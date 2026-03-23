@@ -1,0 +1,12 @@
+services:
+  documan:
+    build:
+      context: .
+      dockerfile: ./docker/documan/Dockerfile
+    env_file:
+      - .env
+    ports:
+      - "${DOCUMAN_HTTP_PORT}:${DOCUMAN_HTTP_PORT}"
+    volumes:
+      - ./docs:/documan/data/docs
+      - ./README.md:/documan/data/README.md
