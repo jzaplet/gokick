@@ -24,10 +24,7 @@ type SendWelcomeEmailHandler struct {
 }
 
 func (h *SendWelcomeEmailHandler) Handle(ctx context.Context, event domain.UserCreated) error {
-    if event.Email == nil {
-        return nil
-    }
-    return h.mailer.Send(/* ... */)
+    return h.mailer.Send(event.Email, /* ... */)
 }
 ```
 

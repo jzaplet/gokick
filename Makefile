@@ -27,6 +27,19 @@ serve:
 di:
 	cd app/di_container && wire
 
+# Migrace
+migrate-create:
+	goose -dir migrations create $(NAME) sql
+
+migrate-up:
+	goose -dir migrations sqlite3 $(shell grep APP_DB_PATH .env | cut -d= -f2) up
+
+migrate-down:
+	goose -dir migrations sqlite3 $(shell grep APP_DB_PATH .env | cut -d= -f2) down
+
+migrate-status:
+	goose -dir migrations sqlite3 $(shell grep APP_DB_PATH .env | cut -d= -f2) status
+
 # Documan
 documan:
 	docker compose build --progress=plain documan && docker compose up -d documan

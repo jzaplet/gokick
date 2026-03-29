@@ -34,7 +34,7 @@ type DomainEvent interface {
 type UserCreated struct {
     UserID    string
     Nickname  string
-    Email     *string
+    Email     string
     Role      string
     Timestamp time.Time
 }

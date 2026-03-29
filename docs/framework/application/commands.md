@@ -30,7 +30,7 @@ Každý command = dva typy v jednom souboru:
 type CreateUserCommand struct {
     Nickname string
     Password string
-    Email    *string  // new("user@example.com") – Go 1.26
+    Email    string
     Role     string
 }
 

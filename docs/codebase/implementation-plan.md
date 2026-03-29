@@ -43,14 +43,14 @@ Po této fázi: `./bin/app serve` spustí HTTP server s health check endpointem.
 
 Po této fázi: server při startu automaticky migruje SQLite databázi.
 
-- [ ] `app/database/sqlite_manager.go` – `SqliteManager`, `NewSqliteManager()`, `ContextWithTx()`, `TxFromContext()`
-- [ ] `app/database/migration_manager.go` – `MigrationManager`, `RunUp()` přes embedded Goose migrace
-- [ ] `migrations/embed.go` – `//go:embed *.sql`
-- [ ] `migrations/20260327000001_create_users_table.sql` – users (id, nickname UNIQUE, password_hash, email, role CHECK, active, timestamps)
-- [ ] `migrations/20260327000002_create_refresh_tokens_table.sql` – refresh_tokens (id, user_id FK CASCADE, token_hash UNIQUE, expires_at, timestamps) + indexy
-- [ ] Wire: přidat `SqliteManager`, `MigrationManager` – migrace se spouští při startu
-- [ ] `Makefile` – `migrate-create`, `migrate-up`, `migrate-down`, `migrate-status`
-- [ ] Ověřit: server start → DB soubor vytvořen, tabulky existují
+- [x] `app/database/sqlite_manager.go` – `SqliteManager`, `NewSqliteManager()`, `ContextWithTx()`, `TxFromContext()`
+- [x] `app/database/migration_manager.go` – `MigrationManager`, `RunUp()` přes embedded Goose migrace
+- [x] `migrations/embed.go` – `//go:embed *.sql`
+- [x] `migrations/20260327000001_create_users_table.sql` – users (id, nickname UNIQUE, password_hash, email, role CHECK, active, timestamps)
+- [x] `migrations/20260327000002_create_refresh_tokens_table.sql` – refresh_tokens (id, user_id FK CASCADE, token_hash UNIQUE, expires_at, timestamps) + indexy
+- [x] Wire: přidat `SqliteManager`, `MigrationManager` – migrace se spouští při startu
+- [x] `Makefile` – `migrate-create`, `migrate-up`, `migrate-down`, `migrate-status`
+- [x] Ověřit: server start → DB soubor vytvořen, tabulky existují
 
 
 ## Fáze 3: Domain – čisté jádro

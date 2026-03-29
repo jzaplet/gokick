@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"myapp/app"
 	"myapp/app/console"
+	"myapp/app/database"
 	"myapp/app/env"
 	"myapp/app/handler"
 	"myapp/app/server"
@@ -26,6 +27,11 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 	serverServer := server.NewServer(config, logger, healthHandler)
 	serveCommand := console.NewServeCommand(serverServer)
 	rootCommand := console.NewRootCommand(serveCommand)
-	application := app.NewApplication(rootCommand)
+	sqliteManager, err := database.NewSqliteManager(config)
+	if err != nil {
+		return nil, err
+	}
+	migrationManager := database.NewMigrationManager(sqliteManager, logger)
+	application := app.NewApplication(rootCommand, migrationManager)
 	return application, nil
 }
