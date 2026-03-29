@@ -57,17 +57,17 @@ Po této fázi: server při startu automaticky migruje SQLite databázi.
 
 Po této fázi: domain balíček kompiluje bez závislostí na ostatních balíčcích.
 
-- [ ] `app/domain/errors.go` – `ValidationError` (400), `AuthError` (403), oba s `HTTPStatus()`
-- [ ] `app/domain/auth_context.go` – `AuthClaims` struct, `ClaimsFromContext()`, `ContextWithClaims()`
-- [ ] `app/domain/nickname.go` – `Nickname` value object, `NewNickname()` (povinný, max 50 znaků)
-- [ ] `app/domain/role.go` – `Role` value object, `RoleAdmin`, `RoleUser`, `NewRole()`
-- [ ] `app/domain/password.go` – `PasswordHasher` interface (Hash, Verify)
-- [ ] `app/domain/permission.go` – `Permissioned`, `SkipPermission`, `PermissionChecker` interfaces
-- [ ] `app/domain/event.go` – `DomainEvent` interface, `EventCollector` (Collect, Flush)
-- [ ] `app/domain/user.go` – `User` entity, `NewUser(Nickname, passwordHash, *string email, Role)`, `UserRepository` interface (Save, Update, Delete, FindByID, FindByNickname, FindAllActive, FindAll)
-- [ ] `app/domain/auth.go` – `RefreshToken` entity, `TokenRepository` interface (Save, FindByHash, DeleteByUserID, DeleteExpired)
-- [ ] `app/domain/events/user_created.go` – `UserCreated` event (UserID, Nickname, Email, Role, Timestamp)
-- [ ] Ověřit: `go build ./app/domain/...` – kompiluje bez app/ importů
+- [x] `app/domain/errors.go` – `ValidationError` (400), `AuthError` (403), oba s `HTTPStatus()`
+- [x] `app/domain/auth_context.go` – `AuthClaims` struct, `ClaimsFromContext()`, `ContextWithClaims()`
+- [x] `app/domain/nickname.go` – `Nickname` value object, `NewNickname()` (povinný, max 50 znaků)
+- [x] `app/domain/role.go` – `Role` value object, `RoleAdmin`, `RoleUser`, `NewRole()`
+- [x] `app/domain/password.go` – `PasswordHasher` interface (Hash, Verify)
+- [x] `app/domain/permission.go` – `Permissioned`, `SkipPermission`, `PermissionChecker` interfaces
+- [x] `app/domain/event.go` – `DomainEvent` interface, `EventCollector` (Collect, Flush)
+- [x] `app/domain/user.go` – `User` entity, `NewUser(Nickname, passwordHash, email, Role)`, `UserRepository` interface
+- [x] `app/domain/auth.go` – `RefreshToken` entity, `TokenRepository` interface
+- [x] `app/domain/events/user_created.go` – `UserCreated` event
+- [x] Ověřit: `go build ./app/domain/...` – kompiluje bez app/ importů (jen stdlib + uuid)
 
 
 ## Fáze 4: Bus – middleware chain
