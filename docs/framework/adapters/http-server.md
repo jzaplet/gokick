@@ -21,7 +21,7 @@ Balíček `server/`. `net/http` stdlib s Go 1.26 routing. Registruje handlery a 
 | Metoda | Route | Popis |
 |---|---|---|
 | GET | `/health` | Health check |
-| POST | `/api/v1/auth/login` | Přihlášení (email + heslo) |
+| POST | `/api/v1/auth/login` | Přihlášení (nickname + heslo) |
 | POST | `/api/v1/auth/refresh` | Obnovení tokenu |
 | GET | `/{path...}` | SPA fallback |
 
