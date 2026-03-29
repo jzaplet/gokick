@@ -2,7 +2,7 @@ package main
 
 import (
 	"log/slog"
-	"myapp/app/di_container"
+	"myapp/app/di"
 	"os"
 )
 
@@ -12,7 +12,7 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
-	application, err := di_container.CreateApplication(logger)
+	application, err := di.CreateApplication(logger)
 	if err != nil {
 		logger.Error("failed to create application", "error", err)
 		os.Exit(1)

@@ -2,7 +2,7 @@ package database
 
 import (
 	"context"
-	"myapp/app/env"
+	"myapp/app/config"
 	"os"
 	"path/filepath"
 
@@ -18,7 +18,7 @@ type SqliteManager struct {
 	db *sqlx.DB
 }
 
-func NewSqliteManager(config *env.Config) (*SqliteManager, error) {
+func NewSqliteManager(config *config.Config) (*SqliteManager, error) {
 	dir := filepath.Dir(config.DBPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, err

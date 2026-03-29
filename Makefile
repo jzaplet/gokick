@@ -25,7 +25,7 @@ serve:
 
 # DI
 di:
-	cd app/di_container && wire
+	cd app/di && wire
 
 # Migrace
 migrate-create:

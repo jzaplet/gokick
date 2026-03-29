@@ -1,7 +1,7 @@
 package console
 
 import (
-	"myapp/app/server"
+	"myapp/app/http/server"
 
 	"github.com/spf13/cobra"
 )

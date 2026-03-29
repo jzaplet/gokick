@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"myapp/app/response"
+	"myapp/app/http/response"
 	"net/http"
 )
 

@@ -57,33 +57,36 @@ Po této fázi: server při startu automaticky migruje SQLite databázi.
 
 Po této fázi: domain balíček kompiluje bez závislostí na ostatních balíčcích.
 
-- [x] `app/domain/errors.go` – `ValidationError` (400), `AuthError` (403), oba s `HTTPStatus()`
-- [x] `app/domain/auth_context.go` – `AuthClaims` struct, `ClaimsFromContext()`, `ContextWithClaims()`
-- [x] `app/domain/nickname.go` – `Nickname` value object, `NewNickname()` (povinný, max 50 znaků)
-- [x] `app/domain/role.go` – `Role` value object, `RoleAdmin`, `RoleUser`, `NewRole()`
-- [x] `app/domain/password.go` – `PasswordHasher` interface (Hash, Verify)
-- [x] `app/domain/permission.go` – `Permissioned`, `SkipPermission`, `PermissionChecker` interfaces
-- [x] `app/domain/event.go` – `DomainEvent` interface, `EventCollector` (Collect, Flush)
-- [x] `app/domain/user.go` – `User` entity, `NewUser(Nickname, passwordHash, email, Role)`, `UserRepository` interface
-- [x] `app/domain/auth.go` – `RefreshToken` entity, `TokenRepository` interface
-- [x] `app/domain/events/user_created.go` – `UserCreated` event
-- [x] Ověřit: `go build ./app/domain/...` – kompiluje bez app/ importů (jen stdlib + uuid)
+- [x] `app/domain/shared/errors.go` – `ValidationError` (400), `AuthError` (403), oba s `HTTPStatus()`
+- [x] `app/domain/shared/auth_context.go` – `AuthClaims` struct, `ClaimsFromContext()`, `ContextWithClaims()`
+- [x] `app/domain/shared/password.go` – `PasswordHasher` interface (Hash, Verify)
+- [x] `app/domain/shared/permission.go` – `Permissioned`, `SkipPermission`, `PermissionChecker` interfaces
+- [x] `app/domain/shared/event.go` – `DomainEvent` interface, `EventCollector` (Collect, Flush)
+- [x] `app/domain/user/user_entity.go` – `User` entity, `NewUser()`
+- [x] `app/domain/user/user_nickname.go` – `Nickname` value object
+- [x] `app/domain/user/user_role.go` – `Role` value object
+- [x] `app/domain/user/user_repository.go` – `Repository` interface
+- [x] `app/domain/user/user_created_event.go` – `UserCreated` event
+- [x] `app/domain/token/token_entity.go` – `RefreshToken` entity
+- [x] `app/domain/token/token_repository.go` – `TokenRepository` interface
+- [x] Ověřit: `go build ./app/domain/...` – kompiluje, shared→0 deps, user→shared, token→0 deps
 
 
 ## Fáze 4: Bus – middleware chain
 
 Po této fázi: bus middleware chain funguje (zatím bez reálných handlerů).
 
-- [ ] `app/bus/bus.go` – `Bus` struct, `Middleware` type (ctx, name, cmd, next), `New()`
-- [ ] `app/bus/exec.go` – `Exec[R]()` generická funkce s cmd parametrem
-- [ ] `app/bus/void.go` – `ExecVoid()` zkratka
-- [ ] `app/bus/middleware_recovery.go` – panic recovery, slog error + optional Sentry report
-- [ ] `app/bus/middleware_logging.go` – slog s trace ID, command name, trvání, error
-- [ ] `app/bus/middleware_authorize.go` – switch: `Permissioned` → check, `SkipPermission` → skip, default → error
-- [ ] `app/bus/middleware_transaction.go` – BEGIN/COMMIT/ROLLBACK, tx do contextu
-- [ ] `app/bus/middleware_events.go` – flush `EventCollector` po commitu, async goroutine dispatch
-- [ ] Wire: `CommandBus` (Recovery → Logging → Authorize → Transaction → DispatchEvents), `QueryBus` (Recovery → Logging → Authorize), `EventBus` (Recovery → Logging), `EventCollector`
-- [ ] Ověřit: Wire generuje, app startuje
+- [x] `app/bus/bus.go` – `Bus` struct, `Middleware` type (ctx, name, cmd, next), `New()`
+- [x] `app/bus/exec.go` – `Exec[R]()` generická funkce s cmd parametrem
+- [x] `app/bus/void.go` – `ExecVoid()` zkratka
+- [x] `app/bus/types.go` – `CommandBus`, `QueryBus`, `EventBus` wrapper typy (Wire rozlišení)
+- [x] `app/bus/middleware_recovery.go` – panic recovery, slog error
+- [x] `app/bus/middleware_logging.go` – slog s trace ID, command name, trvání, error
+- [x] `app/bus/middleware_authorize.go` – switch: `Permissioned` → check, `SkipPermission` → skip, default → error
+- [x] `app/bus/middleware_transaction.go` – BEGIN/COMMIT/ROLLBACK, tx do contextu
+- [x] `app/bus/middleware_events.go` – flush `EventCollector` po commitu, log dispatch
+- [x] Wire: provider funkce připraveny (CommandBus, QueryBus, EventBus), aktivují se ve fázi 6
+- [x] Ověřit: bus balíček kompiluje, app startuje
 
 
 ## Fáze 5: Security + repozitáře – adaptéry

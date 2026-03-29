@@ -2,19 +2,19 @@ package server
 
 import (
 	"log/slog"
-	"myapp/app/env"
-	"myapp/app/handler"
-	"myapp/app/middleware"
+	"myapp/app/config"
+	"myapp/app/http/handler"
+	"myapp/app/http/http_middleware"
 	"net/http"
 )
 
 type Server struct {
-	config *env.Config
+	config *config.Config
 	logger *slog.Logger
 	health *handler.HealthHandler
 }
 
-func NewServer(config *env.Config, logger *slog.Logger, health *handler.HealthHandler) *Server {
+func NewServer(config *config.Config, logger *slog.Logger, health *handler.HealthHandler) *Server {
 	return &Server{
 		config: config,
 		logger: logger,
@@ -40,10 +40,10 @@ func (s *Server) buildMiddlewareChain(handler http.Handler) http.Handler {
 	// Pořadí: Trace → CORS → CSRF → Logging (→ handler)
 	// Aplikuje se od posledního, takže definice je obrácená:
 	middlewares := []func(http.Handler) http.Handler{
-		middleware.TraceMiddleware(),
-		middleware.CORSMiddleware(s.config.CORSOrigin),
+		http_middleware.TraceMiddleware(),
+		http_middleware.CORSMiddleware(s.config.CORSOrigin),
 		csrf.Handler,
-		middleware.LoggingMiddleware(s.logger),
+		http_middleware.LoggingMiddleware(s.logger),
 	}
 
 	for i := len(middlewares) - 1; i >= 0; i-- {
