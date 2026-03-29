@@ -1,2 +1,11 @@
 .idea
 .env
+bin/
+data/
+node_modules/
+
+# Vite build output (keep embed.go)
+public/*.js
+public/*.css
+public/*.html
+public/assets/

@@ -18,25 +18,25 @@ Každá fáze končí spustitelnou aplikací. Wire DI se rozšiřuje iterativně
 
 Po této fázi: `./bin/app serve` spustí HTTP server s health check endpointem.
 
-- [ ] `go mod init` + `go get` – cobra, wire, godotenv, uuid, ncruces/go-sqlite3, sqlx, goose, golang-jwt/jwt, x/crypto, testify
-- [ ] `.gitignore` – `bin/`, `data/`, `public/` (kromě `embed.go`), `.env`, `wire_gen.go`
-- [ ] `.env.example` – `APP_HTTP_PORT=3000`, `APP_DB_PATH=./data/app.db`, `APP_JWT_SECRET`, `APP_JWT_ACCESS_EXPIRATION=15m`, `APP_JWT_REFRESH_EXPIRATION=168h`, `APP_CORS_ORIGIN=http://localhost:5173`
-- [ ] `app/env/config.go` – `Config` struct, `LoadConfig()` přes godotenv
-- [ ] `app/response/response.go` – `JSON()`, `Error()`, `HTTPError` interface, `HandleError()`
-- [ ] `app/middleware/trace.go` – trace ID generování, `TraceIDFromContext()`
-- [ ] `app/middleware/cors.go` – CORS z `APP_CORS_ORIGIN`
-- [ ] `app/middleware/logging.go` – HTTP request logging s trace ID (slog)
-- [ ] `app/handler/health.go` – `GET /health` handler
-- [ ] `app/server/server.go` – `Server` struct, `http.ServeMux`, middleware registrace (Trace → CORS → CSRF → Logging), `Start()`
-- [ ] CSRF – `http.CrossOriginProtection` (Go 1.25 stdlib) registrace v serveru
-- [ ] `app/console/root.go` – Cobra root command
-- [ ] `app/console/serve.go` – `ServeCommand` spustí server
-- [ ] `app/application.go` – `Application` struct s `Run()`
-- [ ] `app/main.go` – entry point, slog logger setup (JSON handler na stderr), volá `CreateApplication()`
-- [ ] `app/di_container/container_provider.go` – Wire: Config, Server, ServeCommand, RootCommand, Application
-- [ ] `make di` → ověřit `wire_gen.go`
-- [ ] `Makefile` – `install`, `dev`, `serve`, `di`, `install-tools` (wire, golines, golangci-lint, goose, go-arch-lint)
-- [ ] Ověřit: `make dev && make serve` → health check na `localhost:3000/health`
+- [x] `go mod init` + `go get` – cobra, wire, godotenv, uuid, ncruces/go-sqlite3, sqlx, goose, golang-jwt/jwt, x/crypto, testify
+- [x] `.gitignore` – `bin/`, `data/`, `public/` (kromě `embed.go`), `.env`, `wire_gen.go`
+- [x] `.env.example` – `APP_HTTP_PORT=3000`, `APP_DB_PATH=./data/app.db`, `APP_JWT_SECRET`, `APP_JWT_ACCESS_EXPIRATION=15m`, `APP_JWT_REFRESH_EXPIRATION=168h`, `APP_CORS_ORIGIN=http://localhost:5173`
+- [x] `app/env/config.go` – `Config` struct, `LoadConfig()` přes godotenv
+- [x] `app/response/response.go` – `JSON()`, `Error()`, `HTTPError` interface, `HandleError()`
+- [x] `app/middleware/trace.go` – trace ID generování, `TraceIDFromContext()`
+- [x] `app/middleware/cors.go` – CORS z `APP_CORS_ORIGIN`
+- [x] `app/middleware/logging.go` – HTTP request logging s trace ID (slog)
+- [x] `app/handler/health.go` – `GET /health` handler
+- [x] `app/server/server.go` – `Server` struct, `http.ServeMux`, middleware registrace (Trace → CORS → CSRF → Logging), `Start()`
+- [x] CSRF – `http.CrossOriginProtection` (Go 1.26 stdlib) registrace v serveru
+- [x] `app/console/root.go` – Cobra root command
+- [x] `app/console/serve.go` – `ServeCommand` spustí server
+- [x] `app/application.go` – `Application` struct s `Run()`
+- [x] `cmd/main.go` – entry point, slog logger setup (JSON handler na stderr), volá `CreateApplication()`
+- [x] `app/di_container/container_provider.go` – Wire: Config, Server, ServeCommand, RootCommand, Application
+- [x] `make di` → ověřit `wire_gen.go`
+- [x] `Makefile` – `install`, `dev`, `serve`, `di`, `install-tools` (wire, golines, golangci-lint, goose, go-arch-lint)
+- [x] Ověřit: `make dev && make serve` → health check na `localhost:3000/health`
 
 
 ## Fáze 2: Databáze – migrace běží
