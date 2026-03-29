@@ -1,12 +1,12 @@
 ---
 layout: 'page'
 uri: '/framework/frontend'
-position: 9
+position: 60
 slug: 'framework-frontend'
 parent: 'framework'
 navTitle: 'Frontend'
 title: 'Frontend'
-description: 'Vue 3 SPA – Vite, TypeScript, Tailwind, router, composables.'
+description: 'Vue 3 SPA – Vite, TypeScript, Tailwind, embedding.'
 ---
 
 # Frontend
@@ -20,70 +20,37 @@ Vue 3 SPA embedovaná do Go binárky.
 |---|---|
 | Framework | `vue@^3` |
 | Routing | `vue-router@^4` |
-| Build tool | `vite` |
+| Build | `vite` |
 | CSS | `tailwindcss@^4` + `@tailwindcss/vite` |
 | TypeScript | `typescript` + `vue-tsc` |
 | Linting | `eslint` + `oxlint` |
 
 
-## Adresářová struktura
+## Struktura
 
 ```
 assets/
-├── app.ts                    # Entry point
-├── tailwind.css              # Tailwind konfigurace
+├── app.ts              # Entry point
+├── tailwind.css
 └── vue/
-    ├── App.vue               # Root komponenta
-    ├── router/               # Vue Router
-    ├── views/                # Stránkové komponenty
-    ├── components/           # UI komponenty
-    ├── composables/          # useAuth, sdílený stav
-    ├── services/             # apiFetch, API klienti
-    └── types/                # TypeScript typy
+    ├── App.vue
+    ├── router/
+    ├── views/
+    ├── components/
+    ├── composables/    # useAuth
+    ├── services/       # apiFetch
+    └── types/
 ```
 
 
-## Entry point
-
-`index.html` → `assets/app.ts` → mountuje Vue s routerem.
-
-
-## Vue Router
-
-```typescript
-createRouter({
-    history: createWebHistory('/'),
-    routes: [
-        { path: '/login', component: LoginView },
-        { path: '/', component: HomeView, meta: { requiresAuth: true } },
-        // ...
-    ]
-})
-```
-
-Backend SPA fallback zajistí, že přímý přístup na jakoukoliv URL vrátí `index.html`.
-
-
-## Stav
-
-Žádná externí state management knihovna. Sdílený stav přes composables (`ref`, `computed`, `provide/inject`).
-
-- **`useAuth()`** – auth stav, login/logout/refresh
-- **`apiFetch()`** – fetch wrapper s auth a auto-refresh
-
-Detaily viz [Autentizace](/framework/auth).
-
-
-## Embedding do binárky
+## Embedding
 
 Vite builduje do `public/`. Go embeduje přes `//go:embed *`:
 
 ```go
 // public/embed.go
 package public
-
 import "embed"
-
 //go:embed *
 var FS embed.FS
 ```
@@ -92,8 +59,8 @@ var FS embed.FS
 ## Makefile
 
 ```bash
-make fe-deps    # Install závislostí
-make fe-build   # Vite produkční build → public/
-make fe-dev     # Vite dev server s HMR
-make fe-clean   # Smazání build artefaktů
+make fe-deps    # Install
+make fe-build   # Produkční build
+make fe-dev     # Dev server s HMR
+make fe-clean   # Smazání artefaktů
 ```
