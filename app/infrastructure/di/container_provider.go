@@ -8,8 +8,13 @@ import (
 	"myapp/app/application/bus"
 	busmw "myapp/app/application/bus/middleware"
 	"myapp/app/domain/shared"
+	"myapp/app/domain/user"
 	"myapp/app/infrastructure/config"
 	"myapp/app/infrastructure/database"
+	"myapp/app/infrastructure/security"
+	"myapp/app/infrastructure/sqlite"
+	sqlitetoken "myapp/app/infrastructure/sqlite/token"
+	sqliteuser "myapp/app/infrastructure/sqlite/user"
 	"myapp/app/presentation/console"
 	"myapp/app/presentation/http/handler"
 	"myapp/app/presentation/http/server"
@@ -21,21 +26,29 @@ func provideEventCollector() *shared.EventCollector {
 	return shared.NewEventCollector()
 }
 
-func provideCommandBus(logger *slog.Logger, db *database.SqliteManager, collector *shared.EventCollector) *bus.CommandBus {
+func providePasswordHasher() shared.PasswordHasher {
+	return security.NewPasswordHasher()
+}
+
+func providePermissionChecker() shared.PermissionChecker {
+	return security.NewPermissionChecker()
+}
+
+func provideCommandBus(logger *slog.Logger, db *database.SqliteManager, collector *shared.EventCollector, checker shared.PermissionChecker) *bus.CommandBus {
 	return &bus.CommandBus{Bus: bus.New(
 		busmw.RecoveryMiddleware(logger),
 		busmw.LoggingMiddleware(logger),
-		// AuthorizeMiddleware přidáme ve fázi 5 (potřebuje PermissionChecker)
+		busmw.AuthorizeMiddleware(checker),
 		busmw.TransactionMiddleware(db),
 		busmw.DispatchEventsMiddleware(logger, collector),
 	)}
 }
 
-func provideQueryBus(logger *slog.Logger) *bus.QueryBus {
+func provideQueryBus(logger *slog.Logger, checker shared.PermissionChecker) *bus.QueryBus {
 	return &bus.QueryBus{Bus: bus.New(
 		busmw.RecoveryMiddleware(logger),
 		busmw.LoggingMiddleware(logger),
-		// AuthorizeMiddleware přidáme ve fázi 5
+		busmw.AuthorizeMiddleware(checker),
 	)}
 }
 
@@ -51,11 +64,17 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 		config.LoadConfig,
 		database.NewSqliteManager,
 		database.NewMigrationManager,
-		// Bus providers (aktivují se ve fázi 6 až budou handlery):
-		// provideEventCollector,
-		// provideCommandBus,
-		// provideQueryBus,
-		// provideEventBus,
+		provideEventCollector,
+		providePasswordHasher,
+		providePermissionChecker,
+		provideCommandBus,
+		provideQueryBus,
+		provideEventBus,
+		security.NewJwtService,
+		wire.Bind(new(user.Repository), new(*sqliteuser.Repository)),
+		sqliteuser.NewRepository,
+		sqlitetoken.NewRepository,
+		sqlite.NewSeeder,
 		handler.NewHealthHandler,
 		server.NewServer,
 		console.NewServeCommand,

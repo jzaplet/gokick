@@ -14,6 +14,10 @@ import (
 	"myapp/app/domain/shared"
 	"myapp/app/infrastructure/config"
 	"myapp/app/infrastructure/database"
+	"myapp/app/infrastructure/security"
+	"myapp/app/infrastructure/sqlite"
+	"myapp/app/infrastructure/sqlite/token"
+	"myapp/app/infrastructure/sqlite/user"
 	"myapp/app/presentation/console"
 	"myapp/app/presentation/http/handler"
 	"myapp/app/presentation/http/server"
@@ -35,7 +39,20 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 		return nil, err
 	}
 	migrationManager := database.NewMigrationManager(sqliteManager, logger)
-	application := app.NewApplication(rootCommand, migrationManager)
+	repository := user.NewRepository(sqliteManager)
+	passwordHasher := providePasswordHasher()
+	seeder := sqlite.NewSeeder(repository, passwordHasher, logger)
+	eventCollector := provideEventCollector()
+	permissionChecker := providePermissionChecker()
+	commandBus := provideCommandBus(logger, sqliteManager, eventCollector, permissionChecker)
+	queryBus := provideQueryBus(logger, permissionChecker)
+	eventBus := provideEventBus(logger)
+	jwtService, err := security.NewJwtService(configConfig)
+	if err != nil {
+		return nil, err
+	}
+	tokenRepository := token.NewRepository(sqliteManager)
+	application := app.NewApplication(rootCommand, migrationManager, seeder, commandBus, queryBus, eventBus, jwtService, tokenRepository)
 	return application, nil
 }
 
@@ -45,12 +62,20 @@ func provideEventCollector() *shared.EventCollector {
 	return shared.NewEventCollector()
 }
 
-func provideCommandBus(logger *slog.Logger, db *database.SqliteManager, collector *shared.EventCollector) *bus.CommandBus {
-	return &bus.CommandBus{Bus: bus.New(middleware.RecoveryMiddleware(logger), middleware.LoggingMiddleware(logger), middleware.TransactionMiddleware(db), middleware.DispatchEventsMiddleware(logger, collector))}
+func providePasswordHasher() shared.PasswordHasher {
+	return security.NewPasswordHasher()
 }
 
-func provideQueryBus(logger *slog.Logger) *bus.QueryBus {
-	return &bus.QueryBus{Bus: bus.New(middleware.RecoveryMiddleware(logger), middleware.LoggingMiddleware(logger))}
+func providePermissionChecker() shared.PermissionChecker {
+	return security.NewPermissionChecker()
+}
+
+func provideCommandBus(logger *slog.Logger, db *database.SqliteManager, collector *shared.EventCollector, checker shared.PermissionChecker) *bus.CommandBus {
+	return &bus.CommandBus{Bus: bus.New(middleware.RecoveryMiddleware(logger), middleware.LoggingMiddleware(logger), middleware.AuthorizeMiddleware(checker), middleware.TransactionMiddleware(db), middleware.DispatchEventsMiddleware(logger, collector))}
+}
+
+func provideQueryBus(logger *slog.Logger, checker shared.PermissionChecker) *bus.QueryBus {
+	return &bus.QueryBus{Bus: bus.New(middleware.RecoveryMiddleware(logger), middleware.LoggingMiddleware(logger), middleware.AuthorizeMiddleware(checker))}
 }
 
 func provideEventBus(logger *slog.Logger) *bus.EventBus {
