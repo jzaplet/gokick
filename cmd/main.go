@@ -2,7 +2,7 @@ package main
 
 import (
 	"log/slog"
-	"myapp/app/di"
+	"myapp/app/infrastructure/di"
 	"os"
 )
 

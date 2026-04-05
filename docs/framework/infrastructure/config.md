@@ -4,14 +4,14 @@ uri: '/framework/infrastructure/config'
 position: 1
 slug: 'framework-infrastructure-config'
 parent: 'framework-infrastructure'
-navTitle: 'Konfigurace'
-title: 'Konfigurace'
-description: 'Balíček env/ – .env soubory, Config struct.'
+navTitle: 'Config'
+title: 'Config'
+description: 'Balíček infrastructure/config/ – .env soubory, Config struct.'
 ---
 
-# Konfigurace
+# Config
 
-Balíček `env/`. Načítá konfiguraci z `.env` přes `godotenv`.
+Balíček `infrastructure/config/`. Načítá konfiguraci z `.env` přes `godotenv`.
 
 
 ## Proměnné
@@ -38,7 +38,7 @@ APP_CORS_ORIGIN=http://localhost:5173
 ## Config struct
 
 ```go
-// env/config.go
+// infrastructure/config/config.go
 
 type Config struct {
     HTTPPort             string

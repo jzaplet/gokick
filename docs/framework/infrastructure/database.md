@@ -4,7 +4,7 @@ uri: '/framework/infrastructure/database'
 position: 2
 slug: 'framework-infrastructure-database'
 parent: 'framework-infrastructure'
-navTitle: 'Databáze'
+navTitle: 'Database'
 title: 'Databáze'
 description: 'Balíček database/ – SQLite manager, Goose migrace.'
 ---

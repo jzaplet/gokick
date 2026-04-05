@@ -4,12 +4,27 @@ uri: '/framework/overview/architecture-rules'
 position: 4
 slug: 'framework-overview-architecture-rules'
 parent: 'framework-overview'
-navTitle: 'Pravidla závislostí'
-title: 'Pravidla závislostí'
+navTitle: 'Dependency Rules'
+title: 'Dependency Rules'
 description: 'Dependency matrix, go-arch-lint, klíčová pravidla.'
 ---
 
-# Pravidla závislostí
+# Dependency Rules
+
+
+## Vrstvy
+
+```
+presentation → application → domain ← infrastructure
+     │                                      ↑
+     └──────────────────────────────────────┘
+```
+
+- **Domain** neimportuje nic – čisté jádro
+- **Application** závisí jen na domain (přes bus + CQRS handlery)
+- **Infrastructure** závisí na domain (implementuje interfaces)
+- **Presentation** závisí na application + infrastructure (volá bus, čte config)
+- **DI** smí vše (excluded z arch-lintu)
 
 
 ## Dependency matrix
@@ -17,22 +32,22 @@ description: 'Dependency matrix, go-arch-lint, klíčová pravidla.'
 Řádek smí importovat sloupec.
 
 ```
-                  domain  cmd  qry  event  bus  sqlite  sec  handler  mw   server  console  di   env  db   resp
-domain              -      ✗    ✗    ✗      ✗     ✗      ✗     ✗      ✗      ✗       ✗      ✗    ✗    ✗     ✗
-command             ✓      -    ✗    ✗      ✗     ✗      ✗     ✗      ✗      ✗       ✗      ✗    ✗    ✗     ✗
-query               ✓      ✗    -    ✗      ✗     ✗      ✗     ✗      ✗      ✗       ✗      ✗    ✗    ✗     ✗
-event               ✓      ✗    ✗    -      ✗     ✗      ✗     ✗      ✗      ✗       ✗      ✗    ✗    ✗     ✗
-bus                 ✓      ✗    ✗    ✗      -     ✗      ✗     ✗      ✗      ✗       ✗      ✗    ✗    ✓     ✗
-sqlite              ✓      ✗    ✗    ✗      ✗     -      ✗     ✗      ✗      ✗       ✗      ✗    ✗    ✓     ✗
-security            ✓      ✗    ✗    ✗      ✗     ✗      -     ✗      ✗      ✗       ✗      ✗    ✓    ✗     ✗
-handler             ✓      ✓    ✓    ✗      ✓     ✗      ✗     -      ✗      ✗       ✗      ✗    ✗    ✗     ✓
-middleware          ✓      ✗    ✗    ✗      ✗     ✗      ✓     ✗      -      ✗       ✗      ✗    ✗    ✗     ✓
-server              ✗      ✗    ✗    ✗      ✗     ✗      ✗     ✓      ✓      -       ✗      ✗    ✓    ✗     ✗
-console             ✗      ✗    ✗    ✗      ✗     ✗      ✗     ✗      ✗      ✓       -      ✗    ✓    ✓     ✗
-di_container        ✓      ✓    ✓    ✓      ✓     ✓      ✓     ✓      ✓      ✓       ✓      -    ✓    ✓     ✓
-env                 ✗      ✗    ✗    ✗      ✗     ✗      ✗     ✗      ✗      ✗       ✗      ✗    -    ✗     ✗
-database            ✗      ✗    ✗    ✗      ✗     ✗      ✗     ✗      ✗      ✗       ✗      ✗    ✓    -     ✗
-response            ✗      ✗    ✗    ✗      ✗     ✗      ✗     ✗      ✗      ✗       ✗      ✗    ✗    ✗     -
+                domain  bus  busmw  cmd  qry  event  config  db  sqlite  sec  handler  httpmw  resp  server  console
+domain            -      ✗    ✗     ✗    ✗     ✗      ✗      ✗    ✗      ✗     ✗        ✗      ✗      ✗       ✗
+bus               ✓      -    –     ✗    ✗     ✗      ✗      ✗    ✗      ✗     ✗        ✗      ✗      ✗       ✗
+bus_middleware    ✓      ✓    -     ✗    ✗     ✗      ✗      ✗    ✗      ✗     ✗        ✗      ✗      ✗       ✗
+command           ✓      ✗    ✗     -    ✗     ✗      ✗      ✗    ✗      ✗     ✗        ✗      ✗      ✗       ✗
+query             ✓      ✗    ✗     ✗    -     ✗      ✗      ✗    ✗      ✗     ✗        ✗      ✗      ✗       ✗
+event             ✓      ✗    ✗     ✗    ✗     -      ✗      ✗    ✗      ✗     ✗        ✗      ✗      ✗       ✗
+config            ✗      ✗    ✗     ✗    ✗     ✗      -      ✗    ✗      ✗     ✗        ✗      ✗      ✗       ✗
+database          ✗      ✗    ✗     ✗    ✗     ✗      ✓      -    ✗      ✗     ✗        ✗      ✗      ✗       ✗
+sqlite            ✓      ✗    ✗     ✗    ✗     ✗      ✗      ✓    -      ✗     ✗        ✗      ✗      ✗       ✗
+security          ✓      ✗    ✗     ✗    ✗     ✗      ✓      ✗    ✗      -     ✗        ✗      ✗      ✗       ✗
+handler           ✓      ✓    ✗     ✓    ✓     ✗      ✗      ✗    ✗      ✗     -        ✗      ✓      ✗       ✗
+http_middleware   ✓      ✗    ✗     ✗    ✗     ✗      ✗      ✗    ✗      ✓     ✗        -      ✓      ✗       ✗
+response          ✗      ✗    ✗     ✗    ✗     ✗      ✗      ✗    ✗      ✗     ✗        ✗      -      ✗       ✗
+server            ✗      ✗    ✗     ✗    ✗     ✗      ✓      ✗    ✗      ✗     ✓        ✓      ✗      -       ✗
+console           ✗      ✗    ✗     ✗    ✗     ✗      ✓      ✓    ✗      ✗     ✗        ✗      ✗      ✓       -
 ```
 
 
@@ -42,10 +57,10 @@ response            ✗      ✗    ✗    ✗      ✗     ✗      ✗     ✗
 2. **Command/Query závisí jen na domain**
 3. **Command/Query neznají bus ani security**
 4. **Handler neimportuje sqlite, security ani event**
-5. **Bus závisí na domain + database**
-6. **Middleware závisí na security** (JWT validace)
-7. **Di_container smí vše**
-8. **Response je izolovaný**
+5. **Bus middleware závisí na domain + bus**
+6. **HTTP middleware závisí na security** (JWT validace) + response
+7. **DI smí vše** (excluded z arch-lintu)
+8. **Response je izolovaný** – žádné závislosti
 
 
 ## go-arch-lint
@@ -61,9 +76,9 @@ Konfigurace `.go-arch-lint.yml` v kořeni projektu – viz [Dev Stack](/framewor
 ## Přidání nové feature
 
 1. `domain/` – entity, value objects, interfaces
-2. `sqlite/` – repository implementace
-3. `command/` nebo `query/` – CQRS handler s `Permissioned` nebo `SkipPermission`
-4. `handler/` – HTTP handler přes bus
-5. `server/` – registrace route
-6. `di_container/` – Wire provider
+2. `infrastructure/sqlite/` – repository implementace
+3. `application/command/` nebo `application/query/` – CQRS handler s `Permissioned` nebo `SkipPermission`
+4. `presentation/http/handler/` – HTTP handler přes bus
+5. `presentation/http/server/` – registrace route
+6. `infrastructure/di/` – Wire provider
 7. `make di && make arch-check`

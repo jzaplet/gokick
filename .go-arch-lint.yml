@@ -1,0 +1,109 @@
+version: 3
+workdir: app
+
+allow:
+  depOnAnyVendor: true
+
+exclude:
+  - infrastructure/di/**
+
+excludeFiles:
+  - application.go
+  - infrastructure/database/migration_manager.go
+
+commonComponents:
+  - domain
+
+components:
+  # Vrstva 1: Domain
+  domain:
+    in: domain/**
+
+  # Vrstva 2: Application
+  bus:
+    in: application/bus
+  bus_middleware:
+    in: application/bus/middleware/**
+  command:
+    in: application/command/**
+  query:
+    in: application/query/**
+  event:
+    in: application/event/**
+
+  # Vrstva 3: Infrastructure
+  config:
+    in: infrastructure/config/**
+  database:
+    in: infrastructure/database
+  security:
+    in: infrastructure/security/**
+  sqlite:
+    in: infrastructure/sqlite/**
+
+  # Vrstva 4: Presentation
+  handler:
+    in: presentation/http/handler/**
+  http_middleware:
+    in: presentation/http/middleware/**
+  response:
+    in: presentation/http/response/**
+  server:
+    in: presentation/http/server/**
+  console:
+    in: presentation/console/**
+
+deps:
+  # Domain – čisté jádro
+  domain:
+    anyVendorDeps: true
+
+  # Application – závisí jen na domain
+  bus:
+    anyVendorDeps: true
+  bus_middleware:
+    mayDependOn:
+      - bus
+  command:
+    anyVendorDeps: true
+  query:
+    anyVendorDeps: true
+  event:
+    anyVendorDeps: true
+
+  # Infrastructure – závisí na domain
+  config:
+    anyVendorDeps: true
+  database:
+    mayDependOn:
+      - config
+  security:
+    mayDependOn:
+      - config
+  sqlite:
+    mayDependOn:
+      - database
+
+  # Presentation – závisí na application + infrastructure
+  handler:
+    mayDependOn:
+      - command
+      - query
+      - bus
+      - response
+  http_middleware:
+    mayDependOn:
+      - security
+      - response
+  response:
+    anyVendorDeps: true
+  server:
+    mayDependOn:
+      - handler
+      - http_middleware
+      - config
+  console:
+    mayDependOn:
+      - server
+      - config
+      - database

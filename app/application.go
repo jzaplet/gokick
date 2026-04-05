@@ -1,8 +1,8 @@
 package app
 
 import (
-	"myapp/app/console"
-	"myapp/app/database"
+	"myapp/app/infrastructure/database"
+	"myapp/app/presentation/console"
 )
 
 type Application struct {

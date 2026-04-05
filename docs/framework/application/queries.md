@@ -6,12 +6,12 @@ slug: 'framework-application-queries'
 parent: 'framework-application'
 navTitle: 'Queries'
 title: 'Queries'
-description: 'Balíček query/ – read operace, permission deklarace.'
+description: 'Balíček application/query/ – read operace, permission deklarace.'
 ---
 
 # Queries
 
-Balíček `query/`. Read operace – čtou stav systému, nemění ho. Závisí jen na `domain/`.
+Balíček `application/query/`. Read operace – čtou stav systému, nemění ho. Závisí jen na `domain/`.
 
 
 ## Struktura
@@ -22,17 +22,17 @@ Stejná jako commands: `XxxQuery` (filtry) + `XxxHandler` (logika).
 ## Příklad
 
 ```go
-// query/list_users.go
+// application/query/query_list_users.go
 
 type ListUsersQuery struct{}
 
 func (q ListUsersQuery) RequiredPermission() string { return "admin.users.read" }
 
 type ListUsersHandler struct {
-    repo domain.UserRepository
+    repo user.Repository
 }
 
-func (h *ListUsersHandler) Handle(ctx context.Context, q ListUsersQuery) ([]domain.User, error) {
+func (h *ListUsersHandler) Handle(ctx context.Context, q ListUsersQuery) ([]user.User, error) {
     return h.repo.FindAll(ctx)
 }
 ```
@@ -43,7 +43,7 @@ func (h *ListUsersHandler) Handle(ctx context.Context, q ListUsersQuery) ([]doma
 Veřejné queries implementují `SkipPermission` – explicitní deklarace, že permission check není potřeba:
 
 ```go
-// query/get_public_info.go – veřejný endpoint
+// application/query/query_get_public_info.go – veřejný endpoint
 
 type GetPublicInfoQuery struct{}
 

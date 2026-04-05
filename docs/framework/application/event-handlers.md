@@ -4,26 +4,26 @@ uri: '/framework/application/event-handlers'
 position: 4
 slug: 'framework-application-event-handlers'
 parent: 'framework-application'
-navTitle: 'Event Handlery'
-title: 'Event Handlery'
-description: 'Balíček event/ – zpracování domain eventů, async side-effects.'
+navTitle: 'Event Handlers'
+title: 'Event Handlers'
+description: 'Balíček application/event/ – zpracování domain eventů, async side-effects.'
 ---
 
-# Event Handlery
+# Event Handlers
 
-Balíček `event/`. Zpracovávají domain eventy dispatched přes EventBus. Závisí jen na `domain/`.
+Balíček `application/event/`. Zpracovávají domain eventy dispatched přes EventBus. Závisí jen na `domain/`.
 
 
 ## Příklad
 
 ```go
-// event/send_welcome_email.go
+// application/event/event_send_welcome_email.go
 
 type SendWelcomeEmailHandler struct {
     mailer Mailer
 }
 
-func (h *SendWelcomeEmailHandler) Handle(ctx context.Context, event domain.UserCreated) error {
+func (h *SendWelcomeEmailHandler) Handle(ctx context.Context, event user.UserCreated) error {
     return h.mailer.Send(event.Email, /* ... */)
 }
 ```
@@ -32,7 +32,7 @@ func (h *SendWelcomeEmailHandler) Handle(ctx context.Context, event domain.UserC
 ## Registrace
 
 ```go
-// di_container/container_provider.go
+// infrastructure/di/container_provider.go
 
 func provideEventHandlerRegistry() map[string][]EventHandler {
     return map[string][]EventHandler{
@@ -45,22 +45,22 @@ func provideEventHandlerRegistry() map[string][]EventHandler {
 ## Použití v command handleru
 
 ```go
-// command/create_user.go
+// application/command/command_create_user.go
 
 func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) error {
     // ... business logika ...
 
-    user := domain.NewUser(nickname, hash, cmd.Email, role)
+    u := user.NewUser(nickname, hash, cmd.Email, role)
 
-    h.events.Collect(domain.UserCreated{
-        UserID:    user.ID,
-        Nickname:  user.Nickname,
-        Email:     user.Email,
-        Role:      user.Role,
+    h.events.Collect(user.UserCreated{
+        UserID:    u.ID,
+        Nickname:  u.Nickname,
+        Email:     u.Email,
+        Role:      u.Role,
         Timestamp: time.Now(),
     })
 
-    return h.repo.Save(ctx, user)
+    return h.repo.Save(ctx, u)
 }
 ```
 

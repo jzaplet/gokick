@@ -4,28 +4,28 @@ uri: '/framework/overview/lifecycle'
 position: 3
 slug: 'framework-overview-lifecycle'
 parent: 'framework-overview'
-navTitle: 'Životní cyklus'
-title: 'Životní cyklus'
+navTitle: 'Lifecycle'
+title: 'Lifecycle'
 description: 'Tok requestu, start aplikace, error flow.'
 ---
 
-# Životní cyklus
+# Lifecycle
 
 
 ## Start aplikace
 
 ```
-main.go
-  → di_container.CreateApplication()       Wire DI vytvoří vše
-    → env.LoadConfig()                     Načtení .env
-    → database.NewSqliteManager()          Připojení k SQLite
-    → database.MigrationManager.RunUp()    Automatické migrace
-    → bus.New(middlewares...)               CommandBus, QueryBus, EventBus
-    → server.New(handlers, middlewares)     HTTP server
-    → console.NewRootCommand()             Cobra CLI
+cmd/main.go
+  → di.CreateApplication()                Wire DI vytvoří vše
+    → config.LoadConfig()                 Načtení .env
+    → database.NewSqliteManager()         Připojení k SQLite
+    → database.MigrationManager.RunUp()   Automatické migrace
+    → bus.New(middlewares...)              CommandBus, QueryBus, EventBus
+    → server.New(handlers, middlewares)    HTTP server
+    → console.NewRootCommand()            Cobra CLI
   → application.Run()
-    → rootCmd.Execute()                    Cobra parsuje "serve"
-      → server.Start()                    Naslouchá na portu
+    → rootCmd.Execute()                   Cobra parsuje "serve"
+      → server.Start()                   Naslouchá na portu
 ```
 
 
@@ -36,21 +36,21 @@ main.go
 ```
 1. HTTP Request → net/http ServeMux
 
-2. HTTP Middleware:
-   CORS → Logging → JWT Auth (claims do context)
+2. HTTP Middleware (presentation/http/middleware/):
+   Trace → CORS → CSRF → Logging → JWT Auth (claims do context)
 
-3. HTTP Handler:
+3. HTTP Handler (presentation/http/handler/):
    json.Decode → CreateUserCommand
    bus.ExecVoid(ctx, commandBus, "CreateUser", cmd, fn)
 
-4. Bus Middleware (CommandBus):
+4. Bus Middleware (application/bus/middleware/):
    Recovery → Logging → Authorize → Transaction → DispatchEvents
    │
    ├─ Authorize: cmd.(Permissioned) → PermissionChecker.Check()
    ├─ Transaction: BEGIN
    └─ → handler:
 
-5. Command Handler:
+5. Command Handler (application/command/):
    NewNickname() → NewRole() → repo.FindByNickname() → password.Hash()
    → NewUser() → repo.Save()
 
@@ -67,8 +67,8 @@ main.go
 `GET /api/v1/admin/users`:
 
 ```
-HTTP Request → CORS → Logging → JWT Auth
-  → Handler → bus.Exec[[]domain.User](ctx, queryBus, "ListUsers", q, fn)
+HTTP Request → Trace → CORS → CSRF → Logging → JWT Auth
+  → Handler → bus.Exec[[]user.User](ctx, queryBus, "ListUsers", q, fn)
     → Recovery → Logging → Authorize → Query Handler → repo.FindAll()
   → response.JSON(w, 200, users)
 ```
@@ -79,7 +79,7 @@ HTTP Request → CORS → Logging → JWT Auth
 `POST /api/v1/auth/login`:
 
 ```
-HTTP Request → CORS → Logging (bez JWT Auth)
+HTTP Request → Trace → CORS → CSRF → Logging (bez JWT Auth)
   → Handler → bus.Exec[*LoginResult](ctx, commandBus, "Login", cmd, fn)
     → Recovery → Logging → Authorize (SkipPermission → skip)
       → Transaction → Login Handler

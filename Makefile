@@ -1,4 +1,4 @@
-.PHONY: install dev build serve di install-tools go-deps
+.PHONY: install dev build serve di install-tools go-deps arch-check
 
 # Instalace
 install: go-deps install-tools
@@ -25,7 +25,7 @@ serve:
 
 # DI
 di:
-	cd app/di && wire
+	cd app/infrastructure/di && wire
 
 # Migrace
 migrate-create:
@@ -39,6 +39,10 @@ migrate-down:
 
 migrate-status:
 	goose -dir migrations sqlite3 $(shell grep APP_DB_PATH .env | cut -d= -f2) status
+
+# Architektura
+arch-check:
+	go-arch-lint check
 
 # Documan
 documan:

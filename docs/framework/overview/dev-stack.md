@@ -47,24 +47,36 @@ Single-binary Go server s embedovaným Vue 3 SPA. Minimální verze Go 1.26. Po 
 
 ```
 project/
+├── cmd/main.go                       # Entry point
 ├── app/                              # Go backend
-│   ├── main.go                       # Entry point
 │   ├── application.go                # App lifecycle
-│   ├── domain/                       # Entity, VO, interfaces, AuthClaims, events
-│   ├── command/                      # CQRS write operace
-│   ├── query/                        # CQRS read operace
-│   ├── bus/                          # CommandBus, QueryBus, EventBus
-│   ├── event/                        # Event handlery
-│   ├── sqlite/                       # Repository implementace
-│   ├── security/                     # JWT, bcrypt, permission checker
-│   ├── handler/                      # HTTP handlery
-│   ├── middleware/                   # HTTP middleware
-│   ├── server/                       # HTTP server + routing
-│   ├── database/                     # SQLite + migration manager
-│   ├── env/                          # Konfigurace (.env)
-│   ├── console/                      # Cobra CLI
-│   ├── response/                     # JSON response helpery
-│   └── di_container/                 # Wire DI
+│   │
+│   ├── domain/                       # Vrstva 1: Čisté jádro
+│   │   ├── shared/                   # Sdílené interfaces, errors, auth context
+│   │   ├── user/                     # User entity, VO, repository interface
+│   │   └── token/                    # RefreshToken entity, repository interface
+│   │
+│   ├── application/                  # Vrstva 2: Use cases
+│   │   ├── bus/                      # CommandBus, QueryBus, EventBus
+│   │   │   └── middleware/           # Recovery, logging, authorize, transaction, events
+│   │   ├── command/                  # CQRS write operace
+│   │   ├── query/                    # CQRS read operace
+│   │   └── event/                    # Event handlery
+│   │
+│   ├── infrastructure/               # Vrstva 3: Implementace
+│   │   ├── config/                   # Konfigurace (.env)
+│   │   ├── database/                 # SQLite + migration manager
+│   │   ├── sqlite/                   # Repository implementace
+│   │   ├── security/                 # JWT, bcrypt, permission checker
+│   │   └── di/                       # Wire DI
+│   │
+│   └── presentation/                 # Vrstva 4: I/O
+│       ├── http/
+│       │   ├── handler/              # HTTP handlery
+│       │   ├── middleware/           # HTTP middleware (CORS, JWT, logging)
+│       │   ├── response/            # JSON response helpery
+│       │   └── server/              # HTTP server + routing
+│       └── console/                  # Cobra CLI
 │
 ├── assets/                           # Frontend (Vue 3 + Vite)
 ├── public/                           # Vite build output (embed)

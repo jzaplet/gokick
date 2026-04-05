@@ -6,18 +6,18 @@ slug: 'framework-application-bus'
 parent: 'framework-application'
 navTitle: 'Bus'
 title: 'Bus'
-description: 'Balíček bus/ – middleware chain, Exec/ExecVoid, authorize, transaction, events.'
+description: 'Balíček application/bus/ – middleware chain, Exec/ExecVoid, authorize, transaction, events.'
 ---
 
 # Bus
 
-Balíček `bus/`. Middleware chain kolem command/query handlerů.
+Balíček `application/bus/`. Middleware chain kolem command/query handlerů.
 
 
 ## API
 
 ```go
-// bus/bus.go
+// application/bus/bus.go
 type Middleware func(ctx context.Context, name string, cmd any, next func(ctx context.Context) (any, error)) (any, error)
 
 type Bus struct {
@@ -28,25 +28,25 @@ func New(middlewares ...Middleware) *Bus
 ```
 
 ```go
-// bus/command.go – typově bezpečný dispatch
+// application/bus/bus_exec.go – typově bezpečný dispatch
 func Exec[R any](ctx context.Context, b *Bus, name string, cmd any, fn func(ctx context.Context) (R, error)) (R, error)
 
-// bus/void.go – pro commandy bez návratové hodnoty
+// application/bus/bus_void.go – pro commandy bez návratové hodnoty
 func ExecVoid(ctx context.Context, b *Bus, name string, cmd any, fn func(ctx context.Context) error) error
 ```
 
-`cmd any` parametr umožňuje middleware introspekci (type assert na `domain.Permissioned`).
+`cmd any` parametr umožňuje middleware introspekci (type assert na `shared.Permissioned`).
 
 
 ## Middleware
 
 | Middleware | Soubor | Popis |
 |---|---|---|
-| Recovery | `middleware_recovery.go` | Zachytí panic, zaloguje |
-| Logging | `middleware_logging.go` | Název, trvání, error. `slog.NewMultiHandler()` (Go 1.26) |
-| Authorize | `middleware_authorize.go` | `Permissioned` → `PermissionChecker.Check()` |
-| Transaction | `middleware_transaction.go` | BEGIN/COMMIT/ROLLBACK (jen CommandBus) |
-| DispatchEvents | `middleware_events.go` | Flush EventCollector po commitu (jen CommandBus) |
+| Recovery | `middleware/middleware_recovery.go` | Zachytí panic, zaloguje |
+| Logging | `middleware/middleware_logging.go` | Název, trvání, trace ID |
+| Authorize | `middleware/middleware_authorize.go` | `Permissioned` → `PermissionChecker.Check()` |
+| Transaction | `middleware/middleware_transaction.go` | BeginTx/Commit/Rollback přes `shared.Transactor` |
+| DispatchEvents | `middleware/middleware_events.go` | Flush EventCollector po commitu (jen CommandBus) |
 
 
 ## AuthorizeMiddleware
@@ -54,14 +54,14 @@ func ExecVoid(ctx context.Context, b *Bus, name string, cmd any, fn func(ctx con
 Každý command/query MUSÍ implementovat `Permissioned` nebo `SkipPermission`. Pokud neimplementuje ani jeden, middleware vrátí error – chrání proti zapomenutému permission deklaraci.
 
 ```go
-func AuthorizeMiddleware(checker domain.PermissionChecker) Middleware {
+func AuthorizeMiddleware(checker shared.PermissionChecker) Middleware {
     return func(ctx context.Context, name string, cmd any, next func(ctx context.Context) (any, error)) (any, error) {
         switch c := cmd.(type) {
-        case domain.Permissioned:
+        case shared.Permissioned:
             if err := checker.Check(ctx, c.RequiredPermission()); err != nil {
                 return nil, err // → AuthError → 403
             }
-        case domain.SkipPermission:
+        case shared.SkipPermission:
             // Explicitně přeskočeno – OK
         default:
             // Ani Permissioned, ani SkipPermission → programátorská chyba
@@ -71,6 +71,11 @@ func AuthorizeMiddleware(checker domain.PermissionChecker) Middleware {
     }
 }
 ```
+
+
+## TransactionMiddleware
+
+Používá `shared.Transactor` interface – nezávisí na konkrétní databázi. `SqliteManager` ho implementuje implicitně (duck typing).
 
 
 ## Tři instance (Wire DI)

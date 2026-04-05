@@ -4,12 +4,12 @@ uri: '/framework/domain/errors'
 position: 4
 slug: 'framework-domain-errors'
 parent: 'framework-domain'
-navTitle: 'Error typy'
-title: 'Error typy'
+navTitle: 'Error Types'
+title: 'Error Types'
 description: 'Doménové error typy – ValidationError, AuthError, HTTPError pattern.'
 ---
 
-# Error typy
+# Error Types
 
 Doménové errory implementují `HTTPError` interface z `response/` balíčku **implicitně** (Go duck typing – žádný import mezi domain a response).
 

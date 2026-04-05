@@ -18,11 +18,13 @@ Třívrstvý observability stack: trace ID propagace, structured logging přes `
 
 Každý HTTP request dostane unikátní trace ID. Propaguje se celým systémem přes `context.Context`.
 
+Trace kontext (generování a čtení) žije v `domain/shared/trace_context.go` – sdílený mezi HTTP middleware a bus middleware.
 
-### Middleware
+
+### HTTP Middleware
 
 ```go
-// middleware/trace.go
+// presentation/http/middleware/trace.go
 
 func TraceMiddleware() func(http.Handler) http.Handler {
     return func(next http.Handler) http.Handler {
@@ -32,27 +34,22 @@ func TraceMiddleware() func(http.Handler) http.Handler {
                 traceID = uuid.New().String()
             }
 
-            ctx := context.WithValue(r.Context(), traceIDKey, traceID)
+            ctx := shared.ContextWithTraceID(r.Context(), traceID)
             w.Header().Set("X-Trace-Id", traceID)
 
             next.ServeHTTP(w, r.WithContext(ctx))
         })
     }
 }
-
-func TraceIDFromContext(ctx context.Context) string {
-    id, _ := ctx.Value(traceIDKey).(string)
-    return id
-}
 ```
 
 
-### HTTP middleware chain
+### Middleware chain
 
 Trace middleware je **první** v chain – všechny následující middleware a handlery mají trace ID k dispozici:
 
 ```
-Request → Trace → CORS → Logging → JWT Auth → Handler
+Request → Trace → CORS → CSRF → Logging → JWT Auth → Handler
 ```
 
 
@@ -69,7 +66,7 @@ Klient (frontend, curl, monitoring) vždy obdrží `X-Trace-Id` v response. Umo�
 ### Logger setup
 
 ```go
-// di_container/ nebo main.go
+// cmd/main.go
 
 logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
     Level: slog.LevelInfo,
@@ -83,11 +80,11 @@ slog.SetDefault(logger)
 Bus `LoggingMiddleware` automaticky přidává trace ID do každého logu:
 
 ```go
-// bus/middleware_logging.go
+// application/bus/middleware/middleware_logging.go
 
 func LoggingMiddleware(logger *slog.Logger) Middleware {
     return func(ctx context.Context, name string, cmd any, next func(ctx context.Context) (any, error)) (any, error) {
-        traceID := middleware.TraceIDFromContext(ctx)
+        traceID := shared.TraceIDFromContext(ctx)
         log := logger.With("trace_id", traceID, "command", name)
 
         log.Info("bus: executing")
@@ -110,12 +107,12 @@ func LoggingMiddleware(logger *slog.Logger) Middleware {
 ### HTTP logging middleware
 
 ```go
-// middleware/logging.go
+// presentation/http/middleware/logging.go
 
 func LoggingMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
     return func(next http.Handler) http.Handler {
         return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-            traceID := TraceIDFromContext(r.Context())
+            traceID := shared.TraceIDFromContext(r.Context())
             logger.Info("http: request",
                 "trace_id", traceID,
                 "method", r.Method,
@@ -149,7 +146,7 @@ Error tracking s automatickým trace ID tagováním.
 ### Inicializace
 
 ```go
-// main.go nebo di_container/
+// cmd/main.go
 
 import "github.com/getsentry/sentry-go"
 
@@ -167,13 +164,13 @@ defer sentry.Flush(2 * time.Second)
 Rozšíření `RecoveryMiddleware` o Sentry reporting:
 
 ```go
-// bus/middleware_recovery.go
+// application/bus/middleware/middleware_recovery.go
 
 func RecoveryMiddleware(logger *slog.Logger) Middleware {
     return func(ctx context.Context, name string, cmd any, next func(ctx context.Context) (any, error)) (any, error) {
         defer func() {
             if r := recover(); r != nil {
-                traceID := middleware.TraceIDFromContext(ctx)
+                traceID := shared.TraceIDFromContext(ctx)
                 logger.Error("bus: panic", "command", name, "trace_id", traceID, "panic", r)
 
                 sentry.WithScope(func(scope *sentry.Scope) {
@@ -194,7 +191,7 @@ func RecoveryMiddleware(logger *slog.Logger) Middleware {
 `response.HandleError` reportuje 500 chyby do Sentry:
 
 ```go
-// response/json.go
+// presentation/http/response/response.go
 
 func HandleError(w http.ResponseWriter, err error) {
     var httpErr HTTPError
@@ -241,9 +238,9 @@ Bus middleware by vytvářel span per command/query. HTTP middleware by propagov
 
 | Balíček | Nová závislost | Popis |
 |---|---|---|
-| `middleware/` | žádná (stdlib) | Trace ID generování + propagace |
-| `bus/` | žádná | Trace ID z contextu do logů |
-| `response/` | `sentry-go` (volitelné) | Error reporting |
-| `main.go` | `sentry-go` (volitelné) | Inicializace |
+| `presentation/http/middleware/` | žádná (stdlib) | Trace ID generování + propagace |
+| `application/bus/middleware/` | žádná | Trace ID z contextu do logů |
+| `presentation/http/response/` | `sentry-go` (volitelné) | Error reporting |
+| `cmd/main.go` | `sentry-go` (volitelné) | Inicializace |
 
 Trace ID middleware a slog jsou **zero-dependency** – jen stdlib. Sentry je volitelná dependency aktivovaná přes env var.
