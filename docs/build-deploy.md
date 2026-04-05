@@ -1,9 +1,8 @@
 ---
 layout: 'page'
-uri: '/framework/infrastructure/build-deploy'
-position: 5
-slug: 'framework-infrastructure-build-deploy'
-parent: 'framework-infrastructure'
+uri: '/build-deploy'
+position: 50
+slug: 'build-deploy'
 navTitle: 'Build & Deploy'
 title: 'Build & Deploy'
 description: 'Single-binary build, Makefile, Docker.'

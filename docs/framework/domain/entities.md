@@ -1,0 +1,137 @@
+---
+layout: 'page'
+uri: '/framework/domain/entities'
+position: 1
+slug: 'framework-domain-entities'
+parent: 'framework-domain'
+navTitle: 'Entity & Value Objects'
+title: 'Entity & Value Objects'
+description: 'Doménové entity (User, RefreshToken) a value objects (Nickname, Role).'
+---
+
+# Entity & Value Objects
+
+
+## Proč
+
+Entity reprezentují doménové objekty s identitou. Value objects zajišťují, že data jsou validní už při vytvoření -- nelze konstruovat objekt v neplatném stavu. Validace formátu a povinných polí žije ve value objects, business pravidla s I/O (např. unique nickname) v command handlerech.
+
+
+## Jak
+
+### User entity
+
+Žije v `domain/user/user_entity.go`. Struct používá `db:"..."` tagy pro sqlx scanning.
+
+```go
+package user
+
+type User struct {
+    ID           string    `db:"id"`
+    Nickname     string    `db:"nickname"`
+    PasswordHash string    `db:"password_hash"`
+    Email        string    `db:"email"`
+    Role         string    `db:"role"`
+    Active       bool      `db:"active"`
+    CreatedAt    time.Time `db:"created_at"`
+    UpdatedAt    time.Time `db:"updated_at"`
+}
+
+func NewUser(nickname Nickname, passwordHash string, email string, role Role) *User {
+    return &User{
+        ID:           uuid.New().String(),
+        Nickname:     string(nickname),
+        PasswordHash: passwordHash,
+        Email:        email,
+        Role:         string(role),
+        Active:       true,
+        CreatedAt:    time.Now(),
+        UpdatedAt:    time.Now(),
+    }
+}
+```
+
+Factory `NewUser` přijímá value objects (`Nickname`, `Role`) -- pokud se caller dostal až sem, data jsou validní.
+
+
+### RefreshToken entity
+
+Žije v `domain/token/token_entity.go`.
+
+```go
+package token
+
+type RefreshToken struct {
+    ID        string    `db:"id"`
+    UserID    string    `db:"user_id"`
+    TokenHash string    `db:"token_hash"`
+    ExpiresAt time.Time `db:"expires_at"`
+    CreatedAt time.Time `db:"created_at"`
+}
+```
+
+
+### Nickname value object
+
+Žije v `domain/user/user_nickname.go`.
+
+```go
+package user
+
+type Nickname string
+
+func NewNickname(s string) (Nickname, error) {
+    if s == "" {
+        return "", &shared.ValidationError{Field: "nickname", Message: "nickname je povinný"}
+    }
+    if len(s) > 50 {
+        return "", &shared.ValidationError{Field: "nickname", Message: "nickname max 50 znaků"}
+    }
+    return Nickname(s), nil
+}
+```
+
+
+### Role value object
+
+Žije v `domain/user/user_role.go`.
+
+```go
+package user
+
+type Role string
+
+const (
+    RoleAdmin Role = "admin"
+    RoleUser  Role = "user"
+)
+
+func NewRole(s string) (Role, error) {
+    switch Role(s) {
+    case RoleAdmin, RoleUser:
+        return Role(s), nil
+    default:
+        return "", &shared.ValidationError{Field: "role", Message: "neplatná role"}
+    }
+}
+```
+
+
+## Detaily
+
+### Kde žije validace
+
+| Typ | Kde | Příklad |
+|---|---|---|
+| Formát, povinná pole | Value objects (`NewNickname`, `NewRole`) | `NewNickname("")` -> `ValidationError` |
+| Business pravidla s I/O | Command handler | Unique nickname (repo lookup) |
+| Oprávnění | Bus `AuthorizeMiddleware` | `Permissioned` interface |
+| Záchranná síť | SQL constraints | `UNIQUE`, `CHECK` |
+
+### Konvence
+
+- Každá entita žije ve vlastním subdoménovém balíčku (`user/`, `token/`).
+- Entity struct má `db:"..."` tagy -- používané `sqlx` pro automatický scanning.
+- Value objects vrací `*shared.ValidationError` při nevalidním vstupu.
+- Factory funkce (např. `NewUser`) přijímají value objects, ne raw stringy.
+- Entity nemá metody s side-effecty (žádné Save, Load) -- to je zodpovědnost repository.

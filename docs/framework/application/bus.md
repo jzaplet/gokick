@@ -1,20 +1,23 @@
 ---
 layout: 'page'
 uri: '/framework/application/bus'
-position: 3
+position: 1
 slug: 'framework-application-bus'
 parent: 'framework-application'
 navTitle: 'Bus'
 title: 'Bus'
-description: 'Balíček application/bus/ – middleware chain, Exec/ExecVoid, authorize, transaction, events.'
+description: 'Balíček application/bus/ -- middleware chain, dispatch, tři instance.'
 ---
 
 # Bus
 
-Balíček `application/bus/`. Middleware chain kolem command/query handlerů.
+## Proč
 
+Každý command/query prochází middleware chainem -- recovery, logging, autorizace, transakce, eventy. Bus odděluje prezentační vrstvu od handlerů a umožňuje transparentně přidat cross-cutting concerns bez změny business logiky.
 
-## API
+## Jak
+
+### API
 
 ```go
 // application/bus/bus.go
@@ -28,58 +31,45 @@ func New(middlewares ...Middleware) *Bus
 ```
 
 ```go
-// application/bus/bus_exec.go – typově bezpečný dispatch
+// Typově bezpečný dispatch
 func Exec[R any](ctx context.Context, b *Bus, name string, cmd any, fn func(ctx context.Context) (R, error)) (R, error)
 
-// application/bus/bus_void.go – pro commandy bez návratové hodnoty
+// Pro commandy bez návratové hodnoty
 func ExecVoid(ctx context.Context, b *Bus, name string, cmd any, fn func(ctx context.Context) error) error
 ```
 
-`cmd any` parametr umožňuje middleware introspekci (type assert na `shared.Permissioned`).
+Parametr `cmd any` umožňuje middleware introspekci -- např. type assert na `shared.Permissioned`.
 
-
-## Middleware
+### Middleware
 
 | Middleware | Soubor | Popis |
 |---|---|---|
-| Recovery | `middleware/middleware_recovery.go` | Zachytí panic, zaloguje |
-| Logging | `middleware/middleware_logging.go` | Název, trvání, trace ID |
-| Authorize | `middleware/middleware_authorize.go` | `Permissioned` → `PermissionChecker.Check()` |
-| Transaction | `middleware/middleware_transaction.go` | BeginTx/Commit/Rollback přes `shared.Transactor` |
-| DispatchEvents | `middleware/middleware_events.go` | Flush EventCollector po commitu (jen CommandBus) |
+| Recovery | `middleware_recovery.go` | Zachytí panic, zaloguje stack trace |
+| Logging | `middleware_logging.go` | Název handleru, trvání, trace ID |
+| Authorize | `middleware_authorize.go` | Type assert na `Permissioned` / `SkipPermission`, volá `PermissionChecker.Check()` |
+| Transaction | `middleware_transaction.go` | BeginTx / Commit / Rollback přes `shared.Transactor` interface |
+| DispatchEvents | `middleware_events.go` | Flush `EventCollector` po úspěšném commitu |
 
+### Tři instance (Wire DI)
 
-## AuthorizeMiddleware
+| Typ | Chain | Použití |
+|---|---|---|
+| `CommandBus` | Recovery - Logging - Authorize - Transaction - DispatchEvents | Write operace |
+| `QueryBus` | Recovery - Logging - Authorize | Read operace |
+| `EventBus` | Recovery - Logging | Side-effects po commitu |
 
-Každý command/query MUSÍ implementovat `Permissioned` nebo `SkipPermission`. Pokud neimplementuje ani jeden, middleware vrátí error – chrání proti zapomenutému permission deklaraci.
+Typy `CommandBus`, `QueryBus`, `EventBus` jsou wrapper structs v `bus_types.go`:
 
 ```go
-func AuthorizeMiddleware(checker shared.PermissionChecker) Middleware {
-    return func(ctx context.Context, name string, cmd any, next func(ctx context.Context) (any, error)) (any, error) {
-        switch c := cmd.(type) {
-        case shared.Permissioned:
-            if err := checker.Check(ctx, c.RequiredPermission()); err != nil {
-                return nil, err // → AuthError → 403
-            }
-        case shared.SkipPermission:
-            // Explicitně přeskočeno – OK
-        default:
-            // Ani Permissioned, ani SkipPermission → programátorská chyba
-            return nil, fmt.Errorf("bus: command %q must implement Permissioned or SkipPermission", name)
-        }
-        return next(ctx)
-    }
-}
+type CommandBus struct{ *Bus }
+type QueryBus struct{ *Bus }
+type EventBus struct{ *Bus }
 ```
 
+Wire je konfiguruje v `container_provider.go` -- každý typ dostane svůj middleware chain.
 
-## TransactionMiddleware
+## Detaily
 
-Používá `shared.Transactor` interface – nezávisí na konkrétní databázi. `SqliteManager` ho implementuje implicitně (duck typing).
-
-
-## Tři instance (Wire DI)
-
-- **CommandBus** = Recovery → Logging → Authorize → Transaction → DispatchEvents
-- **QueryBus** = Recovery → Logging → Authorize
-- **EventBus** = Recovery → Logging
+- **AuthorizeMiddleware** vynucuje, že každý command/query implementuje buď `Permissioned` (deklaruje required permission), nebo `SkipPermission` (explicitní skip). Pokud neimplementuje ani jeden, middleware vrátí error -- chrání proti zapomenuté deklaraci.
+- **TransactionMiddleware** závisí na `shared.Transactor` interface, ne na konkrétní databázi. `SqliteManager` ho implementuje implicitně (duck typing).
+- **DispatchEventsMiddleware** se spouští až po úspěšném commitu transakce. Při rollbacku se eventy zahodí.

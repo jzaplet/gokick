@@ -6,33 +6,178 @@ slug: 'framework-overview-architecture'
 parent: 'framework-overview'
 navTitle: 'Architecture'
 title: 'Architecture'
-description: 'DDD vrstvy – domain, application, infrastructure, presentation.'
+description: 'DDD vrstvy s CQRS, pravidla závislostí, lifecycle, cross-domain izolace.'
 ---
 
 # Architecture
 
-DDD s CQRS a bus pattern. Čtyři vrstvy s přísnými pravidly závislostí, komunikace přes CommandBus/QueryBus/EventBus.
+
+## Proč
+
+DDD s CQRS a bus pattern. Čtyři vrstvy s přísnými pravidly závislostí. Komunikace přes CommandBus/QueryBus/EventBus zajišťuje loose coupling -- command handlery neznají HTTP, handlery neznají databázi.
+
+
+## Jak
+
+### Čtyři vrstvy
 
 | Vrstva | Složka | Balíčky | Popis |
 |---|---|---|---|
-| **Domain** | `domain/` | `shared/`, `user/`, `token/` | Entity, interfaces. Žádné závislosti. |
-| **Application** | `application/` | `bus/`, `command/`, `query/`, `event/` | CQRS handlery, bus middleware. |
-| **Infrastructure** | `infrastructure/` | `config/`, `database/`, `sqlite/`, `security/`, `di/` | Implementace interfaces, podpůrná infra. |
-| **Presentation** | `presentation/` | `http/handler/`, `http/middleware/`, `http/server/`, `http/response/`, `console/` | HTTP a CLI vrstva. |
+| **Domain** | `domain/` | `shared/`, `user/`, `token/` | Entity, value objects, interfaces, errors, events. Žádné závislosti. |
+| **Application** | `application/` | `bus/`, `command/`, `query/`, `event/` | CQRS handlery, bus middleware. Závisí jen na domain. |
+| **Infrastructure** | `infrastructure/` | `config/`, `database/`, `sqlite/`, `security/`, `di/` | Implementace domain interfaces, databáze, security. |
+| **Presentation** | `presentation/` | `http/handler/`, `http/middleware/`, `http/response/`, `http/server/`, `console/` | HTTP a CLI vrstva. |
+
+```
+presentation --> application --> domain <-- infrastructure
+     |                                        ^
+     +----------------------------------------+
+```
 
 
-## Detaily per vrstva
+### Dependency matrix
 
-- [Domain](/framework/domain) – entity, value objects, interfaces, error typy, eventy
-- [Application](/framework/application) – commands, queries, bus, event handlery
-- [Infrastruktura](/framework/infrastructure) – konfigurace, databáze, repozitáře, security, Wire DI
-- [Prezentace](/framework/presentation) – HTTP server, handlery, middleware, response, CLI
+Řádek smí importovat sloupec:
+
+```
+                domain  bus  busmw  cmd  qry  event  config  db  sqlite  sec  handler  httpmw  resp  server  console
+domain            -      x    x     x    x     x      x      x    x      x     x        x      x      x       x
+bus               Y      -    -     x    x     x      x      x    x      x     x        x      x      x       x
+bus_middleware    Y      Y    -     x    x     x      x      x    x      x     x        x      x      x       x
+command           Y      x    x     -    x     x      x      x    x      x     x        x      x      x       x
+query             Y      x    x     x    -     x      x      x    x      x     x        x      x      x       x
+event             Y      x    x     x    x     -      x      x    x      x     x        x      x      x       x
+config            x      x    x     x    x     x      -      x    x      x     x        x      x      x       x
+database          x      x    x     x    x     x      Y      -    x      x     x        x      x      x       x
+sqlite            Y      x    x     x    x     x      x      Y    -      x     x        x      x      x       x
+security          Y      x    x     x    x     x      Y      x    x      -     x        x      x      x       x
+handler           Y      Y    x     Y    Y     x      x      x    x      x     -        x      Y      x       x
+http_middleware   Y      x    x     x    x     x      x      x    x      Y     x        -      Y      x       x
+response          x      x    x     x    x     x      x      x    x      x     x        x      -      x       x
+server            x      x    x     x    x     x      Y      x    x      x     Y        Y      x      -       x
+console           x      x    x     x    x     x      Y      Y    x      x     x        x      x      Y       -
+```
+
+Klíčová pravidla:
+1. **Domain neimportuje nic** -- čisté jádro
+2. **Command/Query závisí jen na domain** -- žádný bus, security, infra
+3. **Handler neimportuje sqlite, security ani event**
+4. **Bus middleware závisí na domain + bus**
+5. **HTTP middleware závisí na security + response**
+6. **DI smí vše** (excluded z arch-lintu)
+7. **Response je izolovaný** -- žádné závislosti
 
 
-## Cross-cutting
+### Startup sequence
 
-- [Authentication](/auth) – JWT access + refresh token
-- [Frontend](/frontend) – Vue 3 SPA
-- [Pravidla závislostí](/framework/overview/architecture-rules) – dependency matrix, go-arch-lint
-- [Cross-domain izolace](/framework/overview/cross-domain) – bounded contexts, komunikace přes bus
-- [Observability](/framework/infrastructure/observability) – trace ID, slog, Sentry
+```
+cmd/main.go
+  -> di.CreateApplication()                Wire DI vytvoří vše
+    -> config.LoadConfig()                 Načtení .env
+    -> database.NewSqliteManager()         Připojení k SQLite
+    -> database.MigrationManager.RunUp()   Automatické migrace
+    -> bus.New(middlewares...)              CommandBus, QueryBus, EventBus
+    -> server.New(handlers, middlewares)    HTTP server
+    -> console.NewRootCommand()            Cobra CLI
+  -> application.Run()
+    -> rootCmd.Execute()                   Cobra parsuje "serve"
+      -> server.Start()                   Naslouchá na portu
+```
+
+
+### Request flow (command)
+
+`POST /api/v1/admin/users` -- vytvoření uživatele:
+
+```
+1. HTTP Request -> net/http ServeMux
+
+2. HTTP Middleware (presentation/http/middleware/):
+   Trace -> CORS -> CSRF -> Logging -> JWT Auth (claims do context)
+
+3. HTTP Handler (presentation/http/handler/):
+   json.Decode -> CreateUserCommand
+   bus.ExecVoid(ctx, commandBus, "CreateUser", cmd, fn)
+
+4. Bus Middleware (application/bus/middleware/):
+   Recovery -> Logging -> Authorize -> Transaction -> DispatchEvents
+   |
+   |- Authorize: cmd.(Permissioned) -> PermissionChecker.Check()
+   |- Transaction: BEGIN
+   +-> handler:
+
+5. Command Handler (application/command/):
+   NewNickname() -> NewRole() -> repo.FindByNickname() -> password.Hash()
+   -> NewUser() -> repo.Save()
+
+6. Bus post-handler:
+   Transaction -> COMMIT
+   DispatchEvents -> flush EventCollector -> async goroutiny
+
+7. HTTP Handler: response.JSON(w, 201, nil)
+```
+
+
+### Request flow (query)
+
+`GET /api/v1/admin/users`:
+
+```
+HTTP Request -> Trace -> CORS -> CSRF -> Logging -> JWT Auth
+  -> Handler -> bus.Exec[[]user.User](ctx, queryBus, "ListUsers", q, fn)
+    -> Recovery -> Logging -> Authorize -> Query Handler -> repo.FindAll()
+  -> response.JSON(w, 200, users)
+```
+
+
+### Error flow
+
+```
+Command Handler vrátí error
+  |
+Bus: Transaction -> ROLLBACK, DispatchEvents -> eventy zahozeny
+  |
+HTTP Handler: response.HandleError(w, err)
+  -> ValidationError -> 400
+  -> AuthError -> 403
+  -> jiný error -> 500
+```
+
+
+## Detaily
+
+### go-arch-lint konfigurace
+
+Soubor `.go-arch-lint.yml` v kořeni projektu. Spuštění:
+
+```bash
+make arch-check    # go-arch-lint se instaluje automaticky přes make install
+```
+
+Hlavní body konfigurace:
+- `workdir: app` -- všechny cesty relativně k `app/`
+- `commonComponents: [domain]` -- domain je automaticky dostupná všem
+- `exclude: [infrastructure/di/**]` -- DI balíček nemá omezení
+- `excludeFiles: [application.go, infrastructure/database/migration_manager.go]` -- lifecycle soubory mimo kontrolu
+- Každá komponenta má `mayDependOn` seznam povolených závislostí
+
+### Cross-domain izolace
+
+Každý doménový kontext (`domain/user/`, `domain/token/`, ...) je izolovaný balíček. `domain/shared/` obsahuje sdílené typy (errors, interfaces, auth context). Pravidla:
+
+- **Bounded context nesmí importovat jiný bounded context.** `domain/user/` nesmí importovat `domain/token/` a naopak.
+- Komunikace mezi kontexty: **QueryBus** (synchronní) nebo **Domain Events** (asynchronní).
+- Eventy používají jen primitivy (string ID, ne celé entity).
+- go-arch-lint zachytí cross-domain import při `make arch-check`.
+
+Nový kontext (např. `domain/order/`) nevyžaduje žádnou změnu v `.go-arch-lint.yml` -- wildcard `domain/**` pokrývá všechny subbalíčky automaticky. Totéž platí pro `application/command/**`, `infrastructure/sqlite/**` atd.
+
+### Přidání nové feature (checklist)
+
+1. `domain/` -- entity, value objects, interfaces
+2. `infrastructure/sqlite/` -- repository implementace
+3. `application/command/` nebo `application/query/` -- CQRS handler s `Permissioned` nebo `SkipPermission`
+4. `presentation/http/handler/` -- HTTP handler přes bus
+5. `presentation/http/server/` -- registrace route
+6. `infrastructure/di/` -- Wire provider
+7. `make di && make arch-check`

@@ -1,28 +1,28 @@
 ---
 layout: 'page'
 uri: '/framework/application/commands'
-position: 1
+position: 2
 slug: 'framework-application-commands'
 parent: 'framework-application'
 navTitle: 'Commands'
 title: 'Commands'
-description: 'Balíček application/command/ – write operace, validace, Permissioned interface.'
+description: 'Balíček application/command/ -- write operace, validace, Permissioned interface.'
 ---
 
 # Commands
 
-Balíček `application/command/`. Write operace – mění stav systému. Závisí jen na `domain/`.
+## Proč
 
+Commands reprezentují write operace -- mění stav systému. Každý command je čistý data struct + handler s business logikou. Handler závisí výhradně na doménových interfaces (např. `user.Repository`, `shared.PasswordHasher`), nikdy na infrastruktuře.
 
-## Struktura
+## Jak
 
 Každý command = dva typy v jednom souboru:
 
-- `XxxCommand` – čistý data struct (raw hodnoty z HTTP)
-- `XxxHandler` – logika (validace, business pravidla, zápis)
+- `XxxCommand` -- data struct (raw hodnoty z HTTP requestu)
+- `XxxHandler` -- logika (validace, business pravidla, zápis)
 
-
-## Příklad
+### Příklad
 
 ```go
 // application/command/command_create_user.go
@@ -34,11 +34,11 @@ type CreateUserCommand struct {
     Role     string
 }
 
-func (c CreateUserCommand) RequiredPermission() string { return "admin.users.create" }
+func (c CreateUserCommand) RequiredPermission() string { return "admin:users:create" }
 
 type CreateUserHandler struct {
-    repo     user.Repository
-    password shared.PasswordHasher
+    repo     user.Repository       // doménový interface
+    password shared.PasswordHasher // doménový interface
 }
 
 func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) error {
@@ -68,11 +68,18 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
 }
 ```
 
+### Dispatch z HTTP handleru
 
-## Pravidla
+```go
+err := bus.ExecVoid(ctx, h.commandBus.Bus, "CreateUser", cmd, func(ctx context.Context) error {
+    return h.createUser.Handle(ctx, cmd)
+})
+```
 
-- Command struct nemá logiku – jen data
-- Handler závisí jen na `domain/` interfaces
-- Handler neimportuje `infrastructure/security/`, `infrastructure/sqlite/` ani `application/bus/`
-- Permission deklaruje přes `Permissioned` interface – kontrola v bus middleware
-- Validace přes domain value objects (formát) + repo queries (business)
+## Detaily
+
+- Command struct nemá logiku -- jen data.
+- Handler nikdy neimportuje `infrastructure/security/`, `infrastructure/sqlite/` ani `application/bus/`. Wire injektuje doménové interfaces.
+- Permission se deklaruje přes `Permissioned` interface -- kontrolu provádí `AuthorizeMiddleware` v busu.
+- Validace: domain value objects (formát) + repo queries (unikátnost, existence).
+- Transakce a event dispatch řídí bus middleware -- handler o nich neví.

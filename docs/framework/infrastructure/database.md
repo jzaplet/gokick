@@ -5,26 +5,45 @@ position: 2
 slug: 'framework-infrastructure-database'
 parent: 'framework-infrastructure'
 navTitle: 'Database'
-title: 'Databáze'
-description: 'Balíček database/ – SQLite manager, Goose migrace.'
+title: 'Database'
+description: 'Balíčky database/ a sqlite/ -- SqliteManager, migrace, BaseRepository, repozitáře.'
 ---
 
-# Databáze
+# Database
 
-Balíček `database/`. Pure-Go SQLite driver `ncruces/go-sqlite3` (bez CGO).
+## Proč
 
+Databázová vrstva je rozdělena na dvě části: `database/` (správa připojení, transakce, migrace) a `sqlite/` (repozitáře implementující doménové interfaces). Pure-Go SQLite driver `ncruces/go-sqlite3` -- žádné CGO.
 
-## SqliteManager
+## Jak
 
-Poskytuje `*sqlx.DB` instanci. Transakční context: `ContextWithTx` / `TxFromContext`.
+### SqliteManager
 
+```go
+// infrastructure/database/sqlite_manager.go
 
-## MigrationManager
+type SqliteManager struct { /* sqlx.DB wrapper */ }
 
-Goose migrace embedované v binárce. Spouští se automaticky při startu.
+func NewSqliteManager(cfg *config.Config) (*SqliteManager, error)
+func (m *SqliteManager) DB() *sqlx.DB
+func (m *SqliteManager) Close() error
+```
 
+Při vytvoření nastavuje WAL mode a foreign keys. Implementuje `shared.Transactor` interface (duck typing) -- používá ho `TransactionMiddleware`.
 
-## Migrace
+Transakce v contextu:
+
+```go
+// database/sqlite_manager.go
+func (m *SqliteManager) BeginTx(ctx context.Context) (context.Context, error)
+func (m *SqliteManager) Commit(ctx context.Context) error
+func (m *SqliteManager) Rollback(ctx context.Context) error
+func TxFromContext(ctx context.Context) *sqlx.Tx
+```
+
+### Migrace (Goose)
+
+`MigrationManager` embeduje SQL migrace z `/migrations/` do binárky a spouští je automaticky při startu.
 
 ```sql
 -- migrations/20260327000001_create_users_table.sql
@@ -51,3 +70,63 @@ make migrate-up                # Aplikuj
 make migrate-down              # Rollback
 make migrate-status            # Stav
 ```
+
+### BaseRepository a Conn interface
+
+Všechny repozitáře embedují `sqlite.BaseRepository`, který resolvuje transakci z contextu:
+
+```go
+// infrastructure/sqlite/conn.go
+
+type Conn interface {
+    NamedExecContext(ctx context.Context, query string, arg any) (sql.Result, error)
+    ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+    GetContext(ctx context.Context, dest any, query string, args ...any) error
+    SelectContext(ctx context.Context, dest any, query string, args ...any) error
+}
+
+type BaseRepository struct {
+    DB *database.SqliteManager
+}
+
+func (b *BaseRepository) Conn(ctx context.Context) Conn
+```
+
+`Conn(ctx)` vrátí `*sqlx.Tx` pokud běží transakce (z `TransactionMiddleware`), jinak `*sqlx.DB`.
+
+### Implementace repozitáře
+
+```go
+// infrastructure/sqlite/user/user_repository.go
+
+type Repository struct {
+    sqlite.BaseRepository   // embed
+}
+
+func NewRepository(db *database.SqliteManager) *Repository {
+    return &Repository{BaseRepository: sqlite.BaseRepository{DB: db}}
+}
+
+func (r *Repository) Save(ctx context.Context, u *user.User) error {
+    const q = `INSERT INTO users (...) VALUES (...)`
+    _, err := r.Conn(ctx).NamedExecContext(ctx, q, u)
+    return err
+}
+```
+
+Wire binduje doménový interface na konkrétní implementaci:
+
+```go
+wire.Bind(new(user.Repository), new(*sqliteuser.Repository))
+```
+
+### Seeder
+
+`sqlite.NewSeeder()` závisí na `user.Repository` (doménový interface) -- seeduje výchozí data při startu.
+
+## Detaily
+
+- SQLite je nastaven na WAL mode a foreign keys enabled.
+- Repozitáře používají `sqlx` named queries (`NamedExecContext`) -- mapují struct fields přímo na SQL.
+- Všechny repozitáře volají `r.Conn(ctx)` -- nikdy přímo `r.DB.DB()`. Tím je zaručena transparentní účast v transakci.
+- Aktuální repozitáře: `sqlite/user/` (`user.Repository`), `sqlite/token/` (`token.TokenRepository`).

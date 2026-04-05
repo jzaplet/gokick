@@ -1,20 +1,23 @@
 ---
 layout: 'page'
 uri: '/framework/presentation/console'
-position: 5
+position: 3
 slug: 'framework-presentation-console'
 parent: 'framework-presentation'
-navTitle: 'CLI'
-title: 'CLI'
-description: 'Balíček presentation/console/ – Cobra CLI, serve command.'
+navTitle: 'Console'
+title: 'Console'
+description: 'Cobra CLI -- root command, serve subcommand.'
 ---
 
-# CLI
+# Console
 
-Balíček `presentation/console/`. Cobra CLI s příkazy.
+## Proč
 
+CLI je druhý vstupní bod aplikace vedle HTTP serveru. Cobra umožňuje snadno přidávat další příkazy (migrace, seedy, one-off skripty) bez změny serveru.
 
-## Příkazy
+## Jak
+
+Balíček `presentation/console/`. Root command `app` s podpříkazy:
 
 ```
 app [command]
@@ -24,8 +27,7 @@ Available Commands:
   help        Nápověda
 ```
 
-
-## Serve command
+### Serve command
 
 ```go
 // presentation/console/serve.go
@@ -45,8 +47,16 @@ func (c *ServeCommand) Command() *cobra.Command {
 }
 ```
 
+Spuštění:
+
 ```bash
 ./bin/app serve
 # Nebo:
 make serve
 ```
+
+## Detaily
+
+- Root command (`root.go`) registruje všechny subcommandy a nastavuje globální flagy.
+- `ServeCommand` dostává `*server.Server` přes DI (Wire) -- nemá žádnou vlastní konfiguraci.
+- Další příkazy (např. `migrate`, `seed`) se přidávají stejným patternem: struct s `Command() *cobra.Command` metodou, registrace v root commandu.
