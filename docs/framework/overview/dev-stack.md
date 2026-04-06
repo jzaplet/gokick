@@ -91,13 +91,13 @@ project/
 │   │   └── <Domain>/Views/           # Views pro danou doménu
 │   └── app-ui/                       # Sdílené UI komponenty a composables
 │       ├── Auth/                     # useAuth + typy (AuthUser, LoginRequest, ...)
-│       ├── Fetch/                    # useFetch, apiUpload + typy (ApiResponse, ...)
+│       ├── Fetch/                    # useFetch, apiUpload, apiDownload + typy (ApiResponse, ...)
 │       ├── Buttons/                  # Button
 │       ├── Icons/                    # SVG ikony
 │       ├── Inputs/                   # Input, Select, CheckBox, DateTimeInput
 │       ├── Loading/                  # Spinner
 │       ├── Modals/                   # Modal, ConfirmModal
-│       └── Toast/                    # Toast notifikace
+│       └── Toast/                    # useToast + Toast komponenty
 │
 ├── tests/                            # Frontend testy (Vitest + Vue Test Utils)
 │

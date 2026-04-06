@@ -2,7 +2,7 @@
 layout: 'page'
 uri: '/'
 slug: 'home'
-navTitle: 'Začínáme'
+navTitle: 'Getting Started'
 title: 'Golang Skeleton'
 description: 'GO CQRS DDD skeleton s Vue 3 SPA, SQLite databází a JWT autentizací – vše v jedné binárce.'
 ---
@@ -49,8 +49,9 @@ Server běží na `http://localhost:3000`. Podrobnosti v [Installation](/framewo
 
 ## Dokumentace
 
-| Sekce | Popis |
-|-------|-------|
-| [Framework](/framework) | Architektura, vrstvy, infrastruktura |
-| [Business logika](/business) | Specifikace obrazovek a business pravidel |
+| Sekce | Popis                                                |
+|-------|------------------------------------------------------|
+| [Framework](/framework) | Architektura, vrstvy, infrastruktura                 |
+| [Guides](/guides) | Praktické návody — autentizace, frontend utility     |
+| [Business Logic](/business) | Specifikace obrazovek a business pravidel projektu   |
 | [Codebase](/codebase) | Algoritmy a znovupoužitelné balíčky v rámci projektu |
