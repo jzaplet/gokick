@@ -33,15 +33,16 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 	healthHandler := handler.NewHealthHandler()
 	serverServer := server.NewServer(configConfig, logger, healthHandler)
 	serveCommand := console.NewServeCommand(serverServer)
-	rootCommand := console.NewRootCommand(serveCommand)
 	sqliteManager, err := database.NewSqliteManager(configConfig)
 	if err != nil {
 		return nil, err
 	}
-	migrationManager := database.NewMigrationManager(sqliteManager, logger)
 	repository := user.NewRepository(sqliteManager)
 	passwordHasher := providePasswordHasher()
 	seeder := sqlite.NewSeeder(repository, passwordHasher, logger)
+	seedCommand := console.NewSeedCommand(seeder)
+	rootCommand := console.NewRootCommand(serveCommand, seedCommand)
+	migrationManager := database.NewMigrationManager(sqliteManager, logger)
 	eventCollector := provideEventCollector()
 	permissionChecker := providePermissionChecker()
 	eventBus := provideEventBus(logger)
@@ -52,7 +53,7 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 		return nil, err
 	}
 	tokenRepository := token.NewRepository(sqliteManager)
-	application := app.NewApplication(rootCommand, migrationManager, seeder, commandBus, queryBus, eventBus, jwtService, tokenRepository)
+	application := app.NewApplication(rootCommand, migrationManager, commandBus, queryBus, eventBus, jwtService, tokenRepository)
 	return application, nil
 }
 

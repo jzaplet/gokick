@@ -1,20 +1,19 @@
 package app
 
 import (
-	"context"
-
 	"myapp/app/application/bus"
 	"myapp/app/domain/token"
 	"myapp/app/infrastructure/database"
 	"myapp/app/infrastructure/security"
-	"myapp/app/infrastructure/sqlite"
 	"myapp/app/presentation/console"
 )
 
 type Application struct {
 	rootCmd    *console.RootCommand
 	migrations *database.MigrationManager
-	seeder     *sqlite.Seeder
+	// Dead code – Wire vyžaduje consumer pro každý provider, jinak hlásí chybu.
+	// Ve fázi 6 se tyto závislosti přesunou do command/query/HTTP handlerů
+	// a z Application se odeberou.
 	CommandBus *bus.CommandBus
 	QueryBus   *bus.QueryBus
 	EventBus   *bus.EventBus
@@ -25,7 +24,6 @@ type Application struct {
 func NewApplication(
 	rootCmd *console.RootCommand,
 	migrations *database.MigrationManager,
-	seeder *sqlite.Seeder,
 	commandBus *bus.CommandBus,
 	queryBus *bus.QueryBus,
 	eventBus *bus.EventBus,
@@ -35,7 +33,6 @@ func NewApplication(
 	return &Application{
 		rootCmd:    rootCmd,
 		migrations: migrations,
-		seeder:     seeder,
 		CommandBus: commandBus,
 		QueryBus:   queryBus,
 		EventBus:   eventBus,
@@ -46,9 +43,6 @@ func NewApplication(
 
 func (a *Application) Run() error {
 	if err := a.migrations.RunUp(); err != nil {
-		return err
-	}
-	if err := a.seeder.Seed(context.Background()); err != nil {
 		return err
 	}
 	return a.rootCmd.Execute()

@@ -7,11 +7,13 @@ import (
 type RootCommand struct {
 	cmd      *cobra.Command
 	serveCmd *ServeCommand
+	seedCmd  *SeedCommand
 }
 
-func NewRootCommand(serveCmd *ServeCommand) *RootCommand {
+func NewRootCommand(serveCmd *ServeCommand, seedCmd *SeedCommand) *RootCommand {
 	root := &RootCommand{
 		serveCmd: serveCmd,
+		seedCmd:  seedCmd,
 	}
 
 	root.cmd = &cobra.Command{
@@ -21,6 +23,7 @@ func NewRootCommand(serveCmd *ServeCommand) *RootCommand {
 	}
 
 	root.cmd.AddCommand(serveCmd.Command())
+	root.cmd.AddCommand(seedCmd.Command())
 
 	return root
 }
