@@ -1,4 +1,5 @@
 import type { ApiResponse } from '@/app-ui/Fetch/types/ApiResponse';
+import type { DownloadResult } from '@/app-ui/Fetch/types/DownloadResult';
 import type { FetchOptions } from '@/app-ui/Fetch/types/FetchOptions';
 import type { UploadProgress } from '@/app-ui/Fetch/types/UploadProgress';
 
@@ -121,4 +122,46 @@ export const apiUpload = async <TData, TError = { message: string }>(
         // No Content-Type — browser sets multipart/form-data with boundary
         xhr.send(formData);
     });
+};
+
+const parseFilename = (response: Response, fallback: string): string => {
+    const disposition = response.headers.get('Content-Disposition');
+    const match = disposition?.match(/filename="?(.+?)"?$/);
+
+    if (match !== null && match !== undefined) {
+        return match[1] ?? fallback;
+    }
+
+    return fallback;
+};
+
+const triggerDownload = (blob: Blob, filename: string): void => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+};
+
+export const apiDownload = async (
+    url: string,
+    fallbackFilename: string,
+): Promise<DownloadResult> => {
+    const response = await fetch(url, {
+        headers: buildHeaders(),
+        credentials: 'same-origin',
+    });
+
+    if (response.ok === false) {
+        return { success: false, status: response.status, filename: null };
+    }
+
+    const blob = await response.blob();
+    const filename = parseFilename(response, fallbackFilename);
+
+    triggerDownload(blob, filename);
+
+    return { success: true, status: response.status, filename };
 };

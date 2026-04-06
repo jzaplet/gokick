@@ -140,3 +140,27 @@ export const loadToasts = (): void => {
 };
 
 loadToasts();
+
+export const useToast = (): {
+    toasts: typeof toasts;
+    success: typeof success;
+    error: typeof error;
+    info: typeof info;
+    warning: typeof warning;
+    clear: typeof clearToasts;
+    remove: typeof removeToast;
+    asleep: typeof asleep;
+    awake: typeof awake;
+} => {
+    return {
+        toasts,
+        success,
+        error,
+        info,
+        warning,
+        clear: clearToasts,
+        remove: removeToast,
+        asleep,
+        awake,
+    };
+};

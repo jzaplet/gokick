@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { onMounted } from 'vue';
 import { apiFetch } from '@/app-ui/Fetch/useFetch';
-import { success, error } from '@/app-ui/Toast/Toast';
+import { useToast } from '@/app-ui/Toast/useToast';
+
+const { success, error } = useToast();
 
 type HealthResponse = {
     status: string;

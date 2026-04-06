@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { removeToast, toasts } from './Toast';
+import { useToast } from './useToast';
+
+const { toasts, remove } = useToast();
+
 import Toast from './Toast.vue';
 </script>
 
@@ -17,7 +20,7 @@ import Toast from './Toast.vue';
             v-for="toast in toasts"
             :key="toast.id"
             :type="toast.type"
-            @close="removeToast(toast)"
+            @close="remove(toast)"
         >
             <!-- eslint-disable-next-line vue/no-v-html -- Toast messages are internal, not user-generated -->
             <div v-html="toast.message" />

@@ -17,17 +17,19 @@ install-tools:
 build: di fe-build
 	go build -ldflags="-s -w" -o bin/app ./cmd/
 
-# Format — frontend (ESLint Stylistic) + backend (golines)
+# Format — frontend (ESLint Stylistic) + backend (golines) + docs
 format:
 	yarn format
 	golines -w .
+	make documan-fix
 
-# Lint — frontend (ESLint strict) + backend (golangci-lint + arch rules)
+# Lint — frontend (ESLint strict) + backend (golangci-lint + arch rules) + docs
 lint:
 	yarn lint
 	yarn type-check
 	golangci-lint run ./app/... ./cmd/...
 	go-arch-lint check
+	make documan-lint
 
 # Vývoj
 dev: di

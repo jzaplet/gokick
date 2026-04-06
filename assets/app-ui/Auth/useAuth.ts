@@ -35,6 +35,8 @@ const clearAuth = (): void => {
     }
 };
 
+// --- Auth actions ---
+
 export const login = async (
     credentials: LoginRequest,
 ): Promise<ApiResponse<LoginResponse, AuthError>> => {
@@ -75,12 +77,61 @@ export const logout = async (): Promise<void> => {
     clearAuth();
 };
 
+// --- Role & permission helpers ---
+
+export const hasRole = (role: string): boolean => {
+    return user.value?.role === role;
+};
+
+export const isAdmin = (): boolean => {
+    return hasRole('admin');
+};
+
+export const hasPermission = (permission: string): boolean => {
+    if (user.value === null) {
+        return false;
+    }
+
+    if (user.value.role === 'admin') {
+        return true;
+    }
+
+    return user.value.permissions.includes(permission);
+};
+
+export const hasAllPermissions = (permissions: string[]): boolean => {
+    for (const permission of permissions) {
+        if (hasPermission(permission) === false) {
+            return false;
+        }
+    }
+
+    return true;
+};
+
+export const hasAnyPermission = (permissions: string[]): boolean => {
+    for (const permission of permissions) {
+        if (hasPermission(permission) === true) {
+            return true;
+        }
+    }
+
+    return false;
+};
+
+// --- Composable ---
+
 export const useAuth = (): {
     user: typeof user;
     isAuthenticated: typeof isAuthenticated;
     login: typeof login;
     logout: typeof logout;
     refresh: typeof refresh;
+    hasRole: typeof hasRole;
+    isAdmin: typeof isAdmin;
+    hasPermission: typeof hasPermission;
+    hasAllPermissions: typeof hasAllPermissions;
+    hasAnyPermission: typeof hasAnyPermission;
 } => {
     return {
         user: readonly(user) as typeof user,
@@ -88,5 +139,10 @@ export const useAuth = (): {
         login,
         logout,
         refresh,
+        hasRole,
+        isAdmin,
+        hasPermission,
+        hasAllPermissions,
+        hasAnyPermission,
     };
 };

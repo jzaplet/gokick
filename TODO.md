@@ -20,6 +20,8 @@ Hotovo – PasswordHasher, JwtService, PermissionChecker, repozitáře (sqlite/u
 - [ ] Registrace rout v server.go: login+refresh (public), logout+profile (JWT auth)
 - [ ] Wire: command/query handlery, HTTP handlery, bus providers
 - [ ] Ověřit: curl login → access token + refresh cookie → curl profile s Bearer → 200
+- [ ] Backend: LoginResult musí vracet `permissions: string[]` — sestavit ze všech command/query handlerů implementujících `shared.Permissioned` (RequiredPermission()) a vyfiltrovat podle role
+- [ ] Backend: GET /api/v1/auth/profile musí vracet `permissions: string[]` (stejná logika)
 
 ## Fáze 7: User management – admin CRUD
 
@@ -47,12 +49,14 @@ Scaffold hotový – Vue 3, Vue Router, Vite, Tailwind v4, TypeScript (maximum s
 - [x] `assets/vue/App.vue` – root komponenta, layout
 - [x] `assets/vue/types/router.ts` – TypeScript typy
 - [x] `assets/vue/router/router.ts` – routes (guards přijdou s Fází 6)
-- [ ] `assets/vue/composables/useAuth.ts` – login, logout, refresh, scheduleRefresh
-- [ ] `assets/vue/services/apiFetch.ts` – Authorization header, auto-refresh na 401
-- [ ] `assets/vue/views/LoginView.vue`
-- [ ] `assets/vue/views/DashboardView.vue`
-- [ ] `assets/vue/views/ProfileView.vue`
-- [ ] `assets/vue/views/AdminUsersView.vue`
+- [x] `app-ui/Auth/useAuth.ts` – login, logout, refresh, scheduleRefresh, hasRole, hasPermission
+- [x] `app-ui/Fetch/useFetch.ts` – apiFetch s generikou, apiUpload, Authorization header
+- [ ] Router guards – requiresAuth (redirect na login + toast), requiresRole (403 toast + redirect)
+- [ ] Auto-refresh na 401 v useFetch (retry po refresh tokenu, logout při selhání)
+- [ ] `assets/app/Auth/Views/LoginView.vue`
+- [ ] `assets/app/Home/Views/DashboardView.vue`
+- [ ] `assets/app/Profile/Views/ProfileView.vue`
+- [ ] `assets/app/Admin/Views/AdminUsersView.vue`
 - [x] Makefile: fe-deps, fe-build, fe-dev, fe-clean
 - [x] Wire: SPA fallback handler
 
