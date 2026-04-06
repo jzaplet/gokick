@@ -1,98 +1,100 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { apiFetch, setAccessToken } from '@/app-ui/Fetch/useFetch';
 
+type HealthResponse = {
+    status: string;
+};
+
 describe('useFetch', () => {
     beforeEach((): void => {
         setAccessToken(null);
         vi.restoreAllMocks();
     });
 
-    it('returns success response with data', async (): Promise<void> => {
+    it('returns success response with typed data', async (): Promise<void> => {
         vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-            new Response(JSON.stringify({ status: 'ok' }), {
-                status: 200,
-                headers: { 'Content-Type': 'application/json' },
-            }),
+            new Response(JSON.stringify({ status: 'ok' }), { status: 200 }),
         );
 
-        const result = await apiFetch<{ status: string }>('/health');
+        const result = await apiFetch<HealthResponse>('GET', '/health');
 
         expect(result.success).toBe(true);
+        expect(result.status).toBe(200);
+
         if (result.success === true) {
             expect(result.data.status).toBe('ok');
         }
-        expect(result.status).toBe(200);
     });
 
-    it('returns error response on non-ok status', async (): Promise<void> => {
+    it('returns error response with typed error', async (): Promise<void> => {
         vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-            new Response(JSON.stringify({ message: 'Unauthorized' }), {
-                status: 401,
-                headers: { 'Content-Type': 'application/json' },
-            }),
+            new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }),
         );
 
-        const result = await apiFetch<unknown>('/auth/profile');
+        const result = await apiFetch<HealthResponse>('GET', '/api/v1/profile');
 
         expect(result.success).toBe(false);
+        expect(result.status).toBe(401);
+
         if (result.success === false) {
             expect(result.data.message).toBe('Unauthorized');
         }
-        expect(result.status).toBe(401);
     });
 
-    it('sends Authorization header when token is set', async (): Promise<void> => {
+    it('attaches Authorization header when token is set', async (): Promise<void> => {
         const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-            new Response(JSON.stringify({}), { status: 200 }),
+            new Response(JSON.stringify({ status: 'ok' }), { status: 200 }),
         );
 
         setAccessToken('test-token-123');
-        await apiFetch<unknown>('/profile');
+        await apiFetch<HealthResponse>('GET', '/health');
 
-        const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
-        const headers = init.headers as Record<string, string>;
+        const requestInit = fetchSpy.mock.calls[0]?.[1];
+        const headers = requestInit?.headers as Record<string, string> | undefined;
 
-        expect(headers['Authorization']).toBe('Bearer test-token-123');
+        expect(headers?.['Authorization']).toBe('Bearer test-token-123');
     });
 
-    it('does not send Authorization header when no token', async (): Promise<void> => {
+    it('omits Authorization header when no token', async (): Promise<void> => {
+        const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+            new Response(JSON.stringify({ status: 'ok' }), { status: 200 }),
+        );
+
+        await apiFetch<HealthResponse>('GET', '/health');
+
+        const requestInit = fetchSpy.mock.calls[0]?.[1];
+        const headers = requestInit?.headers as Record<string, string> | undefined;
+
+        expect(headers?.['Authorization']).toBeUndefined();
+    });
+
+    it('uses the provided HTTP method', async (): Promise<void> => {
         const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
             new Response(JSON.stringify({}), { status: 200 }),
         );
 
-        await apiFetch<unknown>('/health');
+        await apiFetch<HealthResponse>('DELETE', '/api/v1/users/123');
 
-        const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
-        const headers = init.headers as Record<string, string>;
+        const requestInit = fetchSpy.mock.calls[0]?.[1];
 
-        expect(headers['Authorization']).toBeUndefined();
+        expect(requestInit?.method).toBe('DELETE');
     });
 
-    it('prefixes url with /api/v1', async (): Promise<void> => {
+    it('sends JSON-serialized body', async (): Promise<void> => {
         const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
             new Response(JSON.stringify({}), { status: 200 }),
         );
 
-        await apiFetch<unknown>('/auth/login');
+        type LoginRequest = { nickname: string; password: string };
 
-        const [url] = fetchSpy.mock.calls[0] as [string];
+        const credentials: LoginRequest = { nickname: 'admin', password: 'secret' };
 
-        expect(url).toBe('/api/v1/auth/login');
-    });
-
-    it('sends JSON body for POST requests', async (): Promise<void> => {
-        const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-            new Response(JSON.stringify({}), { status: 200 }),
-        );
-
-        await apiFetch<unknown>('/auth/login', {
-            method: 'POST',
-            body: { nickname: 'admin', password: 'secret' },
+        await apiFetch<HealthResponse>('POST', '/api/v1/auth/login', {
+            body: credentials,
         });
 
-        const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+        const requestInit = fetchSpy.mock.calls[0]?.[1];
 
-        expect(init.method).toBe('POST');
-        expect(init.body).toBe('{"nickname":"admin","password":"secret"}');
+        expect(requestInit?.body).toBe('{"nickname":"admin","password":"secret"}');
     });
 });

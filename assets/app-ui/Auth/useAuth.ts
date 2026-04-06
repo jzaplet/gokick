@@ -38,8 +38,7 @@ const clearAuth = (): void => {
 export const login = async (
     credentials: LoginRequest,
 ): Promise<ApiResponse<LoginResponse, AuthError>> => {
-    const result = await apiFetch<LoginResponse>('/auth/login', {
-        method: 'POST',
+    const result = await apiFetch<LoginResponse>('POST', '/api/v1/auth/login', {
         body: credentials,
     });
 
@@ -54,9 +53,7 @@ export const login = async (
 };
 
 export const refresh = async (): Promise<boolean> => {
-    const result = await apiFetch<LoginResponse>('/auth/refresh', {
-        method: 'POST',
-    });
+    const result = await apiFetch<LoginResponse>('POST', '/api/v1/auth/refresh');
 
     if (result.success === true) {
         setAccessToken(result.data.access_token);
@@ -73,9 +70,7 @@ export const refresh = async (): Promise<boolean> => {
 };
 
 export const logout = async (): Promise<void> => {
-    await apiFetch<unknown>('/auth/logout', {
-        method: 'POST',
-    });
+    await apiFetch<unknown>('POST', '/api/v1/auth/logout');
 
     clearAuth();
 };

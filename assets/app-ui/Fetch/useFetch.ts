@@ -49,6 +49,7 @@ const parseResponse = async <TData, TError>(
 };
 
 export const apiFetch = async <TData, TError = { message: string }>(
+    method: string,
     url: string,
     options: FetchOptions = {},
 ): Promise<ApiResponse<TData, TError>> => {
@@ -58,7 +59,7 @@ export const apiFetch = async <TData, TError = { message: string }>(
     });
 
     const init: RequestInit = {
-        method: options.method ?? 'GET',
+        method,
         headers,
         credentials: 'same-origin',
     };
@@ -67,7 +68,7 @@ export const apiFetch = async <TData, TError = { message: string }>(
         init.body = JSON.stringify(options.body);
     }
 
-    const response = await fetch(`/api/v1${url}`, init);
+    const response = await fetch(url, init);
 
     return parseResponse<TData, TError>(response);
 };
@@ -109,7 +110,7 @@ export const apiUpload = async <TData, TError = { message: string }>(
             });
         };
 
-        xhr.open('POST', `/api/v1${url}`);
+        xhr.open('POST', url);
 
         const headers = buildHeaders();
 
