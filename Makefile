@@ -1,7 +1,7 @@
-.PHONY: install dev build serve di install-tools go-deps arch-check test lint format
+.PHONY: install build serve dev di install-tools go-deps lint format test arch-check fe-deps fe-dev fe-build fe-clean
 
 # Instalace
-install: go-deps install-tools
+install: go-deps install-tools fe-deps
 
 go-deps:
 	go mod download && go mod tidy
@@ -13,12 +13,25 @@ install-tools:
 	go install github.com/pressly/goose/v3/cmd/goose@latest
 	go install github.com/fe3dback/go-arch-lint@latest
 
+# Build — frontend first (Vite → public/), then Go (embeds public/)
+build: di fe-build
+	go build -ldflags="-s -w" -o bin/app ./cmd/
+
+# Format — frontend (ESLint Stylistic) + backend (golines)
+format:
+	yarn format
+	golines -w .
+
+# Lint — frontend (ESLint strict) + backend (golangci-lint + arch rules)
+lint:
+	yarn lint
+	yarn type-check
+	golangci-lint run ./app/... ./cmd/...
+	go-arch-lint check
+
 # Vývoj
 dev: di
 	go build -o bin/app ./cmd/
-
-build: di
-	go build -ldflags="-s -w" -o bin/app ./cmd/
 
 serve:
 	./bin/app serve
@@ -40,15 +53,22 @@ migrate-down:
 migrate-status:
 	goose -dir migrations sqlite3 $(shell grep APP_DB_PATH .env | cut -d= -f2) status
 
+# Frontend
+fe-deps:
+	yarn install
+
+fe-dev:
+	yarn dev
+
+fe-build:
+	yarn build
+
+fe-clean:
+	rm -rf public/assets public/index.html
+
 # Kvalita
 test:
 	go test ./...
-
-lint:
-	golangci-lint run ./app/... ./cmd/...
-
-format:
-	golines -w .
 
 arch-check:
 	go-arch-lint check

@@ -53,15 +53,18 @@ Catch-all `GET /{path...}` vrací soubory z embedovaného `public.FS`. Neexistuj
 
 ### Vite dev proxy
 
-Při vývoji frontend běží na Vite dev serveru. Proxy směruje API cesty na Go server:
+Při vývoji frontend běží na Vite dev serveru (`yarn dev`). Proxy směruje API cesty, health check a favicon na Go backend:
 
 ```typescript
 // vite.config.ts
+// Port se čte z APP_HTTP_PORT v .env (default: 3000)
 server: {
     proxy: {
-        '/api': 'http://localhost:3000',
-        '/health': 'http://localhost:3000'
-    }
+        '^/(api|health|favicon\\.ico)': {
+            target: `http://localhost:${backendPort}`,
+            changeOrigin: true,
+        },
+    },
 }
 ```
 

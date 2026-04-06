@@ -1,0 +1,60 @@
+{
+    "extends": "@tsconfig/node24/tsconfig.json",
+    "compilerOptions": {
+        // Inherits from @tsconfig/node24: strict, esModuleInterop, skipLibCheck, target ES2024
+        // strict enables: strictNullChecks, noImplicitAny, strictBindCallApply,
+        //   strictFunctionTypes, strictPropertyInitialization, useUnknownInCatchVariables, etc.
+
+        // Module — Vite uses bundler resolution, not Node's.
+        // verbatimModuleSyntax replaces isolatedModules — stricter, enforces explicit
+        // `import type` / `export type` syntax instead of silently eliding.
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "verbatimModuleSyntax": true,
+        // Browser environment — node24 base only includes ES libs, not DOM
+        "lib": [
+            "ES2024",
+            "DOM",
+            "DOM.Iterable"
+        ],
+        // Type checking — maximum strictness beyond `strict: true`
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "noFallthroughCasesInSwitch": true,
+        "noUncheckedIndexedAccess": true,
+        // Distinguishes `{ key?: string }` from `{ key: string | undefined }`.
+        // Prevents accidentally passing undefined where a property should be missing.
+        "exactOptionalPropertyTypes": true,
+        // Forces `obj["key"]` instead of `obj.key` for index signatures —
+        // makes it obvious when you're accessing a dynamic/untyped key.
+        "noPropertyAccessFromIndexSignature": true,
+        // Requires explicit `override` keyword on subclass methods.
+        "noImplicitOverride": true,
+        // Every code path in a function must explicitly return a value.
+        "noImplicitReturns": true,
+        // Prevents importing files with inconsistent casing (catches Linux/macOS differences).
+        "forceConsistentCasingInFileNames": true,
+        // Emit — Vite handles compilation, TS is only for type-checking
+        "noEmit": true,
+        "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsbuildinfo",
+        // Vue JSX support
+        "jsx": "preserve",
+        "jsxImportSource": "vue",
+        // Path aliases — must match vite.config.ts resolve.alias
+        "paths": {
+            "@/*": [
+                "./assets/*"
+            ]
+        }
+    },
+    "include": [
+        "env.d.ts",
+        "assets/**/*",
+        "assets/**/*.vue",
+        "vite.config.*"
+    ],
+    "exclude": [
+        "node_modules",
+        "public"
+    ]
+}

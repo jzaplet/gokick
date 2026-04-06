@@ -1,8 +1,10 @@
 .idea
 .env
+.yarn
 bin/
 data/
 node_modules/
+*.tsbuildinfo
 
 # Vite build output (keep embed.go)
 public/*.js

@@ -33,12 +33,14 @@ Single-binary Go server s embedovaným Vue 3 SPA. Po buildu vznikne jedna spusti
 
 | Komponenta | Knihovna | Účel |
 |---|---|---|
-| Framework | `vue@^3` | Reaktivní UI |
-| Routing | `vue-router@^4` | Client-side SPA routing |
-| Build tool | `vite` | Dev server + produkční build |
+| Framework | `vue@^3.5` | Reaktivní UI |
+| Routing | `vue-router@^5` | Client-side SPA routing |
+| Build tool | `vite@^8` | Dev server + produkční build |
 | CSS | `tailwindcss@^4` + `@tailwindcss/vite` | Utility-first styling |
-| TypeScript | `typescript` + `vue-tsc` | Typová kontrola |
-| Linting | `eslint` + `oxlint` | Statická analýza |
+| TypeScript | `typescript@^6` + `vue-tsc` | Typová kontrola (maximum strictness) |
+| Linting | `eslint@^10` + `typescript-eslint` + `eslint-plugin-vue` | Statická analýza (strictTypeChecked) |
+| Formatting | `@stylistic/eslint-plugin` | Formátování kódu (nahrazuje Prettier) |
+| Package manager | `yarn@4` (Berry, nodeLinker: node-modules) | Správa závislostí |
 
 
 ## Adresářová struktura
@@ -75,19 +77,40 @@ project/
 │       ├── http/
 │       │   ├── handler/              # HTTP handlery
 │       │   ├── middleware/           # HTTP middleware (CORS, JWT, logging)
-│       │   ├── response/            # JSON response helpery
-│       │   └── server/              # HTTP server + routing
+│       │   ├── response/             # JSON response helpery
+│       │   └── server/               # HTTP server + routing
 │       └── console/                  # Cobra CLI
 │
-├── assets/                           # Frontend (Vue 3 + Vite)
-├── public/                           # Vite build output (embed)
-├── migrations/                       # Goose SQL migrace (embed)
-├── docker/release/                   # Produkční Dockerfile
+├── assets/                           # Frontend zdrojáky (Vue 3 + Vite)
+│   ├── app.ts                        # Vue mount point (createApp + router + CSS)
+│   ├── tailwind.css                  # Tailwind entry (@import 'tailwindcss')
+│   └── vue/                          # Vue aplikace
+│       ├── App.vue                   # Root komponenta (<RouterView />)
+│       ├── router/index.ts           # Vue Router (routes, guards)
+│       └── views/                    # Stránky (routed components)
 │
-├── go.mod / package.json / Makefile
-├── vite.config.ts / tsconfig.json
-├── .env / .go-arch-lint.yml
-└── docker-compose.yml
+├── public/                           # Vite build output (embedováno do Go binárky)
+│   ├── embed.go                      # //go:embed * → embed.FS
+│   ├── favicon.ico                   # Favicon (commitováno)
+│   ├── index.html                    # Generovaný Vite entry (gitignored)
+│   └── assets/                       # Generované JS/CSS bundly (gitignored)
+├── migrations/                       # Goose SQL migrace (embed)
+├── docs/                             # Documan dokumentace (markdown)
+├── docker/                           # Docker konfigurace
+│   └── release/                      # Produkční Dockerfile
+│
+├── Makefile                          # Build, lint, format, migrate, serve
+├── go.mod / go.sum                   # Go dependencies
+├── package.json / yarn.lock          # Frontend dependencies
+├── .yarnrc.yml                       # Yarn v4 konfigurace (nodeLinker: node-modules)
+├── vite.config.ts                    # Vite build + dev proxy konfigurace
+├── tsconfig.json                     # TypeScript (maximum strictness)
+├── eslint.config.ts                  # ESLint (strictTypeChecked + Stylistic)
+├── index.html                        # Vite HTML entry point
+├── env.d.ts                          # TypeScript deklarace (Vite client, .vue moduly)
+├── .env / .env.example               # Env konfigurace (porty, DB, JWT)
+├── .go-arch-lint.yml                 # Pravidla závislostí mezi vrstvami
+└── docker-compose.yml                # Docker services (documan)
 ```
 
 

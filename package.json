@@ -1,0 +1,34 @@
+{
+  "name": "filmshes",
+  "type": "module",
+  "private": true,
+  "packageManager": "yarn@4.13.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --build && vite build",
+    "type-check": "vue-tsc --build --noEmit",
+    "lint": "eslint assets/",
+    "lint:fix": "eslint assets/ --fix",
+    "format": "eslint assets/ --fix"
+  },
+  "dependencies": {
+    "vue": "^3.5.32",
+    "vue-router": "^5.0.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@stylistic/eslint-plugin": "^5.10.0",
+    "@tailwindcss/vite": "^4.2.2",
+    "@tsconfig/node24": "^24.0.4",
+    "@types/node": "^25.5.2",
+    "@vitejs/plugin-vue": "^6.0.5",
+    "eslint": "^10.2.0",
+    "eslint-plugin-vue": "^10.8.0",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.58.0",
+    "vite": "^8.0.5",
+    "vue-eslint-parser": "^10.4.0",
+    "vue-tsc": "^3.2.6"
+  }
+}
