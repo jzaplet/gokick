@@ -68,7 +68,8 @@ fe-clean:
 
 # Kvalita
 test:
-	go test ./...
+	yarn test
+	go test ./app/... ./cmd/... 2>&1 | grep -v '\[no test files\]'
 
 arch-check:
 	go-arch-lint check

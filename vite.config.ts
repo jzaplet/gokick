@@ -35,5 +35,10 @@ export default defineConfig(({ mode }) => {
         // Disabled because we build directly into public/ which already contains embed.go.
         // With publicDir enabled, Vite would try to copy public/ into itself.
         publicDir: false,
+        test: {
+            root: '.',
+            include: ['tests/**/*.test.ts'],
+            environment: 'jsdom',
+        },
     };
 });

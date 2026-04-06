@@ -3,11 +3,11 @@ layout: 'page'
 uri: '/'
 slug: 'home'
 navTitle: 'Začínáme'
-title: 'Go Skeleton'
-description: 'Go CQRS DDD skeleton s Vue 3 SPA, SQLite databází a JWT autentizací – vše v jedné binárce.'
+title: 'Golang Skeleton'
+description: 'GO CQRS DDD skeleton s Vue 3 SPA, SQLite databází a JWT autentizací – vše v jedné binárce.'
 ---
 
-# Go Skeleton
+# Golang Skeleton
 
 Go **DDD** (Domain-Driven Design) skeleton s **CQRS** (Command Query Responsibility Segregation), Vue 3 SPA, SQLite databází a JWT autentizací – vše v jedné binárce.
 
@@ -22,6 +22,29 @@ Go **DDD** (Domain-Driven Design) skeleton s **CQRS** (Command Query Responsibil
 - **JWT** access + refresh token autentizace
 - **Wire** compile-time dependency injection
 - **go-arch-lint** vynucení závislostí mezi vrstvami
+
+
+## Rychlý start
+
+```bash
+corepack enable
+cp .env.example .env
+make install
+make build && make serve
+```
+
+Server běží na `http://localhost:3000`. Podrobnosti v [Installation](/framework/overview/commands).
+
+
+## Hlavní příkazy
+
+| Příkaz | Co dělá |
+|---|---|
+| `make build` | Sestaví frontend + backend → `bin/app` |
+| `make serve` | Spustí server |
+| `make test` | Vitest + go test |
+| `make lint` | ESLint + vue-tsc + golangci-lint + go-arch-lint |
+| `make format` | ESLint Stylistic + golines |
 
 
 ## Dokumentace

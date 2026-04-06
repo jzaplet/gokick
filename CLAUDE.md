@@ -34,11 +34,10 @@ Migrations live in `migrations/` (Goose SQL format, embedded into binary). Migra
 ### Quality
 
 ```bash
-make test                                        # Run all tests
-make lint                                        # golangci-lint (app/ + cmd/ only)
-make format                                      # golines formatting
-make arch-check                                  # Validate layer dependency rules
-go test ./app/infrastructure/security/ -run TestHash  # Single test
+make test                                        # vitest + go test (app/ + cmd/ only)
+make lint                                        # ESLint + vue-tsc + golangci-lint + go-arch-lint
+make format                                      # ESLint Stylistic fix + golines
+go test ./app/infrastructure/security/ -run TestHash  # Single Go test
 ```
 
 ### CLI Commands
