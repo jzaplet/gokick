@@ -18,7 +18,7 @@ func NewRootCommand(serveCmd *ServeCommand, seedCmd *SeedCommand) *RootCommand {
 
 	root.cmd = &cobra.Command{
 		Use:     "app",
-		Short:   "Go skeleton application",
+		Short:   "Golang skeleton application",
 		Version: "0.1.0",
 	}
 

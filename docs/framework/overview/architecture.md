@@ -1,7 +1,7 @@
 ---
 layout: 'page'
 uri: '/framework/overview/architecture'
-position: 2
+position: 3
 slug: 'framework-overview-architecture'
 parent: 'framework-overview'
 navTitle: 'Architecture'

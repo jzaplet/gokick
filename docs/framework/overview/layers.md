@@ -1,7 +1,7 @@
 ---
 layout: 'page'
 uri: '/framework/overview/layers'
-position: 3
+position: 4
 slug: 'framework-overview-layers'
 parent: 'framework-overview'
 navTitle: 'Layers'

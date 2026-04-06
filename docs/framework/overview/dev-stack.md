@@ -40,6 +40,7 @@ Single-binary Go server s embedovaným Vue 3 SPA. Po buildu vznikne jedna spusti
 | TypeScript | `typescript@^6` + `vue-tsc` | Typová kontrola (maximum strictness) |
 | Linting | `eslint@^10` + `typescript-eslint` + `eslint-plugin-vue` | Statická analýza (strictTypeChecked) |
 | Formatting | `@stylistic/eslint-plugin` | Formátování kódu (nahrazuje Prettier) |
+| Testování | `vitest@^4` + `@vue/test-utils` + `jsdom` | Unit testy komponent |
 | Package manager | `yarn@4` (Berry, nodeLinker: node-modules) | Správa závislostí |
 
 
@@ -88,6 +89,8 @@ project/
 │       ├── App.vue                   # Root komponenta (<RouterView />)
 │       ├── router/index.ts           # Vue Router (routes, guards)
 │       └── views/                    # Stránky (routed components)
+│
+├── tests/                            # Frontend testy (Vitest + Vue Test Utils)
 │
 ├── public/                           # Vite build output (embedováno do Go binárky)
 │   ├── embed.go                      # //go:embed * → embed.FS

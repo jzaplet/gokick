@@ -30,7 +30,7 @@ make dev            # Go binárka (dev)
 make fe-dev         # Vite HMR
 make serve          # ./bin/app serve
 make lint           # go-fmt + fe-lint + go-lint
-make test           # go test ./...
+make test           # vitest + go test (app/ + cmd/)
 make arch-check     # go-arch-lint
 make go-fix         # go fix ./... (Go 1.26)
 make check          # Kompletní CI
