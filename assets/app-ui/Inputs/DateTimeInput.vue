@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue';
 
-interface Props {
+type Props = {
     modelValue?: null | string;
     defaultValue?: string;
     placeholder?: string;
@@ -11,7 +11,7 @@ interface Props {
     disabled?: boolean;
     name?: string;
     isNullable?: boolean;
-}
+};
 
 const props = defineProps<Props>();
 const emit = defineEmits<{

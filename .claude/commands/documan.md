@@ -63,7 +63,7 @@ description: 'Optional.'    # page description
 - Position: use sequential integers (1, 2, 3) with gaps for future insertions
 - Use **two blank lines** between major sections (Documan renders inline otherwise)
 - **Links between docs:** Always use Documan URIs from frontmatter (`uri` field), never direct paths to `.md` files. Example: `[Page Title](/section/page-name)`, not `[Page Title](../section/page-name.md)`
-- **Public URL:** All docs are available at `https://filmshes.strategio.dev/`. Any frontmatter `uri` maps to `https://filmshes.strategio.dev{uri}`. Use this when referencing docs outside of markdown (e.g. in chat, Jira, Slack). Only content merged to `develop` branch is published — local changes and open MRs are not visible.
+- **Public URL:** All docs are available at `https://docs.yourdomain.dev/`. Any frontmatter `uri` maps to `https://docs.yourdomain.dev{uri}`. Use this when referencing docs outside of markdown (e.g. in chat, Jira, Slack). Only content merged to `develop` branch is published — local changes and open MRs are not visible.
 - All files must be UTF-8
 
 ## Templates

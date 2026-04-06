@@ -1,8 +1,8 @@
 <script setup lang="ts">
-interface Props {
+type Props = {
     size?: 'sm' | 'md' | 'lg';
     color?: 'primary' | 'secondary' | 'white' | 'success';
-}
+};
 
 const { size = 'md', color = 'primary' } = defineProps<Props>();
 </script>

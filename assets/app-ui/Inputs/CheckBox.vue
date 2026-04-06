@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import CheckIcon from '@/app-ui/Icons/CheckIcon.vue';
 
-interface Props {
+type Props = {
     modelValue?: boolean;
     label?: string;
     error?: string;
     disabled?: boolean;
     name?: string;
-}
+};
 
 const props = defineProps<Props>();
 const emit = defineEmits<{

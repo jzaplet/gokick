@@ -41,6 +41,12 @@ export default tseslint.config(
         clearTimeout: 'readonly',
         HTMLInputElement: 'readonly',
         HTMLSelectElement: 'readonly',
+        fetch: 'readonly',
+        Response: 'readonly',
+        FormData: 'readonly',
+        XMLHttpRequest: 'readonly',
+        ProgressEvent: 'readonly',
+        RequestInit: 'readonly',
       },
       parserOptions: {
         parser: tseslint.parser,
@@ -63,6 +69,10 @@ export default tseslint.config(
   {
     rules: {
       // TypeScript — extra strictness
+      // Override stylisticTypeChecked: we prefer `type` over `interface`
+      '@typescript-eslint/consistent-type-definitions': ['error', 'type'],
+      // Override strictTypeChecked: we require explicit `=== true` / `=== false`
+      '@typescript-eslint/no-unnecessary-boolean-literal-compare': 'off',
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-non-null-assertion': 'error',
       '@typescript-eslint/explicit-function-return-type': ['error', {

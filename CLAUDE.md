@@ -198,6 +198,8 @@ wire.Bind(new(shared.Seeder), new(*sqlite.Seeder))
 - Always use strict comparison (`===`, `!==`)
 - Always use explicit boolean checks: `if (x === true)`, never `if (!x)` — use `if (x === false)` or `if (x === null)`
 - Never use `as` type casting — use generics instead
+- Never use `function` keyword — always arrow functions (`const fn = (): void => { ... }`)
+- Never use `class` — use composables, plain objects, and closures instead
 - Access index signature properties with bracket notation: `obj['key']` not `obj.key` (enforced by `noPropertyAccessFromIndexSignature`)
 - ID is always `string` (UUIDv7), never `number`
 

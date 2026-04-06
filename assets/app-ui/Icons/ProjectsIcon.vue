@@ -1,7 +1,7 @@
 <script setup lang="ts">
-interface Props {
+type Props = {
     className?: string;
-}
+};
 
 defineProps<Props>();
 </script>

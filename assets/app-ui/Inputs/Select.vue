@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 
-interface Option {
+type Option = {
     value: string;
     label: string;
-}
+};
 
-interface Props {
+type Props = {
     modelValue?: string | null;
     options: Option[];
     placeholder?: string;
@@ -16,7 +16,7 @@ interface Props {
     disabled?: boolean;
     name?: string;
     size?: 'sm' | 'md' | 'lg' | 'xl';
-}
+};
 
 const props = defineProps<Props>();
 const emit = defineEmits<{

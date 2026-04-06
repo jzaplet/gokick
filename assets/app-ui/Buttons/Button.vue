@@ -1,11 +1,11 @@
 <script setup lang="ts">
-interface Props {
+type Props = {
     variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
     size?: 'xs' | 'sm' | 'md' | 'lg';
     disabled?: boolean;
     loading?: boolean;
     type?: 'button' | 'submit' | 'reset';
-}
+};
 
 const {
     variant = 'primary',

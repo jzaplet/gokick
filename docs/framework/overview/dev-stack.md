@@ -89,7 +89,9 @@ project/
 │   ├── tailwind.css                  # Tailwind entry (@import 'tailwindcss')
 │   ├── app/                          # Aplikační komponenty (po doménách)
 │   │   └── <Domain>/Views/           # Views pro danou doménu
-│   └── app-ui/                       # Sdílené UI komponenty
+│   └── app-ui/                       # Sdílené UI komponenty a composables
+│       ├── Auth/                     # useAuth + typy (AuthUser, LoginRequest, ...)
+│       ├── Fetch/                    # useFetch, apiUpload + typy (ApiResponse, ...)
 │       ├── Buttons/                  # Button
 │       ├── Icons/                    # SVG ikony
 │       ├── Inputs/                   # Input, Select, CheckBox, DateTimeInput

@@ -45,8 +45,8 @@ Scaffold hotový – Vue 3, Vue Router, Vite, Tailwind v4, TypeScript (maximum s
 - [x] `assets/app.ts` – Vue mount s routerem
 - [x] `assets/tailwind.css`
 - [x] `assets/vue/App.vue` – root komponenta, layout
+- [x] `assets/vue/types/router.ts` – TypeScript typy
 - [x] `assets/vue/router/router.ts` – routes (guards přijdou s Fází 6)
-- [ ] `assets/vue/types/router.ts` – TypeScript typy
 - [ ] `assets/vue/composables/useAuth.ts` – login, logout, refresh, scheduleRefresh
 - [ ] `assets/vue/services/apiFetch.ts` – Authorization header, auto-refresh na 401
 - [ ] `assets/vue/views/LoginView.vue`
