@@ -34,7 +34,9 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("invalid APP_JWT_ACCESS_EXPIRATION: %w", err)
 	}
 
-	config.JWTRefreshExpiration, err = time.ParseDuration(getEnv("APP_JWT_REFRESH_EXPIRATION", "168h"))
+	config.JWTRefreshExpiration, err = time.ParseDuration(
+		getEnv("APP_JWT_REFRESH_EXPIRATION", "168h"),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("invalid APP_JWT_REFRESH_EXPIRATION: %w", err)
 	}

@@ -7,7 +7,11 @@ import (
 	"myapp/app/domain/shared"
 )
 
-func DispatchEventsMiddleware(logger *slog.Logger, collector *shared.EventCollector, eventBus *bus.EventBus) bus.Middleware {
+func DispatchEventsMiddleware(
+	logger *slog.Logger,
+	collector *shared.EventCollector,
+	eventBus *bus.EventBus,
+) bus.Middleware {
 	return func(ctx context.Context, name string, cmd any, next func(ctx context.Context) (any, error)) (any, error) {
 		result, err := next(ctx)
 		if err != nil {

@@ -40,6 +40,7 @@ func (r *Repository) DeleteByUserID(ctx context.Context, userID string) error {
 }
 
 func (r *Repository) DeleteExpired(ctx context.Context) error {
-	_, err := r.Conn(ctx).ExecContext(ctx, `DELETE FROM refresh_tokens WHERE expires_at < datetime('now')`)
+	_, err := r.Conn(ctx).
+		ExecContext(ctx, `DELETE FROM refresh_tokens WHERE expires_at < datetime('now')`)
 	return err
 }

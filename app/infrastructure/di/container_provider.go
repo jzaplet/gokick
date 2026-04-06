@@ -3,6 +3,7 @@
 package di
 
 import (
+	"io/fs"
 	"log/slog"
 	app "myapp/app"
 	"myapp/app/application/bus"
@@ -19,6 +20,7 @@ import (
 	"myapp/app/presentation/console"
 	"myapp/app/presentation/http/handler"
 	"myapp/app/presentation/http/server"
+	"myapp/public"
 
 	"github.com/google/wire"
 )
@@ -35,7 +37,13 @@ func providePermissionChecker() shared.PermissionChecker {
 	return security.NewPermissionChecker()
 }
 
-func provideCommandBus(logger *slog.Logger, db *database.SqliteManager, collector *shared.EventCollector, checker shared.PermissionChecker, eventBus *bus.EventBus) *bus.CommandBus {
+func provideCommandBus(
+	logger *slog.Logger,
+	db *database.SqliteManager,
+	collector *shared.EventCollector,
+	checker shared.PermissionChecker,
+	eventBus *bus.EventBus,
+) *bus.CommandBus {
 	return bus.NewCommandBus(
 		busmw.RecoveryMiddleware(logger),
 		busmw.LoggingMiddleware(logger),
@@ -51,6 +59,10 @@ func provideQueryBus(logger *slog.Logger, checker shared.PermissionChecker) *bus
 		busmw.LoggingMiddleware(logger),
 		busmw.AuthorizeMiddleware(checker),
 	)
+}
+
+func providePublicFS() fs.FS {
+	return public.FS
 }
 
 func provideEventBus(logger *slog.Logger) *bus.EventBus {
@@ -78,6 +90,8 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 		sqliteuser.NewRepository,
 		sqlitetoken.NewRepository,
 		sqlite.NewSeeder,
+		providePublicFS,
+		handler.NewSPAHandler,
 		handler.NewHealthHandler,
 		server.NewServer,
 		console.NewServeCommand,

@@ -58,7 +58,8 @@ func (r *Repository) FindByNickname(ctx context.Context, nickname string) (*user
 
 func (r *Repository) FindAllActive(ctx context.Context) ([]user.User, error) {
 	var users []user.User
-	err := r.Conn(ctx).SelectContext(ctx, &users, `SELECT * FROM users WHERE active=1 ORDER BY nickname`)
+	err := r.Conn(ctx).
+		SelectContext(ctx, &users, `SELECT * FROM users WHERE active=1 ORDER BY nickname`)
 	return users, err
 }
 

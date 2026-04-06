@@ -12,13 +12,20 @@ type Server struct {
 	config *config.Config
 	logger *slog.Logger
 	health *handler.HealthHandler
+	spa    *handler.SPAHandler
 }
 
-func NewServer(config *config.Config, logger *slog.Logger, health *handler.HealthHandler) *Server {
+func NewServer(
+	config *config.Config,
+	logger *slog.Logger,
+	health *handler.HealthHandler,
+	spa *handler.SPAHandler,
+) *Server {
 	return &Server{
 		config: config,
 		logger: logger,
 		health: health,
+		spa:    spa,
 	}
 }
 
@@ -26,6 +33,9 @@ func (s *Server) Start() error {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /health", s.health.Handle)
+
+	// SPA catch-all — must be last
+	mux.HandleFunc("GET /{path...}", s.spa.Handle)
 
 	chain := s.buildMiddlewareChain(mux)
 

@@ -7,6 +7,7 @@
 package di
 
 import (
+	"io/fs"
 	"log/slog"
 	"myapp/app"
 	"myapp/app/application/bus"
@@ -21,6 +22,7 @@ import (
 	"myapp/app/presentation/console"
 	"myapp/app/presentation/http/handler"
 	"myapp/app/presentation/http/server"
+	"myapp/public"
 )
 
 // Injectors from container_provider.go:
@@ -31,7 +33,9 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 		return nil, err
 	}
 	healthHandler := handler.NewHealthHandler()
-	serverServer := server.NewServer(configConfig, logger, healthHandler)
+	fs := providePublicFS()
+	spaHandler := handler.NewSPAHandler(fs)
+	serverServer := server.NewServer(configConfig, logger, healthHandler, spaHandler)
 	serveCommand := console.NewServeCommand(serverServer)
 	sqliteManager, err := database.NewSqliteManager(configConfig)
 	if err != nil {
@@ -71,12 +75,22 @@ func providePermissionChecker() shared.PermissionChecker {
 	return security.NewPermissionChecker()
 }
 
-func provideCommandBus(logger *slog.Logger, db *database.SqliteManager, collector *shared.EventCollector, checker shared.PermissionChecker, eventBus *bus.EventBus) *bus.CommandBus {
+func provideCommandBus(
+	logger *slog.Logger,
+	db *database.SqliteManager,
+	collector *shared.EventCollector,
+	checker shared.PermissionChecker,
+	eventBus *bus.EventBus,
+) *bus.CommandBus {
 	return bus.NewCommandBus(middleware.RecoveryMiddleware(logger), middleware.LoggingMiddleware(logger), middleware.AuthorizeMiddleware(checker), middleware.TransactionMiddleware(db), middleware.DispatchEventsMiddleware(logger, collector, eventBus))
 }
 
 func provideQueryBus(logger *slog.Logger, checker shared.PermissionChecker) *bus.QueryBus {
 	return bus.NewQueryBus(middleware.RecoveryMiddleware(logger), middleware.LoggingMiddleware(logger), middleware.AuthorizeMiddleware(checker))
+}
+
+func providePublicFS() fs.FS {
+	return public.FS
 }
 
 func provideEventBus(logger *slog.Logger) *bus.EventBus {
