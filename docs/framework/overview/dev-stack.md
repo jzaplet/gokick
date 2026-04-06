@@ -84,11 +84,18 @@ project/
 │
 ├── assets/                           # Frontend zdrojáky (Vue 3 + Vite)
 │   ├── app.ts                        # Vue mount point (createApp + router + CSS)
+│   ├── App.vue                       # Root komponenta (<RouterView /> + Toast)
+│   ├── router.ts                     # Vue Router (routes, guards)
 │   ├── tailwind.css                  # Tailwind entry (@import 'tailwindcss')
-│   └── vue/                          # Vue aplikace
-│       ├── App.vue                   # Root komponenta (<RouterView />)
-│       ├── router/index.ts           # Vue Router (routes, guards)
-│       └── views/                    # Stránky (routed components)
+│   ├── app/                          # Aplikační komponenty (po doménách)
+│   │   └── <Domain>/Views/           # Views pro danou doménu
+│   └── app-ui/                       # Sdílené UI komponenty
+│       ├── Buttons/                  # Button
+│       ├── Icons/                    # SVG ikony
+│       ├── Inputs/                   # Input, Select, CheckBox, DateTimeInput
+│       ├── Loading/                  # Spinner
+│       ├── Modals/                   # Modal, ConfirmModal
+│       └── Toast/                    # Toast notifikace
 │
 ├── tests/                            # Frontend testy (Vitest + Vue Test Utils)
 │

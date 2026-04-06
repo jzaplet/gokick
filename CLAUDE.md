@@ -183,6 +183,50 @@ wire.Bind(new(shared.Seeder), new(*sqlite.Seeder))
 - `*shared.AuthError` → 403
 - Other errors → 500
 
+### Frontend (`assets/`)
+
+**Structure:** Domain-based organization — `assets/app/<Domain>/Views/`, `assets/app-ui/` for shared UI components.
+
+**Vue components:**
+- Use `<script setup lang="ts">` with proper TypeScript types
+- Define form/error types using `type` (not `interface`)
+- Use `reactive<Type>()` and `ref<Type>()` with explicit typing
+- Props with destructuring: `const { prop1, prop2 = 'default' } = defineProps<Type>()`
+- No frontend validation — all validation handled by backend
+- Always use `@/` alias for imports — never relative paths
+- Always use `for...of` instead of `.forEach()`
+- Always use strict comparison (`===`, `!==`)
+- Always use explicit boolean checks: `if (x === true)`, never `if (!x)` — use `if (x === false)` or `if (x === null)`
+- Never use `as` type casting — use generics instead
+- Access index signature properties with bracket notation: `obj['key']` not `obj.key` (enforced by `noPropertyAccessFromIndexSignature`)
+- ID is always `string` (UUIDv7), never `number`
+
+**Tailwind class formatting in templates:**
+- Long class lists (5+ utilities) use `:class="[...]"` array syntax instead of `class="..."`
+- Group related utilities together: layout, sizing, spacing, typography, visual, interactive
+- Example:
+```html
+<div
+    :class="[
+        'flex items-center justify-center',
+        'w-full h-12',
+        'px-4 py-2',
+        'text-sm font-medium text-white',
+        'bg-blue-600 rounded-lg shadow-sm',
+        'hover:bg-blue-700 transition-colors cursor-pointer',
+    ]"
+>
+```
+- Short classes (1-4 utilities) stay as plain `class="..."`
+- Dynamic classes mix with static: `:class="['static classes', dynamicVar]"`
+
+**SVG icons:**
+- Break long `d` attribute values across multiple lines (max 120 chars per line)
+
+**Registration in router:**
+- Views are route components registered in `assets/router.ts`
+- SPA with Vue Router (`<RouterView />`)
+
 ## Development Flow
 
 1. **Feature** — implement (see checklist below), `make di` after DI changes

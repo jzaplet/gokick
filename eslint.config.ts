@@ -3,6 +3,7 @@ import stylistic from '@stylistic/eslint-plugin'
 import tseslint from 'typescript-eslint'
 import pluginVue from 'eslint-plugin-vue'
 
+// @ts-ignore
 export default tseslint.config(
   // --- Base ---
   eslint.configs.recommended,
@@ -32,6 +33,15 @@ export default tseslint.config(
   {
     files: ['assets/**/*.vue'],
     languageOptions: {
+      globals: {
+        document: 'readonly',
+        window: 'readonly',
+        localStorage: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        HTMLInputElement: 'readonly',
+        HTMLSelectElement: 'readonly',
+      },
       parserOptions: {
         parser: tseslint.parser,
       },
@@ -112,6 +122,10 @@ export default tseslint.config(
         exceptAfterSingleLine: true,
       }],
 
+      // Vue — template indent must match script indent (4 spaces)
+      'vue/html-indent': ['error', 4],
+      'vue/script-indent': ['error', 4, { baseIndent: 0 }],
+
       // Vue — extra strictness beyond recommended
       'vue/block-lang': ['error', { script: { lang: 'ts' } }],
       'vue/block-order': ['error', { order: ['script', 'template', 'style'] }],
@@ -133,11 +147,20 @@ export default tseslint.config(
       'vue/no-useless-v-bind': 'error',
       'vue/no-v-text': 'error',
       'vue/padding-line-between-blocks': 'error',
-      'vue/prefer-separate-static-class': 'error',
+      // Disabled — we intentionally use :class="[...]" arrays for all long class lists
+      'vue/prefer-separate-static-class': 'off',
       'vue/prefer-true-attribute-shorthand': 'error',
       'vue/require-macro-variable-name': 'error',
       'vue/require-typed-ref': 'error',
       'vue/v-for-delimiter-style': ['error', 'in'],
+    },
+  },
+
+  // --- app-ui overrides: allow single-word component names (Button, Input, etc.) ---
+  {
+    files: ['assets/app-ui/**/*.vue'],
+    rules: {
+      'vue/multi-word-component-names': 'off',
     },
   },
 

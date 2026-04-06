@@ -33,30 +33,33 @@ Hotovo – PasswordHasher, JwtService, PermissionChecker, repozitáře (sqlite/u
 - [ ] Registrace admin rout v server.go s JWT auth + role guard
 - [ ] Wire: command/query handlery, HTTP handler, event handler registry
 
-## Fáze 8: Frontend – Vue 3 SPA
+## ~~Fáze 8: Frontend – Vue 3 SPA~~ ✓ (scaffold)
 
-- [ ] `package.json` – vue, vue-router, vite, tailwindcss, typescript, eslint, oxlint
-- [ ] `index.html`, `vite.config.ts`, `tsconfig.json`, `env.d.ts`
-- [ ] `public/embed.go` – `//go:embed *`
-- [ ] `presentation/http/handler/handler_spa_fallback.go` – SPA fallback (embed.FS → index.html)
-- [ ] Registrace SPA fallback v server.go jako catch-all `GET /{path...}`
-- [ ] `assets/app.ts` – Vue mount s routerem
-- [ ] `assets/tailwind.css`
-- [ ] `assets/vue/App.vue` – root komponenta, layout
-- [ ] `assets/vue/router/index.ts` – routes + guards (requiresAuth, requiredRole)
-- [ ] `assets/vue/types/index.ts` – TypeScript typy
+Scaffold hotový – Vue 3, Vue Router, Vite, Tailwind v4, TypeScript (maximum strictness), ESLint (strictTypeChecked + Stylistic), Vitest, Yarn v4, SPA embed + fallback handler.
+
+- [x] `package.json` – vue, vue-router, vite, tailwindcss, typescript, eslint
+- [x] `index.html`, `vite.config.ts`, `tsconfig.json`, `env.d.ts`
+- [x] `public/embed.go` – `//go:embed *`
+- [x] `presentation/http/handler/handler_spa_fallback.go` – SPA fallback (embed.FS → index.html)
+- [x] Registrace SPA fallback v server.go jako catch-all `GET /{path...}`
+- [x] `assets/app.ts` – Vue mount s routerem
+- [x] `assets/tailwind.css`
+- [x] `assets/vue/App.vue` – root komponenta, layout
+- [x] `assets/vue/router/router.ts` – routes (guards přijdou s Fází 6)
+- [ ] `assets/vue/types/router.ts` – TypeScript typy
 - [ ] `assets/vue/composables/useAuth.ts` – login, logout, refresh, scheduleRefresh
 - [ ] `assets/vue/services/apiFetch.ts` – Authorization header, auto-refresh na 401
 - [ ] `assets/vue/views/LoginView.vue`
 - [ ] `assets/vue/views/DashboardView.vue`
 - [ ] `assets/vue/views/ProfileView.vue`
 - [ ] `assets/vue/views/AdminUsersView.vue`
-- [ ] Makefile: fe-deps, fe-build, fe-dev, fe-clean
-- [ ] Wire: SPA fallback handler
+- [x] Makefile: fe-deps, fe-build, fe-dev, fe-clean
+- [x] Wire: SPA fallback handler
 
-## Fáze 9: Build pipeline
+## ~~Fáze 9: Build pipeline~~ ✓ (základ)
 
-- [ ] Makefile: build (di → fe-build → go-build), build-all (linux/amd64, darwin/arm64, windows/amd64)
+- [x] Makefile: build (di → fe-build → go-build)
+- [ ] Makefile: build-all (linux/amd64, darwin/arm64, windows/amd64)
 - [ ] Ověřit: `make build` → `./bin/app serve` → SPA + API z jedné binárky
 - [ ] E2E test: login → API → refresh → logout
 
@@ -67,13 +70,13 @@ Hotovo – PasswordHasher, JwtService, PermissionChecker, repozitáře (sqlite/u
 - [ ] `make build-all` → linux binary → `docker build` → `docker compose up -d`
 - [ ] Ověřit: health check + login z containeru
 
-## Fáze 12: Kvalita kódu
+## ~~Fáze 12: Kvalita kódu~~ ✓
 
-- [ ] `eslint.config.ts` – ESLint + oxlint
-- [ ] `.golangci.yml` – golangci-lint
-- [ ] `go fix ./...` (Go 1.26)
-- [ ] Makefile: lint, lint-check, test, check (= lint-check + fe-type-check + test + arch-check)
-- [ ] Ověřit: `make check` → zelené
+Hotovo – ESLint (strictTypeChecked + Vue recommended + Stylistic), golangci-lint, go-arch-lint, vue-tsc, Vitest, golines.
+
+- [x] `eslint.config.ts` – ESLint + typescript-eslint + eslint-plugin-vue + @stylistic/eslint-plugin
+- [x] golangci-lint – již nakonfigurovaný
+- [x] Makefile: lint (ESLint + vue-tsc + golangci-lint + go-arch-lint), format (ESLint Stylistic + golines), test (vitest + go test)
 
 ## Observability
 

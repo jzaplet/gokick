@@ -52,7 +52,8 @@
         "assets/**/*",
         "assets/**/*.vue",
         "tests/**/*.ts",
-        "vite.config.*"
+        "vite.config.*",
+        "eslint.config.*"
     ],
     "exclude": [
         "node_modules",
