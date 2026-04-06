@@ -3,11 +3,11 @@ layout: 'page'
 uri: '/'
 slug: 'home'
 navTitle: 'Getting Started'
-title: 'GO Kick Docs'
+title: 'GO Kick'
 description: 'GO CQRS DDD skeleton s Vue 3 SPA, SQLite databází a JWT autentizací – vše v jedné binárce.'
 ---
 
-# GO Kick Docs
+# GO Kick
 
 Go **DDD** (Domain-Driven Design) skeleton s **CQRS** (Command Query Responsibility Segregation), Vue 3 SPA, SQLite databází a JWT autentizací – vše v jedné binárce.
 
