@@ -18,7 +18,7 @@ DDD s CQRS a bus pattern. Čtyři vrstvy s přísnými pravidly závislostí. Ko
 | Vrstva | Složka | Balíčky | Popis |
 |---|---|---|---|
 | **Domain** | `domain/` | `shared/`, `user/`, `token/` | Entity, value objects, interfaces, errors, events. Žádné závislosti. |
-| **Application** | `application/` | `bus/`, `command/`, `query/`, `event/` | CQRS handlery, bus middleware. Závisí jen na domain. |
+| **Application** | `application/` | `bus/`, `<domain>/command/`, `<domain>/query/`, `<domain>/event/` | CQRS handlery organizované po doménách, bus middleware. Závisí jen na domain. |
 | **Infrastructure** | `infrastructure/` | `config/`, `database/`, `sqlite/`, `security/`, `di/` | Implementace domain interfaces, databáze, security. |
 | **Presentation** | `presentation/` | `http/handler/`, `http/middleware/`, `http/response/`, `http/server/`, `console/` | HTTP a CLI vrstva. |
 
@@ -68,7 +68,7 @@ cmd/main.go
    |- Transaction: BEGIN
    +-> handler:
 
-5. Command Handler (application/command/):
+5. Command Handler (application/user/command/):
    NewNickname() -> NewRole() -> repo.FindByNickname() -> password.Hash()
    -> NewUser() -> repo.Save()
 
@@ -132,13 +132,13 @@ Každý doménový kontext (`domain/user/`, `domain/token/`, ...) je izolovaný 
 - Eventy používají jen primitivy (string ID, ne celé entity).
 - go-arch-lint zachytí cross-domain import při `make arch-check`.
 
-Nový kontext (např. `domain/order/`) nevyžaduje žádnou změnu v `.go-arch-lint.yml` -- wildcard `domain/**` pokrývá všechny subbalíčky automaticky. Totéž platí pro `application/command/**`, `infrastructure/sqlite/**` atd.
+Nový kontext (např. `domain/order/`) nevyžaduje žádnou změnu v `.go-arch-lint.yml` -- wildcard `domain/**` pokrývá všechny subbalíčky automaticky. Totéž platí pro `application/<domain>/command/**`, `infrastructure/sqlite/**` atd.
 
 ### Přidání nové feature (checklist)
 
 1. `domain/` -- entity, value objects, interfaces
 2. `infrastructure/sqlite/` -- repository implementace
-3. `application/command/` nebo `application/query/` -- CQRS handler s `Permissioned` nebo `SkipPermission`
+3. `application/<domain>/command/` nebo `application/<domain>/query/` -- CQRS handler s `Permissioned` nebo `SkipPermission`
 4. `presentation/http/handler/` -- HTTP handler přes bus
 5. `presentation/http/server/` -- registrace route
 6. `infrastructure/di/` -- Wire provider

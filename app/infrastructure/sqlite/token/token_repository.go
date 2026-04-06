@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"errors"
 
-	"myapp/app/domain/token"
-	"myapp/app/infrastructure/database"
-	"myapp/app/infrastructure/sqlite"
+	"gokick/app/domain/token"
+	"gokick/app/infrastructure/database"
+	"gokick/app/infrastructure/sqlite"
 )
 
 type Repository struct {

@@ -3,7 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
-	"myapp/app/infrastructure/config"
+	"gokick/app/infrastructure/config"
 	"os"
 	"path/filepath"
 

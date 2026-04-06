@@ -22,7 +22,7 @@ Queries čtou stav systému bez jeho změny. Oddělení od commands umožňuje n
 Stejná struktura jako command: `XxxQuery` (filtry) + `XxxHandler` (logika). Query prochází `QueryBus` (Recovery → Logging → Authorize).
 
 ```go
-// application/query/query_list_users.go
+// application/user/query/list_users.go
 
 type ListUsersQuery struct{}
 

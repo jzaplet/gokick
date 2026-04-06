@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"myapp/app/domain/shared"
-	"myapp/app/infrastructure/config"
+	"gokick/app/domain/shared"
+	"gokick/app/infrastructure/config"
 
 	"github.com/golang-jwt/jwt/v5"
 )

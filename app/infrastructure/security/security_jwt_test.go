@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"myapp/app/domain/shared"
-	"myapp/app/infrastructure/config"
+	"gokick/app/domain/shared"
+	"gokick/app/infrastructure/config"
 )
 
 func newTestJwtService(secret string, accessExp, refreshExp time.Duration) *JwtService {

@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"myapp/app/presentation/http/response"
+	"gokick/app/presentation/http/response"
 	"net/http"
 )
 

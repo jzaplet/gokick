@@ -1,10 +1,10 @@
 package server
 
 import (
+	"gokick/app/infrastructure/config"
+	"gokick/app/presentation/http/handler"
+	"gokick/app/presentation/http/middleware"
 	"log/slog"
-	"myapp/app/infrastructure/config"
-	"myapp/app/presentation/http/handler"
-	"myapp/app/presentation/http/middleware"
 	"net/http"
 )
 

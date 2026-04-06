@@ -2,8 +2,8 @@ package database
 
 import (
 	"context"
+	"gokick/migrations"
 	"log/slog"
-	"myapp/migrations"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/pressly/goose/v3"

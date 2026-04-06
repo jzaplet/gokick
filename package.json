@@ -1,5 +1,5 @@
 {
-  "name": "myapp",
+  "name": "gokick",
   "type": "module",
   "private": true,
   "packageManager": "yarn@4.13.0",

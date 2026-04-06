@@ -59,9 +59,9 @@ Klíčová pravidla:
 |---|---|
 | `application/bus/` | Bus s middleware chain, generický dispatch, Wire wrapper typy. |
 | `application/bus/middleware/` | Recovery, logging, autorizace, transakce, dispatch eventů. |
-| `application/command/` | Command structs + handlery. Write operace. |
-| `application/query/` | Query structs + handlery. Read operace. |
-| `application/event/` | Event handlery -- side-effects po úspěšném commitu. |
+| `application/<domain>/command/` | Command structs + handlery. Write operace. Organizováno po doménách (`auth/`, `user/`, `profile/`, ...). |
+| `application/<domain>/query/` | Query structs + handlery. Read operace. Organizováno po doménách. |
+| `application/<domain>/event/` | Event handlery -- side-effects po úspěšném commitu. Organizováno po doménách. |
 
 
 ## Infrastructure

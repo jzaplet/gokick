@@ -2,7 +2,7 @@ package bus
 
 import (
 	"context"
-	"myapp/app/domain/shared"
+	"gokick/app/domain/shared"
 )
 
 type EventHandler func(ctx context.Context, event shared.DomainEvent) error

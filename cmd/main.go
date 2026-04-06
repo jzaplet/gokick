@@ -1,8 +1,8 @@
 package main
 
 import (
+	"gokick/app/infrastructure/di"
 	"log/slog"
-	"myapp/app/infrastructure/di"
 	"os"
 )
 

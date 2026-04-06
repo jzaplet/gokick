@@ -39,8 +39,8 @@ make build && make serve
 | `make build` | Wire DI → Vite build → Go build → `bin/app` |
 | `make serve` | Spustí `bin/app serve` |
 | `make test` | Vitest (frontend) + go test (app/ + cmd/) |
-| `make lint` | ESLint + vue-tsc + golangci-lint + go-arch-lint |
-| `make format` | ESLint Stylistic fix + golines |
+| `make lint` | ESLint + vue-tsc + golangci-lint + go-arch-lint + documan-lint |
+| `make format` | ESLint Stylistic fix + golines + documan-fix |
 
 ### Vývoj
 

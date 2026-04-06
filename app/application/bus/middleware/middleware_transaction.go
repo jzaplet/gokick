@@ -2,8 +2,8 @@ package middleware
 
 import (
 	"context"
-	"myapp/app/application/bus"
-	"myapp/app/domain/shared"
+	"gokick/app/application/bus"
+	"gokick/app/domain/shared"
 )
 
 func TransactionMiddleware(tx shared.Transactor) bus.Middleware {

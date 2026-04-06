@@ -1,11 +1,11 @@
 package app
 
 import (
-	"myapp/app/application/bus"
-	"myapp/app/domain/token"
-	"myapp/app/infrastructure/database"
-	"myapp/app/infrastructure/security"
-	"myapp/app/presentation/console"
+	"gokick/app/application/bus"
+	"gokick/app/domain/token"
+	"gokick/app/infrastructure/database"
+	"gokick/app/infrastructure/security"
+	"gokick/app/presentation/console"
 )
 
 type Application struct {

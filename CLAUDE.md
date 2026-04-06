@@ -53,7 +53,7 @@ Copy `.env.example` to `.env`. Key vars: `APP_HTTP_PORT`, `APP_DB_PATH`, `APP_JW
 
 ## Architecture
 
-**DDD 4-layer + CQRS** with strict dependency rules enforced by `go-arch-lint` (`.go-arch-lint.yml`). Module path: `myapp`. Go 1.26.0.
+**DDD 4-layer + CQRS** with strict dependency rules enforced by `go-arch-lint` (`.go-arch-lint.yml`). Module path: `gokick`. Go 1.26.0.
 
 ### Layers & Dependency Rules
 

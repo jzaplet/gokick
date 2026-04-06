@@ -7,22 +7,22 @@
 package di
 
 import (
+	"gokick/app"
+	"gokick/app/application/bus"
+	"gokick/app/application/bus/middleware"
+	"gokick/app/domain/shared"
+	"gokick/app/infrastructure/config"
+	"gokick/app/infrastructure/database"
+	"gokick/app/infrastructure/security"
+	"gokick/app/infrastructure/sqlite"
+	"gokick/app/infrastructure/sqlite/token"
+	"gokick/app/infrastructure/sqlite/user"
+	"gokick/app/presentation/console"
+	"gokick/app/presentation/http/handler"
+	"gokick/app/presentation/http/server"
+	"gokick/public"
 	"io/fs"
 	"log/slog"
-	"myapp/app"
-	"myapp/app/application/bus"
-	"myapp/app/application/bus/middleware"
-	"myapp/app/domain/shared"
-	"myapp/app/infrastructure/config"
-	"myapp/app/infrastructure/database"
-	"myapp/app/infrastructure/security"
-	"myapp/app/infrastructure/sqlite"
-	"myapp/app/infrastructure/sqlite/token"
-	"myapp/app/infrastructure/sqlite/user"
-	"myapp/app/presentation/console"
-	"myapp/app/presentation/http/handler"
-	"myapp/app/presentation/http/server"
-	"myapp/public"
 )
 
 // Injectors from container_provider.go:

@@ -3,8 +3,8 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"gokick/app/application/bus"
 	"log/slog"
-	"myapp/app/application/bus"
 )
 
 func RecoveryMiddleware(logger *slog.Logger) bus.Middleware {

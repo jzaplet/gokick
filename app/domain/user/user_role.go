@@ -1,6 +1,6 @@
 package user
 
-import "myapp/app/domain/shared"
+import "gokick/app/domain/shared"
 
 type Role string
 

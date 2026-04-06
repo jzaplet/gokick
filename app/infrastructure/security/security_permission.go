@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"myapp/app/domain/shared"
-	"myapp/app/domain/user"
+	"gokick/app/domain/shared"
+	"gokick/app/domain/user"
 )
 
 type PermissionChecker struct{}

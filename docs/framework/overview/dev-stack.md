@@ -58,12 +58,12 @@ project/
 │   │   ├── user/                     # User entity, Nickname/Role VO, Repository interface
 │   │   └── token/                    # RefreshToken entity, TokenRepository interface
 │   │
-│   ├── application/                  # Vrstva 2: Use cases
+│   ├── application/                  # Vrstva 2: Use cases (po doménách)
 │   │   ├── bus/                      # CommandBus, QueryBus, EventBus
 │   │   │   └── middleware/           # Recovery, logging, authorize, transaction, events
-│   │   ├── command/                  # CQRS write operace
-│   │   ├── query/                    # CQRS read operace
-│   │   └── event/                    # Event handlery
+│   │   ├── auth/                     # command/ (login, refresh, logout)
+│   │   ├── profile/                  # command/ (change_password), query/ (get_profile)
+│   │   └── user/                     # command/ (CRUD), query/ (list), event/ (welcome email)
 │   │
 │   ├── infrastructure/               # Vrstva 3: Implementace
 │   │   ├── config/                   # Konfigurace (.env)

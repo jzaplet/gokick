@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 
-	"myapp/app/infrastructure/database"
+	"gokick/app/infrastructure/database"
 )
 
 // Conn is the common interface satisfied by both *sqlx.DB and *sqlx.Tx.

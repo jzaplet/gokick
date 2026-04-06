@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"myapp/app/domain/shared"
+	"gokick/app/domain/shared"
 	"net/http"
 
 	"github.com/google/uuid"

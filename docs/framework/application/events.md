@@ -24,7 +24,7 @@ Event handlery reagují na domain eventy -- side-effects po úspěšném commitu
 Event handlery zpracovávají domain eventy dispatched přes `EventBus` (Recovery → Logging). Registrují se v DI kontejneru.
 
 ```go
-// application/event/event_send_welcome_email.go
+// application/user/event/send_welcome_email.go
 
 type SendWelcomeEmailHandler struct {
     mailer Mailer

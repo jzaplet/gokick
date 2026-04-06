@@ -3,11 +3,11 @@ layout: 'page'
 uri: '/'
 slug: 'home'
 navTitle: 'Getting Started'
-title: 'Golang Skeleton'
+title: 'GO Kick Docs'
 description: 'GO CQRS DDD skeleton s Vue 3 SPA, SQLite databází a JWT autentizací – vše v jedné binárce.'
 ---
 
-# Golang Skeleton
+# GO Kick Docs
 
 Go **DDD** (Domain-Driven Design) skeleton s **CQRS** (Command Query Responsibility Segregation), Vue 3 SPA, SQLite databází a JWT autentizací – vše v jedné binárce.
 

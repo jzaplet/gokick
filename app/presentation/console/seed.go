@@ -1,7 +1,7 @@
 package console
 
 import (
-	"myapp/app/domain/shared"
+	"gokick/app/domain/shared"
 
 	"github.com/spf13/cobra"
 )

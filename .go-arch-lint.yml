@@ -27,12 +27,8 @@ components:
     in: application/bus
   bus_middleware:
     in: application/bus/middleware/**
-  command:
-    in: application/command/**
-  query:
-    in: application/query/**
-  event:
-    in: application/event/**
+  application:
+    in: application/**
 
   # Vrstva 3: Infrastructure
   config:
@@ -78,11 +74,7 @@ deps:
   bus_middleware:
     mayDependOn:
       - bus
-  command:
-    anyVendorDeps: true
-  query:
-    anyVendorDeps: true
-  event:
+  application:
     anyVendorDeps: true
 
   # Infrastructure – závisí na domain
@@ -105,8 +97,7 @@ deps:
   # Presentation – závisí na application + infrastructure
   handler:
     mayDependOn:
-      - command
-      - query
+      - application
       - bus
       - response
   http_middleware:

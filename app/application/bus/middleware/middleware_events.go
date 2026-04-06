@@ -2,9 +2,9 @@ package middleware
 
 import (
 	"context"
+	"gokick/app/application/bus"
+	"gokick/app/domain/shared"
 	"log/slog"
-	"myapp/app/application/bus"
-	"myapp/app/domain/shared"
 )
 
 func DispatchEventsMiddleware(

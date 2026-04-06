@@ -21,9 +21,14 @@ onMounted(async (): Promise<void> => {
 </script>
 
 <template>
-    <div class="flex items-center justify-center min-h-screen">
-        <h1 class="text-4xl font-bold text-gray-900">
+    <div class="flex flex-col items-center justify-center min-h-screen p-10">
+        <h1 class="text-4xl font-bold text-gray-900 text-center">
             This is your brand new app!
         </h1>
+        <img
+            src="@/img/go-vue-cqrs-ddd.png"
+            alt="Go Vue CQRS DDD Logo"
+            class="mt-8 max-w-full max-h-[50vh] object-contain"
+        >
     </div>
 </template>

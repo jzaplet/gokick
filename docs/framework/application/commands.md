@@ -25,7 +25,7 @@ Každý command = dva typy v jednom souboru:
 ### Příklad
 
 ```go
-// application/command/command_create_user.go
+// application/user/command/create_user.go
 
 type CreateUserCommand struct {
     Nickname string

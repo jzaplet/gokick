@@ -4,8 +4,8 @@ import (
 	"context"
 	"log/slog"
 
-	"myapp/app/domain/shared"
-	"myapp/app/domain/user"
+	"gokick/app/domain/shared"
+	"gokick/app/domain/user"
 
 	"github.com/google/uuid"
 )

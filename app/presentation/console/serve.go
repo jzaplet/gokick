@@ -1,7 +1,7 @@
 package console
 
 import (
-	"myapp/app/presentation/http/server"
+	"gokick/app/presentation/http/server"
 
 	"github.com/spf13/cobra"
 )

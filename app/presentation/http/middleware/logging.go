@@ -1,8 +1,8 @@
 package middleware
 
 import (
+	"gokick/app/domain/shared"
 	"log/slog"
-	"myapp/app/domain/shared"
 	"net/http"
 	"time"
 )

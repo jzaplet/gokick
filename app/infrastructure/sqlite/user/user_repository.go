@@ -5,10 +5,10 @@ import (
 	"database/sql"
 	"errors"
 
-	"myapp/app/domain/shared"
-	"myapp/app/domain/user"
-	"myapp/app/infrastructure/database"
-	"myapp/app/infrastructure/sqlite"
+	"gokick/app/domain/shared"
+	"gokick/app/domain/user"
+	"gokick/app/infrastructure/database"
+	"gokick/app/infrastructure/sqlite"
 )
 
 type Repository struct {

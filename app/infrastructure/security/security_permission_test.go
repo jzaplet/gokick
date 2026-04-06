@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"myapp/app/domain/shared"
+	"gokick/app/domain/shared"
 )
 
 func TestCheck_NoClaims(t *testing.T) {

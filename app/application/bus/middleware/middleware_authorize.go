@@ -3,8 +3,8 @@ package middleware
 import (
 	"context"
 	"fmt"
-	"myapp/app/application/bus"
-	"myapp/app/domain/shared"
+	"gokick/app/application/bus"
+	"gokick/app/domain/shared"
 )
 
 func AuthorizeMiddleware(checker shared.PermissionChecker) bus.Middleware {
