@@ -11,7 +11,7 @@ COPY ../../README.md /documan/data/README.md
 WORKDIR /documan/data
 
 # Configure your project
-ENV DOCUMAN_PROJECT_NAME='Filmshes'
+ENV DOCUMAN_PROJECT_NAME='Go Skeleton'
 ENV DOCUMAN_DOCS_FILES='**/*.md'
 ENV DOCUMAN_EXCLUDED_FILES=''
 ENV DOCUMAN_HTTP_PORT=3000

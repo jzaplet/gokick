@@ -8,13 +8,16 @@ exclude:
   - infrastructure/di/**
 
 excludeFiles:
-  - application.go
   - infrastructure/database/migration_manager.go
 
 commonComponents:
   - domain
 
 components:
+  # Root
+  app:
+    in: .
+
   # Vrstva 1: Domain
   domain:
     in: domain/**
@@ -38,7 +41,9 @@ components:
     in: infrastructure/database
   security:
     in: infrastructure/security/**
-  sqlite:
+  sqlite_base:
+    in: infrastructure/sqlite
+  sqlite_repos:
     in: infrastructure/sqlite/**
 
   # Vrstva 4: Presentation
@@ -54,6 +59,15 @@ components:
     in: presentation/console/**
 
 deps:
+  # Root – orchestrace
+  app:
+    mayDependOn:
+      - bus
+      - database
+      - security
+      - sqlite_base
+      - console
+
   # Domain – čisté jádro
   domain:
     anyVendorDeps: true
@@ -80,8 +94,12 @@ deps:
   security:
     mayDependOn:
       - config
-  sqlite:
+  sqlite_base:
     mayDependOn:
+      - database
+  sqlite_repos:
+    mayDependOn:
+      - sqlite_base
       - database
 
   # Presentation – závisí na application + infrastructure

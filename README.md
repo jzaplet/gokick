@@ -2,20 +2,32 @@
 layout: 'page'
 uri: '/'
 slug: 'home'
-navTitle: 'Filmshes'
-title: 'Filmshes'
-description: 'Filmshesh - kreditový systém pro správu požadavků.'
+navTitle: 'Začínáme'
+title: 'Go Skeleton'
+description: 'Go CQRS DDD skeleton s Vue 3 SPA, SQLite databází a JWT autentizací – vše v jedné binárce.'
 ---
 
-# Filmshes
+# Go Skeleton
 
-Filmshesh je interní kreditový systém pro správu požadavků. Uživatelé mají kreditový účet (standardně 60 kr/rok), zadávají požadavky přes společnou zeď a admin je plní – strhává kredity podle velikosti (přepočet přes GB). Aplikace má dvě role (admin a user), JWT autentizaci a emailové notifikace.
+Go **CQRS** (Command Query Responsibility Segregation) DDD skeleton s Vue 3 SPA, SQLite databází a JWT autentizací – vše v jedné binárce.
+
+
+## Vlastnosti
+
+- **Go** backend s **CQRS** command/query/event bus
+- **DDD** architektura (domain → application → infrastructure → presentation)
+- **Vue 3** SPA (Vite, TypeScript, Tailwind) embedovaná do Go binárky
+- **SQLite** s migracemi (Goose)
+- **JWT** access + refresh token autentizace
+- **Wire** dependency injection
+- **Striktní oddělení vrstev** přes interfaces – infrastrukturu (např. SQLite → Postgres) lze zaměnit bez zásahu do domény
+- **go-arch-lint** vynucení architektonických pravidel
+
 
 ## Dokumentace
 
 | Sekce | Popis |
 |-------|-------|
-| [Sdílené obrazovky](/business/shared) | Layout, navigace, přihlašovací obrazovka |
-| [Uživatelské obrazovky](/business/user) | Zeď požadavků, nový požadavek, detail, profil |
-| [Administrátorské obrazovky](/business/admin) | Správa uživatelů, odpovědi na požadavky, kredity |
-| [Notifikace](/business/notifications) | Emailové notifikace při odpovědi na požadavek |
+| [Framework](/framework) | Architektura, vrstvy, infrastruktura |
+| [Business logika](/business) | Specifikace obrazovek a business pravidel |
+| [Codebase](/codebase) | Algoritmy a znovupoužitelné balíčky v rámci projektu |

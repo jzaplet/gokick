@@ -8,6 +8,7 @@ import (
 	"myapp/app/application/bus"
 	busmw "myapp/app/application/bus/middleware"
 	"myapp/app/domain/shared"
+	"myapp/app/domain/token"
 	"myapp/app/domain/user"
 	"myapp/app/infrastructure/config"
 	"myapp/app/infrastructure/database"
@@ -72,6 +73,7 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 		provideEventBus,
 		security.NewJwtService,
 		wire.Bind(new(user.Repository), new(*sqliteuser.Repository)),
+		wire.Bind(new(token.TokenRepository), new(*sqlitetoken.Repository)),
 		sqliteuser.NewRepository,
 		sqlitetoken.NewRepository,
 		sqlite.NewSeeder,

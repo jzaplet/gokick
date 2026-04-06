@@ -33,7 +33,6 @@ Single-binary Go server s embedovaným Vue 3 SPA. Po buildu vznikne jedna spusti
 | UUID | `github.com/google/uuid` | Unikátní identifikátory |
 | Hesla | `golang.org/x/crypto` | bcrypt (s SHA-256 prehash) |
 | JWT | `github.com/golang-jwt/jwt/v5` | Generování a validace tokenů |
-| Testování | `github.com/stretchr/testify` | Aserce a test suites |
 | Arch linting | `github.com/fe3dback/go-arch-lint` | Kontrola závislostí mezi vrstvami |
 
 ### Frontend (Vue 3 + Vite)

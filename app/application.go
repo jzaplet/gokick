@@ -4,10 +4,10 @@ import (
 	"context"
 
 	"myapp/app/application/bus"
+	"myapp/app/domain/token"
 	"myapp/app/infrastructure/database"
 	"myapp/app/infrastructure/security"
 	"myapp/app/infrastructure/sqlite"
-	sqlitetoken "myapp/app/infrastructure/sqlite/token"
 	"myapp/app/presentation/console"
 )
 
@@ -21,7 +21,7 @@ type Application struct {
 	QueryBus   *bus.QueryBus
 	EventBus   *bus.EventBus
 	Jwt        *security.JwtService
-	Tokens     *sqlitetoken.Repository
+	Tokens     token.TokenRepository
 }
 
 func NewApplication(
@@ -32,7 +32,7 @@ func NewApplication(
 	queryBus *bus.QueryBus,
 	eventBus *bus.EventBus,
 	jwt *security.JwtService,
-	tokens *sqlitetoken.Repository,
+	tokens token.TokenRepository,
 ) *Application {
 	return &Application{
 		rootCmd:    rootCmd,
