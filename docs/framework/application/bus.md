@@ -27,7 +27,7 @@ type Bus struct {
     middlewares []Middleware
 }
 
-func New(middlewares ...Middleware) *Bus
+func newBus(middlewares ...Middleware) *Bus  // unexported, používá se přes NewCommandBus/NewQueryBus/NewEventBus
 ```
 
 ```go
@@ -58,7 +58,7 @@ Parametr `cmd any` umožňuje middleware introspekci -- např. type assert na `s
 | `QueryBus` | Recovery - Logging - Authorize | Read operace |
 | `EventBus` | Recovery - Logging | Side-effects po commitu |
 
-Typy `CommandBus`, `QueryBus`, `EventBus` jsou wrapper structs v `bus_types.go`:
+Každý bus typ žije ve vlastním souboru (`bus_command.go`, `bus_query.go`, `bus_event.go`):
 
 ```go
 type CommandBus struct{ *Bus }

@@ -126,7 +126,7 @@ Hlavní body konfigurace:
 - `workdir: app` -- všechny cesty relativně k `app/`
 - `commonComponents: [domain]` -- domain je automaticky dostupná všem
 - `exclude: [infrastructure/di/**]` -- DI balíček nemá omezení
-- `excludeFiles: [application.go, infrastructure/database/migration_manager.go]` -- lifecycle soubory mimo kontrolu
+- `excludeFiles: [infrastructure/database/migration_manager.go]` -- lifecycle soubor mimo kontrolu
 - Každá komponenta má `mayDependOn` seznam povolených závislostí
 
 ### Cross-domain izolace
