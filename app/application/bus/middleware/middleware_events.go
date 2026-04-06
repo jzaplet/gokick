@@ -7,7 +7,7 @@ import (
 	"myapp/app/domain/shared"
 )
 
-func DispatchEventsMiddleware(logger *slog.Logger, collector *shared.EventCollector) bus.Middleware {
+func DispatchEventsMiddleware(logger *slog.Logger, collector *shared.EventCollector, eventBus *bus.EventBus) bus.Middleware {
 	return func(ctx context.Context, name string, cmd any, next func(ctx context.Context) (any, error)) (any, error) {
 		result, err := next(ctx)
 		if err != nil {
@@ -22,7 +22,7 @@ func DispatchEventsMiddleware(logger *slog.Logger, collector *shared.EventCollec
 				"event", event.EventName(),
 				"source_command", name,
 			)
-			// TODO: dispatch to registered event handlers via EventBus
+			eventBus.Dispatch(ctx, event)
 		}
 
 		return result, nil

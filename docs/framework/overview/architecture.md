@@ -44,7 +44,7 @@ cmd/main.go
     -> config.LoadConfig()                 Načtení .env
     -> database.NewSqliteManager()         Připojení k SQLite
     -> database.MigrationManager.RunUp()   Automatické migrace
-    -> bus.New(middlewares...)              CommandBus, QueryBus, EventBus
+    -> bus.NewCommandBus/NewQueryBus/NewEventBus  CQRS busy s middleware chain
     -> server.New(handlers, middlewares)    HTTP server
     -> console.NewRootCommand()            Cobra CLI
   -> application.Run()

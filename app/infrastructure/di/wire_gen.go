@@ -44,9 +44,9 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 	seeder := sqlite.NewSeeder(repository, passwordHasher, logger)
 	eventCollector := provideEventCollector()
 	permissionChecker := providePermissionChecker()
-	commandBus := provideCommandBus(logger, sqliteManager, eventCollector, permissionChecker)
-	queryBus := provideQueryBus(logger, permissionChecker)
 	eventBus := provideEventBus(logger)
+	commandBus := provideCommandBus(logger, sqliteManager, eventCollector, permissionChecker, eventBus)
+	queryBus := provideQueryBus(logger, permissionChecker)
 	jwtService, err := security.NewJwtService(configConfig)
 	if err != nil {
 		return nil, err
@@ -70,14 +70,14 @@ func providePermissionChecker() shared.PermissionChecker {
 	return security.NewPermissionChecker()
 }
 
-func provideCommandBus(logger *slog.Logger, db *database.SqliteManager, collector *shared.EventCollector, checker shared.PermissionChecker) *bus.CommandBus {
-	return &bus.CommandBus{Bus: bus.New(middleware.RecoveryMiddleware(logger), middleware.LoggingMiddleware(logger), middleware.AuthorizeMiddleware(checker), middleware.TransactionMiddleware(db), middleware.DispatchEventsMiddleware(logger, collector))}
+func provideCommandBus(logger *slog.Logger, db *database.SqliteManager, collector *shared.EventCollector, checker shared.PermissionChecker, eventBus *bus.EventBus) *bus.CommandBus {
+	return bus.NewCommandBus(middleware.RecoveryMiddleware(logger), middleware.LoggingMiddleware(logger), middleware.AuthorizeMiddleware(checker), middleware.TransactionMiddleware(db), middleware.DispatchEventsMiddleware(logger, collector, eventBus))
 }
 
 func provideQueryBus(logger *slog.Logger, checker shared.PermissionChecker) *bus.QueryBus {
-	return &bus.QueryBus{Bus: bus.New(middleware.RecoveryMiddleware(logger), middleware.LoggingMiddleware(logger), middleware.AuthorizeMiddleware(checker))}
+	return bus.NewQueryBus(middleware.RecoveryMiddleware(logger), middleware.LoggingMiddleware(logger), middleware.AuthorizeMiddleware(checker))
 }
 
 func provideEventBus(logger *slog.Logger) *bus.EventBus {
-	return &bus.EventBus{Bus: bus.New(middleware.RecoveryMiddleware(logger), middleware.LoggingMiddleware(logger))}
+	return bus.NewEventBus(middleware.RecoveryMiddleware(logger), middleware.LoggingMiddleware(logger))
 }

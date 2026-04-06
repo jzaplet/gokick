@@ -15,8 +15,6 @@ type Application struct {
 	rootCmd    *console.RootCommand
 	migrations *database.MigrationManager
 	seeder     *sqlite.Seeder
-
-	// Wired but used by command/query handlers in Phase 6.
 	CommandBus *bus.CommandBus
 	QueryBus   *bus.QueryBus
 	EventBus   *bus.EventBus

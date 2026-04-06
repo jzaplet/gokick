@@ -9,19 +9,19 @@ description: 'Go CQRS DDD skeleton s Vue 3 SPA, SQLite databází a JWT autentiz
 
 # Go Skeleton
 
-Go **CQRS** (Command Query Responsibility Segregation) DDD skeleton s Vue 3 SPA, SQLite databází a JWT autentizací – vše v jedné binárce.
+Go **DDD** (Domain-Driven Design) skeleton s **CQRS** (Command Query Responsibility Segregation), Vue 3 SPA, SQLite databází a JWT autentizací – vše v jedné binárce.
 
 
 ## Vlastnosti
 
-- **Go** backend s **CQRS** command/query/event bus
-- **DDD** architektura (domain → application → infrastructure → presentation)
+- **DDD** – čtyřvrstvá architektura (domain → application → infrastructure → presentation) s bounded kontexty, entitami, value objects a domain eventy
+- **CQRS** – oddělené command/query/event busy s middleware chain (logging, autorizace, transakce, recovery)
+- **Dependency inversion** – doména definuje interfaces (porty), infrastruktura dodává implementace (adaptery). Př: SQLite lze zaměnit za Postgres bez zásahu do domény
 - **Vue 3** SPA (Vite, TypeScript, Tailwind) embedovaná do Go binárky
-- **SQLite** s migracemi (Goose)
+- **SQLite** s migracemi (Goose), pure-Go bez CGO
 - **JWT** access + refresh token autentizace
-- **Wire** dependency injection
-- **Striktní oddělení vrstev** přes interfaces – infrastrukturu (např. SQLite → Postgres) lze zaměnit bez zásahu do domény
-- **go-arch-lint** vynucení architektonických pravidel
+- **Wire** compile-time dependency injection
+- **go-arch-lint** vynucení závislostí mezi vrstvami
 
 
 ## Dokumentace

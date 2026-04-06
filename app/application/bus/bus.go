@@ -8,7 +8,7 @@ type Bus struct {
 	middlewares []Middleware
 }
 
-func New(middlewares ...Middleware) *Bus {
+func newBus(middlewares ...Middleware) *Bus {
 	return &Bus{middlewares: middlewares}
 }
 
