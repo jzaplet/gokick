@@ -35,38 +35,6 @@ presentation --> application --> domain <-- infrastructure
 ```
 
 
-### Dependency matrix
-
-Řádek smí importovat sloupec:
-
-```
-                domain  bus  busmw  cmd  qry  event  config  db  sqlite  sec  handler  httpmw  resp  server  console
-domain            -      x    x     x    x     x      x      x    x      x     x        x      x      x       x
-bus               Y      -    -     x    x     x      x      x    x      x     x        x      x      x       x
-bus_middleware    Y      Y    -     x    x     x      x      x    x      x     x        x      x      x       x
-command           Y      x    x     -    x     x      x      x    x      x     x        x      x      x       x
-query             Y      x    x     x    -     x      x      x    x      x     x        x      x      x       x
-event             Y      x    x     x    x     -      x      x    x      x     x        x      x      x       x
-config            x      x    x     x    x     x      -      x    x      x     x        x      x      x       x
-database          x      x    x     x    x     x      Y      -    x      x     x        x      x      x       x
-sqlite            Y      x    x     x    x     x      x      Y    -      x     x        x      x      x       x
-security          Y      x    x     x    x     x      Y      x    x      -     x        x      x      x       x
-handler           Y      Y    x     Y    Y     x      x      x    x      x     -        x      Y      x       x
-http_middleware   Y      x    x     x    x     x      x      x    x      Y     x        -      Y      x       x
-response          x      x    x     x    x     x      x      x    x      x     x        x      -      x       x
-server            x      x    x     x    x     x      Y      x    x      x     Y        Y      x      -       x
-console           x      x    x     x    x     x      Y      Y    x      x     x        x      x      Y       -
-```
-
-Klíčová pravidla:
-1. **Domain neimportuje nic** -- čisté jádro
-2. **Command/Query závisí jen na domain** -- žádný bus, security, infra
-3. **Handler neimportuje sqlite, security ani event**
-4. **Bus middleware závisí na domain + bus**
-5. **HTTP middleware závisí na security + response**
-6. **DI smí vše** (excluded z arch-lintu)
-7. **Response je izolovaný** -- žádné závislosti
-
 
 ### Startup sequence
 

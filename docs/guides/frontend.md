@@ -1,8 +1,9 @@
 ---
 layout: 'page'
-uri: '/frontend'
-position: 45
-slug: 'frontend'
+uri: '/guides/frontend'
+position: 2
+slug: 'guides-frontend'
+parent: 'guides'
 navTitle: 'Frontend'
 title: 'Frontend'
 description: 'Vue 3 SPA – Vite, TypeScript, Tailwind, embedding.'

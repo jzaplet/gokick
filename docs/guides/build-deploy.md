@@ -1,8 +1,9 @@
 ---
 layout: 'page'
-uri: '/build-deploy'
-position: 50
-slug: 'build-deploy'
+uri: '/guides/build-deploy'
+position: 3
+slug: 'guides-build-deploy'
+parent: 'guides'
 navTitle: 'Build & Deploy'
 title: 'Build & Deploy'
 description: 'Single-binary build, Makefile, Docker.'

@@ -1,8 +1,9 @@
 ---
 layout: 'page'
-uri: '/auth'
-position: 40
-slug: 'auth'
+uri: '/guides/auth'
+position: 1
+slug: 'guides-auth'
+parent: 'guides'
 navTitle: 'Authentication'
 title: 'Authentication'
 description: 'JWT access + refresh token, session lifecycle.'
