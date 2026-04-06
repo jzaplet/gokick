@@ -11,15 +11,9 @@ description: 'Technologický stack a adresářová struktura.'
 
 # Dev Stack
 
-
-## Proč
-
 Single-binary Go server s embedovaným Vue 3 SPA. Po buildu vznikne jedna spustitelná binárka `./app serve`. Minimální verze Go 1.26.
 
-
-## Jak
-
-### Backend (Go)
+## Backend (Go)
 
 | Komponenta | Knihovna | Účel |
 |---|---|---|
@@ -35,7 +29,7 @@ Single-binary Go server s embedovaným Vue 3 SPA. Po buildu vznikne jedna spusti
 | JWT | `github.com/golang-jwt/jwt/v5` | Generování a validace tokenů |
 | Arch linting | `github.com/fe3dback/go-arch-lint` | Kontrola závislostí mezi vrstvami |
 
-### Frontend (Vue 3 + Vite)
+## Frontend (Vue 3 + Vite)
 
 | Komponenta | Knihovna | Účel |
 |---|---|---|
@@ -47,7 +41,7 @@ Single-binary Go server s embedovaným Vue 3 SPA. Po buildu vznikne jedna spusti
 | Linting | `eslint` + `oxlint` | Statická analýza |
 
 
-### Adresářová struktura
+## Adresářová struktura
 
 ```
 project/

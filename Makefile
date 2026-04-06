@@ -1,4 +1,4 @@
-.PHONY: install dev build serve di install-tools go-deps arch-check
+.PHONY: install dev build serve di install-tools go-deps arch-check test lint format
 
 # Instalace
 install: go-deps install-tools
@@ -40,7 +40,16 @@ migrate-down:
 migrate-status:
 	goose -dir migrations sqlite3 $(shell grep APP_DB_PATH .env | cut -d= -f2) status
 
-# Architektura
+# Kvalita
+test:
+	go test ./...
+
+lint:
+	golangci-lint run ./app/... ./cmd/...
+
+format:
+	golines -w .
+
 arch-check:
 	go-arch-lint check
 

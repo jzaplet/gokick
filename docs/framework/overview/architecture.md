@@ -11,15 +11,9 @@ description: 'DDD vrstvy s CQRS, pravidla závislostí, lifecycle, cross-domain 
 
 # Architecture
 
-
-## Proč
-
 DDD s CQRS a bus pattern. Čtyři vrstvy s přísnými pravidly závislostí. Komunikace přes CommandBus/QueryBus/EventBus zajišťuje loose coupling -- command handlery neznají HTTP, handlery neznají databázi.
 
-
-## Jak
-
-### Čtyři vrstvy
+## Čtyři vrstvy
 
 | Vrstva | Složka | Balíčky | Popis |
 |---|---|---|---|
@@ -36,7 +30,7 @@ presentation --> application --> domain <-- infrastructure
 
 
 
-### Startup sequence
+## Startup sequence
 
 ```
 cmd/main.go
@@ -53,7 +47,7 @@ cmd/main.go
 ```
 
 
-### Request flow (command)
+## Request flow (command)
 
 `POST /api/v1/admin/users` -- vytvoření uživatele:
 
@@ -86,7 +80,7 @@ cmd/main.go
 ```
 
 
-### Request flow (query)
+## Request flow (query)
 
 `GET /api/v1/admin/users`:
 
@@ -98,7 +92,7 @@ HTTP Request -> Trace -> CORS -> CSRF -> Logging -> JWT Auth
 ```
 
 
-### Error flow
+## Error flow
 
 ```
 Command Handler vrátí error

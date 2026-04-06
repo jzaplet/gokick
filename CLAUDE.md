@@ -2,6 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Documentation Reference (`docs/framework/`)
+
+- **Overview:** [Architecture](docs/framework/overview/architecture.md), [Layers](docs/framework/overview/layers.md), [Dev Stack](docs/framework/overview/dev-stack.md)
+- **Domain:** [Entity & Value Objects](docs/framework/domain/entities.md), [Interfaces](docs/framework/domain/interfaces.md), [Errors & Events](docs/framework/domain/errors-events.md)
+- **Application:** [Bus](docs/framework/application/bus.md), [Commands](docs/framework/application/commands.md), [Queries](docs/framework/application/queries.md), [Event Handlers](docs/framework/application/events.md)
+- **Infrastructure:** [Wire DI](docs/framework/infrastructure/wire.md), [Database](docs/framework/infrastructure/database.md), [Security](docs/framework/infrastructure/security.md), [Config](docs/framework/infrastructure/config.md)
+- **Presentation:** [Handlers & Middleware](docs/framework/presentation/http-handlers.md), [HTTP Server](docs/framework/presentation/http-server.md), [Console](docs/framework/presentation/console.md)
+
 ## Build & Development Commands
 
 ```bash
@@ -10,7 +18,6 @@ make dev              # Regenerate Wire DI + build debug binary → bin/app
 make build            # Regenerate Wire DI + build release binary (stripped) → bin/app
 make serve            # Run bin/app serve (HTTP server on configured port)
 make di               # Regenerate Wire DI only (cd app/infrastructure/di && wire)
-make arch-check       # Validate layer dependency rules via go-arch-lint
 ```
 
 ### Database
@@ -24,11 +31,13 @@ make migrate-create NAME=create_x_table # Create new migration file
 
 Migrations live in `migrations/` (Goose SQL format, embedded into binary). Migrations run automatically on app startup.
 
-### Running Tests
+### Quality
 
 ```bash
-go test ./...                                    # All tests
-go test ./app/infrastructure/security/...        # Single package
+make test                                        # Run all tests
+make lint                                        # golangci-lint (app/ + cmd/ only)
+make format                                      # golines formatting
+make arch-check                                  # Validate layer dependency rules
 go test ./app/infrastructure/security/ -run TestHash  # Single test
 ```
 
@@ -174,6 +183,13 @@ wire.Bind(new(shared.Seeder), new(*sqlite.Seeder))
 - `*shared.ValidationError` → 400
 - `*shared.AuthError` → 403
 - Other errors → 500
+
+## Development Flow
+
+1. **Feature** — implement (see checklist below), `make di` after DI changes
+2. **Architecture** — `make arch-check` to verify layer dependency rules
+3. **Code style** — `make lint` + `make format`
+4. **Tests** — `make test`
 
 ## Adding a New Feature (Checklist)
 
