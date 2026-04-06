@@ -3,6 +3,18 @@
 Fáze 1–5 hotové. Fáze 10 (arch-lint) předřazena a hotová.
 DDD restrukturalizace dokončena (domain/application/infrastructure/presentation).
 
+## Overview
+
+| Fáze | Co zbývá | Náročnost |
+|---|---|---|
+| **6: Auth** | BE: 5 command/query handlerů, JWT middleware, HTTP handlery, routy, Wire, permissions v response. FE: router guards, 401 auto-refresh, LoginView, ProfileView | velká |
+| **7: Admin CRUD** | BE: create/update/delete/list user, role guard, UserCreated event. FE: AdminUsersView, DashboardView | střední |
+| **9: Build pipeline** | `build-all` cross-compile, E2E test | malá |
+| **11: Docker** | Release Dockerfile, docker-compose app service | malá |
+| **Security Headers** | Middleware pro A+ rating (HSTS, CSP, X-Frame-Options, Referrer-Policy, Permissions-Policy) | malá |
+| **Observability** | Sentry, slog attrs, OpenTelemetry | volitelné |
+| **Dokumentace** | Sentry/OTel do home stránky (až budou) | minimální |
+
 ## ~~Fáze 5: Security + repozitáře~~ ✓
 
 Hotovo – PasswordHasher, JwtService, PermissionChecker, repozitáře (sqlite/user, sqlite/token), seeder, Wire binding, 24 unit testů.
