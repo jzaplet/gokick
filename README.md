@@ -9,9 +9,9 @@ description: 'GO CQRS DDD skeleton s Vue 3 SPA, SQLite databází a JWT autentiz
 
 # GO Kick
 
-Go **DDD** (Domain-Driven Design) skeleton s **CQRS** (Command Query Responsibility Segregation), Vue 3 SPA, SQLite databází a JWT autentizací – vše v jedné binárce.
+![GO Kick](./docs/go-vue-cqrs-ddd.png "GO Kick")
 
-<img src="/assets/img/go-vue-cqrs-ddd.png" alt="GO CQRS DDD skeleton">
+Go **DDD** (Domain-Driven Design) skeleton s **CQRS** (Command Query Responsibility Segregation), Vue 3 SPA, SQLite databází a JWT autentizací – vše v jedné binárce.
 
 ## Vlastnosti
 

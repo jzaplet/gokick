@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1
 # check=skip=SecretsUsedInArgOrEnv
-FROM jzaplet/documan:2.9.1-alpha
+FROM jzaplet/documan:2.10.4
 
 # Copy documentation source files into the image
-COPY ../../docs /documan/data/docs
-COPY ../../README.md /documan/data/README.md
+COPY ./docs /documan/data/docs
+COPY ./README.md /documan/data/README.md
 
 # Set working directory
 # Important for relative paths in DOCUMAN_DOCS_FILES or DOCUMAN_EXCLUDED_FILES
