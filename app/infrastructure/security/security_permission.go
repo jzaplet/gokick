@@ -2,10 +2,8 @@ package security
 
 import (
 	"context"
-	"strings"
 
 	"gokick/app/domain/shared"
-	"gokick/app/domain/user"
 )
 
 type PermissionChecker struct{}
@@ -20,15 +18,8 @@ func (c *PermissionChecker) Check(ctx context.Context, permission string) error 
 		return &shared.AuthError{Message: "authentication required"}
 	}
 
-	// Permission format: "resource:action" or "resource:action:role"
-	// Admin role has access to everything.
-	if claims.Role == string(user.RoleAdmin) {
-		return nil
-	}
-
-	// Non-admin: deny any permission requiring admin role.
-	if strings.HasPrefix(permission, "admin:") {
-		return &shared.AuthError{Message: "admin access required"}
+	if !shared.IsPermissionAllowedForRole(permission, claims.Role) {
+		return &shared.AuthError{Message: "insufficient permissions"}
 	}
 
 	return nil
