@@ -27,7 +27,19 @@ Dvoutokenový systém s konfigurovatelnou expirací.
 - Náhodný řetězec přes `crypto/rand.Text()` (Go 1.24+)
 - Životnost `APP_JWT_REFRESH_EXPIRATION` (default `168h`)
 - Přenos: `httpOnly` + `Secure` + `SameSite=Strict` cookie
-- Uložení: SHA256 hash v DB. Rotace při každém refresh.
+- Uložení: SHA256 hash v DB se sloupcem `used_at`
+
+
+## Rotace a theft detection
+
+Při každém refresh se starý token **neodmaže**, jen se označí jako použitý (`used_at = NOW()`). Pokud se ten samý raw token objeví podruhé (`used_at != NULL`), backend to vyhodnotí jako krádež tokenu a zavolá **force logout** — smaže všechny refresh tokeny daného usera. Útočník i legitimní klient jsou okamžitě odhlášeni.
+
+| Situace | Akce |
+|---|---|
+| Token neznámý | `AuthError` (401) |
+| Token použitý (reuse) | **DeleteByUserID** + `AuthError` (theft) |
+| Token expirovaný | DeleteByUserID + `AuthError` |
+| Token platný | `MarkUsed` + vydat novou dvojici |
 
 
 ## Endpointy

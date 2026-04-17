@@ -1,7 +1,7 @@
 ---
 layout: 'page'
 uri: '/guides/frontend-utils'
-position: 2
+position: 3
 slug: 'guides-frontend-utils'
 parent: 'guides'
 navTitle: 'Frontend Utils'
