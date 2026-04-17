@@ -1,4 +1,6 @@
-// Package testfx provides shared test fixtures for auth command handlers.
+// Package testfx provides shared test fixtures for application-layer handlers.
+// Spins up a real SQLite database with migrations and wires real implementations
+// of all common dependencies (password hasher, JWT, repositories).
 package testfx
 
 import (

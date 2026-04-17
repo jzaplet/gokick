@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"gokick/app/application/auth/command/internal/testfx"
+	"gokick/app/application/internal/testfx"
 	"gokick/app/domain/shared"
 )
 
