@@ -46,8 +46,14 @@ func (h *RefreshTokenHandler) Handle(ctx context.Context, cmd RefreshTokenComman
 		return LoginResult{}, &shared.AuthError{Message: "invalid refresh token"}
 	}
 
+	// Theft detection: a token that was already rotated is being presented again.
+	// Assume credentials are compromised and log the user out on all devices.
+	if existing.UsedAt != nil {
+		_ = h.tokens.DeleteByUserID(ctx, existing.UserID)
+		return LoginResult{}, &shared.AuthError{Message: "refresh token reuse detected"}
+	}
+
 	if time.Now().After(existing.ExpiresAt) {
-		// Expired — clean up so it can't be used again.
 		_ = h.tokens.DeleteByUserID(ctx, existing.UserID)
 		return LoginResult{}, &shared.AuthError{Message: "refresh token expired"}
 	}
@@ -57,8 +63,9 @@ func (h *RefreshTokenHandler) Handle(ctx context.Context, cmd RefreshTokenComman
 		return LoginResult{}, &shared.AuthError{Message: "user no longer exists"}
 	}
 
-	// Rotate: delete the used token, then issue a fresh pair.
-	if err := h.tokens.DeleteByUserID(ctx, u.ID); err != nil {
+	// Rotate: mark the current token as used (so reuse can be detected),
+	// then issue a fresh pair.
+	if err := h.tokens.MarkUsed(ctx, hash); err != nil {
 		return LoginResult{}, err
 	}
 

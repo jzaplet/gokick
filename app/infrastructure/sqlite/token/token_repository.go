@@ -19,8 +19,8 @@ func NewRepository(db *database.SqliteManager) *Repository {
 }
 
 func (r *Repository) Save(ctx context.Context, t *token.RefreshToken) error {
-	const q = `INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, created_at)
-		VALUES (:id, :user_id, :token_hash, :expires_at, :created_at)`
+	const q = `INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, created_at, used_at)
+		VALUES (:id, :user_id, :token_hash, :expires_at, :created_at, :used_at)`
 	_, err := r.Conn(ctx).NamedExecContext(ctx, q, t)
 	return err
 }
@@ -32,6 +32,12 @@ func (r *Repository) FindByHash(ctx context.Context, hash string) (*token.Refres
 		return nil, nil
 	}
 	return &t, err
+}
+
+func (r *Repository) MarkUsed(ctx context.Context, hash string) error {
+	_, err := r.Conn(ctx).
+		ExecContext(ctx, `UPDATE refresh_tokens SET used_at=datetime('now') WHERE token_hash=?`, hash)
+	return err
 }
 
 func (r *Repository) DeleteByUserID(ctx context.Context, userID string) error {

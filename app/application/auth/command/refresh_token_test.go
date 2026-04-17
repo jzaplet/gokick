@@ -34,18 +34,23 @@ func TestRefreshTokenHandler_Success(t *testing.T) {
 		t.Fatalf("user id mismatch: got %s want %s", result.User.ID, u.ID)
 	}
 
-	// Old token must be gone.
+	// Old token must remain but be marked used (so reuse can be detected).
 	old, _ := fx.Tokens.FindByHash(ctx, fx.HashToken(raw))
-	if old != nil {
-		t.Fatal("expected old refresh token to be removed")
+	if old == nil {
+		t.Fatal("expected old refresh token retained for theft detection")
 	}
-	// Exactly one new token should exist.
-	fx.AssertTokenCount(t, 1)
-	// The persisted token must match the returned raw.
+	if old.UsedAt == nil {
+		t.Fatal("expected old refresh token marked as used")
+	}
+	// New token must exist and be unused.
 	stored, _ := fx.Tokens.FindByHash(ctx, fx.HashToken(result.RefreshToken))
 	if stored == nil || stored.UserID != u.ID {
 		t.Fatal("expected new refresh token persisted for user")
 	}
+	if stored.UsedAt != nil {
+		t.Fatal("expected new refresh token to be unused")
+	}
+	fx.AssertTokenCount(t, 2)
 }
 
 func TestRefreshTokenHandler_Expired(t *testing.T) {
@@ -99,22 +104,33 @@ func TestRefreshTokenHandler_UserDeletedAfterIssue(t *testing.T) {
 	}
 }
 
-func TestRefreshTokenHandler_RotationPreventsReuse(t *testing.T) {
-	// After a successful refresh, the original raw token must be invalid.
+func TestRefreshTokenHandler_ReuseTriggersForceLogout(t *testing.T) {
+	// Using an already-rotated refresh token signals theft: drop all tokens for that user.
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "refresh_rotation.db"))
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "refresh_theft.db"))
 	u := fx.SeedUser(t, "alice", "pwd", "user")
 	raw := fx.SeedRefreshToken(t, u.ID, time.Now().Add(24*time.Hour))
 
 	handler := NewRefreshTokenHandler(fx.Users, fx.Tokens, fx.Jwt)
 
-	if _, err := handler.Handle(ctx, RefreshTokenCommand{RawToken: raw}); err != nil {
+	// First refresh rotates the token (legitimate client or attacker).
+	result, err := handler.Handle(ctx, RefreshTokenCommand{RawToken: raw})
+	if err != nil {
 		t.Fatalf("first refresh: %v", err)
 	}
+	fx.AssertTokenCount(t, 2) // old (used) + new
 
-	_, err := handler.Handle(ctx, RefreshTokenCommand{RawToken: raw})
+	// Presenting the already-used raw token again triggers force logout.
+	_, err = handler.Handle(ctx, RefreshTokenCommand{RawToken: raw})
 	var authErr *shared.AuthError
 	if !errors.As(err, &authErr) {
 		t.Fatalf("expected *shared.AuthError on reuse, got %T: %v", err, err)
+	}
+
+	// All user tokens (including the freshly-issued one) must be gone.
+	fx.AssertTokenCount(t, 0)
+	stillValid, _ := fx.Tokens.FindByHash(ctx, fx.HashToken(result.RefreshToken))
+	if stillValid != nil {
+		t.Fatal("expected newly-issued token to be revoked after theft detection")
 	}
 }
