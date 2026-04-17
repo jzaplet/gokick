@@ -1,0 +1,81 @@
+// Package testfx provides shared test fixtures for auth command handlers.
+package testfx
+
+import (
+	"context"
+	"io"
+	"log/slog"
+	"testing"
+	"time"
+
+	"gokick/app/domain/token"
+	"gokick/app/domain/user"
+	"gokick/app/infrastructure/config"
+	"gokick/app/infrastructure/database"
+	"gokick/app/infrastructure/security"
+	sqlitetoken "gokick/app/infrastructure/sqlite/token"
+	sqliteuser "gokick/app/infrastructure/sqlite/user"
+)
+
+type Fixture struct {
+	DB     *database.SqliteManager
+	Users  user.Repository
+	Tokens token.TokenRepository
+	Hasher *security.PasswordHasher
+	Jwt    *security.JwtService
+}
+
+// New spins up an isolated SQLite database at dbPath, runs migrations and wires
+// real implementations of all auth dependencies. The DB is closed automatically
+// when the test completes.
+func New(t *testing.T, dbPath string) *Fixture {
+	t.Helper()
+
+	cfg := &config.Config{
+		DBPath:               dbPath,
+		JWTSecret:            "test-secret-32-chars-long-enough",
+		JWTAccessExpiration:  15 * time.Minute,
+		JWTRefreshExpiration: 7 * 24 * time.Hour,
+	}
+
+	db, err := database.NewSqliteManager(cfg)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	if err := database.NewMigrationManager(db, logger).RunUp(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	jwt, err := security.NewJwtService(cfg)
+	if err != nil {
+		t.Fatalf("jwt: %v", err)
+	}
+
+	return &Fixture{
+		DB:     db,
+		Users:  sqliteuser.NewRepository(db),
+		Tokens: sqlitetoken.NewRepository(db),
+		Hasher: security.NewPasswordHasher(),
+		Jwt:    jwt,
+	}
+}
+
+// HashToken returns the SHA-256 hex hash of the raw refresh token.
+func (*Fixture) HashToken(raw string) string {
+	return security.HashToken(raw)
+}
+
+// AssertTokenCount fails the test if the refresh_tokens row count differs from want.
+func (f *Fixture) AssertTokenCount(t *testing.T, want int) {
+	t.Helper()
+	var got int
+	if err := f.DB.DB().GetContext(context.Background(), &got, `SELECT COUNT(*) FROM refresh_tokens`); err != nil {
+		t.Fatalf("count tokens: %v", err)
+	}
+	if got != want {
+		t.Fatalf("refresh_tokens count: got %d want %d", got, want)
+	}
+}

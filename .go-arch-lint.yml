@@ -29,6 +29,10 @@ components:
     in: application/bus/middleware/**
   application:
     in: application/**
+  # Matches any `testfx/` directory anywhere in the tree (e.g. application/auth/command/internal/testfx/).
+  # Fixtures may wire real infrastructure — production code can import them from *_test.go files only.
+  testfx:
+    in: '**/testfx/**'
 
   # Vrstva 3: Infrastructure
   config:
@@ -75,6 +79,19 @@ deps:
     mayDependOn:
       - bus
   application:
+    mayDependOn:
+      - testfx
+    anyVendorDeps: true
+
+  # Test fixtures — may wire real infrastructure for integration tests.
+  # Any layer that has tests can import them.
+  testfx:
+    mayDependOn:
+      - database
+      - security
+      - config
+      - sqlite_base
+      - sqlite_repos
     anyVendorDeps: true
 
   # Infrastructure – závisí na domain
