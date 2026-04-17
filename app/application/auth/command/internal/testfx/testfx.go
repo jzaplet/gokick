@@ -15,6 +15,8 @@ import (
 	"gokick/app/infrastructure/security"
 	sqlitetoken "gokick/app/infrastructure/sqlite/token"
 	sqliteuser "gokick/app/infrastructure/sqlite/user"
+
+	"github.com/google/uuid"
 )
 
 type Fixture struct {
@@ -78,4 +80,46 @@ func (f *Fixture) AssertTokenCount(t *testing.T, want int) {
 	if got != want {
 		t.Fatalf("refresh_tokens count: got %d want %d", got, want)
 	}
+}
+
+// SeedUser persists a user with the given nickname/password/role and returns the entity.
+func (f *Fixture) SeedUser(t *testing.T, nickname, password, role string) *user.User {
+	t.Helper()
+	hash, err := f.Hasher.Hash(password)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	nn, err := user.NewNickname(nickname)
+	if err != nil {
+		t.Fatalf("nickname: %v", err)
+	}
+	r, err := user.NewRole(role)
+	if err != nil {
+		t.Fatalf("role: %v", err)
+	}
+	u := user.NewUser(nn, hash, nickname+"@example.com", r)
+	if err := f.Users.Save(context.Background(), u); err != nil {
+		t.Fatalf("save user: %v", err)
+	}
+	return u
+}
+
+// SeedRefreshToken persists a refresh token for the user and returns the raw (unhashed) value.
+func (f *Fixture) SeedRefreshToken(t *testing.T, userID string, expiresAt time.Time) string {
+	t.Helper()
+	raw, hash, _, err := f.Jwt.GenerateRefreshToken()
+	if err != nil {
+		t.Fatalf("generate refresh: %v", err)
+	}
+	rt := &token.RefreshToken{
+		ID:        uuid.New().String(),
+		UserID:    userID,
+		TokenHash: hash,
+		ExpiresAt: expiresAt,
+		CreatedAt: time.Now(),
+	}
+	if err := f.Tokens.Save(context.Background(), rt); err != nil {
+		t.Fatalf("save token: %v", err)
+	}
+	return raw
 }

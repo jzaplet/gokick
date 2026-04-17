@@ -81,6 +81,10 @@ func (s *JwtService) RefreshExpiration() time.Duration {
 	return s.refreshExpiration
 }
 
+func (*JwtService) HashRefreshToken(raw string) string {
+	return HashToken(raw)
+}
+
 func HashToken(raw string) string {
 	h := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(h[:])

@@ -9,29 +9,16 @@ import (
 
 	"gokick/app/application/auth/command/internal/testfx"
 	"gokick/app/domain/shared"
-	"gokick/app/domain/user"
 )
 
 func TestLoginHandler_Success(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_success.db"))
-
-	// Seed user
-	const rawPassword = "super-secret"
-	hash, err := fx.Hasher.Hash(rawPassword)
-	if err != nil {
-		t.Fatalf("hash: %v", err)
-	}
-	nickname, _ := user.NewNickname("alice")
-	role, _ := user.NewRole("user")
-	u := user.NewUser(nickname, hash, "alice@example.com", role)
-	if err := fx.Users.Save(ctx, u); err != nil {
-		t.Fatalf("save user: %v", err)
-	}
+	u := fx.SeedUser(t, "alice", "super-secret", "user")
 
 	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
 
-	result, err := handler.Handle(ctx, LoginCommand{Nickname: "alice", Password: rawPassword})
+	result, err := handler.Handle(ctx, LoginCommand{Nickname: "alice", Password: "super-secret"})
 	if err != nil {
 		t.Fatalf("login: %v", err)
 	}
@@ -52,7 +39,6 @@ func TestLoginHandler_Success(t *testing.T) {
 		t.Fatal("expected refresh token to expire in the future")
 	}
 
-	// Refresh token must be persisted
 	stored, err := fx.Tokens.FindByHash(ctx, fx.HashToken(result.RefreshToken))
 	if err != nil {
 		t.Fatalf("find token: %v", err)
@@ -68,22 +54,14 @@ func TestLoginHandler_Success(t *testing.T) {
 func TestLoginHandler_WrongPassword(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_wrong_pwd.db"))
-
-	hash, _ := fx.Hasher.Hash("correct-password")
-	nickname, _ := user.NewNickname("bob")
-	role, _ := user.NewRole("user")
-	u := user.NewUser(nickname, hash, "bob@example.com", role)
-	_ = fx.Users.Save(ctx, u)
+	fx.SeedUser(t, "bob", "correct-password", "user")
 
 	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
 
 	_, err := handler.Handle(ctx, LoginCommand{Nickname: "bob", Password: "wrong-password"})
-	if err == nil {
-		t.Fatal("expected auth error")
-	}
 	var authErr *shared.AuthError
 	if !errors.As(err, &authErr) {
-		t.Fatalf("expected *shared.AuthError, got %T", err)
+		t.Fatalf("expected *shared.AuthError, got %T: %v", err, err)
 	}
 }
 
@@ -94,29 +72,20 @@ func TestLoginHandler_UnknownUser(t *testing.T) {
 	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
 
 	_, err := handler.Handle(ctx, LoginCommand{Nickname: "ghost", Password: "anything"})
-	if err == nil {
-		t.Fatal("expected auth error")
-	}
 	var authErr *shared.AuthError
 	if !errors.As(err, &authErr) {
-		t.Fatalf("expected *shared.AuthError, got %T", err)
+		t.Fatalf("expected *shared.AuthError, got %T: %v", err, err)
 	}
 }
 
 func TestLoginHandler_NoRefreshTokenOnFailure(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_no_token_on_fail.db"))
-
-	hash, _ := fx.Hasher.Hash("right")
-	nickname, _ := user.NewNickname("charlie")
-	role, _ := user.NewRole("user")
-	u := user.NewUser(nickname, hash, "charlie@example.com", role)
-	_ = fx.Users.Save(ctx, u)
+	fx.SeedUser(t, "charlie", "right", "user")
 
 	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
 
 	_, _ = handler.Handle(ctx, LoginCommand{Nickname: "charlie", Password: "wrong"})
 
-	// No tokens should have been persisted
 	fx.AssertTokenCount(t, 0)
 }
