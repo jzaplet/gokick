@@ -6,7 +6,7 @@ slug: 'framework-domain-entities'
 parent: 'framework-domain'
 navTitle: 'Entity & Value Objects'
 title: 'Entity & Value Objects'
-description: 'Doménové entity (User, RefreshToken) a value objects (Nickname, Role).'
+description: 'Doménové entity (User, RefreshToken) a value objects (Nickname, Role, Email, Password).'
 ---
 
 # Entity & Value Objects
@@ -37,12 +37,12 @@ type User struct {
     UpdatedAt    time.Time `db:"updated_at"`
 }
 
-func NewUser(nickname Nickname, passwordHash string, email string, role Role) *User {
+func NewUser(nickname Nickname, passwordHash string, email Email, role Role) *User {
     return &User{
         ID:           uuid.New().String(),
         Nickname:     string(nickname),
         PasswordHash: passwordHash,
-        Email:        email,
+        Email:        string(email),
         Role:         string(role),
         Active:       true,
         CreatedAt:    time.Now(),
@@ -51,7 +51,7 @@ func NewUser(nickname Nickname, passwordHash string, email string, role Role) *U
 }
 ```
 
-Factory `NewUser` přijímá value objects (`Nickname`, `Role`) -- pokud se caller dostal až sem, data jsou validní.
+Factory `NewUser` přijímá value objects (`Nickname`, `Email`, `Role`) -- pokud se caller dostal až sem, data jsou validní. `passwordHash` je odvozený stav (produkt `PasswordHasher`), ne doménový koncept -- raw heslo se validuje přes `Password` VO těsně před hashováním.
 
 
 ### RefreshToken entity
@@ -117,13 +117,63 @@ func NewRole(s string) (Role, error) {
 ```
 
 
+### Email value object
+
+Žije v `domain/user/user_email.go`. Minimální validace: prázdnost, maximální délka, přítomnost `@`. Striktnější kontrolu (regex, DNS MX lookup) záměrně nedělá -- uživatel přijde na řadu při prvním odeslání mailu.
+
+```go
+package user
+
+type Email string
+
+func NewEmail(s string) (Email, error) {
+    if s == "" {
+        return "", &shared.ValidationError{Field: "email", Message: "email je povinný"}
+    }
+    if len(s) > 254 {
+        return "", &shared.ValidationError{Field: "email", Message: "email max 254 znaků"}
+    }
+    if !strings.Contains(s, "@") {
+        return "", &shared.ValidationError{Field: "email", Message: "neplatný formát emailu"}
+    }
+    return Email(s), nil
+}
+```
+
+
+### Password value object
+
+Žije v `domain/user/user_password.go`. Validuje **raw** heslo před hashingem -- na už uložený hash se nevztahuje (login jen porovnává).
+
+```go
+package user
+
+type Password string
+
+func NewPassword(s string) (Password, error) {
+    if s == "" {
+        return "", &shared.ValidationError{Field: "password", Message: "heslo je povinné"}
+    }
+    if len(s) < 8 {
+        return "", &shared.ValidationError{Field: "password", Message: "heslo musí mít aspoň 8 znaků"}
+    }
+    if len(s) > 128 {
+        return "", &shared.ValidationError{Field: "password", Message: "heslo max 128 znaků"}
+    }
+    return Password(s), nil
+}
+```
+
+Používá se v `CreateUserCommand` (při registraci) a `ChangePasswordCommand` (při změně hesla). `LoginCommand` ho **nepoužívá** -- ten jen porovnává se stored hashem, nevaliduje pravidla (jinak by změna pravidel zamkla existující účty).
+
+
 ## Detaily
 
 ### Kde žije validace
 
 | Typ | Kde | Příklad |
 |---|---|---|
-| Formát, povinná pole | Value objects (`NewNickname`, `NewRole`) | `NewNickname("")` -> `ValidationError` |
+| Formát, povinná pole | Value objects (`NewNickname`, `NewRole`, `NewEmail`, `NewPassword`) | `NewNickname("")` -> `ValidationError` |
 | Business pravidla s I/O | Command handler | Unique nickname (repo lookup) |
 | Oprávnění | Bus `AuthorizeMiddleware` | `Permissioned` interface |
 | Záchranná síť | SQL constraints | `UNIQUE`, `CHECK` |

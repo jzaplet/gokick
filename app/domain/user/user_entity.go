@@ -17,12 +17,12 @@ type User struct {
 	UpdatedAt    time.Time `db:"updated_at"`
 }
 
-func NewUser(nickname Nickname, passwordHash string, email string, role Role) *User {
+func NewUser(nickname Nickname, passwordHash string, email Email, role Role) *User {
 	return &User{
 		ID:           uuid.New().String(),
 		Nickname:     string(nickname),
 		PasswordHash: passwordHash,
-		Email:        email,
+		Email:        string(email),
 		Role:         string(role),
 		Active:       true,
 		CreatedAt:    time.Now(),

@@ -103,6 +103,37 @@ func TestChangePasswordHandler_UnknownUser(t *testing.T) {
 	}
 }
 
+func TestChangePasswordHandler_InvalidNewPassword(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "pwd_invalid_new.db"))
+	u := fx.SeedUser(t, "alice", "old-password", "user")
+	originalHash := u.PasswordHash
+
+	authCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{
+		UserID: u.ID, Role: u.Role, Nickname: u.Nickname,
+	})
+
+	handler := NewChangePasswordHandler(fx.Users, fx.Hasher)
+	err := handler.Handle(authCtx, ChangePasswordCommand{
+		OldPassword: "old-password",
+		NewPassword: "short",
+	})
+
+	var ve *shared.ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("expected *shared.ValidationError, got %T: %v", err, err)
+	}
+	if ve.Field != "password" {
+		t.Fatalf("expected field=password, got %s", ve.Field)
+	}
+
+	// Password must remain unchanged.
+	reloaded, _ := fx.Users.FindByID(ctx, u.ID)
+	if reloaded.PasswordHash != originalHash {
+		t.Fatal("password hash must not change on invalid new password")
+	}
+}
+
 func TestChangePasswordCommand_RequiredPermission(t *testing.T) {
 	if got := (ChangePasswordCommand{}).RequiredPermission(); got != "profile:update" {
 		t.Fatalf("expected permission profile:update, got %q", got)

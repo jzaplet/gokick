@@ -40,7 +40,7 @@ func (h *SendWelcomeEmailHandler) Handle(ctx context.Context, event user.UserCre
 ```go
 func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) error {
     // ... business logika ...
-    u := user.NewUser(nickname, hash, cmd.Email, role)
+    u := user.NewUser(nickname, hash, email, role)
 
     h.events.Collect(user.UserCreated{
         UserID: u.ID, Nickname: u.Nickname, Email: u.Email,

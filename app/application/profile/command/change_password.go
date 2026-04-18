@@ -41,7 +41,12 @@ func (h *ChangePasswordHandler) Handle(ctx context.Context, cmd ChangePasswordCo
 		return &shared.AuthError{Message: "current password is incorrect"}
 	}
 
-	newHash, err := h.password.Hash(cmd.NewPassword)
+	newPassword, err := user.NewPassword(cmd.NewPassword)
+	if err != nil {
+		return err
+	}
+
+	newHash, err := h.password.Hash(string(newPassword))
 	if err != nil {
 		return err
 	}

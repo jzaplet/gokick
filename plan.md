@@ -70,8 +70,8 @@ Izolované testy používají real sqlite (`:memory:` nebo `t.TempDir()`), real 
 
 ## Fáze 7: Admin CRUD
 
-- [ ] **Task 17** — `application/user/command/create_user.go` + handler (Permissioned `admin:users:create`): Validate → Hash → Save → Collect `UserCreated`
-  - Test: real sqlite + collector → user exists + event collected
+- [x] **Task 17** — `application/user/command/create_user.go` + handler (Permissioned `admin:users:create`): Validate VO (nickname, role) → check not-empty (password, email) → check duplicate nickname → hash → save → collect `UserCreated`
+  - 7 testů: success / duplicate-nickname (no event) / empty-nickname / invalid-role / empty-password / empty-email / required-permission
 - [ ] **Task 18** — `application/user/command/update_user.go` + handler
   - Test: seed + update → changes persist
 - [ ] **Task 19** — `application/user/command/delete_user.go` + handler — refuse self-delete
@@ -133,6 +133,6 @@ Izolované testy používají real sqlite (`:memory:` nebo `t.TempDir()`), real 
 
 ## Progress
 
-**Hotovo:** 12 / 38 tasků — celá Fáze 6 Backend ✓
+**Hotovo:** 16 / 38 tasků — celá Fáze 6 (Backend + Frontend) ✓
 
-**Další:** Task 13 — Frontend 401 retry v useFetch (+ router guards, LoginView, ProfileView)
+**Další:** Fáze 7 — Admin CRUD (Task 17+)

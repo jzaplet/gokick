@@ -51,6 +51,14 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
     if err != nil {
         return err
     }
+    password, err := user.NewPassword(cmd.Password)
+    if err != nil {
+        return err
+    }
+    email, err := user.NewEmail(cmd.Email)
+    if err != nil {
+        return err
+    }
 
     // 2. Business pravidlo (I/O)
     existing, _ := h.repo.FindByNickname(ctx, string(nickname))
@@ -59,11 +67,11 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
     }
 
     // 3. Vytvoření entity + zápis
-    hash, err := h.password.Hash(cmd.Password)
+    hash, err := h.password.Hash(string(password))
     if err != nil {
         return err
     }
-    u := user.NewUser(nickname, hash, cmd.Email, role)
+    u := user.NewUser(nickname, hash, email, role)
     return h.repo.Save(ctx, u)
 }
 ```

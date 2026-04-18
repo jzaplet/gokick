@@ -149,7 +149,11 @@ func (f *Fixture) SeedUser(t *testing.T, nickname, password, role string) *user.
 	if err != nil {
 		t.Fatalf("role: %v", err)
 	}
-	u := user.NewUser(nn, hash, nickname+"@example.com", r)
+	em, err := user.NewEmail(nickname + "@example.com")
+	if err != nil {
+		t.Fatalf("email: %v", err)
+	}
+	u := user.NewUser(nn, hash, em, r)
 	if err := f.Users.Save(context.Background(), u); err != nil {
 		t.Fatalf("save user: %v", err)
 	}
