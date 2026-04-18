@@ -48,8 +48,13 @@ Izolované testy používají real sqlite (`:memory:` nebo `t.TempDir()`), real 
   - `Auth/`: 7 single-purpose souborů (state, login, logout, refresh, permissions, authFetch, useAuth) + index
   - `authFetch` = apiFetch + 401 retry + single-flight coalescing; skip pro `/api/v1/auth/*`
   - Testy: `tests/fetch/apiFetch.test.ts` (7) + `tests/auth/authFetch.test.ts` (5 integration, mock jen fetch)
-- [ ] **Task 14** — `router.ts` — guards `requiresAuth`, `requiresRole`; toast + redirect na login
-  - Test: create router → isAuth=false → navigate → expect redirect na /login
+- [x] **Task 14** — `router.ts` — `authGuard` + povinné `meta.requiresAuth` (mirror backendu Permissioned/SkipPermission)
+  - `AppRoute` type forces explicit `meta.requiresAuth: true|false` — TS nepustí route bez deklarace
+  - Runtime fail-closed pro bypass (missing meta → redirect /home + error toast)
+  - Redirect na `/login` s `?redirect=<path>`, toasty (info / error), admin shortcut přes `hasPermission`
+  - Stubs: `LoginView.vue`, `ProfileView.vue`, `AdminUsersView.vue` (Task 15/16/25 rozšíří)
+  - Production routes: `/` + `/login` (public), `/profile` (auth), `/admin/users` (auth + permission)
+  - 8 testů v `tests/router/authGuard.test.ts` (memory history + isolated state)
 - [ ] **Task 15** — `app/Auth/Views/LoginView.vue` — form, volá `login()`, redirect na `/`
 - [ ] **Task 16** — `app/Profile/Views/ProfileView.vue` — user data + "změnit heslo" form
 
