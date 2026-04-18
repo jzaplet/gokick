@@ -81,8 +81,16 @@ func HandleError(w http.ResponseWriter, err error)
 ```
 
 - `JSON()` -- serializuje `data` do JSON a nastaví `Content-Type` + status code.
-- `Error()` -- zapíše chybovou odpověď s explicitním status kódem.
-- `HandleError()` -- automaticky mapuje error na správný HTTP status.
+- `Error()` -- zapíše chybovou odpověď `{ "message": "..." }` s explicitním status kódem.
+- `HandleError()` -- automaticky mapuje error na správný HTTP status + volá `Error()`.
+
+**Error response shape** (jednotný napříč všemi endpointy):
+
+```json
+{ "message": "invalid credentials" }
+```
+
+Frontend typy (`AuthError`, custom `TError` v `apiFetch<TData, TError>`) se musí trefit do `{ message: string }` — viz `assets/app-ui/Auth/types/AuthError.ts`.
 
 ### HTTPError interface
 

@@ -227,8 +227,24 @@ wire.Bind(new(shared.Seeder), new(*sqlite.Seeder))
 - Break long `d` attribute values across multiple lines (max 120 chars per line)
 
 **Registration in router:**
-- Views are route components registered in `assets/router.ts`
-- SPA with Vue Router (`<RouterView />`)
+- Every route must declare `meta.requiresAuth: true|false` — enforced via `AppRoute` type. Mirrors backend `Permissioned`/`SkipPermission` rule.
+- Protected routes: `{ requiresAuth: true }`; admin: `{ requiresAuth: true, requiresPermission: 'x:y:z' }`.
+- Routes live in `assets/router/routes.ts`, guard in `assets/router/authGuard.ts`.
+
+**Forms, requests & errors:**
+- Use `reactive` for form + errors (both typed as plain structs), `ref` for `isLoading`.
+- Errors shape: all fields `string` (empty = no error) — avoids `undefined` with `exactOptionalPropertyTypes`.
+  ```typescript
+  type LoginErrors = { general: string; nickname: string; password: string };
+  ```
+- Clear field error on edit via `@update:model-value="() => clearFieldError('nickname')"`.
+- Requests:
+  - **Protected endpoints** → `authFetch<Data, Error>('POST', '/api/v1/...', { body })` from `@/app-ui/Auth`.
+  - **Public endpoints** → `apiFetch<Data, Error>` from `@/app-ui/Fetch`.
+- Response error shape (backend `response.Error()` serializes): `{ "message": "..." }`.
+  - Match with `type AuthError = { message: string }` — no `{ error: "..." }` shapes on frontend.
+- Submit flow: reset errors → call → `result.success === false` → set errors (field-level / general) → toast; on success → toast + redirect.
+- Never validate on the frontend — backend is authoritative.
 
 ## Development Flow
 
