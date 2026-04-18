@@ -55,7 +55,11 @@ Izolované testy používají real sqlite (`:memory:` nebo `t.TempDir()`), real 
   - Stubs: `LoginView.vue`, `ProfileView.vue`, `AdminUsersView.vue` (Task 15/16/25 rozšíří)
   - Production routes: `/` + `/login` (public), `/profile` (auth), `/admin/users` (auth + permission)
   - 8 testů v `tests/router/authGuard.test.ts` (memory history + isolated state)
-- [ ] **Task 15** — `app/Auth/Views/LoginView.vue` — form, volá `login()`, redirect na `/`
+- [x] **Task 15** — `app/Auth/Views/LoginView.vue` — form nickname + password, volá `login()`
+  - Error state: zpráva z response do `Input` error slotu + error toast
+  - Redirect: `?redirect` query (z guardu) nebo `/`
+  - Success toast "Vítej zpátky, {nickname}"
+  - Loading state: disabled form + spinner v tlačítku
 - [ ] **Task 16** — `app/Profile/Views/ProfileView.vue` — user data + "změnit heslo" form
 
 ---
