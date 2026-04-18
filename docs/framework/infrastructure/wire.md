@@ -35,23 +35,28 @@ app/infrastructure/di/
 
 | Kategorie | Providery |
 |---|---|
-| **Config** | `config.LoadConfig` |
+| **Config** | `config.LoadConfig`, `provideCookieSecure` (-> `handler.CookieSecure`) |
 | **Database** | `database.NewSqliteManager`, `database.NewMigrationManager` |
-| **Security** | `security.NewJwtService`, `providePasswordHasher` (-> `shared.PasswordHasher`), `providePermissionChecker` (-> `shared.PermissionChecker`) |
-| **Bus** | `provideCommandBus`, `provideQueryBus`, `provideEventBus` |
+| **Security** | `security.NewJwtService`, `providePasswordHasher` (-> `shared.PasswordHasher`), `providePermissionChecker` (-> `shared.PermissionChecker`), `providePermissionsRegistry` (-> `*shared.PermissionsRegistry`) |
+| **Bus** | `provideCommandBus`, `provideQueryBus`, `provideEventBus`, `provideEventCollector` |
 | **Repositories** | `sqliteuser.NewRepository`, `sqlitetoken.NewRepository`, `sqlite.NewSeeder` |
-| **HTTP** | `handler.NewHealthHandler`, `server.NewServer` |
-| **CLI** | `console.NewServeCommand`, `console.NewRootCommand` |
+| **Auth handlery** | `authcmd.NewLoginHandler`, `authcmd.NewRefreshTokenHandler`, `authcmd.NewLogoutHandler` |
+| **Profile handlery** | `profilecmd.NewChangePasswordHandler`, `profileqry.NewGetProfileHandler` |
+| **HTTP** | `handler.NewHealthHandler`, `handler.NewSPAHandler`, `handler.NewAuthHandler`, `handler.NewProfileHandler`, `server.NewServer`, `providePublicFS` |
+| **CLI** | `console.NewServeCommand`, `console.NewSeedCommand`, `console.NewRootCommand` |
 
 ### Interface binding
 
 Wire nepropojí interface automaticky -- je potřeba explicitní `wire.Bind`:
 
 ```go
+wire.Bind(new(shared.JwtService), new(*security.JwtService))
 wire.Bind(new(user.Repository), new(*sqliteuser.Repository))
+wire.Bind(new(token.TokenRepository), new(*sqlitetoken.Repository))
+wire.Bind(new(shared.Seeder), new(*sqlite.Seeder))
 ```
 
-Provider funkce pro doménové interfaces:
+Provider funkce pro doménové interfaces (kde constructor vrací konkrétní typ):
 
 ```go
 func providePasswordHasher() shared.PasswordHasher { return security.NewPasswordHasher() }

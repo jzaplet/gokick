@@ -29,10 +29,14 @@ func NewJwtService(cfg *config.Config) (*JwtService, error)
 func (s *JwtService) GenerateAccessToken(claims *shared.AuthClaims) (string, time.Duration, error)
 func (s *JwtService) ValidateAccessToken(tokenString string) (*shared.AuthClaims, error)
 func (s *JwtService) GenerateRefreshToken() (raw string, hash string, expiresAt time.Time, err error)
+func (s *JwtService) HashRefreshToken(raw string) string
 ```
+
+Implementuje `shared.JwtService` interface.
 
 - **Access token**: HS256-signed JWT, obsahuje `sub` (UserID), `role`, `nickname`. Vrací podepsaný string a dobu platnosti.
 - **Refresh token**: `crypto/rand.Text()` (Go 1.24+) generuje náhodný raw token. Do DB se ukládá SHA-256 hash, klientovi se posílá raw hodnota.
+- `HashRefreshToken(raw)` zhashuje raw token — používá se při validaci příchozího tokenu z cookie (nalezení v DB přes hash).
 - `ValidateAccessToken` vrací `*shared.AuthClaims` nebo `*shared.AuthError`.
 
 ### PasswordHasher
@@ -64,18 +68,21 @@ func (c *PermissionChecker) Check(ctx context.Context, permission string) error
 
 Implementuje `shared.PermissionChecker`. Logika:
 
-1. Pokud v contextu nejsou `AuthClaims` -- vrátí `AuthError` ("authentication required").
-2. Role `admin` -- plný přístup, všechny permissions povoleny.
-3. Role `user` -- permissions s prefixem `admin:` jsou zamítnuty.
+1. Pokud v contextu nejsou `AuthClaims` -- vrátí `AuthError` 401 ("authentication required").
+2. Delegate na `shared.IsPermissionAllowedForRole(permission, role)`:
+   - Role `admin` -- plný přístup, všechny permissions povoleny.
+   - Ostatní role -- permissions s prefixem `admin:` jsou zamítnuty.
+3. Když role nesedí -- vrátí `PermissionError` 403 ("insufficient permissions").
 
-Používá ho `AuthorizeMiddleware` v busu.
+Používá ho `AuthorizeMiddleware` v busu. Stejný helper `IsPermissionAllowedForRole` používá i `PermissionsRegistry.ForRole` pro sestavení seznamu povolených permissions pro frontend.
 
 ## Detaily
 
 - `JwtService` vyžaduje `APP_JWT_SECRET` -- `NewJwtService` vrací error pokud chybí.
-- Refresh token hash funkce `HashToken(raw)` je exportovaná -- používá se i při validaci refresh tokenu.
-- Wire binduje `PasswordHasher` a `PermissionChecker` na doménové interfaces přes provider funkce v `container_provider.go`:
+- Wire binduje `*security.JwtService` na `shared.JwtService` interface přes `wire.Bind`. `PasswordHasher` a `PermissionChecker` se bindují přes provider funkce vracející interface typ:
   ```go
+  wire.Bind(new(shared.JwtService), new(*security.JwtService))
+
   func providePasswordHasher() shared.PasswordHasher { return security.NewPasswordHasher() }
   func providePermissionChecker() shared.PermissionChecker { return security.NewPermissionChecker() }
   ```

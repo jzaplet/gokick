@@ -6,7 +6,7 @@ slug: 'framework-domain-interfaces'
 parent: 'framework-domain'
 navTitle: 'Interfaces'
 title: 'Interfaces'
-description: 'Repository a service interfaces -- user.Repository, PasswordHasher, PermissionChecker, Transactor.'
+description: 'Repository a service interfaces -- user.Repository, PasswordHasher, PermissionChecker, JwtService, Transactor, PermissionsRegistry.'
 ---
 
 # Interfaces
@@ -52,12 +52,13 @@ package token
 type TokenRepository interface {
     Save(ctx context.Context, token *RefreshToken) error
     FindByHash(ctx context.Context, hash string) (*RefreshToken, error)
+    MarkUsed(ctx context.Context, hash string) error
     DeleteByUserID(ctx context.Context, userID string) error
     DeleteExpired(ctx context.Context) error
 }
 ```
 
-Implementace: `infrastructure/sqlite/token/token_repository.go`
+Implementace: `infrastructure/sqlite/token/token_repository.go`. `MarkUsed` je klíčový pro rotaci refresh tokenů s theft detection — viz [Auth guide](/guides/auth).
 
 
 ### Service interfaces
@@ -100,7 +101,42 @@ type PermissionChecker interface {
 
 Každý command/query MUSÍ implementovat buď `Permissioned`, nebo `SkipPermission`. Bus `AuthorizeMiddleware` to vynucuje -- pokud command neimplementuje ani jeden, vrátí error.
 
-Implementace checkeru: `infrastructure/security/security_permission.go`
+Implementace checkeru: `infrastructure/security/security_permission.go`. Checker delegate na sdílený helper `shared.IsPermissionAllowedForRole(permission, role)`, který definuje pravidlo "admin má vše, ostatní role nemají `admin:*`". Stejný helper používá i `PermissionsRegistry`.
+
+
+#### JwtService
+
+Žije v `domain/shared/jwt.go`:
+
+```go
+package shared
+
+type JwtService interface {
+    GenerateAccessToken(claims *AuthClaims) (token string, expiresIn time.Duration, err error)
+    ValidateAccessToken(token string) (*AuthClaims, error)
+    GenerateRefreshToken() (raw string, hash string, expiresAt time.Time, err error)
+    HashRefreshToken(raw string) string
+}
+```
+
+Implementace: `infrastructure/security/security_jwt.go` (`*security.JwtService`). Bindingu se děje přes `wire.Bind(new(shared.JwtService), new(*security.JwtService))`. Používá se v `AuthMiddleware`, `LoginHandler`, `RefreshTokenHandler`.
+
+
+#### PermissionsRegistry
+
+Žije v `domain/shared/permissions_registry.go`:
+
+```go
+package shared
+
+type PermissionsRegistry struct { /* interní: sorted, deduplicated list */ }
+
+func NewPermissionsRegistry(items []Permissioned) *PermissionsRegistry
+func (r *PermissionsRegistry) All() []string
+func (r *PermissionsRegistry) ForRole(role string) []string
+```
+
+Sbírá `RequiredPermission()` od všech command/query handlerů implementujících `Permissioned`. Wire provider ji sestavuje v `container_provider.go` — při každém novém Permissioned handleru se přidá instance do slice. `ForRole` filtruje podle stejné logiky jako `PermissionChecker`. HTTP handlery (Login, Profile) ji injektují a plní `user.permissions` v response. Viz [Permissions guide](/guides/permissions).
 
 
 #### Transactor

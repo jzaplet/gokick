@@ -30,22 +30,22 @@ Server používá stdlib `net/http.ServeMux` s Go 1.22+ pattern routingem. Routy
 | POST | `/api/v1/auth/refresh` | Obnovení tokenu |
 | GET | `/{path...}` | SPA fallback |
 
-**Chráněné (JWT Bearer):**
+**Chráněné (JWT Bearer + `AuthMiddleware` wrap):**
 
-| Metoda | Route | Popis |
-|---|---|---|
-| POST | `/api/v1/auth/logout` | Odhlášení |
-| GET | `/api/v1/profile` | Profil |
-| PUT | `/api/v1/profile/password` | Změna hesla |
+| Metoda | Route | Command/Query | Permission |
+|---|---|---|---|
+| POST | `/api/v1/auth/logout` | `LogoutCommand` | `auth:logout` |
+| GET | `/api/v1/profile` | `GetProfileQuery` | `profile:read` |
+| PUT | `/api/v1/profile/password` | `ChangePasswordCommand` | `profile:update` |
 
-**Admin (JWT Bearer + admin role):**
+**Admin (plánováno — Fáze 7):**
 
-| Metoda | Route | Popis |
-|---|---|---|
-| GET | `/api/v1/admin/users` | Seznam uživatelů |
-| POST | `/api/v1/admin/users` | Vytvoření |
-| PUT | `/api/v1/admin/users/{id}` | Editace |
-| DELETE | `/api/v1/admin/users/{id}` | Smazání |
+| Metoda | Route | Command/Query | Permission |
+|---|---|---|---|
+| GET | `/api/v1/admin/users` | `ListUsersQuery` | `admin:users:read` |
+| POST | `/api/v1/admin/users` | `CreateUserCommand` | `admin:users:create` |
+| PUT | `/api/v1/admin/users/{id}` | `UpdateUserCommand` | `admin:users:update` |
+| DELETE | `/api/v1/admin/users/{id}` | `DeleteUserCommand` | `admin:users:delete` |
 
 ### SPA fallback
 
