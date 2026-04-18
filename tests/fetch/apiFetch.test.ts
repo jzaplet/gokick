@@ -1,11 +1,11 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { apiFetch, setAccessToken } from '@/app-ui/Fetch/useFetch';
+import { apiFetch, setAccessToken } from '@/app-ui/Fetch';
 
 type HealthResponse = {
     status: string;
 };
 
-describe('useFetch', () => {
+describe('apiFetch', () => {
     beforeEach((): void => {
         setAccessToken(null);
         vi.restoreAllMocks();
@@ -96,5 +96,18 @@ describe('useFetch', () => {
         const requestInit = fetchSpy.mock.calls[0]?.[1];
 
         expect(requestInit?.body).toBe('{"nickname":"admin","password":"secret"}');
+    });
+
+    it('does NOT retry on 401 (that is authFetch responsibility)', async (): Promise<void> => {
+        const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+            new Response(JSON.stringify({ message: 'expired' }), { status: 401 }),
+        );
+
+        setAccessToken('stale');
+        const result = await apiFetch<HealthResponse>('GET', '/api/v1/profile');
+
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+        expect(result.success).toBe(false);
+        expect(result.status).toBe(401);
     });
 });

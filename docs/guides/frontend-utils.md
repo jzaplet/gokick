@@ -6,92 +6,101 @@ slug: 'guides-frontend-utils'
 parent: 'guides'
 navTitle: 'Frontend Utils'
 title: 'Frontend Utils'
-description: 'Composables (useFetch, useAuth) a sdílené UI komponenty (Toast, Modals).'
+description: 'Přehled všech frontend utilit — fetch, auth, toast, modals.'
 ---
 
 # Frontend Utils
 
+Rychlý přehled co je k dispozici a odkud to importovat.
 
-## useFetch
+| Utilita | Import | Kdy použít |
+|---|---|---|
+| [`apiFetch`](#apifetch) | `@/app-ui/Fetch` | Public endpoint (`/health`, bez JWT) |
+| [`authFetch`](#authfetch) | `@/app-ui/Auth` | Protected API — auto-refresh na 401 |
+| [`apiUpload`](#apiupload) | `@/app-ui/Fetch` | Upload souboru s progress |
+| [`apiDownload`](#apidownload) | `@/app-ui/Fetch` | Download souboru (browser dialog) |
+| [`useAuth`](#useauth) | `@/app-ui/Auth` | Session state, login/logout, permissions |
+| [`useToast`](#usetoast) | `@/app-ui/Toast/useToast` | Notifikace |
+| [`Modal`](#modal), [`ConfirmModal`](#confirmmodal) | `@/app-ui/Modals/*` | Dialogy |
 
-Generický HTTP klient s typovanou response. Vždy se píše celá URL.
+
+## apiFetch
 
 ```typescript
-import { apiFetch, apiUpload, apiDownload } from '@/app-ui/Fetch/useFetch';
+import { apiFetch } from '@/app-ui/Fetch';
 
-// GET
 const result = await apiFetch<HealthResponse>('GET', '/health');
-
-// POST s body
 const result = await apiFetch<LoginResponse>('POST', '/api/v1/auth/login', {
     body: { nickname: 'admin', password: 'secret' },
 });
+const result = await apiFetch<UserList, ValidationError>('GET', '/api/v1/users');
 
-// Discriminated union response
-if (result.success === true) {
-    result.data;   // HealthResponse
-}
-if (result.success === false) {
-    result.data;   // { message: string } (default) nebo vlastní TError
-}
+if (result.success === true) { result.data; }
+if (result.success === false) { result.data; /* { message: string } default */ }
+```
 
-// Custom error typ
-const result = await apiFetch<UserList, ValidationError>('GET', '/api/v1/admin/users');
+Automaticky přidává `Authorization: Bearer` header pokud je nastaven token. **Neretrí na 401** — pro to použij `authFetch`.
 
-// Upload s progress
+
+## authFetch
+
+```typescript
+import { authFetch } from '@/app-ui/Auth';
+
+const result = await authFetch<UserProfile>('GET', '/api/v1/profile');
+```
+
+Stejné API jako `apiFetch`, navíc při 401 automaticky zavolá `refresh()` a request zopakuje s novým tokenem. Paralelní 401 sdílí jedno volání `/auth/refresh`. Skip pro `/api/v1/auth/*` (login/refresh/logout se neretrají).
+
+
+## apiUpload
+
+```typescript
+import { apiUpload } from '@/app-ui/Fetch';
+
 const result = await apiUpload<UploadResult>('/api/v1/files', formData, (stats) => {
     stats.percent;  // 0-100
     stats.loaded;   // bytes
     stats.total;    // bytes
 });
-
-// Download souboru (spustí browser download dialog)
-const result = await apiDownload('/api/v1/exports/report.csv', 'report.csv');
-// result: { success: true, status: 200, filename: 'report-2026-04.csv' }
-// filename se parsuje z Content-Disposition headeru, fallback na druhý parametr
 ```
 
-Všechny tři funkce automaticky přidávají `Authorization: Bearer` header když je nastaven token.
+
+## apiDownload
+
+```typescript
+import { apiDownload } from '@/app-ui/Fetch';
+
+const result = await apiDownload('/api/v1/exports/report.csv', 'report.csv');
+// result: { success: true, status: 200, filename: 'report-2026-04.csv' }
+```
+
+Filename z `Content-Disposition`, fallback na druhý parametr.
 
 
 ## useAuth
 
-Composable pro autentizaci, role a permissions.
-
 ```typescript
-import { useAuth } from '@/app-ui/Auth/useAuth';
+import { useAuth } from '@/app-ui/Auth';
 
 const {
-    user,              // Ref<AuthUser | null>
-    isAuthenticated,   // Ref<boolean>
+    user,              // Readonly<Ref<AuthUser | null>>
+    isAuthenticated,   // Readonly<Ref<boolean>>
     login,             // (credentials) => Promise<ApiResponse>
     logout,            // () => Promise<void>
     refresh,           // () => Promise<boolean>
-    hasRole,           // (role: string) => boolean
+    hasRole,           // (role) => boolean
     isAdmin,           // () => boolean
-    hasPermission,     // (permission: string) => boolean
-    hasAllPermissions, // (permissions: string[]) => boolean
-    hasAnyPermission,  // (permissions: string[]) => boolean
+    hasPermission,     // (permission) => boolean
+    hasAllPermissions, // (permissions[]) => boolean
+    hasAnyPermission,  // (permissions[]) => boolean
 } = useAuth();
 ```
-
-| Metoda | Popis |
-|---|---|
-| `login(credentials)` | POST login, uloží token, naplánuje auto-refresh |
-| `logout()` | POST logout, vyčistí token + stav |
-| `refresh()` | POST refresh, obnoví token nebo vyčistí stav |
-| `hasRole(role)` | Kontrola role uživatele |
-| `isAdmin()` | Shortcut pro `hasRole('admin')` |
-| `hasPermission(p)` | Admin má vždy true, jinak hledá v `permissions[]` |
-| `hasAllPermissions(ps)` | Všechny permissions musí být splněny |
-| `hasAnyPermission(ps)` | Stačí jedna permission |
 
 Auto-refresh běží 30s před expirací access tokenu.
 
 
-## Toast
-
-Globální notifikace. `ToastContainer` je v root `App.vue`, stačí volat funkce.
+## useToast
 
 ```typescript
 import { useToast } from '@/app-ui/Toast/useToast';
@@ -106,15 +115,18 @@ clear();                       // smaže všechny toasty
 ```
 
 
-## Modals
-
-Dva typy — obecný `Modal` a potvrzovací `ConfirmModal`.
+## Modal
 
 ```html
 <Modal :show="isOpen" title="Detail" @close="isOpen = false">
     <p>Obsah modalu</p>
 </Modal>
+```
 
+
+## ConfirmModal
+
+```html
 <ConfirmModal
     :show="isConfirmOpen"
     title="Smazat?"

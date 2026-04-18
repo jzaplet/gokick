@@ -42,8 +42,12 @@ Izolované testy používají real sqlite (`:memory:` nebo `t.TempDir()`), real 
 
 ### Frontend
 
-- [ ] **Task 13** — `app-ui/Fetch/useFetch.ts` — 401 retry: call `/refresh` → retry original → logout při selhání
-  - Test: fetch spy — první volání 401, druhé 200 → expect 2 calls + retry
+- [x] **Task 13** — 401 auto-refresh + retry
+  - Refactor Fetch/Auth na jednosměrné vrstvy (Fetch → Auth → Views), odstraněn auth bridge
+  - `Fetch/`: 6 single-purpose souborů (apiFetch, apiUpload, apiDownload, accessToken, buildHeaders, parseResponse) + index
+  - `Auth/`: 7 single-purpose souborů (state, login, logout, refresh, permissions, authFetch, useAuth) + index
+  - `authFetch` = apiFetch + 401 retry + single-flight coalescing; skip pro `/api/v1/auth/*`
+  - Testy: `tests/fetch/apiFetch.test.ts` (7) + `tests/auth/authFetch.test.ts` (5 integration, mock jen fetch)
 - [ ] **Task 14** — `router.ts` — guards `requiresAuth`, `requiresRole`; toast + redirect na login
   - Test: create router → isAuth=false → navigate → expect redirect na /login
 - [ ] **Task 15** — `app/Auth/Views/LoginView.vue` — form, volá `login()`, redirect na `/`

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted } from 'vue';
-import { apiFetch } from '@/app-ui/Fetch/useFetch';
+import { apiFetch } from '@/app-ui/Fetch';
 import { useToast } from '@/app-ui/Toast/useToast';
 
 const { success, error } = useToast();

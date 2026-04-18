@@ -90,8 +90,8 @@ project/
 │   ├── app/                          # Aplikační komponenty (po doménách)
 │   │   └── <Domain>/Views/           # Views pro danou doménu
 │   └── app-ui/                       # Sdílené UI komponenty a composables
-│       ├── Auth/                     # useAuth + typy (AuthUser, LoginRequest, ...)
-│       ├── Fetch/                    # useFetch, apiUpload, apiDownload + typy (ApiResponse, ...)
+│       ├── Auth/                     # useAuth, authFetch, state, login/logout/refresh, permissions + typy
+│       ├── Fetch/                    # apiFetch, apiUpload, apiDownload, accessToken, parseResponse + typy
 │       ├── Buttons/                  # Button
 │       ├── Icons/                    # SVG ikony
 │       ├── Inputs/                   # Input, Select, CheckBox, DateTimeInput
