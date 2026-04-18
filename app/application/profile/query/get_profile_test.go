@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"gokick/app/application/internal/testfx"
 	"gokick/app/domain/shared"
+	"gokick/app/internal/testfx"
 )
 
 func TestGetProfileHandler_Success(t *testing.T) {

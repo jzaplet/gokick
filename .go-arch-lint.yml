@@ -121,6 +121,7 @@ deps:
     mayDependOn:
       - security
       - response
+      - testfx
   response:
     anyVendorDeps: true
   server:

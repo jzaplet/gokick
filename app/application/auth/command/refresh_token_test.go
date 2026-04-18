@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"gokick/app/application/internal/testfx"
 	"gokick/app/domain/shared"
+	"gokick/app/internal/testfx"
 )
 
 func TestRefreshTokenHandler_Success(t *testing.T) {

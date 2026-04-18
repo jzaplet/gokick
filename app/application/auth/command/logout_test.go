@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"gokick/app/application/internal/testfx"
 	"gokick/app/domain/shared"
+	"gokick/app/internal/testfx"
 )
 
 func TestLogoutHandler_DeletesAllUserTokens(t *testing.T) {
