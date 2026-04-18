@@ -8,8 +8,11 @@ package di
 
 import (
 	"gokick/app"
+	"gokick/app/application/auth/command"
 	"gokick/app/application/bus"
 	"gokick/app/application/bus/middleware"
+	command2 "gokick/app/application/profile/command"
+	"gokick/app/application/profile/query"
 	"gokick/app/domain/shared"
 	"gokick/app/infrastructure/config"
 	"gokick/app/infrastructure/database"
@@ -32,31 +35,40 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 	if err != nil {
 		return nil, err
 	}
-	healthHandler := handler.NewHealthHandler()
-	fs := providePublicFS()
-	spaHandler := handler.NewSPAHandler(fs)
-	serverServer := server.NewServer(configConfig, logger, healthHandler, spaHandler)
-	serveCommand := console.NewServeCommand(serverServer)
-	sqliteManager, err := database.NewSqliteManager(configConfig)
-	if err != nil {
-		return nil, err
-	}
-	repository := user.NewRepository(sqliteManager)
-	passwordHasher := providePasswordHasher()
-	seeder := sqlite.NewSeeder(repository, passwordHasher, logger)
-	seedCommand := console.NewSeedCommand(seeder)
-	rootCommand := console.NewRootCommand(serveCommand, seedCommand)
-	migrationManager := database.NewMigrationManager(sqliteManager, logger)
-	eventCollector := provideEventCollector()
-	permissionChecker := providePermissionChecker()
-	eventBus := provideEventBus(logger)
-	commandBus := provideCommandBus(logger, sqliteManager, eventCollector, permissionChecker, eventBus)
-	queryBus := provideQueryBus(logger, permissionChecker)
 	jwtService, err := security.NewJwtService(configConfig)
 	if err != nil {
 		return nil, err
 	}
+	healthHandler := handler.NewHealthHandler()
+	fs := providePublicFS()
+	spaHandler := handler.NewSPAHandler(fs)
+	cookieSecure := provideCookieSecure(configConfig)
+	sqliteManager, err := database.NewSqliteManager(configConfig)
+	if err != nil {
+		return nil, err
+	}
+	eventCollector := provideEventCollector()
+	permissionChecker := providePermissionChecker()
+	eventBus := provideEventBus(logger)
+	commandBus := provideCommandBus(logger, sqliteManager, eventCollector, permissionChecker, eventBus)
+	repository := user.NewRepository(sqliteManager)
 	tokenRepository := token.NewRepository(sqliteManager)
+	passwordHasher := providePasswordHasher()
+	loginHandler := command.NewLoginHandler(repository, tokenRepository, passwordHasher, jwtService)
+	refreshTokenHandler := command.NewRefreshTokenHandler(repository, tokenRepository, jwtService)
+	logoutHandler := command.NewLogoutHandler(tokenRepository)
+	permissionsRegistry := providePermissionsRegistry()
+	authHandler := handler.NewAuthHandler(cookieSecure, commandBus, loginHandler, refreshTokenHandler, logoutHandler, permissionsRegistry)
+	queryBus := provideQueryBus(logger, permissionChecker)
+	getProfileHandler := query.NewGetProfileHandler(repository)
+	changePasswordHandler := command2.NewChangePasswordHandler(repository, passwordHasher)
+	profileHandler := handler.NewProfileHandler(commandBus, queryBus, getProfileHandler, changePasswordHandler, permissionsRegistry)
+	serverServer := server.NewServer(configConfig, logger, jwtService, healthHandler, spaHandler, authHandler, profileHandler)
+	serveCommand := console.NewServeCommand(serverServer)
+	seeder := sqlite.NewSeeder(repository, passwordHasher, logger)
+	seedCommand := console.NewSeedCommand(seeder)
+	rootCommand := console.NewRootCommand(serveCommand, seedCommand)
+	migrationManager := database.NewMigrationManager(sqliteManager, logger)
 	application := app.NewApplication(rootCommand, migrationManager, commandBus, queryBus, eventBus, jwtService, tokenRepository)
 	return application, nil
 }
@@ -95,4 +107,17 @@ func providePublicFS() fs.FS {
 
 func provideEventBus(logger *slog.Logger) *bus.EventBus {
 	return bus.NewEventBus(middleware.RecoveryMiddleware(logger), middleware.LoggingMiddleware(logger))
+}
+
+// provideCookieSecure extracts the boolean flag so handler.NewAuthHandler
+// does not need to import the config package.
+func provideCookieSecure(cfg *config.Config) handler.CookieSecure {
+	return handler.CookieSecure(cfg.CookieSecure)
+}
+
+// providePermissionsRegistry collects RequiredPermission() values from every
+// command/query handler that is Permissioned. Adding a new handler requires
+// adding it here too — there is no other permission list in the codebase.
+func providePermissionsRegistry() *shared.PermissionsRegistry {
+	return shared.NewPermissionsRegistry([]shared.Permissioned{command.LogoutCommand{}, command2.ChangePasswordCommand{}, query.GetProfileQuery{}})
 }

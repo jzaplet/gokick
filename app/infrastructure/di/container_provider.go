@@ -4,8 +4,11 @@ package di
 
 import (
 	app "gokick/app"
+	authcmd "gokick/app/application/auth/command"
 	"gokick/app/application/bus"
 	busmw "gokick/app/application/bus/middleware"
+	profilecmd "gokick/app/application/profile/command"
+	profileqry "gokick/app/application/profile/query"
 	"gokick/app/domain/shared"
 	"gokick/app/domain/token"
 	"gokick/app/domain/user"
@@ -72,6 +75,23 @@ func provideEventBus(logger *slog.Logger) *bus.EventBus {
 	)
 }
 
+// provideCookieSecure extracts the boolean flag so handler.NewAuthHandler
+// does not need to import the config package.
+func provideCookieSecure(cfg *config.Config) handler.CookieSecure {
+	return handler.CookieSecure(cfg.CookieSecure)
+}
+
+// providePermissionsRegistry collects RequiredPermission() values from every
+// command/query handler that is Permissioned. Adding a new handler requires
+// adding it here too — there is no other permission list in the codebase.
+func providePermissionsRegistry() *shared.PermissionsRegistry {
+	return shared.NewPermissionsRegistry([]shared.Permissioned{
+		authcmd.LogoutCommand{},
+		profilecmd.ChangePasswordCommand{},
+		profileqry.GetProfileQuery{},
+	})
+}
+
 func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 	wire.Build(
 		config.LoadConfig,
@@ -83,16 +103,26 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 		provideCommandBus,
 		provideQueryBus,
 		provideEventBus,
+		provideCookieSecure,
+		providePermissionsRegistry,
 		security.NewJwtService,
+		wire.Bind(new(shared.JwtService), new(*security.JwtService)),
 		wire.Bind(new(user.Repository), new(*sqliteuser.Repository)),
 		wire.Bind(new(token.TokenRepository), new(*sqlitetoken.Repository)),
 		wire.Bind(new(shared.Seeder), new(*sqlite.Seeder)),
 		sqliteuser.NewRepository,
 		sqlitetoken.NewRepository,
 		sqlite.NewSeeder,
+		authcmd.NewLoginHandler,
+		authcmd.NewRefreshTokenHandler,
+		authcmd.NewLogoutHandler,
+		profilecmd.NewChangePasswordHandler,
+		profileqry.NewGetProfileHandler,
 		providePublicFS,
 		handler.NewSPAHandler,
 		handler.NewHealthHandler,
+		handler.NewAuthHandler,
+		handler.NewProfileHandler,
 		server.NewServer,
 		console.NewServeCommand,
 		console.NewSeedCommand,

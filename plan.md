@@ -32,9 +32,13 @@ Izolované testy používají real sqlite (`:memory:` nebo `t.TempDir()`), real 
   - `testfx.NewBuses()` helper — produkčně nakonfigurovaný stack busů
   - Arch-lint: `deepScan: false` (false positives v DI wiringu v testfx)
   - 8 E2E testů (real bus + real SQLite): login success / invalid creds / malformed JSON / refresh valid cookie / refresh missing cookie / refresh invalid cookie clears / logout no-claims 401 / logout with claims 204
-- [ ] **Task 10** — `presentation/http/server/server.go` — routy `/api/v1/auth/*`
-- [ ] **Task 11** — `infrastructure/di/container_provider.go` — Wire providers, bind `shared.JwtService` na `*security.JwtService`
-- [ ] **Task 12** — LoginHandler + GetProfileHandler response obohatit o `permissions: []string` z Registry
+- [x] **Task 10** — ProfileHandler (Get, ChangePassword) + server registrace všech rout
+  - `presentation/http/handler/profile.go` — Get vrací userDTO s permissions, ChangePassword 204
+  - `server.go` — public routy + protected (JWT AuthMiddleware wrap) + SPA fallback
+  - 7 E2E testů (get success user / get success admin / get no-claims 401 / change success / change wrong-old 401 / change malformed 400 / change no-claims 401)
+- [x] **Task 11** — Wire DI: všechny auth/profile handlery, `CookieSecure` typed flag, `PermissionsRegistry` provider, `shared.JwtService` binding
+  - `make dev` sestaví binárku, `./bin/app serve` nastartuje, curl smoke test login→profile→logout prošel end-to-end
+- [x] **Task 12** — Permissions v response (už hotové v Task 9/10: `registry.ForRole(role)` přímo v HTTP handleru)
 
 ### Frontend
 
@@ -112,6 +116,6 @@ Izolované testy používají real sqlite (`:memory:` nebo `t.TempDir()`), real 
 
 ## Progress
 
-**Hotovo:** 9 / 38 tasků (Task 1, 2, 3, 4, 5, 6, 7, 8, 9)
+**Hotovo:** 12 / 38 tasků — celá Fáze 6 Backend ✓
 
-**Další:** Task 10 — Server registrace auth rout
+**Další:** Task 13 — Frontend 401 retry v useFetch (+ router guards, LoginView, ProfileView)
