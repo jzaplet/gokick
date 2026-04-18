@@ -72,6 +72,23 @@ func (*Fixture) HashToken(raw string) string {
 	return security.HashToken(raw)
 }
 
+// NewJwt returns a JwtService configured with the given access expiration.
+// Use when a test needs only JWT (no DB) or a non-default access expiry
+// (e.g. negative duration for expired-token scenarios).
+func NewJwt(t *testing.T, accessExp time.Duration) *security.JwtService {
+	t.Helper()
+	svc, err := security.NewJwtService(&config.Config{
+		JWTSecret:            "test-secret-32-chars-long-enough",
+		JWTAccessExpiration:  accessExp,
+		JWTRefreshExpiration: 7 * 24 * time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("jwt: %v", err)
+	}
+
+	return svc
+}
+
 // AssertTokenCount fails the test if the refresh_tokens row count differs from want.
 func (f *Fixture) AssertTokenCount(t *testing.T, want int) {
 	t.Helper()

@@ -19,7 +19,7 @@ func (c *PermissionChecker) Check(ctx context.Context, permission string) error 
 	}
 
 	if !shared.IsPermissionAllowedForRole(permission, claims.Role) {
-		return &shared.AuthError{Message: "insufficient permissions"}
+		return &shared.PermissionError{Message: "insufficient permissions"}
 	}
 
 	return nil
