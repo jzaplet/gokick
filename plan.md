@@ -60,7 +60,11 @@ Izolované testy používají real sqlite (`:memory:` nebo `t.TempDir()`), real 
   - Redirect: `?redirect` query (z guardu) nebo `/`
   - Success toast "Vítej zpátky, {nickname}"
   - Loading state: disabled form + spinner v tlačítku
-- [ ] **Task 16** — `app/Profile/Views/ProfileView.vue` — user data + "změnit heslo" form
+- [x] **Task 16** — `app/Profile/Views/ProfileView.vue` — user info + change password form
+  - Dvě karty: "Informace o účtu" (nickname, role) + "Změnit heslo" (old + new password)
+  - PUT `/api/v1/profile/password` přes `authFetch` s `{ old_password, new_password }`
+  - Error handling stejný pattern jako LoginView (errors object, clearFieldError, general error box)
+  - Úspěch: toast "Heslo bylo změněno." + reset formu
 
 ---
 

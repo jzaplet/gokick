@@ -186,7 +186,12 @@ wire.Bind(new(shared.Seeder), new(*sqlite.Seeder))
 
 ### Frontend (`assets/`)
 
-**Structure:** Domain-based organization — `assets/app/<Domain>/Views/`, `assets/app-ui/` for shared UI components.
+**Structure:** Domain-based organization:
+- `assets/app/<Domain>/Views/` — routed views (orchestrators only — layout + mount components)
+- `assets/app/<Domain>/Components/` — domain-specific, self-contained components (forms, cards, widgets)
+- `assets/app-ui/` — shared, generic components reusable across domains
+
+**Views are orchestrators.** Keep business logic out of `Views/` — a view mounts a few components, adds layout, maybe reads router/state for prop-passing. Forms live as `<Domain>/Components/XxxForm.vue`, display widgets as `XxxCard.vue`, etc.
 
 **Vue components:**
 - Use `<script setup lang="ts">` with proper TypeScript types

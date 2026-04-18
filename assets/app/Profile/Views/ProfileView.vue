@@ -1,20 +1,23 @@
 <script setup lang="ts">
 import { useAuth } from '@/app-ui/Auth';
+import UserInfoCard from '@/app/Profile/Components/UserInfoCard.vue';
+import ChangePasswordForm from '@/app/Profile/Components/ChangePasswordForm.vue';
 
 const { user } = useAuth();
 </script>
 
 <template>
-    <div class="flex flex-col items-center justify-center min-h-screen p-10 gap-4">
-        <h1 class="text-3xl font-bold text-gray-900">
-            Profil
-        </h1>
-        <div
-            v-if="user !== null"
-            class="text-gray-700"
-        >
-            <p>Nickname: {{ user.nickname }}</p>
-            <p>Role: {{ user.role }}</p>
+    <div class="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+        <div class="max-w-2xl mx-auto space-y-8">
+            <h1 class="text-3xl font-extrabold text-gray-900">
+                Profil
+            </h1>
+
+            <UserInfoCard
+                v-if="user !== null"
+                :user="user"
+            />
+            <ChangePasswordForm />
         </div>
     </div>
 </template>
