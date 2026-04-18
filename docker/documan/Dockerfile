@@ -1,13 +1,9 @@
 # syntax=docker/dockerfile:1
 # check=skip=SecretsUsedInArgOrEnv
-FROM jzaplet/documan:2.10.4
+FROM jzaplet/documan:2.13.0
 
-# Copy documentation source files into the image
 COPY ./docs /documan/data/docs
-COPY ./README.md /documan/data/README.md
 
-# Set working directory
-# Important for relative paths in DOCUMAN_DOCS_FILES or DOCUMAN_EXCLUDED_FILES
 WORKDIR /documan/data
 
 # Configure your project
@@ -18,18 +14,21 @@ ENV DOCUMAN_HTTP_PORT=3000
 ENV DOCUMAN_OPENAI_EMBEDDING_MODEL='text-embedding-3-small'
 ENV DOCUMAN_CHUNK_MAX_LEN=250
 
-# Build-time args for PaaS platforms (e.g., EasyPanel) that pass secrets via --build-arg
-# Locally, Docker secrets are used instead (mounted at /run/secrets/)
 ARG DOCUMAN_LICENSE_KEY=''
 ARG DOCUMAN_OPENAI_API_KEY=''
 
-# Validate markdown files - checks for broken links, invalid frontmatter, etc.
-# Fails the build if any issues are found
-RUN /documan/bin/documan lint
+# Set to "true" to skip lint, import, and vectorize during build.
+# Useful for first-time setup when docs may not have valid frontmatter yet.
+ARG SKIP_BUILD_STEPS=false
 
-# Import docs (license key optional - needed for >100 files)
+# Validate markdown files — checks for broken links, invalid frontmatter, etc.
+# Fails the build if any issues are found
+RUN if [ "$SKIP_BUILD_STEPS" = "false" ]; then /documan/bin/documan lint; fi
+
+# Import docs (license key optional — needed for >100 files)
 # Uses Docker secret if available, otherwise falls back to ARG
 RUN --mount=type=secret,id=DOCUMAN_LICENSE_KEY,required=false \
+    if [ "$SKIP_BUILD_STEPS" = "true" ]; then exit 0; fi && \
     if [ -f /run/secrets/DOCUMAN_LICENSE_KEY ]; then \
       export DOCUMAN_LICENSE_KEY=$(cat /run/secrets/DOCUMAN_LICENSE_KEY); \
     fi && \
@@ -38,6 +37,7 @@ RUN --mount=type=secret,id=DOCUMAN_LICENSE_KEY,required=false \
 # Vectorize docs (only runs if OpenAI API key is provided)
 # Uses Docker secret if available, otherwise falls back to ARG
 RUN --mount=type=secret,id=DOCUMAN_OPENAI_API_KEY,required=false \
+    if [ "$SKIP_BUILD_STEPS" = "true" ]; then exit 0; fi && \
     if [ -f /run/secrets/DOCUMAN_OPENAI_API_KEY ]; then \
       export DOCUMAN_OPENAI_API_KEY=$(cat /run/secrets/DOCUMAN_OPENAI_API_KEY); \
     fi && \
