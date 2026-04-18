@@ -25,7 +25,7 @@ func NewSPAHandler(publicFS fs.FS) *SPAHandler {
 	}
 }
 
-func (h *SPAHandler) Handle(w http.ResponseWriter, r *http.Request) {
+func (h *SPAHandler) Serve(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 
 	// Try serving static file first (JS, CSS, assets)

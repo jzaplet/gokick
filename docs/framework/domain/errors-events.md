@@ -6,7 +6,7 @@ slug: 'framework-domain-errors-events'
 parent: 'framework-domain'
 navTitle: 'Errors & Events'
 title: 'Errors & Events'
-description: 'Doménové error typy (ValidationError, AuthError) a domain events s EventCollector.'
+description: 'Doménové error typy (ValidationError, AuthError, PermissionError) a domain events s EventCollector.'
 ---
 
 # Errors & Events
@@ -45,7 +45,7 @@ nickname, err := user.NewNickname("")
 
 ### AuthError
 
-Nedostatečná oprávnění. Žije v `domain/shared/errors.go`.
+Nejsi autentizován (chybějící / neplatné / expirované credentials). Mapuje na HTTP 401.
 
 ```go
 type AuthError struct {
@@ -53,10 +53,26 @@ type AuthError struct {
 }
 
 func (e *AuthError) Error() string   { return e.Message }
-func (e *AuthError) HTTPStatus() int { return 403 }
+func (e *AuthError) HTTPStatus() int { return 401 }
 ```
 
-Použití v `PermissionChecker` implementaci a bus `AuthorizeMiddleware`.
+Použití: JWT middleware (neplatný Bearer), command handlery (neznámý login, expirovaný refresh token, missing claims).
+
+
+### PermissionError
+
+Jsi autentizován, ale nemáš právo na danou operaci. Mapuje na HTTP 403.
+
+```go
+type PermissionError struct {
+    Message string
+}
+
+func (e *PermissionError) Error() string   { return e.Message }
+func (e *PermissionError) HTTPStatus() int { return 403 }
+```
+
+Použití: `PermissionChecker` v bus `AuthorizeMiddleware` (role nemá požadovanou permission), role guard middleware.
 
 
 ### DomainEvent interface
@@ -155,7 +171,8 @@ Doménové errory implementují `HTTPStatus() int` metodu implicitně (Go duck t
 | Error | Status | Kdy |
 |---|---|---|
 | `*shared.ValidationError` | 400 | Value object validace, business pravidla |
-| `*shared.AuthError` | 403 | Bus AuthorizeMiddleware, permission check |
+| `*shared.AuthError` | 401 | Chybí/neplatné/expirované credentials, missing claims |
+| `*shared.PermissionError` | 403 | Autentizován, ale nemá právo (role neodpovídá) |
 | Ostatní | 500 | Systémové chyby |
 
 ### Event konvence

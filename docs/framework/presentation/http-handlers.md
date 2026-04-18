@@ -21,6 +21,8 @@ Handlery jsou tenká vrstva mezi HTTP a doménou -- deserializují vstup, zavola
 
 Handler přijme request, dekóduje JSON body a dispatchne přes bus. Neimportuje `infrastructure/` -- autorizace a další průřezy probíhá v bus middleware.
 
+**Konvence pojmenování:** struct odpovídá zdroji/oblasti (`AdminUsersHandler`, `AuthHandler`, `HealthHandler`), metoda odpovídá akci (`Create`, `List`, `Login`, `Check`). Žádný `Handle*` prefix -- struct už říká, že jde o handler, metoda nese význam (akci).
+
 ```go
 // presentation/http/handler/admin_users.go
 
@@ -31,7 +33,7 @@ type AdminUsersHandler struct {
     listUsers  *query.ListUsersHandler
 }
 
-func (h *AdminUsersHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
+func (h *AdminUsersHandler) Create(w http.ResponseWriter, r *http.Request) {
     var cmd command.CreateUserCommand
     if err := json.NewDecoder(r.Body).Decode(&cmd); err != nil {
         response.HandleError(w, err)
@@ -48,7 +50,7 @@ func (h *AdminUsersHandler) HandleCreate(w http.ResponseWriter, r *http.Request)
     response.JSON(w, http.StatusCreated, nil)
 }
 
-func (h *AdminUsersHandler) HandleList(w http.ResponseWriter, r *http.Request) {
+func (h *AdminUsersHandler) List(w http.ResponseWriter, r *http.Request) {
     q := query.ListUsersQuery{}
     users, err := bus.Exec[[]user.User](r.Context(), h.queryBus.Bus, "ListUsers", q, func(ctx context.Context) ([]user.User, error) {
         return h.listUsers.Handle(ctx, q)
@@ -59,6 +61,15 @@ func (h *AdminUsersHandler) HandleList(w http.ResponseWriter, r *http.Request) {
     }
     response.JSON(w, http.StatusOK, users)
 }
+```
+
+Registrace rout čitelně odráží akci:
+
+```go
+mux.HandleFunc("POST /api/v1/admin/users", adminUsers.Create)
+mux.HandleFunc("GET /api/v1/admin/users", adminUsers.List)
+mux.HandleFunc("POST /api/v1/auth/login", auth.Login)
+mux.HandleFunc("GET /health", health.Check)
 ```
 
 - **Command (bez výsledku):** `bus.ExecVoid()` -- použít pro create, update, delete.

@@ -11,7 +11,7 @@ func NewHealthHandler() *HealthHandler {
 	return &HealthHandler{}
 }
 
-func (h *HealthHandler) Handle(w http.ResponseWriter, r *http.Request) {
+func (h *HealthHandler) Check(w http.ResponseWriter, _ *http.Request) {
 	response.JSON(w, http.StatusOK, map[string]string{
 		"status": "ok",
 	})

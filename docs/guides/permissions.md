@@ -64,7 +64,7 @@ Middleware `AuthorizeMiddleware` se spouští automaticky v command/query bus. P
 1. Pokud command implementuje `SkipPermission` → propustí.
 2. Pokud implementuje `Permissioned` → zavolá `PermissionChecker.Check(ctx, permission)`.
 3. Checker přečte `AuthClaims` z kontextu a volá `shared.IsPermissionAllowedForRole(permission, role)`.
-4. Když role nesedí → `*shared.AuthError` (HTTP 403).
+4. Když role nesedí → `*shared.PermissionError` (HTTP 403). Když nejsou claims → `*shared.AuthError` (HTTP 401).
 
 
 ## Seznam pro frontend

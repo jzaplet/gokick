@@ -100,9 +100,10 @@ Command Handler vrátí error
 Bus: Transaction -> ROLLBACK, DispatchEvents -> eventy zahozeny
   |
 HTTP Handler: response.HandleError(w, err)
-  -> ValidationError -> 400
-  -> AuthError -> 403
-  -> jiný error -> 500
+  -> ValidationError  -> 400
+  -> AuthError        -> 401
+  -> PermissionError  -> 403
+  -> jiný error       -> 500
 ```
 
 

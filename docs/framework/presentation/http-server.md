@@ -95,11 +95,11 @@ type HTTPError interface {
 
 `HandleError` kontroluje, zda error implementuje `HTTPError`:
 
-- **Ano** -- použije `HTTPStatus()` (např. 400, 403).
+- **Ano** -- použije `HTTPStatus()` (např. 400, 401, 403).
 - **Ne** -- vrátí 500 Internal Server Error.
 
 ## Detaily
 
-- Domain error typy (`ValidationError`, `AuthError`) implementují `HTTPError` implicitně (duck typing). `ValidationError` vrací 400, `AuthError` vrací 403. Žádný import mezi `response/` a `domain/`.
+- Domain error typy (`ValidationError` 400, `AuthError` 401, `PermissionError` 403) implementují `HTTPError` implicitně (duck typing). Žádný import mezi `response/` a `domain/`. Detaily viz [Errors & Events](/framework/domain/errors-events).
 - Server struct drží `*http.ServeMux`, middleware chain a `Start()` metodu, která spustí `http.ListenAndServe`.
 - Response balíček nemá žádné závislosti kromě stdlib.

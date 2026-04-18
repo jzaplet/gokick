@@ -32,10 +32,10 @@ func NewServer(
 func (s *Server) Start() error {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /health", s.health.Handle)
+	mux.HandleFunc("GET /health", s.health.Check)
 
 	// SPA catch-all — must be last
-	mux.HandleFunc("GET /{path...}", s.spa.Handle)
+	mux.HandleFunc("GET /{path...}", s.spa.Serve)
 
 	chain := s.buildMiddlewareChain(mux)
 

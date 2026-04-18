@@ -49,7 +49,7 @@ go test ./app/infrastructure/security/ -run TestHash  # Single Go test
 
 ### Environment
 
-Copy `.env.example` to `.env`. Key vars: `APP_HTTP_PORT`, `APP_DB_PATH`, `APP_JWT_SECRET`, `APP_CORS_ORIGIN`, `APP_JWT_ACCESS_EXPIRATION`, `APP_JWT_REFRESH_EXPIRATION`.
+Copy `.env.example` to `.env`. Key vars: `APP_HTTP_PORT`, `APP_DB_PATH`, `APP_JWT_SECRET`, `APP_CORS_ORIGIN`, `APP_JWT_ACCESS_EXPIRATION`, `APP_JWT_REFRESH_EXPIRATION`, `APP_COOKIE_SECURE`. Full reference: [Config](docs/framework/infrastructure/config.md).
 
 ## Architecture
 
@@ -78,7 +78,7 @@ Bounded contexts in separate packages. **Never import between contexts** (e.g. `
 
 | Package | Contains |
 |---------|----------|
-| `domain/shared/` | `AuthClaims`, `ValidationError`, `AuthError`, `DomainEvent`, `EventCollector`, interfaces (`PasswordHasher`, `PermissionChecker`, `Transactor`, `Seeder`) |
+| `domain/shared/` | `AuthClaims`, `ValidationError`, `AuthError`, `PermissionError`, `DomainEvent`, `EventCollector`, `PermissionsRegistry`, interfaces (`PasswordHasher`, `PermissionChecker`, `JwtService`, `Transactor`, `Seeder`) |
 | `domain/user/` | `User` entity, `Nickname`/`Role` value objects, `Repository` interface, `UserCreated` event |
 | `domain/token/` | `RefreshToken` entity, `TokenRepository` interface |
 
@@ -180,7 +180,8 @@ wire.Bind(new(shared.Seeder), new(*sqlite.Seeder))
 
 **Error → HTTP mapping** (duck typing, no import between response/ and domain/):
 - `*shared.ValidationError` → 400
-- `*shared.AuthError` → 403
+- `*shared.AuthError` → 401 (not authenticated)
+- `*shared.PermissionError` → 403 (authenticated but not permitted)
 - Other errors → 500
 
 ### Frontend (`assets/`)
