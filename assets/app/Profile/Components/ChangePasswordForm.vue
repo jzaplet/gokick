@@ -12,9 +12,9 @@ type ChangePasswordFormData = {
 };
 
 type ChangePasswordErrors = {
-    general: string;
-    old_password: string;
-    new_password: string;
+    general?: string;
+    old_password?: string;
+    new_password?: string;
 };
 
 const { success } = useToast();
@@ -24,16 +24,12 @@ const form: ChangePasswordFormData = reactive({
     new_password: '',
 });
 
-const errors: ChangePasswordErrors = reactive({
-    general: '',
-    old_password: '',
-    new_password: '',
-});
-
+const errors = ref<ChangePasswordErrors>({});
 const isLoading = ref(false);
 
 const clearFieldError = (field: keyof ChangePasswordErrors): void => {
-    errors[field] = '';
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- optional key removal is the intended API
+    delete errors.value[field];
 };
 
 const resetForm = (): void => {
@@ -43,11 +39,9 @@ const resetForm = (): void => {
 
 const handleSubmit = async (): Promise<void> => {
     isLoading.value = true;
-    errors.general = '';
-    errors.old_password = '';
-    errors.new_password = '';
+    errors.value = {};
 
-    const result = await authFetch<null>(
+    const result = await authFetch<null, ChangePasswordErrors>(
         'PUT',
         '/api/v1/profile/password',
         { body: form },
@@ -56,7 +50,7 @@ const handleSubmit = async (): Promise<void> => {
     isLoading.value = false;
 
     if (result.success === false) {
-        errors.general = result.data.message;
+        errors.value = result.data;
 
         return;
     }

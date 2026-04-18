@@ -7,7 +7,7 @@ type Props = {
     type?: string;
     placeholder?: string;
     label?: string;
-    error?: string;
+    error?: string | undefined;
     required?: boolean;
     disabled?: boolean;
     name?: string;

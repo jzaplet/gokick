@@ -12,10 +12,12 @@ type LoginFormData = {
     password: string;
 };
 
+// general = non-field errors (auth, rate-limit, …)
+// nickname / password = ValidationError with matching Field
 type LoginErrors = {
-    general: string;
-    nickname: string;
-    password: string;
+    general?: string;
+    nickname?: string;
+    password?: string;
 };
 
 const router = useRouter();
@@ -28,29 +30,23 @@ const form: LoginFormData = reactive({
     password: '',
 });
 
-const errors: LoginErrors = reactive({
-    general: '',
-    nickname: '',
-    password: '',
-});
-
+const errors = ref<LoginErrors>({});
 const isLoading = ref(false);
 
 const clearFieldError = (field: keyof LoginErrors): void => {
-    errors[field] = '';
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- optional key removal is the intended API
+    delete errors.value[field];
 };
 
 const handleSubmit = async (): Promise<void> => {
     isLoading.value = true;
-    errors.general = '';
-    errors.nickname = '';
-    errors.password = '';
+    errors.value = {};
 
-    const result = await login(form);
+    const result = await login<LoginErrors>(form);
 
     if (result.success === false) {
         isLoading.value = false;
-        errors.general = result.data.message;
+        errors.value = result.data;
 
         return;
     }

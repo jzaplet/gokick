@@ -5,8 +5,9 @@ type ValidationError struct {
 	Message string
 }
 
-func (e *ValidationError) Error() string   { return e.Message }
-func (e *ValidationError) HTTPStatus() int { return 400 }
+func (e *ValidationError) Error() string      { return e.Message }
+func (e *ValidationError) HTTPStatus() int    { return 400 }
+func (e *ValidationError) ErrorField() string { return e.Field }
 
 // AuthError indicates the caller is not authenticated (no/invalid/expired credentials).
 // Maps to HTTP 401.

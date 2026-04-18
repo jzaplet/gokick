@@ -237,18 +237,34 @@ wire.Bind(new(shared.Seeder), new(*sqlite.Seeder))
 - Routes live in `assets/router/routes.ts`, guard in `assets/router/authGuard.ts`.
 
 **Forms, requests & errors:**
-- Use `reactive` for form + errors (both typed as plain structs), `ref` for `isLoading`.
-- Errors shape: all fields `string` (empty = no error) — avoids `undefined` with `exactOptionalPropertyTypes`.
+- `reactive` for form data, `ref<T>({})` for errors, `ref<boolean>` for `isLoading`.
+- Errors type: all fields optional (`?:`). Key absent = no error.
   ```typescript
-  type LoginErrors = { general: string; nickname: string; password: string };
+  type LoginErrors = { general?: string; nickname?: string; password?: string };
+  const errors = ref<LoginErrors>({});
   ```
-- Clear field error on edit via `@update:model-value="() => clearFieldError('nickname')"`.
+- Clear field error on edit:
+  ```typescript
+  const clearFieldError = (field: keyof LoginErrors): void => {
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- optional key removal is the intended API
+      delete errors.value[field];
+  };
+  ```
 - Requests:
-  - **Protected endpoints** → `authFetch<Data, Error>('POST', '/api/v1/...', { body })` from `@/app-ui/Auth`.
-  - **Public endpoints** → `apiFetch<Data, Error>` from `@/app-ui/Fetch`.
-- Response error shape (backend `response.Error()` serializes): `{ "message": "..." }`.
-  - Match with `type AuthError = { message: string }` — no `{ error: "..." }` shapes on frontend.
-- Submit flow: reset errors → call → `result.success === false` → set errors (field-level / general) → toast; on success → toast + redirect.
+  - **Protected endpoints** → `authFetch<Data, Errors>('POST', '/api/v1/...', { body })` from `@/app-ui/Auth`.
+  - **Public endpoints** → `apiFetch<Data, Errors>` from `@/app-ui/Fetch`.
+- **Backend error response shape** (via `response.Error()` + `FieldError` interface):
+  - `ValidationError{Field: "nickname"}` → `{ "nickname": "..." }` — routed to specific field.
+  - Any other error → `{ "general": "..." }`.
+- **Frontend error handling:** one-line merge.
+  ```typescript
+  const result = await login<LoginErrors>(form);
+  if (result.success === false) {
+      errors.value = result.data;   // server keys land in matching form fields
+      return;
+  }
+  ```
+- Submit flow: `errors.value = {}` → call → on failure `errors.value = result.data` → toast; on success → toast + redirect.
 - Never validate on the frontend — backend is authoritative.
 
 ## Development Flow

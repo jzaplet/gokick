@@ -7,12 +7,13 @@ import type { LoginResponse } from '@/app-ui/Auth/types/LoginResponse';
 import { isAuthenticated, scheduleRefresh, user } from '@/app-ui/Auth/state';
 import { refresh } from '@/app-ui/Auth/refresh';
 
-// POST /api/v1/auth/login — returns the full ApiResponse so the caller
-// (e.g. LoginView) can render backend validation messages on 401.
-export const login = async (
+// POST /api/v1/auth/login — generic TError lets callers supply their own
+// error shape (e.g. `{ general?; nickname?; password? }` in LoginForm).
+// No default: the caller must declare the error shape it wants to handle.
+export const login = async <TError extends AuthError>(
     credentials: LoginRequest,
-): Promise<ApiResponse<LoginResponse, AuthError>> => {
-    const result = await apiFetch<LoginResponse>('POST', '/api/v1/auth/login', {
+): Promise<ApiResponse<LoginResponse, TError>> => {
+    const result = await apiFetch<LoginResponse, TError>('POST', '/api/v1/auth/login', {
         body: credentials,
     });
 

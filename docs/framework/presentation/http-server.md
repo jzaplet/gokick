@@ -81,16 +81,30 @@ func HandleError(w http.ResponseWriter, err error)
 ```
 
 - `JSON()` -- serializuje `data` do JSON a nastaví `Content-Type` + status code.
-- `Error()` -- zapíše chybovou odpověď `{ "message": "..." }` s explicitním status kódem.
+- `Error()` -- zapíše chybovou odpověď. Pokud error implementuje `FieldError` (např. `*shared.ValidationError` s vyplněným polem), použije jeho název jako klíč v JSON; jinak "general".
 - `HandleError()` -- automaticky mapuje error na správný HTTP status + volá `Error()`.
 
-**Error response shape** (jednotný napříč všemi endpointy):
+**Error response shape** — key-based, každý error má jeden klíč:
 
 ```json
-{ "message": "invalid credentials" }
+// ValidationError{Field: "nickname", Message: "..."}
+{ "nickname": "nickname je povinný" }
+
+// AuthError / PermissionError / systémové chyby
+{ "general": "invalid credentials" }
 ```
 
-Frontend typy (`AuthError`, custom `TError` v `apiFetch<TData, TError>`) se musí trefit do `{ message: string }` — viz `assets/app-ui/Auth/types/AuthError.ts`.
+Frontend definuje vlastní typ a přiřazuje celé tělo přímo do reactive errors:
+
+```typescript
+type LoginErrors = { general?: string; nickname?: string; password?: string };
+const errors = ref<LoginErrors>({});
+
+// on failure:
+errors.value = result.data;  // server key (general / nickname / …) mapuje na formulář
+```
+
+Detaily viz [Errors & Events](/framework/domain/errors-events) a [Frontend Utils](/guides/frontend-utils).
 
 ### HTTPError interface
 
