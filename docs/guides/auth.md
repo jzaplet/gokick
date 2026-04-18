@@ -81,8 +81,8 @@ Kompletní přehled všech `useAuth()` metod viz [Frontend Utils – useAuth](/g
 
 ## Session lifecycle
 
-1. **Otevření** → route guard → `refresh()` → tiché přihlášení nebo redirect na login
+1. **Otevření** → route guard → `refresh()` → tiché přihlášení nebo redirect na login _(plánováno — Task 14)_
 2. **Přihlášení** → access token + refresh cookie + `scheduleRefresh()`
 3. **Auto-refresh** → 30s před expirací → nový access token + rotace refresh tokenu
-4. **401 response** → TODO: auto-refresh v useFetch → retry nebo logout
+4. **401 response** → auto-refresh v useFetch → retry nebo logout _(plánováno — Task 13)_
 5. **Odhlášení** → smaže token z DB + cookie + paměť
