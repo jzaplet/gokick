@@ -26,6 +26,7 @@ APP_JWT_SECRET=min-32-chars-random-secret-key-here
 APP_JWT_ACCESS_EXPIRATION=15m
 APP_JWT_REFRESH_EXPIRATION=168h
 APP_CORS_ORIGIN=http://localhost:5173
+APP_COOKIE_SECURE=false
 ```
 
 ### Config struct
@@ -40,6 +41,7 @@ type Config struct {
     JWTAccessExpiration  time.Duration
     JWTRefreshExpiration time.Duration
     CORSOrigin           string
+    CookieSecure         bool
 }
 
 func LoadConfig() (*Config, error)
@@ -55,6 +57,19 @@ func LoadConfig() (*Config, error)
 | `APP_JWT_ACCESS_EXPIRATION` | `15m` | Životnost access tokenu |
 | `APP_JWT_REFRESH_EXPIRATION` | `168h` | Životnost refresh tokenu |
 | `APP_CORS_ORIGIN` | `http://localhost:5173` | Povolený CORS origin |
+| `APP_COOKIE_SECURE` | `true` | Posílat refresh cookie jen přes HTTPS (viz níže) |
 
 - `LoadConfig()` vrací error pokud `APP_JWT_SECRET` chybí -- je povinný.
 - Duration proměnné se parsují přes `time.ParseDuration`.
+- Bool proměnné parsují řetězec `"true"` jako `true`, vše ostatní jako `false`.
+
+### APP_COOKIE_SECURE
+
+Řídí `Secure` flag na refresh cookie, který prohlížeč používá pro `/api/v1/auth/refresh`.
+
+- `true` (produkce, default) — prohlížeč pošle cookie **jen přes HTTPS**. Nad HTTP se vůbec neodešle, refresh selže.
+- `false` (lokální vývoj) — cookie se posílá i přes plain HTTP. Nutné pro vývoj na `http://localhost` (Vite dev server + Go backend jsou oba HTTP).
+
+V `.env.example` je `false` kvůli dev workflow. V produkci **vždy** `true` + nasazení za TLS terminátor.
+
+Ostatní flagy cookie jsou hardcoded, protože nemá smysl je měnit: `HttpOnly=true` (nepřístupné z JS, obrana proti XSS), `SameSite=Strict` (nepošle se při cross-site requestu, obrana proti CSRF), `Path=/api/v1/auth` (posílá se jen na auth endpointy).

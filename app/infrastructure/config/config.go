@@ -15,16 +15,18 @@ type Config struct {
 	JWTAccessExpiration  time.Duration
 	JWTRefreshExpiration time.Duration
 	CORSOrigin           string
+	CookieSecure         bool
 }
 
 func LoadConfig() (*Config, error) {
 	_ = godotenv.Load()
 
 	config := &Config{
-		HTTPPort:   getEnv("APP_HTTP_PORT", "3000"),
-		DBPath:     getEnv("APP_DB_PATH", "./data/app.db"),
-		JWTSecret:  os.Getenv("APP_JWT_SECRET"),
-		CORSOrigin: getEnv("APP_CORS_ORIGIN", "http://localhost:5173"),
+		HTTPPort:     getEnv("APP_HTTP_PORT", "3000"),
+		DBPath:       getEnv("APP_DB_PATH", "./data/app.db"),
+		JWTSecret:    os.Getenv("APP_JWT_SECRET"),
+		CORSOrigin:   getEnv("APP_CORS_ORIGIN", "http://localhost:5173"),
+		CookieSecure: getEnv("APP_COOKIE_SECURE", "true") == "true",
 	}
 
 	var err error

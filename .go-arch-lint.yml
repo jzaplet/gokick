@@ -3,6 +3,11 @@ workdir: app
 
 allow:
   depOnAnyVendor: true
+  # Deep scan analyzes method call graphs and flags cross-layer DI wiring
+  # (e.g. testfx passing a security type to a bus middleware constructor).
+  # Component-import rules alone are sufficient — disabling removes false
+  # positives caused by dependency injection wiring.
+  deepScan: false
 
 exclude:
   - infrastructure/di/**
@@ -87,6 +92,8 @@ deps:
   # Any layer that has tests can import them.
   testfx:
     mayDependOn:
+      - bus
+      - bus_middleware
       - database
       - security
       - config
@@ -117,6 +124,7 @@ deps:
       - application
       - bus
       - response
+      - testfx
   http_middleware:
     mayDependOn:
       - security

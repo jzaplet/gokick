@@ -10,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"gokick/app/application/bus"
+	busmw "gokick/app/application/bus/middleware"
+	"gokick/app/domain/shared"
 	"gokick/app/domain/token"
 	"gokick/app/domain/user"
 	"gokick/app/infrastructure/config"
@@ -70,6 +73,36 @@ func New(t *testing.T, dbPath string) *Fixture {
 // HashToken returns the SHA-256 hex hash of the raw refresh token.
 func (*Fixture) HashToken(raw string) string {
 	return security.HashToken(raw)
+}
+
+// NewBuses wires a production-like CommandBus + QueryBus + EventBus with all
+// middleware (recovery, logging, authorize, transaction, dispatch events) and
+// a shared EventCollector. Logger is silent (io.Discard).
+func (f *Fixture) NewBuses() (*bus.CommandBus, *bus.QueryBus, *bus.EventBus, *shared.EventCollector) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	checker := security.NewPermissionChecker()
+	collector := shared.NewEventCollector()
+
+	eventBus := bus.NewEventBus(
+		busmw.RecoveryMiddleware(logger),
+		busmw.LoggingMiddleware(logger),
+	)
+
+	commandBus := bus.NewCommandBus(
+		busmw.RecoveryMiddleware(logger),
+		busmw.LoggingMiddleware(logger),
+		busmw.AuthorizeMiddleware(checker),
+		busmw.TransactionMiddleware(f.DB),
+		busmw.DispatchEventsMiddleware(logger, collector, eventBus),
+	)
+
+	queryBus := bus.NewQueryBus(
+		busmw.RecoveryMiddleware(logger),
+		busmw.LoggingMiddleware(logger),
+		busmw.AuthorizeMiddleware(checker),
+	)
+
+	return commandBus, queryBus, eventBus, collector
 }
 
 // NewJwt returns a JwtService configured with the given access expiration.
