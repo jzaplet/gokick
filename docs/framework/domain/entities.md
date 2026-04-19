@@ -21,7 +21,7 @@ Entity reprezentují doménové objekty s identitou. Value objects zajišťují,
 
 ### User entity
 
-Žije v `domain/user/user_entity.go`. Struct používá `db:"..."` tagy pro sqlx scanning.
+Žije v `domain/user/user.go`. Struct používá `db:"..."` tagy pro sqlx scanning.
 
 ```go
 package user
@@ -56,7 +56,7 @@ Factory `NewUser` přijímá value objects (`Nickname`, `Email`, `Role`) -- poku
 
 ### RefreshToken entity
 
-Žije v `domain/token/token_entity.go`.
+Žije v `domain/token/refresh_token.go`.
 
 ```go
 package token
@@ -73,7 +73,7 @@ type RefreshToken struct {
 
 ### Nickname value object
 
-Žije v `domain/user/user_nickname.go`.
+Žije v `domain/user/nickname.go`.
 
 ```go
 package user
@@ -94,7 +94,7 @@ func NewNickname(s string) (Nickname, error) {
 
 ### Role value object
 
-Žije v `domain/user/user_role.go`.
+Žije v `domain/user/role.go`.
 
 ```go
 package user
@@ -119,7 +119,7 @@ func NewRole(s string) (Role, error) {
 
 ### Email value object
 
-Žije v `domain/user/user_email.go`. Minimální validace: prázdnost, maximální délka, přítomnost `@`. Striktnější kontrolu (regex, DNS MX lookup) záměrně nedělá -- uživatel přijde na řadu při prvním odeslání mailu.
+Žije v `domain/user/email.go`. Minimální validace: prázdnost, maximální délka, přítomnost `@`. Striktnější kontrolu (regex, DNS MX lookup) záměrně nedělá -- uživatel přijde na řadu při prvním odeslání mailu.
 
 ```go
 package user
@@ -143,7 +143,7 @@ func NewEmail(s string) (Email, error) {
 
 ### Password value object
 
-Žije v `domain/user/user_password.go`. Validuje **raw** heslo před hashingem -- na už uložený hash se nevztahuje (login jen porovnává).
+Žije v `domain/user/password.go`. Validuje **raw** heslo před hashingem -- na už uložený hash se nevztahuje (login jen porovnává).
 
 ```go
 package user

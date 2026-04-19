@@ -44,11 +44,11 @@ Parametr `cmd any` umožňuje middleware introspekci -- např. type assert na `s
 
 | Middleware | Soubor | Popis |
 |---|---|---|
-| Recovery | `middleware_recovery.go` | Zachytí panic, zaloguje stack trace |
-| Logging | `middleware_logging.go` | Název handleru, trvání, trace ID |
-| Authorize | `middleware_authorize.go` | Type assert na `Permissioned` / `SkipPermission`, volá `PermissionChecker.Check()` |
-| Transaction | `middleware_transaction.go` | BeginTx / Commit / Rollback přes `shared.Transactor` interface |
-| DispatchEvents | `middleware_events.go` | Flush `EventCollector` po úspěšném commitu |
+| Recovery | `recovery.go` | Zachytí panic, zaloguje stack trace |
+| Logging | `logging.go` | Název handleru, trvání, trace ID |
+| Authorize | `authorize.go` | Type assert na `Permissioned` / `SkipPermission`, volá `PermissionChecker.Check()` |
+| Transaction | `transaction.go` | BeginTx / Commit / Rollback přes `shared.Transactor` interface |
+| DispatchEvents | `events.go` | Flush `EventCollector` po úspěšném commitu |
 
 ### Tři instance (Wire DI)
 
@@ -58,7 +58,7 @@ Parametr `cmd any` umožňuje middleware introspekci -- např. type assert na `s
 | `QueryBus` | Recovery - Logging - Authorize | Read operace |
 | `EventBus` | Recovery - Logging | Side-effects po commitu |
 
-Každý bus typ žije ve vlastním souboru (`bus_command.go`, `bus_query.go`, `bus_event.go`):
+Každý bus typ žije ve vlastním souboru (`command.go`, `query.go`, `event.go`):
 
 ```go
 type CommandBus struct{ *Bus }

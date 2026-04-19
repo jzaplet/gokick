@@ -91,7 +91,7 @@ type DomainEvent interface {
 
 ### Příklad eventu
 
-Žije v `domain/user/user_created_event.go`:
+Žije v `domain/user/user_created.go`:
 
 ```go
 package user

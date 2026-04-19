@@ -28,7 +28,7 @@ Validace je **server-side**. Frontend data nevaliduje, jen pošle a zobrazí, co
 Value Object je místo, kde pravidla žijí. Ne v handleru, ne ve formuláři.
 
 ```go
-// domain/user/user_nickname.go
+// domain/user/nickname.go
 func NewNickname(s string) (Nickname, error) {
     if s == "" {
         return "", &shared.ValidationError{Field: "nickname", Message: "nickname je povinný"}

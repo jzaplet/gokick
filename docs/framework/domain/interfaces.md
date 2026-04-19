@@ -23,7 +23,7 @@ Domain definuje _co_ systém umí, ne _jak_. Interfaces žijí v doméně, imple
 
 #### user.Repository
 
-Žije v `domain/user/user_repository.go`:
+Žije v `domain/user/repository.go`:
 
 ```go
 package user
@@ -39,12 +39,12 @@ type Repository interface {
 }
 ```
 
-Implementace: `infrastructure/sqlite/user/user_repository.go`
+Implementace: `infrastructure/sqlite/user/repository.go`
 
 
 #### token.TokenRepository
 
-Žije v `domain/token/token_repository.go`:
+Žije v `domain/token/repository.go`:
 
 ```go
 package token
@@ -58,7 +58,7 @@ type TokenRepository interface {
 }
 ```
 
-Implementace: `infrastructure/sqlite/token/token_repository.go`. `MarkUsed` je klíčový pro rotaci refresh tokenů s theft detection — viz [Auth guide](/guides/auth).
+Implementace: `infrastructure/sqlite/token/repository.go`. `MarkUsed` je klíčový pro rotaci refresh tokenů s theft detection — viz [Auth guide](/guides/auth).
 
 
 ### Service interfaces
@@ -76,7 +76,7 @@ type PasswordHasher interface {
 }
 ```
 
-Implementace: `infrastructure/security/security_password.go` (`security.PasswordHasher`). Používá SHA-256 prehash před bcrypt -- bcrypt truncuje vstup na 72 bytes, prehash zajistí že celý password je vždy zohledněn.
+Implementace: `infrastructure/security/password.go` (`security.PasswordHasher`). Používá SHA-256 prehash před bcrypt -- bcrypt truncuje vstup na 72 bytes, prehash zajistí že celý password je vždy zohledněn.
 
 
 #### PermissionChecker
@@ -101,7 +101,7 @@ type PermissionChecker interface {
 
 Každý command/query MUSÍ implementovat buď `Permissioned`, nebo `SkipPermission`. Bus `AuthorizeMiddleware` to vynucuje -- pokud command neimplementuje ani jeden, vrátí error.
 
-Implementace checkeru: `infrastructure/security/security_permission.go`. Checker delegate na sdílený helper `shared.IsPermissionAllowedForRole(permission, role)`, který definuje pravidlo "admin má vše, ostatní role nemají `admin:*`". Stejný helper používá i `PermissionsRegistry`.
+Implementace checkeru: `infrastructure/security/permission.go`. Checker delegate na sdílený helper `shared.IsPermissionAllowedForRole(permission, role)`, který definuje pravidlo "admin má vše, ostatní role nemají `admin:*`". Stejný helper používá i `PermissionsRegistry`.
 
 
 #### JwtService
@@ -119,7 +119,7 @@ type JwtService interface {
 }
 ```
 
-Implementace: `infrastructure/security/security_jwt.go` (`*security.JwtService`). Bindingu se děje přes `wire.Bind(new(shared.JwtService), new(*security.JwtService))`. Používá se v `AuthMiddleware`, `LoginHandler`, `RefreshTokenHandler`.
+Implementace: `infrastructure/security/jwt.go` (`*security.JwtService`). Bindingu se děje přes `wire.Bind(new(shared.JwtService), new(*security.JwtService))`. Používá se v `AuthMiddleware`, `LoginHandler`, `RefreshTokenHandler`.
 
 
 #### PermissionsRegistry

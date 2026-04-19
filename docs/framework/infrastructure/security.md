@@ -20,7 +20,7 @@ Bezpečnostní vrstva implementuje tři služby: JWT tokeny pro autentizaci, has
 ### JwtService
 
 ```go
-// infrastructure/security/security_jwt.go
+// infrastructure/security/jwt.go
 
 type JwtService struct { /* secret, accessExpiration, refreshExpiration */ }
 
@@ -34,6 +34,7 @@ func (s *JwtService) HashRefreshToken(raw string) string
 
 Implementuje `shared.JwtService` interface.
 
+
 - **Access token**: HS256-signed JWT, obsahuje `sub` (UserID), `role`, `nickname`. Vrací podepsaný string a dobu platnosti.
 - **Refresh token**: `crypto/rand.Text()` (Go 1.24+) generuje náhodný raw token. Do DB se ukládá SHA-256 hash, klientovi se posílá raw hodnota.
 - `HashRefreshToken(raw)` zhashuje raw token — používá se při validaci příchozího tokenu z cookie (nalezení v DB přes hash).
@@ -42,7 +43,7 @@ Implementuje `shared.JwtService` interface.
 ### PasswordHasher
 
 ```go
-// infrastructure/security/security_password.go
+// infrastructure/security/password.go
 
 type PasswordHasher struct{}
 
@@ -57,7 +58,7 @@ Implementuje `shared.PasswordHasher`. Před bcrypt (cost 12) provádí **SHA-256
 ### PermissionChecker
 
 ```go
-// infrastructure/security/security_permission.go
+// infrastructure/security/permission.go
 
 type PermissionChecker struct{}
 

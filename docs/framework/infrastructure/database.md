@@ -97,7 +97,7 @@ func (b *BaseRepository) Conn(ctx context.Context) Conn
 ### Implementace repozitáře
 
 ```go
-// infrastructure/sqlite/user/user_repository.go
+// infrastructure/sqlite/user/repository.go
 
 type Repository struct {
     sqlite.BaseRepository   // embed
