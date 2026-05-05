@@ -3,6 +3,10 @@ import HomeView from '@/app/Home/Views/HomeView.vue';
 import LoginView from '@/app/Auth/Views/LoginView.vue';
 import ProfileView from '@/app/Profile/Views/ProfileView.vue';
 import AdminUsersView from '@/app/Admin/Views/AdminUsersView.vue';
+import AdminUserCreateView from '@/app/Admin/Views/AdminUserCreateView.vue';
+import AdminUserEditView from '@/app/Admin/Views/AdminUserEditView.vue';
+import UserDashboardView from '@/app/Dashboard/Views/UserDashboardView.vue';
+import AdminDashboardView from '@/app/Dashboard/Views/AdminDashboardView.vue';
 
 // Each route declares its auth posture explicitly (mirrors the backend
 // Permissioned / SkipPermission rule). TypeScript rejects any entry without
@@ -27,12 +31,48 @@ export const routes: AppRoute[] = [
         meta: { requiresAuth: true },
     },
     {
+        path: '/user/dashboard',
+        name: 'user-dashboard',
+        component: UserDashboardView,
+        meta: {
+            requiresAuth: true,
+            requiresPermission: 'dashboard:read',
+        },
+    },
+    {
+        path: '/admin/dashboard',
+        name: 'admin-dashboard',
+        component: AdminDashboardView,
+        meta: {
+            requiresAuth: true,
+            requiresPermission: 'admin:dashboard:read',
+        },
+    },
+    {
         path: '/admin/users',
         name: 'admin-users',
         component: AdminUsersView,
         meta: {
             requiresAuth: true,
             requiresPermission: 'admin:users:read',
+        },
+    },
+    {
+        path: '/admin/users/new',
+        name: 'admin-users-new',
+        component: AdminUserCreateView,
+        meta: {
+            requiresAuth: true,
+            requiresPermission: 'admin:users:create',
+        },
+    },
+    {
+        path: '/admin/users/:id/edit',
+        name: 'admin-users-edit',
+        component: AdminUserEditView,
+        meta: {
+            requiresAuth: true,
+            requiresPermission: 'admin:users:update',
         },
     },
 ];

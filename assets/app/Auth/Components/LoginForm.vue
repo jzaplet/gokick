@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { LoginErrors } from '@/app/Auth/types/LoginErrors';
+import type { LoginRequest } from '@/app-ui/Auth';
 import { reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuth } from '@/app-ui/Auth';
@@ -7,25 +9,12 @@ import Button from '@/app-ui/Buttons/Button.vue';
 import Input from '@/app-ui/Inputs/Input.vue';
 import ErrorAlert from '@/app-ui/Alerts/ErrorAlert.vue';
 
-type LoginFormData = {
-    nickname: string;
-    password: string;
-};
-
-// general = non-field errors (auth, rate-limit, …)
-// nickname / password = ValidationError with matching Field
-type LoginErrors = {
-    general?: string;
-    nickname?: string;
-    password?: string;
-};
-
 const router = useRouter();
 const route = useRoute();
 const { login } = useAuth();
 const { success } = useToast();
 
-const form: LoginFormData = reactive({
+const form: LoginRequest = reactive({
     nickname: '',
     password: '',
 });
@@ -54,7 +43,10 @@ const handleSubmit = async (): Promise<void> => {
     success(`Vítej zpátky, ${result.data.user.nickname}.`);
 
     const redirectQuery = route.query['redirect'];
-    const target = typeof redirectQuery === 'string' ? redirectQuery : '/';
+    const defaultByRole = result.data.user.role === 'admin'
+        ? '/admin/dashboard'
+        : '/user/dashboard';
+    const target = typeof redirectQuery === 'string' ? redirectQuery : defaultByRole;
 
     await router.push(target);
 };
@@ -96,6 +88,7 @@ const handleSubmit = async (): Promise<void> => {
             type="submit"
             variant="primary"
             size="lg"
+            class="w-full"
             :loading="isLoading"
             :disabled="isLoading"
         >

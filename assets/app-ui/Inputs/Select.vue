@@ -11,7 +11,7 @@ type Props = {
     options: Option[];
     placeholder?: string;
     label?: string;
-    error?: string;
+    error?: string | undefined;
     required?: boolean;
     disabled?: boolean;
     name?: string;

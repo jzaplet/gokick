@@ -1,21 +1,12 @@
 <script setup lang="ts">
+import type { ChangePasswordErrors } from '@/app/Profile/types/ChangePasswordErrors';
+import type { ChangePasswordFormData } from '@/app/Profile/types/ChangePasswordFormData';
 import { reactive, ref } from 'vue';
 import { authFetch } from '@/app-ui/Auth';
 import { useToast } from '@/app-ui/Toast/useToast';
 import Button from '@/app-ui/Buttons/Button.vue';
 import Input from '@/app-ui/Inputs/Input.vue';
 import ErrorAlert from '@/app-ui/Alerts/ErrorAlert.vue';
-
-type ChangePasswordFormData = {
-    old_password: string;
-    new_password: string;
-};
-
-type ChangePasswordErrors = {
-    general?: string;
-    old_password?: string;
-    new_password?: string;
-};
 
 const { success } = useToast();
 
