@@ -9,7 +9,10 @@ func NewPassword(s string) (Password, error) {
 		return "", &shared.ValidationError{Field: "password", Message: "heslo je povinné"}
 	}
 	if len(s) < 8 {
-		return "", &shared.ValidationError{Field: "password", Message: "heslo musí mít aspoň 8 znaků"}
+		return "", &shared.ValidationError{
+			Field:   "password",
+			Message: "heslo musí mít aspoň 8 znaků",
+		}
 	}
 	if len(s) > 128 {
 		return "", &shared.ValidationError{Field: "password", Message: "heslo max 128 znaků"}

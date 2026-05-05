@@ -36,7 +36,13 @@ func newAuthHandler(t *testing.T) (*AuthHandler, *testfx.Fixture) {
 	return h, fx
 }
 
-func doJSON(t *testing.T, handler http.HandlerFunc, method, path string, body any, cookies ...*http.Cookie) *httptest.ResponseRecorder {
+func doJSON(
+	t *testing.T,
+	handler http.HandlerFunc,
+	method, path string,
+	body any,
+	cookies ...*http.Cookie,
+) *httptest.ResponseRecorder {
 	t.Helper()
 	var buf bytes.Buffer
 	if body != nil {
@@ -140,7 +146,11 @@ func TestAuthHandler_Login_InvalidCredentials(t *testing.T) {
 func TestAuthHandler_Login_MalformedJSON(t *testing.T) {
 	h, _ := newAuthHandler(t)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader("{not json"))
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/auth/login",
+		strings.NewReader("{not json"),
+	)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	h.Login(rec, req)

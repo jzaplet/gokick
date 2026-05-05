@@ -13,6 +13,8 @@ import (
 	"gokick/app/application/bus/middleware"
 	command2 "gokick/app/application/profile/command"
 	"gokick/app/application/profile/query"
+	command3 "gokick/app/application/user/command"
+	query2 "gokick/app/application/user/query"
 	"gokick/app/domain/shared"
 	"gokick/app/infrastructure/config"
 	"gokick/app/infrastructure/database"
@@ -63,7 +65,12 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 	getProfileHandler := query.NewGetProfileHandler(repository)
 	changePasswordHandler := command2.NewChangePasswordHandler(repository, passwordHasher)
 	profileHandler := handler.NewProfileHandler(commandBus, queryBus, getProfileHandler, changePasswordHandler, permissionsRegistry)
-	serverServer := server.NewServer(configConfig, logger, jwtService, healthHandler, spaHandler, authHandler, profileHandler)
+	listUsersHandler := query2.NewListUsersHandler(repository)
+	createUserHandler := command3.NewCreateUserHandler(repository, passwordHasher, eventCollector)
+	updateUserHandler := command3.NewUpdateUserHandler(repository, passwordHasher)
+	deleteUserHandler := command3.NewDeleteUserHandler(repository)
+	adminUsersHandler := handler.NewAdminUsersHandler(commandBus, queryBus, listUsersHandler, createUserHandler, updateUserHandler, deleteUserHandler)
+	serverServer := server.NewServer(configConfig, logger, jwtService, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler)
 	serveCommand := console.NewServeCommand(serverServer)
 	seeder := sqlite.NewSeeder(repository, passwordHasher, logger)
 	seedCommand := console.NewSeedCommand(seeder)
@@ -119,5 +126,5 @@ func provideCookieSecure(cfg *config.Config) handler.CookieSecure {
 // command/query handler that is Permissioned. Adding a new handler requires
 // adding it here too — there is no other permission list in the codebase.
 func providePermissionsRegistry() *shared.PermissionsRegistry {
-	return shared.NewPermissionsRegistry([]shared.Permissioned{command.LogoutCommand{}, command2.ChangePasswordCommand{}, query.GetProfileQuery{}})
+	return shared.NewPermissionsRegistry([]shared.Permissioned{command.LogoutCommand{}, command2.ChangePasswordCommand{}, query.GetProfileQuery{}, command3.CreateUserCommand{}, command3.UpdateUserCommand{}, command3.DeleteUserCommand{}, query2.ListUsersQuery{}})
 }

@@ -19,7 +19,10 @@ type ChangePasswordHandler struct {
 	password shared.PasswordHasher
 }
 
-func NewChangePasswordHandler(users user.Repository, password shared.PasswordHasher) *ChangePasswordHandler {
+func NewChangePasswordHandler(
+	users user.Repository,
+	password shared.PasswordHasher,
+) *ChangePasswordHandler {
 	return &ChangePasswordHandler{
 		users:    users,
 		password: password,

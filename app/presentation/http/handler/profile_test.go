@@ -165,7 +165,11 @@ func TestProfileHandler_ChangePassword_MalformedJSON(t *testing.T) {
 	h, fx := newProfileHandler(t)
 	u := fx.SeedUser(t, "alice", "pwd", "user")
 
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/profile/password", strings.NewReader("{broken"))
+	req := httptest.NewRequest(
+		http.MethodPut,
+		"/api/v1/profile/password",
+		strings.NewReader("{broken"),
+	)
 	req.Header.Set("Content-Type", "application/json")
 	req = req.WithContext(shared.ContextWithClaims(req.Context(), &shared.AuthClaims{
 		UserID: u.ID, Role: u.Role, Nickname: u.Nickname,

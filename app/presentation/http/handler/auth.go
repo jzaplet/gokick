@@ -75,9 +75,15 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	cmd := authcmd.LoginCommand{Nickname: body.Nickname, Password: body.Password}
 
-	result, err := bus.Exec(r.Context(), h.commandBus.Bus, "Login", cmd, func(ctx context.Context) (authcmd.LoginResult, error) {
-		return h.login.Handle(ctx, cmd)
-	})
+	result, err := bus.Exec(
+		r.Context(),
+		h.commandBus.Bus,
+		"Login",
+		cmd,
+		func(ctx context.Context) (authcmd.LoginResult, error) {
+			return h.login.Handle(ctx, cmd)
+		},
+	)
 	if err != nil {
 		response.HandleError(w, err)
 
@@ -97,9 +103,15 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	cmd := authcmd.RefreshTokenCommand{RawToken: cookie.Value}
 
-	result, err := bus.Exec(r.Context(), h.commandBus.Bus, "RefreshToken", cmd, func(ctx context.Context) (authcmd.LoginResult, error) {
-		return h.refreshToken.Handle(ctx, cmd)
-	})
+	result, err := bus.Exec(
+		r.Context(),
+		h.commandBus.Bus,
+		"RefreshToken",
+		cmd,
+		func(ctx context.Context) (authcmd.LoginResult, error) {
+			return h.refreshToken.Handle(ctx, cmd)
+		},
+	)
 	if err != nil {
 		h.clearRefreshCookie(w)
 		response.HandleError(w, err)
@@ -113,9 +125,15 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	cmd := authcmd.LogoutCommand{}
 
-	err := bus.ExecVoid(r.Context(), h.commandBus.Bus, "Logout", cmd, func(ctx context.Context) error {
-		return h.logout.Handle(ctx, cmd)
-	})
+	err := bus.ExecVoid(
+		r.Context(),
+		h.commandBus.Bus,
+		"Logout",
+		cmd,
+		func(ctx context.Context) error {
+			return h.logout.Handle(ctx, cmd)
+		},
+	)
 	if err != nil {
 		response.HandleError(w, err)
 

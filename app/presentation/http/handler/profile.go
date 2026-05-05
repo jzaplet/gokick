@@ -45,9 +45,15 @@ type changePasswordRequest struct {
 func (h *ProfileHandler) Get(w http.ResponseWriter, r *http.Request) {
 	q := profileqry.GetProfileQuery{}
 
-	u, err := bus.Exec(r.Context(), h.queryBus.Bus, "GetProfile", q, func(ctx context.Context) (*user.User, error) {
-		return h.getProfile.Handle(ctx, q)
-	})
+	u, err := bus.Exec(
+		r.Context(),
+		h.queryBus.Bus,
+		"GetProfile",
+		q,
+		func(ctx context.Context) (*user.User, error) {
+			return h.getProfile.Handle(ctx, q)
+		},
+	)
 	if err != nil {
 		response.HandleError(w, err)
 
@@ -75,9 +81,15 @@ func (h *ProfileHandler) ChangePassword(w http.ResponseWriter, r *http.Request) 
 		NewPassword: body.NewPassword,
 	}
 
-	err := bus.ExecVoid(r.Context(), h.commandBus.Bus, "ChangePassword", cmd, func(ctx context.Context) error {
-		return h.changePassword.Handle(ctx, cmd)
-	})
+	err := bus.ExecVoid(
+		r.Context(),
+		h.commandBus.Bus,
+		"ChangePassword",
+		cmd,
+		func(ctx context.Context) error {
+			return h.changePassword.Handle(ctx, cmd)
+		},
+	)
 	if err != nil {
 		response.HandleError(w, err)
 

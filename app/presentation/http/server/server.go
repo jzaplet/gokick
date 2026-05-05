@@ -11,13 +11,14 @@ import (
 )
 
 type Server struct {
-	config  *config.Config
-	logger  *slog.Logger
-	jwt     shared.JwtService
-	health  *handler.HealthHandler
-	spa     *handler.SPAHandler
-	auth    *handler.AuthHandler
-	profile *handler.ProfileHandler
+	config     *config.Config
+	logger     *slog.Logger
+	jwt        shared.JwtService
+	health     *handler.HealthHandler
+	spa        *handler.SPAHandler
+	auth       *handler.AuthHandler
+	profile    *handler.ProfileHandler
+	adminUsers *handler.AdminUsersHandler
 }
 
 func NewServer(
@@ -28,15 +29,17 @@ func NewServer(
 	spa *handler.SPAHandler,
 	auth *handler.AuthHandler,
 	profile *handler.ProfileHandler,
+	adminUsers *handler.AdminUsersHandler,
 ) *Server {
 	return &Server{
-		config:  config,
-		logger:  logger,
-		jwt:     jwt,
-		health:  health,
-		spa:     spa,
-		auth:    auth,
-		profile: profile,
+		config:     config,
+		logger:     logger,
+		jwt:        jwt,
+		health:     health,
+		spa:        spa,
+		auth:       auth,
+		profile:    profile,
+		adminUsers: adminUsers,
 	}
 }
 
@@ -64,6 +67,12 @@ func (s *Server) registerRoutes() *http.ServeMux {
 	mux.Handle("POST /api/v1/auth/logout", authed(http.HandlerFunc(s.auth.Logout)))
 	mux.Handle("GET /api/v1/profile", authed(http.HandlerFunc(s.profile.Get)))
 	mux.Handle("PUT /api/v1/profile/password", authed(http.HandlerFunc(s.profile.ChangePassword)))
+
+	// Admin — bus AuthorizeMiddleware enforces admin:users:* permission per command/query.
+	mux.Handle("GET /api/v1/admin/users", authed(http.HandlerFunc(s.adminUsers.List)))
+	mux.Handle("POST /api/v1/admin/users", authed(http.HandlerFunc(s.adminUsers.Create)))
+	mux.Handle("PUT /api/v1/admin/users/{id}", authed(http.HandlerFunc(s.adminUsers.Update)))
+	mux.Handle("DELETE /api/v1/admin/users/{id}", authed(http.HandlerFunc(s.adminUsers.Delete)))
 
 	// SPA catch-all — must be last so explicit routes win.
 	mux.HandleFunc("GET /{path...}", s.spa.Serve)

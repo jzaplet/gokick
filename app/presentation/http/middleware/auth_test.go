@@ -48,7 +48,8 @@ func TestAuthMiddleware_ValidTokenSetsClaims(t *testing.T) {
 	if capture.claims == nil {
 		t.Fatal("expected claims in context")
 	}
-	if capture.claims.UserID != "u-1" || capture.claims.Role != "admin" || capture.claims.Nickname != "alice" {
+	if capture.claims.UserID != "u-1" || capture.claims.Role != "admin" ||
+		capture.claims.Nickname != "alice" {
 		t.Fatalf("claims mismatch: %+v", capture.claims)
 	}
 }

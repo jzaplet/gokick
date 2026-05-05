@@ -149,15 +149,42 @@ func TestCreateUserHandler_EmptyPassword(t *testing.T) {
 	}
 }
 
-func TestCreateUserHandler_EmptyEmail(t *testing.T) {
+func TestCreateUserHandler_OptionalEmail(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_empty_email.db"))
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_optional_email.db"))
 
 	h := NewCreateUserHandler(fx.Users, fx.Hasher, shared.NewEventCollector())
 	err := h.Handle(ctx, CreateUserCommand{
 		Nickname: "bob",
 		Password: "secret12",
 		Email:    "",
+		Role:     "user",
+	})
+	if err != nil {
+		t.Fatalf("expected success with empty email, got %v", err)
+	}
+
+	saved, err := fx.Users.FindByNickname(ctx, "bob")
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	if saved == nil {
+		t.Fatal("expected user persisted in DB")
+	}
+	if saved.Email != "" {
+		t.Fatalf("email: got %q want empty", saved.Email)
+	}
+}
+
+func TestCreateUserHandler_InvalidEmail(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_invalid_email.db"))
+
+	h := NewCreateUserHandler(fx.Users, fx.Hasher, shared.NewEventCollector())
+	err := h.Handle(ctx, CreateUserCommand{
+		Nickname: "bob",
+		Password: "secret12",
+		Email:    "no-at-sign",
 		Role:     "user",
 	})
 

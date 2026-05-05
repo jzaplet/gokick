@@ -61,7 +61,10 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
 		return err
 	}
 	if existing != nil {
-		return &shared.ValidationError{Field: "nickname", Message: "uživatel s tímto nickname už existuje"}
+		return &shared.ValidationError{
+			Field:   "nickname",
+			Message: "uživatel s tímto nickname už existuje",
+		}
 	}
 
 	hash, err := h.password.Hash(string(password))

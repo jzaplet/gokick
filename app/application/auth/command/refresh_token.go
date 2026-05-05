@@ -35,7 +35,10 @@ func NewRefreshTokenHandler(
 	}
 }
 
-func (h *RefreshTokenHandler) Handle(ctx context.Context, cmd RefreshTokenCommand) (LoginResult, error) {
+func (h *RefreshTokenHandler) Handle(
+	ctx context.Context,
+	cmd RefreshTokenCommand,
+) (LoginResult, error) {
 	hash := h.jwt.HashRefreshToken(cmd.RawToken)
 
 	existing, err := h.tokens.FindByHash(ctx, hash)
