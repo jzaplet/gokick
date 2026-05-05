@@ -7,6 +7,7 @@ import (
 	authcmd "gokick/app/application/auth/command"
 	"gokick/app/application/bus"
 	busmw "gokick/app/application/bus/middleware"
+	dashboardqry "gokick/app/application/dashboard/query"
 	profilecmd "gokick/app/application/profile/command"
 	profileqry "gokick/app/application/profile/query"
 	usercmd "gokick/app/application/user/command"
@@ -95,6 +96,8 @@ func providePermissionsRegistry() *shared.PermissionsRegistry {
 		usercmd.UpdateUserCommand{},
 		usercmd.DeleteUserCommand{},
 		userqry.ListUsersQuery{},
+		dashboardqry.GetUserDashboardQuery{},
+		dashboardqry.GetAdminDashboardQuery{},
 	})
 }
 
@@ -128,15 +131,19 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 		usercmd.NewUpdateUserHandler,
 		usercmd.NewDeleteUserHandler,
 		userqry.NewListUsersHandler,
+		dashboardqry.NewGetUserDashboardHandler,
+		dashboardqry.NewGetAdminDashboardHandler,
 		providePublicFS,
 		handler.NewSPAHandler,
 		handler.NewHealthHandler,
 		handler.NewAuthHandler,
 		handler.NewProfileHandler,
 		handler.NewAdminUsersHandler,
+		handler.NewDashboardHandler,
 		server.NewServer,
 		console.NewServeCommand,
 		console.NewSeedCommand,
+		console.NewCreateUserCommand,
 		console.NewRootCommand,
 		app.NewApplication,
 	)

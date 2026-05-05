@@ -142,3 +142,5 @@ deps:
       - server
       - config
       - database
+      - application
+      - bus

@@ -5,15 +5,21 @@ import (
 )
 
 type RootCommand struct {
-	cmd      *cobra.Command
-	serveCmd *ServeCommand
-	seedCmd  *SeedCommand
+	cmd           *cobra.Command
+	serveCmd      *ServeCommand
+	seedCmd       *SeedCommand
+	createUserCmd *CreateUserCommand
 }
 
-func NewRootCommand(serveCmd *ServeCommand, seedCmd *SeedCommand) *RootCommand {
+func NewRootCommand(
+	serveCmd *ServeCommand,
+	seedCmd *SeedCommand,
+	createUserCmd *CreateUserCommand,
+) *RootCommand {
 	root := &RootCommand{
-		serveCmd: serveCmd,
-		seedCmd:  seedCmd,
+		serveCmd:      serveCmd,
+		seedCmd:       seedCmd,
+		createUserCmd: createUserCmd,
 	}
 
 	root.cmd = &cobra.Command{
@@ -24,6 +30,7 @@ func NewRootCommand(serveCmd *ServeCommand, seedCmd *SeedCommand) *RootCommand {
 
 	root.cmd.AddCommand(serveCmd.Command())
 	root.cmd.AddCommand(seedCmd.Command())
+	root.cmd.AddCommand(createUserCmd.Command())
 
 	return root
 }

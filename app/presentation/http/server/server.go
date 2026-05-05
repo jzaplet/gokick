@@ -19,6 +19,7 @@ type Server struct {
 	auth       *handler.AuthHandler
 	profile    *handler.ProfileHandler
 	adminUsers *handler.AdminUsersHandler
+	dashboard  *handler.DashboardHandler
 }
 
 func NewServer(
@@ -30,6 +31,7 @@ func NewServer(
 	auth *handler.AuthHandler,
 	profile *handler.ProfileHandler,
 	adminUsers *handler.AdminUsersHandler,
+	dashboard *handler.DashboardHandler,
 ) *Server {
 	return &Server{
 		config:     config,
@@ -40,6 +42,7 @@ func NewServer(
 		auth:       auth,
 		profile:    profile,
 		adminUsers: adminUsers,
+		dashboard:  dashboard,
 	}
 }
 
@@ -67,8 +70,10 @@ func (s *Server) registerRoutes() *http.ServeMux {
 	mux.Handle("POST /api/v1/auth/logout", authed(http.HandlerFunc(s.auth.Logout)))
 	mux.Handle("GET /api/v1/profile", authed(http.HandlerFunc(s.profile.Get)))
 	mux.Handle("PUT /api/v1/profile/password", authed(http.HandlerFunc(s.profile.ChangePassword)))
+	mux.Handle("GET /api/v1/dashboard/user", authed(http.HandlerFunc(s.dashboard.User)))
 
-	// Admin — bus AuthorizeMiddleware enforces admin:users:* permission per command/query.
+	// Admin — bus AuthorizeMiddleware enforces admin:* permission per command/query.
+	mux.Handle("GET /api/v1/dashboard/admin", authed(http.HandlerFunc(s.dashboard.Admin)))
 	mux.Handle("GET /api/v1/admin/users", authed(http.HandlerFunc(s.adminUsers.List)))
 	mux.Handle("POST /api/v1/admin/users", authed(http.HandlerFunc(s.adminUsers.Create)))
 	mux.Handle("PUT /api/v1/admin/users/{id}", authed(http.HandlerFunc(s.adminUsers.Update)))

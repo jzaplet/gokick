@@ -11,6 +11,7 @@ import (
 	"gokick/app/application/auth/command"
 	"gokick/app/application/bus"
 	"gokick/app/application/bus/middleware"
+	query3 "gokick/app/application/dashboard/query"
 	command2 "gokick/app/application/profile/command"
 	"gokick/app/application/profile/query"
 	command3 "gokick/app/application/user/command"
@@ -70,11 +71,15 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 	updateUserHandler := command3.NewUpdateUserHandler(repository, passwordHasher)
 	deleteUserHandler := command3.NewDeleteUserHandler(repository)
 	adminUsersHandler := handler.NewAdminUsersHandler(commandBus, queryBus, listUsersHandler, createUserHandler, updateUserHandler, deleteUserHandler)
-	serverServer := server.NewServer(configConfig, logger, jwtService, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler)
+	getUserDashboardHandler := query3.NewGetUserDashboardHandler()
+	getAdminDashboardHandler := query3.NewGetAdminDashboardHandler()
+	dashboardHandler := handler.NewDashboardHandler(queryBus, getUserDashboardHandler, getAdminDashboardHandler)
+	serverServer := server.NewServer(configConfig, logger, jwtService, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler)
 	serveCommand := console.NewServeCommand(serverServer)
 	seeder := sqlite.NewSeeder(repository, passwordHasher, logger)
 	seedCommand := console.NewSeedCommand(seeder)
-	rootCommand := console.NewRootCommand(serveCommand, seedCommand)
+	createUserCommand := console.NewCreateUserCommand(createUserHandler)
+	rootCommand := console.NewRootCommand(serveCommand, seedCommand, createUserCommand)
 	migrationManager := database.NewMigrationManager(sqliteManager, logger)
 	application := app.NewApplication(rootCommand, migrationManager, commandBus, queryBus, eventBus, jwtService, tokenRepository)
 	return application, nil
@@ -126,5 +131,5 @@ func provideCookieSecure(cfg *config.Config) handler.CookieSecure {
 // command/query handler that is Permissioned. Adding a new handler requires
 // adding it here too — there is no other permission list in the codebase.
 func providePermissionsRegistry() *shared.PermissionsRegistry {
-	return shared.NewPermissionsRegistry([]shared.Permissioned{command.LogoutCommand{}, command2.ChangePasswordCommand{}, query.GetProfileQuery{}, command3.CreateUserCommand{}, command3.UpdateUserCommand{}, command3.DeleteUserCommand{}, query2.ListUsersQuery{}})
+	return shared.NewPermissionsRegistry([]shared.Permissioned{command.LogoutCommand{}, command2.ChangePasswordCommand{}, query.GetProfileQuery{}, command3.CreateUserCommand{}, command3.UpdateUserCommand{}, command3.DeleteUserCommand{}, query2.ListUsersQuery{}, query3.GetUserDashboardQuery{}, query3.GetAdminDashboardQuery{}})
 }
