@@ -54,5 +54,5 @@ Server běží na `http://localhost:3000`. Podrobnosti v [Installation](/framewo
 |-------|------------------------------------------------------|
 | [Framework](/framework) | Architektura, vrstvy, infrastruktura                 |
 | [Guides](/guides) | Praktické návody — autentizace, frontend utility     |
-| [Business Logic](/business) | Specifikace obrazovek a business pravidel projektu   |
+| [Business](/business) | Business pravidla projektu                           |
 | [Codebase](/codebase) | Algoritmy a znovupoužitelné balíčky v rámci projektu |
