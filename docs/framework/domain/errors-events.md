@@ -31,15 +31,18 @@ type ValidationError struct {
     Message string
 }
 
-func (e *ValidationError) Error() string   { return e.Message }
-func (e *ValidationError) HTTPStatus() int { return 400 }
+func (e *ValidationError) Error() string      { return e.Message }
+func (e *ValidationError) HTTPStatus() int    { return 400 }
+func (e *ValidationError) ErrorField() string { return e.Field }
 ```
+
+Metoda `ErrorField()` implementuje `response.FieldError` -- response writer díky tomu pošle chybu pod klíčem podle pole (`{"nickname": "..."}`), takže frontend ji namapuje rovnou na příslušný input. Když je `Field` prázdný, chyba spadne do `general` klíče. Detaily v [Forms guide](/guides/forms).
 
 Použití ve value objects:
 
 ```go
 nickname, err := user.NewNickname("")
-// err = &shared.ValidationError{Field: "nickname", Message: "nickname je povinný"}
+// err = &shared.ValidationError{Field: "nickname", Message: "nickname is required"}
 ```
 
 
@@ -72,7 +75,7 @@ func (e *PermissionError) Error() string   { return e.Message }
 func (e *PermissionError) HTTPStatus() int { return 403 }
 ```
 
-Použití: `PermissionChecker` v bus `AuthorizeMiddleware` (role nemá požadovanou permission), role guard middleware.
+Použití: `PermissionChecker` v bus `AuthorizeMiddleware` (role nemá požadovanou permission). HTTP role guard middleware není potřeba -- bus middleware to vynucuje sám pro každý command/query.
 
 
 ### DomainEvent interface

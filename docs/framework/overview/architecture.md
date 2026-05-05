@@ -55,7 +55,7 @@ cmd/main.go
 1. HTTP Request -> net/http ServeMux
 
 2. HTTP Middleware (presentation/http/middleware/):
-   Trace -> CORS -> CSRF -> Logging -> JWT Auth (claims do context)
+   Trace -> Security headers -> CORS -> CSRF -> Logging -> JWT Auth (claims do context)
 
 3. HTTP Handler (presentation/http/handler/):
    json.Decode -> CreateUserCommand
@@ -85,7 +85,7 @@ cmd/main.go
 `GET /api/v1/admin/users`:
 
 ```
-HTTP Request -> Trace -> CORS -> CSRF -> Logging -> JWT Auth
+HTTP Request -> Trace -> Security headers -> CORS -> CSRF -> Logging -> JWT Auth
   -> Handler -> bus.Exec[[]user.User](ctx, queryBus, "ListUsers", q, fn)
     -> Recovery -> Logging -> Authorize -> Query Handler -> repo.FindAll()
   -> response.JSON(w, 200, users)

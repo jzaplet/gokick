@@ -37,15 +37,19 @@ Server používá stdlib `net/http.ServeMux` s Go 1.22+ pattern routingem. Routy
 | POST | `/api/v1/auth/logout` | `LogoutCommand` | `auth:logout` |
 | GET | `/api/v1/profile` | `GetProfileQuery` | `profile:read` |
 | PUT | `/api/v1/profile/password` | `ChangePasswordCommand` | `profile:update` |
+| GET | `/api/v1/dashboard/user` | `GetUserDashboardQuery` | `dashboard:read` |
 
-**Admin (plánováno — Fáze 7):**
+**Admin:**
 
 | Metoda | Route | Command/Query | Permission |
 |---|---|---|---|
+| GET | `/api/v1/dashboard/admin` | `GetAdminDashboardQuery` | `admin:dashboard:read` |
 | GET | `/api/v1/admin/users` | `ListUsersQuery` | `admin:users:read` |
 | POST | `/api/v1/admin/users` | `CreateUserCommand` | `admin:users:create` |
 | PUT | `/api/v1/admin/users/{id}` | `UpdateUserCommand` | `admin:users:update` |
 | DELETE | `/api/v1/admin/users/{id}` | `DeleteUserCommand` | `admin:users:delete` |
+
+Žádné samostatné role-guard middleware není potřeba -- bus `AuthorizeMiddleware` v kombinaci s `IsPermissionAllowedForRole` (`admin:*` permissions povolí jen admin role) pokrývá oddělení uživatel / admin.
 
 ### SPA fallback
 
@@ -88,7 +92,7 @@ func HandleError(w http.ResponseWriter, err error)
 
 ```json
 // ValidationError{Field: "nickname", Message: "..."}
-{ "nickname": "nickname je povinný" }
+{ "nickname": "nickname is required" }
 
 // AuthError / PermissionError / systémové chyby
 { "general": "invalid credentials" }

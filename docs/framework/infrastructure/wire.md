@@ -42,8 +42,10 @@ app/infrastructure/di/
 | **Repositories** | `sqliteuser.NewRepository`, `sqlitetoken.NewRepository`, `sqlite.NewSeeder` |
 | **Auth handlery** | `authcmd.NewLoginHandler`, `authcmd.NewRefreshTokenHandler`, `authcmd.NewLogoutHandler` |
 | **Profile handlery** | `profilecmd.NewChangePasswordHandler`, `profileqry.NewGetProfileHandler` |
-| **HTTP** | `handler.NewHealthHandler`, `handler.NewSPAHandler`, `handler.NewAuthHandler`, `handler.NewProfileHandler`, `server.NewServer`, `providePublicFS` |
-| **CLI** | `console.NewServeCommand`, `console.NewSeedCommand`, `console.NewRootCommand` |
+| **User handlery (admin CRUD)** | `usercmd.NewCreateUserHandler`, `usercmd.NewUpdateUserHandler`, `usercmd.NewDeleteUserHandler`, `userqry.NewListUsersHandler` |
+| **Dashboard handlery** | `dashboardqry.NewGetUserDashboardHandler`, `dashboardqry.NewGetAdminDashboardHandler` |
+| **HTTP** | `handler.NewHealthHandler`, `handler.NewSPAHandler`, `handler.NewAuthHandler`, `handler.NewProfileHandler`, `handler.NewAdminUsersHandler`, `handler.NewDashboardHandler`, `server.NewServer`, `providePublicFS` |
+| **CLI** | `console.NewServeCommand`, `console.NewSeedCommand`, `console.NewCreateUserCommand`, `console.NewRootCommand` |
 
 ### Interface binding
 

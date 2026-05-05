@@ -6,7 +6,7 @@ slug: 'framework-presentation-console'
 parent: 'framework-presentation'
 navTitle: 'Console'
 title: 'Console'
-description: 'Cobra CLI -- root command, serve a seed subcommand.'
+description: 'Cobra CLI -- root command, serve, seed a create-user subcommand.'
 ---
 
 # Console
@@ -23,10 +23,13 @@ Balíček `presentation/console/`. Root command `app` s podpříkazy:
 app [command]
 
 Available Commands:
-  serve       Spustí HTTP server
-  seed        Naplní databázi výchozími daty
-  help        Nápověda
+  serve         Start the HTTP server
+  seed          Seed the database with default data
+  create-user   Create a user (any role -- defaults to admin)
+  help          Help about any command
 ```
+
+Před každým subcommandem se volá `Application.Run()`, který nejprve aplikuje pending Goose migrace -- migrace tedy doběhnou i při `seed`/`create-user`, ne jen při `serve`.
 
 ### Serve command
 
@@ -40,7 +43,7 @@ type ServeCommand struct {
 func (c *ServeCommand) Command() *cobra.Command {
     return &cobra.Command{
         Use:   "serve",
-        Short: "Spustí HTTP server",
+        Short: "Start the HTTP server",
         RunE: func(cmd *cobra.Command, args []string) error {
             return c.server.Start()
         },
@@ -68,7 +71,7 @@ type SeedCommand struct {
 func (c *SeedCommand) Command() *cobra.Command {
     return &cobra.Command{
         Use:   "seed",
-        Short: "Naplní databázi výchozími daty",
+        Short: "Seed the database with default data",
         RunE: func(cmd *cobra.Command, args []string) error {
             return c.seeder.Seed(cmd.Context())
         },
@@ -79,12 +82,32 @@ func (c *SeedCommand) Command() *cobra.Command {
 Spuštění:
 
 ```bash
-./bin/app seed
+./bin/app seed   # vytvoří admin/admin pokud ještě neexistuje
 ```
+
+### Create-user command
+
+```go
+// presentation/console/create_user.go
+
+type CreateUserCommand struct {
+    handler *usercmd.CreateUserHandler
+}
+```
+
+Bypassuje bus (žádný auth context potřeba) a volá přímo `*usercmd.CreateUserHandler.Handle()` -- recykluje stejnou validaci, hashing a unique-nickname check jako HTTP API. Eventy zůstávají v `EventCollector`, který se na konci procesu zahodí.
+
+```bash
+./bin/app create-user -n alice -p secret12              # admin (default)
+./bin/app create-user -n bob -p secret12 -e b@x -r user # user, s emailem
+```
+
+Flagy: `-n/--nickname` (povinné), `-p/--password` (povinné), `-e/--email` (volitelné), `-r/--role` (`admin` default, `user` alternativa).
 
 
 ## Detaily
 
 - Root command (`root.go`) registruje všechny subcommandy.
-- Každý příkaz dostává závislosti přes DI (Wire) a závisí na doménové interfaces (např. `shared.Seeder`), ne na konkrétní infrastrukturu.
+- Každý příkaz dostává závislosti přes DI (Wire) a závisí na doménové interfaces (např. `shared.Seeder`), případně na application handlerech (`*usercmd.CreateUserHandler`) -- ne na konkrétní infrastruktuře.
+- Komponenta `console` v `.go-arch-lint.yml` má `mayDependOn: [server, config, database, application, bus]` -- CLI volá application handlery stejně jako HTTP handlery.
 - Nové příkazy se přidávají stejným patternem: struct s `Command() *cobra.Command` metodou, registrace v root commandu.

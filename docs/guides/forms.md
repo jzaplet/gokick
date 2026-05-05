@@ -31,10 +31,10 @@ Value Object je místo, kde pravidla žijí. Ne v handleru, ne ve formuláři.
 // domain/user/nickname.go
 func NewNickname(s string) (Nickname, error) {
     if s == "" {
-        return "", &shared.ValidationError{Field: "nickname", Message: "nickname je povinný"}
+        return "", &shared.ValidationError{Field: "nickname", Message: "nickname is required"}
     }
     if len(s) > 50 {
-        return "", &shared.ValidationError{Field: "nickname", Message: "nickname max 50 znaků"}
+        return "", &shared.ValidationError{Field: "nickname", Message: "nickname must be at most 50 characters"}
     }
     return Nickname(s), nil
 }
@@ -51,7 +51,10 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
     if err != nil { return err }  // → 400 { "role": "…" }
 
     if existing != nil {
-        return &shared.ValidationError{Field: "nickname", Message: "už existuje"}
+        return &shared.ValidationError{
+            Field:   "nickname",
+            Message: "user with this nickname already exists",
+        }
     }
     // ... hash, save, collect event
 }
@@ -65,7 +68,7 @@ Detaily error typů viz [Errors & Events](/framework/domain/errors-events), mapo
 Jedna chyba, jeden klíč:
 
 ```json
-{ "nickname": "nickname je povinný" }     // ValidationError s polem
+{ "nickname": "nickname is required" }    // ValidationError s polem
 { "general": "invalid credentials" }      // AuthError / PermissionError / bez pole
 ```
 
@@ -114,7 +117,7 @@ const handleSubmit = async (): Promise<void> => {
         return;
     }
 
-    success('Heslo bylo změněno.');
+    success('Password changed.');
     resetForm();
 };
 ```
@@ -129,7 +132,7 @@ Klíčová řádka: `errors.value = result.data`. Žádné mapování, žádné 
     :error="errors.old_password"
     name="old_password"
     type="password"
-    label="Staré heslo"
+    label="Current password"
     required
     :disabled="isLoading"
     @update:model-value="() => clearFieldError('old_password')"

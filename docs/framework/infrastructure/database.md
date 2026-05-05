@@ -43,10 +43,10 @@ func TxFromContext(ctx context.Context) *sqlx.Tx
 
 ### Migrace (Goose)
 
-`MigrationManager` embeduje SQL migrace z `/migrations/` do binárky a spouští je automaticky při startu.
+`MigrationManager` embeduje SQL migrace z `/migrations/` do binárky a spouští je automaticky při každém spuštění CLI (`Application.Run`). Boilerplate startuje s jednou konsolidovanou migrací `20260327000001_init_schema.sql`, která zakládá tabulky `users` a `refresh_tokens`. Další migrace se přidávají s vyšším timestampem.
 
 ```sql
--- migrations/20260327000001_create_users_table.sql
+-- migrations/20260327000001_init_schema.sql
 
 -- +goose Up
 CREATE TABLE IF NOT EXISTS users (
@@ -60,7 +60,22 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at DATETIME NOT NULL,
+    used_at DATETIME,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_refresh_tokens_token_hash ON refresh_tokens(token_hash);
+CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens(user_id);
+
 -- +goose Down
+DROP INDEX IF EXISTS idx_refresh_tokens_user_id;
+DROP INDEX IF EXISTS idx_refresh_tokens_token_hash;
+DROP TABLE IF EXISTS refresh_tokens;
 DROP TABLE IF EXISTS users;
 ```
 
@@ -122,7 +137,7 @@ wire.Bind(new(user.Repository), new(*sqliteuser.Repository))
 
 ### Seeder
 
-`sqlite.NewSeeder()` závisí na `user.Repository` (doménový interface) -- seeduje výchozí data při startu.
+`sqlite.NewSeeder()` závisí na `user.Repository` (doménový interface) -- seeduje výchozí admin účet (nickname `admin`, heslo `admin`). Seeder **neběží automaticky** -- spouští se ručně přes CLI `./bin/app seed`. Idempotentní: pokud uživatel `admin` existuje, nic nedělá. Pro vytvoření dalších uživatelů s libovolnou rolí slouží `./bin/app create-user`.
 
 ## Detaily
 

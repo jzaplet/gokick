@@ -65,11 +65,15 @@ func LoadConfig() (*Config, error)
 
 ### APP_COOKIE_SECURE
 
-Řídí `Secure` flag na refresh cookie, který prohlížeč používá pro `/api/v1/auth/refresh`.
+Řídí `Secure` flag na refresh cookie, který prohlížeč používá pro `/api/v1/auth/refresh`. Stejný flag zároveň gate-uje HSTS hlavičku v `SecurityHeadersMiddleware` -- `Strict-Transport-Security` se posílá jen v produkčním režimu.
 
-- `true` (produkce, default) — prohlížeč pošle cookie **jen přes HTTPS**. Nad HTTP se vůbec neodešle, refresh selže.
-- `false` (lokální vývoj) — cookie se posílá i přes plain HTTP. Nutné pro vývoj na `http://localhost` (Vite dev server + Go backend jsou oba HTTP).
+- `true` (produkce, default) — prohlížeč pošle cookie **jen přes HTTPS**, server posílá HSTS. Nad HTTP se cookie neodešle, refresh selže.
+- `false` (lokální vývoj) — cookie se posílá i přes plain HTTP, HSTS se nevysílá. Nutné pro vývoj na `http://localhost` (Vite dev server + Go backend jsou oba HTTP).
 
 V `.env.example` je `false` kvůli dev workflow. V produkci **vždy** `true` + nasazení za TLS terminátor.
 
 Ostatní flagy cookie jsou hardcoded, protože nemá smysl je měnit: `HttpOnly=true` (nepřístupné z JS, obrana proti XSS), `SameSite=Strict` (nepošle se při cross-site requestu, obrana proti CSRF), `Path=/api/v1/auth` (posílá se jen na auth endpointy).
+
+### Documan
+
+`DOCUMAN_HTTP_PORT=3005` — port pro `documan` Docker service definovaný v `docker-compose.yml`. Slouží jen pro lokální preview dokumentace, nesouvisí s aplikační binárkou.

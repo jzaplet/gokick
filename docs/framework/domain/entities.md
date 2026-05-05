@@ -62,11 +62,12 @@ Factory `NewUser` přijímá value objects (`Nickname`, `Email`, `Role`) -- poku
 package token
 
 type RefreshToken struct {
-    ID        string    `db:"id"`
-    UserID    string    `db:"user_id"`
-    TokenHash string    `db:"token_hash"`
-    ExpiresAt time.Time `db:"expires_at"`
-    CreatedAt time.Time `db:"created_at"`
+    ID        string     `db:"id"`
+    UserID    string     `db:"user_id"`
+    TokenHash string     `db:"token_hash"`
+    ExpiresAt time.Time  `db:"expires_at"`
+    CreatedAt time.Time  `db:"created_at"`
+    UsedAt    *time.Time `db:"used_at"` // marker pro theft detection (rotace + zneužití)
 }
 ```
 
@@ -82,10 +83,10 @@ type Nickname string
 
 func NewNickname(s string) (Nickname, error) {
     if s == "" {
-        return "", &shared.ValidationError{Field: "nickname", Message: "nickname je povinný"}
+        return "", &shared.ValidationError{Field: "nickname", Message: "nickname is required"}
     }
     if len(s) > 50 {
-        return "", &shared.ValidationError{Field: "nickname", Message: "nickname max 50 znaků"}
+        return "", &shared.ValidationError{Field: "nickname", Message: "nickname must be at most 50 characters"}
     }
     return Nickname(s), nil
 }
@@ -111,7 +112,7 @@ func NewRole(s string) (Role, error) {
     case RoleAdmin, RoleUser:
         return Role(s), nil
     default:
-        return "", &shared.ValidationError{Field: "role", Message: "neplatná role"}
+        return "", &shared.ValidationError{Field: "role", Message: "invalid role"}
     }
 }
 ```
@@ -119,22 +120,26 @@ func NewRole(s string) (Role, error) {
 
 ### Email value object
 
-Žije v `domain/user/email.go`. Minimální validace: prázdnost, maximální délka, přítomnost `@`. Striktnější kontrolu (regex, DNS MX lookup) záměrně nedělá -- uživatel přijde na řadu při prvním odeslání mailu.
+Žije v `domain/user/email.go`. Email je **nepovinný** -- prázdný řetězec projde jako prázdný `Email`. Když je hodnota neprázdná, validuje se maximální délka a přítomnost `@`. Striktnější kontrolu (regex, DNS MX lookup) záměrně nedělá -- uživatel přijde na řadu při prvním odeslání mailu.
 
 ```go
 package user
 
 type Email string
 
+// NewEmail validates the email. Empty string is allowed (email is optional).
 func NewEmail(s string) (Email, error) {
     if s == "" {
-        return "", &shared.ValidationError{Field: "email", Message: "email je povinný"}
+        return "", nil
     }
     if len(s) > 254 {
-        return "", &shared.ValidationError{Field: "email", Message: "email max 254 znaků"}
+        return "", &shared.ValidationError{
+            Field:   "email",
+            Message: "email must be at most 254 characters",
+        }
     }
     if !strings.Contains(s, "@") {
-        return "", &shared.ValidationError{Field: "email", Message: "neplatný formát emailu"}
+        return "", &shared.ValidationError{Field: "email", Message: "invalid email format"}
     }
     return Email(s), nil
 }
@@ -152,13 +157,19 @@ type Password string
 
 func NewPassword(s string) (Password, error) {
     if s == "" {
-        return "", &shared.ValidationError{Field: "password", Message: "heslo je povinné"}
+        return "", &shared.ValidationError{Field: "password", Message: "password is required"}
     }
     if len(s) < 8 {
-        return "", &shared.ValidationError{Field: "password", Message: "heslo musí mít aspoň 8 znaků"}
+        return "", &shared.ValidationError{
+            Field:   "password",
+            Message: "password must be at least 8 characters",
+        }
     }
     if len(s) > 128 {
-        return "", &shared.ValidationError{Field: "password", Message: "heslo max 128 znaků"}
+        return "", &shared.ValidationError{
+            Field:   "password",
+            Message: "password must be at most 128 characters",
+        }
     }
     return Password(s), nil
 }

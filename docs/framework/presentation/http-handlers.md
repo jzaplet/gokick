@@ -6,7 +6,7 @@ slug: 'framework-presentation-http-handlers'
 parent: 'framework-presentation'
 navTitle: 'Handlers & Middleware'
 title: 'Handlers & Middleware'
-description: 'HTTP handlery s bus dispatchem a middleware chain (trace, CORS, CSRF, logging, JWT, role guard).'
+description: 'HTTP handlery s bus dispatchem a middleware chain (trace, security headers, CORS, CSRF, logging, JWT).'
 ---
 
 # Handlers & Middleware
@@ -84,28 +84,27 @@ Balíček `presentation/http/middleware/`. Každý middleware je `func(http.Hand
 | Middleware | Soubor | Popis |
 |---|---|---|
 | Trace | `trace.go` | Generování/propagace X-Trace-Id |
+| Security headers | `security.go` | HSTS (gateováno na `APP_COOKIE_SECURE`), CSP, X-Frame-Options, Permissions-Policy a další |
 | CORS | `cors.go` | Povolení cross-origin (Vite dev) |
 | CSRF | -- | `http.CrossOriginProtection` (Go 1.25 stdlib) |
 | Logging | `logging.go` | Request/response logging |
 | JWT Auth | `auth.go` | Validace Bearer tokenu, claims do contextu |
-| Role Guard | `role.go` | Kontrola role (admin/user) |
 
 Pořadí chain podle typu routy:
 
 ```
 Request
   /health, /api/v1/auth/{login,refresh}
-      -> Trace -> CORS -> CSRF -> Logging -> Handler
+      -> Trace -> Security headers -> CORS -> CSRF -> Logging -> Handler
 
   /api/v1/... (chráněné)
-      -> Trace -> CORS -> CSRF -> Logging -> JWT Auth -> Handler
-
-  /api/v1/admin/...
-      -> Trace -> CORS -> CSRF -> Logging -> JWT Auth -> Role Guard -> Handler
+      -> Trace -> Security headers -> CORS -> CSRF -> Logging -> JWT Auth -> Handler
 
   /{path...} (SPA)
       -> Static File / SPA Fallback
 ```
+
+Oddělení admin / uživatel routes řeší bus `AuthorizeMiddleware` skrze `Permissioned.RequiredPermission()` -- žádný role-guard HTTP middleware není potřeba, protože pravidlo "admin má všechno, ostatní role jsou zamítnuti pro `admin:*`" platí pro každý command i query.
 
 ### Trace middleware
 

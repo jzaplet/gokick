@@ -81,8 +81,8 @@ Kompletní přehled všech `useAuth()` metod viz [Frontend Utils – useAuth](/g
 
 ## Session lifecycle
 
-1. **Otevření** → route guard → `refresh()` → tiché přihlášení nebo redirect na login _(plánováno — Task 14)_
-2. **Přihlášení** → access token + refresh cookie + `scheduleRefresh()`
-3. **Auto-refresh** → 30s před expirací → nový access token + rotace refresh tokenu
-4. **401 response** → `authFetch` zavolá `refresh()` → retry s novým tokenem, jinak vrátí 401 a vyčistí stav
-5. **Odhlášení** → smaže token z DB + cookie + paměť
+1. **Otevření / hard refresh stránky** → `assets/app.ts:bootstrap()` zavolá `refresh()` ještě před mountem routeru. Pokud je refresh cookie platná, session se obnoví seamless (nový access token + populace `user` state). Když cookie chybí nebo je neplatná, `refresh()` tiše selže a route guard pošle chráněné routy na `/login`.
+2. **Přihlášení** → access token + refresh cookie + `scheduleRefresh()` (timer na auto-refresh).
+3. **Auto-refresh** → 30s před expirací → nový access token + rotace refresh tokenu.
+4. **401 response** → `authFetch` zavolá single-flight `refresh()` → retry s novým tokenem, jinak vrátí 401 a vyčistí stav.
+5. **Odhlášení** → smaže token z DB + cookie + paměť.

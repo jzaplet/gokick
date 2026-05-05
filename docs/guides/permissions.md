@@ -88,18 +88,22 @@ Tento seznam sestavuje `PermissionsRegistry`:
 
 ```go
 reg := shared.NewPermissionsRegistry([]shared.Permissioned{
-    authCmd.LogoutCommand{},
-    profileCmd.ChangePasswordCommand{},
-    profileQry.GetProfileQuery{},
-    userCmd.CreateUserCommand{},
-    // …všechny Permissioned handlery
+    authcmd.LogoutCommand{},
+    profilecmd.ChangePasswordCommand{},
+    profileqry.GetProfileQuery{},
+    usercmd.CreateUserCommand{},
+    usercmd.UpdateUserCommand{},
+    usercmd.DeleteUserCommand{},
+    userqry.ListUsersQuery{},
+    dashboardqry.GetUserDashboardQuery{},
+    dashboardqry.GetAdminDashboardQuery{},
 })
 
 reg.ForRole("admin")  // vše
 reg.ForRole("user")   // bez admin:*
 ```
 
-Wire registruje všechny handlery ve `container_provider.go` — kdykoliv přidáš nový `Permissioned`, přidáš ho i do seznamu.
+Wire registruje všechny handlery ve `container_provider.go` (provider `providePermissionsRegistry`) — kdykoliv přidáš nový `Permissioned` handler, přidáš ho i do tohoto seznamu. Žádná druhá konfigurace neexistuje — permission registry je jediný zdroj pravdy a derived přímo z kódu.
 
 
 ## Použití ve frontendu

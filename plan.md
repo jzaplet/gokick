@@ -1,138 +1,59 @@
-# Implementation plan
+# Roadmap
 
-Isolated tests use real sqlite (`:memory:` or `t.TempDir()`), real bus, real handlers. No mocks.
+The boilerplate is functional end-to-end: DDD/CQRS backend, Vue 3 SPA, JWT auth with HttpOnly refresh cookie, admin user CRUD, role-based dashboards, security headers, persisted session across page refresh.
 
-## Phase 6: Auth
+This file tracks what's left to make it production-ready and to grow it beyond the "starter" scope.
 
-### Backend
 
-- [x] **Task 1** — `application/auth/command/login.go` — `LoginCommand` (SkipPermission), `LoginResult`
-- [x] **Task 2** — `LoginHandler.Handle()`: FindByNickname → Verify → GenerateAccessToken → GenerateRefreshToken → tokens.Save
-  - Test: `login_handler_test.go` (real sqlite + seeded user) — success / wrong-pwd / unknown-nick / no-token-on-failure
-- [x] **Task 3** — `application/auth/command/refresh_token.go` + handler
-  - Rotation: old token `MarkUsed`, not deleted (for theft detection)
-  - Theft detection: reuse of an already-used token → `DeleteByUserID` (force logout on all devices)
-  - Test: success / expired / unknown / user-deleted / reuse-triggers-force-logout
-- [x] **Task 4** — `application/auth/command/logout.go` + handler (Permissioned `auth:logout`): claims → `DeleteByUserID`
-  - Test: deletes-all / does-not-touch-other-users / no-claims-returns-auth-error / required-permission
-- [x] **Task 5** — `application/profile/command/change_password.go` + handler (Permissioned `profile:update`): claims → FindByID → Verify old → Hash new → Update
-  - Test: success / wrong-old-password / no-claims / unknown-user / required-permission
-  - **Refactor:** moved `testfx` from `auth/command/internal/` to `application/internal/` (shared across subpackages)
-- [x] **Task 6** — `application/profile/query/get_profile.go` + handler (Permissioned `profile:read`): claims.UserID → `FindByID`
-  - Test: success / no-claims / unknown-user / required-permission
-- [x] **Task 7** — `domain/shared/permissions_registry.go` — `NewPermissionsRegistry([]Permissioned)` → `All()` / `ForRole(role) []string`
-  - Shared helper `IsPermissionAllowedForRole(permission, role)` in `domain/shared/permission.go`, `PermissionChecker` now uses it (DRY)
-  - Test: All sorted+dedup / ForRole(admin) = everything / ForRole(user) = without `admin:*` / unknown-role = like user / empty / copy-safety / 8 sub-tests for the helper
-- [x] **Task 8** — `presentation/http/middleware/auth.go` — parse Bearer → `JwtService.Validate` → `ContextWithClaims`
-  - **Error refactor:** `AuthError` 403→401, added `PermissionError` 403 (401 = not signed in, 403 = no permission)
-  - **Fixture move:** `application/internal/testfx` → `app/internal/testfx` (shared across all `app/**` layers)
-  - Test: valid-sets-claims / no-header-passes-through / missing-bearer-prefix-401 / invalid-token-401 / expired-401 / empty-bearer-401
-- [x] **Task 9** — `presentation/http/handler/auth.go` — POST login / refresh / logout via bus
-  - `config.CookieSecure` (env `APP_COOKIE_SECURE`, default true, dev false)
-  - `testfx.NewBuses()` helper — production-configured stack of buses
-  - Arch-lint: `deepScan: false` (false positives in DI wiring inside testfx)
-  - 8 E2E tests (real bus + real SQLite): login success / invalid creds / malformed JSON / refresh valid cookie / refresh missing cookie / refresh invalid cookie clears / logout no-claims 401 / logout with claims 204
-- [x] **Task 10** — ProfileHandler (Get, ChangePassword) + server registration of all routes
-  - `presentation/http/handler/profile.go` — Get returns userDTO with permissions, ChangePassword 204
-  - `server.go` — public routes + protected (JWT AuthMiddleware wrap) + SPA fallback
-  - 7 E2E tests (get success user / get success admin / get no-claims 401 / change success / change wrong-old 401 / change malformed 400 / change no-claims 401)
-- [x] **Task 11** — Wire DI: all auth/profile handlers, `CookieSecure` typed flag, `PermissionsRegistry` provider, `shared.JwtService` binding
-  - `make dev` builds the binary, `./bin/app serve` starts up, curl smoke test login→profile→logout passed end-to-end
-- [x] **Task 12** — Permissions in response (already done in Task 9/10: `registry.ForRole(role)` directly in the HTTP handler)
+## Build & deploy
 
-### Frontend
+- [ ] **Cross-compile matrix** — `make build-all` producing `linux/amd64`, `darwin/arm64`, `windows/amd64` binaries into `dist/`. Single source of artifacts for release tooling.
+- [ ] **E2E smoke test** — shell script that boots the binary against a temp SQLite, runs `login → /api/v1/profile → /api/v1/auth/refresh → /api/v1/auth/logout`, asserts status codes. Run as part of `make test` (or a separate `make e2e`).
+- [ ] **Release Dockerfile** — `docker/release/Dockerfile` based on `gcr.io/distroless/static` or Alpine, copies the linux binary, exposes `:3000`, declares `/data` volume for the SQLite file.
+- [ ] **`docker-compose.yml`** — single `app` service with bind-mounted DB volume + healthcheck on `/health`. Smoke test: `docker compose up -d && curl localhost:3000/health` returns 200.
 
-- [x] **Task 13** — 401 auto-refresh + retry
-  - Refactor of Fetch/Auth to one-way layers (Fetch → Auth → Views), removed the auth bridge
-  - `Fetch/`: 6 single-purpose files (apiFetch, apiUpload, apiDownload, accessToken, buildHeaders, parseResponse) + index
-  - `Auth/`: 7 single-purpose files (state, login, logout, refresh, permissions, authFetch, useAuth) + index
-  - `authFetch` = apiFetch + 401 retry + single-flight coalescing; skipped for `/api/v1/auth/*`
-  - Tests: `tests/fetch/apiFetch.test.ts` (7) + `tests/auth/authFetch.test.ts` (5 integration, fetch is the only mock)
-- [x] **Task 14** — `router.ts` — `authGuard` + required `meta.requiresAuth` (mirrors backend Permissioned/SkipPermission)
-  - `AppRoute` type forces explicit `meta.requiresAuth: true|false` — TS rejects routes without a declaration
-  - Runtime fail-closed for bypass (missing meta → redirect /home + error toast)
-  - Redirect to `/login` with `?redirect=<path>`, toasts (info / error), admin shortcut via `hasPermission`
-  - Stubs: `LoginView.vue`, `ProfileView.vue`, `AdminUsersView.vue` (Tasks 15/16/25 will extend)
-  - Production routes: `/` + `/login` (public), `/profile` (auth), `/admin/users` (auth + permission)
-  - 8 tests in `tests/router/authGuard.test.ts` (memory history + isolated state)
-- [x] **Task 15** — `app/Auth/Views/LoginView.vue` — form nickname + password, calls `login()`
-  - Error state: message from response into `Input` error slot + error toast
-  - Redirect: `?redirect` query (from guard) or `/`
-  - Success toast "Welcome back, {nickname}"
-  - Loading state: disabled form + spinner in the button
-- [x] **Task 16** — `app/Profile/Views/ProfileView.vue` — user info + change password form
-  - Two cards: "Account information" (nickname, role) + "Change password" (old + new password)
-  - PUT `/api/v1/profile/password` via `authFetch` with `{ old_password, new_password }`
-  - Error handling follows the same pattern as LoginView (errors object, clearFieldError, general error box)
-  - Success: toast "Password changed." + form reset
 
----
+## Background work
 
-## Phase 7: Admin CRUD
+The current `EventBus` is in-memory and synchronous after transaction commit. A crash between commit and dispatch loses the event. There's no retry, no delayed/recurring jobs, and `refresh_tokens` grows forever (used + expired rows are never cleaned).
 
-- [x] **Task 17** — `application/user/command/create_user.go` + handler (Permissioned `admin:users:create`): Validate VO (nickname, role) → check not-empty (password, email) → check duplicate nickname → hash → save → collect `UserCreated`
-  - 7 tests: success / duplicate-nickname (no event) / empty-nickname / invalid-role / empty-password / empty-email / required-permission
-- [ ] **Task 18** — `application/user/command/update_user.go` + handler
-  - Test: seed + update → changes persist
-- [ ] **Task 19** — `application/user/command/delete_user.go` + handler — refuse self-delete
-  - Test: seed + delete → 0 users / self-delete → ValidationError
-- [ ] **Task 20** — `application/user/query/list_users.go` + handler
-  - Test: seed 3 → expect 3 sorted
-- [ ] **Task 21** — `application/user/event/send_welcome_email.go` — subscribe to `UserCreated` (just a log for now)
-  - Test: dispatch event → log called
-- [ ] **Task 22** — `presentation/http/middleware/role.go` — role guard (admin)
-  - Test: httptest → claims.Role=admin → 200, user → 403
-- [ ] **Task 23** — `presentation/http/handler/admin_users.go` — CRUD via bus
-  - Test: httptest with real stack
-- [ ] **Task 24** — Server registration of admin routes
-- [ ] **Task 25** — `app/Admin/Views/AdminUsersView.vue` — list + modal create/edit/delete
-- [ ] **Task 26** — `app/Home/Views/DashboardView.vue` — post-login page
+### In-process scheduler (cron-like)
 
----
-
-## Other
-
-- [ ] **Task 27** — `presentation/http/middleware/security.go` — security headers (HSTS, CSP, X-Frame-Options, Referrer-Policy, Permissions-Policy)
-  - Test: httptest → all headers present
-  - Goal: A+ rating on securityheaders.com
-- [ ] **Task 28** — `Makefile: build-all` — cross-compile matrix (linux/amd64, darwin/arm64, windows/amd64)
-- [ ] **Task 29** — `docker/release/Dockerfile` + `docker-compose.yml`
-  - Smoke test: `docker compose up` → `/health` 200
-
----
-
-## Phase: Queues and scheduled tasks
-
-**Problem:** EventBus is in-memory and synchronous after commit. A crash between commit and dispatch = lost event. No retry, no delayed/recurring jobs, no visibility.
-
-### Scheduled tasks (cron-like)
-
-- [ ] **Task 30** — `infrastructure/scheduler/scheduler.go` — `Every(interval, name, fn)` + graceful shutdown
-  - Started by the server, runs in a goroutine, respects `ctx.Done()`
-  - Test: schedule fn → sleep → assert counter incremented
-- [ ] **Task 31** — Register cleanup: `scheduler.Every(1*time.Hour, "cleanup:expired-tokens", tokens.DeleteExpired)`
-  - Solves growth of `refresh_tokens` (after expiration they get deleted, both used tokens and the theft-detection window)
+- [ ] **`infrastructure/scheduler/scheduler.go`** — `Every(interval, name, fn)` with graceful shutdown via `ctx.Done()`. Started from the server, runs in its own goroutine.
+- [ ] **Refresh token cleanup** — register `scheduler.Every(1*time.Hour, "cleanup:expired-tokens", tokens.DeleteExpired)`. Adds `DeleteExpired(ctx)` to `token.Repository` (criterion: `expires_at < now()` OR `used_at < now() - theftWindow`).
 
 ### Persistent job queue (SQLite)
 
-- [ ] **Task 32** — Migration: `jobs` table (id, kind, payload JSON, run_at, attempts, max_attempts, locked_until, last_error, created_at, completed_at)
-- [ ] **Task 33** — `domain/job/` — `Job` entity, `JobRepository` interface with `Enqueue`, `ClaimDue`, `Complete`, `Fail` methods
-- [ ] **Task 34** — `infrastructure/sqlite/job/` — implementation with atomic claim via `UPDATE ... RETURNING`
-- [ ] **Task 35** — `application/job/` — `JobDispatcher` (interface for enqueue from command handlers), `JobHandlerRegistry` (kind → fn mapping)
-- [ ] **Task 36** — `infrastructure/worker/worker.go` — goroutine worker, poll interval, concurrency, exponential backoff, context cancellation
-  - Test: enqueue fn → worker processes it → complete / enqueue failing fn → retry up to max_attempts
-- [ ] **Task 37** — Integration with events: `DispatchEventsMiddleware` may optionally enqueue (for heavy handlers like email, external API)
-  - Fast handlers (pure Go logic) stay synchronous
-  - Heavy handlers have a `JobPayload` interface and are registered in `JobHandlerRegistry`
+For work that must survive crashes (welcome emails, external API calls, anything I/O-heavy or retry-prone).
 
-### CLI workflow
+- [ ] **Migration** — `jobs` table (`id`, `kind`, `payload` JSON, `run_at`, `attempts`, `max_attempts`, `locked_until`, `last_error`, `created_at`, `completed_at`).
+- [ ] **`domain/job/`** — `Job` entity, `JobRepository` interface with `Enqueue`, `ClaimDue`, `Complete`, `Fail`.
+- [ ] **`infrastructure/sqlite/job/`** — implementation, atomic claim via `UPDATE … RETURNING` to avoid double-processing.
+- [ ] **`application/job/`** — `JobDispatcher` (interface that command handlers depend on for enqueueing), `JobHandlerRegistry` (kind → handler fn).
+- [ ] **`infrastructure/worker/worker.go`** — goroutine pool, poll interval, concurrency, exponential backoff, respects context cancellation.
+- [ ] **Event integration** — `DispatchEventsMiddleware` lets event handlers opt into queueing. Fast/pure handlers stay synchronous; heavy handlers register a `JobPayload` and run via the worker.
 
-- [ ] **Task 38** — `./bin/app worker` — separate process for jobs only (for horizontal scaling; `./bin/app serve` may also turn the worker off via env)
+### CLI
 
----
+- [ ] **`./bin/app worker`** — standalone process running only the job worker. Allows horizontal scaling (one `serve` process + N `worker` processes). `./bin/app serve` still runs an in-process worker by default; an env flag (`APP_INPROC_WORKER=false`) disables it for split deployments.
 
-## Progress
 
-**Done:** 16 / 38 tasks — entire Phase 6 (Backend + Frontend) ✓
+## Observability
 
-**Next:** Phase 7 — Admin CRUD (Task 17+)
+- [ ] **Sentry** — `SENTRY_DSN` env, recovery middleware reports panics with trace_id + user_id context.
+- [ ] **Structured slog attrs** — audit `request_id`, `user_id`, `command` consistency across all log lines emitted by middleware and handlers.
+- [ ] **OpenTelemetry** — only when distributed tracing is needed. Otel HTTP middleware + propagation through bus middleware (trace_id is already a context-bound concept, OTel can replace the custom `TraceMiddleware`).
+
+
+## Hardening
+
+- [ ] **Rate limiting on auth endpoints** — token bucket or sliding window per IP for `POST /api/v1/auth/login` to slow brute-force.
+- [ ] **Audit log** — append-only table for security-relevant actions (login success/failure, role changes, user deletes). Useful for compliance, low cost to add.
+- [ ] **CSRF token endpoint** — currently `http.CrossOriginProtection` (Go 1.25 stdlib) handles same-site. If the SPA ever needs to be served from a different origin, the explicit double-submit cookie pattern would be needed.
+
+
+## Notes
+
+- Auth flow already done: login (cookie + access token), silent refresh on app boot, 401 auto-retry with single-flight refresh, theft detection via `used_at` marker.
+- Admin user CRUD already done: list/create/update/delete with field-keyed validation errors, self-delete protection, role-change-on-self triggers full-page reload to refresh JWT.
+- Migration is consolidated into a single `init_schema.sql` — fresh deploys are clean. Add new migrations as `20260328…` etc.

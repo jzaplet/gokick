@@ -37,8 +37,9 @@ type CreateUserCommand struct {
 func (c CreateUserCommand) RequiredPermission() string { return "admin:users:create" }
 
 type CreateUserHandler struct {
-    repo     user.Repository       // doménový interface
-    password shared.PasswordHasher // doménový interface
+    users    user.Repository        // doménový interface
+    password shared.PasswordHasher  // doménový interface
+    events   *shared.EventCollector // sběrač domain eventů (flushne se po commitu)
 }
 
 func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) error {
@@ -60,19 +61,37 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
         return err
     }
 
-    // 2. Business pravidlo (I/O)
-    existing, _ := h.repo.FindByNickname(ctx, string(nickname))
+    // 2. Business pravidlo (I/O) -- unique nickname
+    existing, err := h.users.FindByNickname(ctx, string(nickname))
+    if err != nil {
+        return err
+    }
     if existing != nil {
-        return &shared.ValidationError{Field: "nickname", Message: "přezdívka již existuje"}
+        return &shared.ValidationError{
+            Field:   "nickname",
+            Message: "user with this nickname already exists",
+        }
     }
 
-    // 3. Vytvoření entity + zápis
+    // 3. Hash hesla + vytvoření entity + zápis
     hash, err := h.password.Hash(string(password))
     if err != nil {
         return err
     }
     u := user.NewUser(nickname, hash, email, role)
-    return h.repo.Save(ctx, u)
+    if err := h.users.Save(ctx, u); err != nil {
+        return err
+    }
+
+    // 4. Domain event -- bus ho dispatchne až po úspěšném commitu transakce
+    h.events.Collect(user.UserCreated{
+        UserID:    u.ID,
+        Nickname:  u.Nickname,
+        Email:     u.Email,
+        Role:      u.Role,
+        Timestamp: time.Now(),
+    })
+    return nil
 }
 ```
 

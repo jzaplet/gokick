@@ -65,3 +65,4 @@ make build && make serve
 |---|---|
 | `./bin/app serve` | Spustí HTTP server |
 | `./bin/app seed` | Naplní DB výchozími daty (admin user) |
+| `./bin/app create-user -n <nick> -p <pass> [-e <email>] [-r <role>]` | Vytvoří uživatele (výchozí role `admin`) |

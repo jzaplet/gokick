@@ -63,7 +63,8 @@ project/
 │   │   │   └── middleware/           # Recovery, logging, authorize, transaction, events
 │   │   ├── auth/                     # command/ (login, refresh, logout)
 │   │   ├── profile/                  # command/ (change_password), query/ (get_profile)
-│   │   └── user/                     # command/ (CRUD), query/ (list), event/ (welcome email)
+│   │   ├── user/                     # command/ (create, update, delete), query/ (list)
+│   │   └── dashboard/                # query/ (user_dashboard, admin_dashboard) -- placeholdery
 │   │
 │   ├── infrastructure/               # Vrstva 3: Implementace
 │   │   ├── config/                   # Konfigurace (.env)
@@ -77,10 +78,10 @@ project/
 │   └── presentation/                 # Vrstva 4: I/O
 │       ├── http/
 │       │   ├── handler/              # HTTP handlery
-│       │   ├── middleware/           # HTTP middleware (CORS, JWT, logging)
+│       │   ├── middleware/           # Trace, security headers, CORS, logging, JWT
 │       │   ├── response/             # JSON response helpery
 │       │   └── server/               # HTTP server + routing
-│       └── console/                  # Cobra CLI
+│       └── console/                  # Cobra CLI (serve, seed, create-user)
 │
 ├── assets/                           # Frontend zdrojáky (Vue 3 + Vite)
 │   ├── app.ts                        # Vue mount point (createApp + router + CSS)
@@ -88,11 +89,17 @@ project/
 │   ├── router.ts                     # Vue Router (routes, guards)
 │   ├── tailwind.css                  # Tailwind entry (@import 'tailwindcss')
 │   ├── app/                          # Aplikační komponenty (po doménách)
-│   │   └── <Domain>/Views/           # Views pro danou doménu
-│   └── app-ui/                       # Sdílené UI komponenty a composables
+│   │   ├── <Domain>/Views/           # Routované views (orchestrátory)
+│   │   ├── <Domain>/Components/      # Doménové komponenty (formuláře, tabulky, karty)
+│   │   ├── <Domain>/types/           # Typové definice (.ts soubory, jeden typ na soubor)
+│   │   └── Layout/                   # AppLayout + AppHeader (chrome pro autentizovaný stav)
+│   └── app-ui/                       # Sdílené, generic UI komponenty a composables
 │       ├── Auth/                     # useAuth, authFetch, state, login/logout/refresh, permissions + typy
 │       ├── Fetch/                    # apiFetch, apiUpload, apiDownload, accessToken, parseResponse + typy
+│       ├── Alerts/                   # ErrorAlert
 │       ├── Buttons/                  # Button
+│       ├── ClickOutside/             # useClickOutside composable
+│       ├── Dropdown/                 # Dropdown (slot-based, click-outside auto-close)
 │       ├── Icons/                    # SVG ikony
 │       ├── Inputs/                   # Input, Select, CheckBox, DateTimeInput
 │       ├── Loading/                  # Spinner

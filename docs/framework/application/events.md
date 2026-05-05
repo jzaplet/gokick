@@ -21,10 +21,10 @@ Event handlery reagují na domain eventy -- side-effects po úspěšném commitu
 
 ### Event handler
 
-Event handlery zpracovávají domain eventy dispatched přes `EventBus` (Recovery → Logging). Registrují se v DI kontejneru.
+Event handlery zpracovávají domain eventy dispatched přes `EventBus` (Recovery → Logging). Registrují se v DI kontejneru. Boilerplate sám žádný event handler aktuálně nemá -- následující šablona ukazuje, jak by handler vypadal (např. pro odeslání welcome emailu po vytvoření uživatele):
 
 ```go
-// application/user/event/send_welcome_email.go
+// application/user/event/send_welcome_email.go (placeholder)
 
 type SendWelcomeEmailHandler struct {
     mailer Mailer
@@ -37,18 +37,27 @@ func (h *SendWelcomeEmailHandler) Handle(ctx context.Context, event user.UserCre
 
 ### Sběr eventů v command handleru
 
+Eventy se sbírají do `EventCollector` až **po úspěšném zápisu**, aby se v případě DB chyby nedispatchoval event s daty, která neuvízla:
+
 ```go
 func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) error {
-    // ... business logika ...
-    u := user.NewUser(nickname, hash, email, role)
+    // ... business logika + Save ...
+    if err := h.users.Save(ctx, u); err != nil {
+        return err
+    }
 
     h.events.Collect(user.UserCreated{
-        UserID: u.ID, Nickname: u.Nickname, Email: u.Email,
+        UserID:    u.ID,
+        Nickname:  u.Nickname,
+        Email:     u.Email,
+        Role:      u.Role,
+        Timestamp: time.Now(),
     })
-
-    return h.repo.Save(ctx, u)
+    return nil
 }
 ```
+
+Bus `DispatchEventsMiddleware` flushne sbírku až po commitu transakce -- pokud Save uspěl, ale commit selže, eventy se zahodí.
 
 
 ## Detaily

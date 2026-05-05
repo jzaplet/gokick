@@ -81,7 +81,7 @@ Klíčová pravidla:
 | Balíček | Co dělá |
 |---|---|
 | `presentation/http/handler/` | HTTP handlery -- deserializace, bus dispatch, response. |
-| `presentation/http/middleware/` | Trace ID, CORS, logging, JWT auth, role guard. |
+| `presentation/http/middleware/` | Trace ID, security headers (CSP/HSTS/…), CORS, logging, JWT auth. |
 | `presentation/http/response/` | JSON response helpers, error → HTTP status mapování. |
 | `presentation/http/server/` | Routing, middleware chain, SPA fallback. |
 | `presentation/console/` | Cobra CLI příkazy. |

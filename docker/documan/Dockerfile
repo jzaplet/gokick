@@ -3,6 +3,7 @@
 FROM jzaplet/documan:2.13.0
 
 COPY ./docs /documan/data/docs
+COPY ./README.md /documan/data/README.md
 
 WORKDIR /documan/data
 
