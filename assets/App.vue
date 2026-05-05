@@ -1,10 +1,15 @@
 <script setup lang="ts">
+import { useRoute } from 'vue-router';
+import AppLayout from '@/app/Layout/AppLayout.vue';
 import ToastContainer from '@/app-ui/Toast/ToastContainer.vue';
+
+const route = useRoute();
 </script>
 
 <template>
-    <div class="min-h-screen bg-gray-50">
+    <AppLayout v-if="route.meta.requiresAuth === true">
         <RouterView />
-        <ToastContainer />
-    </div>
+    </AppLayout>
+    <RouterView v-else />
+    <ToastContainer />
 </template>

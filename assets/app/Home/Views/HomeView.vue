@@ -1,14 +1,11 @@
 <script setup lang="ts">
-import type { HealthResponse } from '@/app/Home/types/HealthResponse';
-import { onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuth } from '@/app-ui/Auth';
-import { apiFetch } from '@/app-ui/Fetch';
 import { useToast } from '@/app-ui/Toast/useToast';
 import Button from '@/app-ui/Buttons/Button.vue';
 
 const router = useRouter();
-const { success, error } = useToast();
+const { success } = useToast();
 const { user, isAuthenticated, logout, hasPermission } = useAuth();
 
 const goToLogin = (): void => {
@@ -35,16 +32,6 @@ const handleLogout = async (): Promise<void> => {
     await logout();
     success('Odhlášení proběhlo.');
 };
-
-onMounted(async (): Promise<void> => {
-    const result = await apiFetch<HealthResponse>('GET', '/health');
-
-    if (result.success === true) {
-        success(`API Test status: ${result.data.status}`);
-    } else {
-        error(`API Test Error ${String(result.status)}`);
-    }
-});
 </script>
 
 <template>

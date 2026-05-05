@@ -26,7 +26,7 @@ onMounted(async (): Promise<void> => {
 </script>
 
 <template>
-    <div class="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div class="py-12 px-4 sm:px-6 lg:px-8">
         <div class="max-w-3xl mx-auto space-y-6">
             <h1 class="text-3xl font-extrabold text-gray-900">
                 Admin dashboard
