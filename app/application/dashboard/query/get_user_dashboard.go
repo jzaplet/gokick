@@ -30,6 +30,6 @@ func (h *GetUserDashboardHandler) Handle(
 	}
 
 	return UserDashboard{
-		Message: "Vítej " + claims.Nickname + " — toto je placeholder user dashboard.",
+		Message: "Welcome " + claims.Nickname + " — this is a placeholder user dashboard.",
 	}, nil
 }

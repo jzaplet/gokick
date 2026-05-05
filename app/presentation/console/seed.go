@@ -17,7 +17,7 @@ func NewSeedCommand(seeder shared.Seeder) *SeedCommand {
 func (c *SeedCommand) Command() *cobra.Command {
 	return &cobra.Command{
 		Use:   "seed",
-		Short: "Naplní databázi výchozími daty",
+		Short: "Seed the database with default data",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return c.seeder.Seed(cmd.Context())
 		},

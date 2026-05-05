@@ -23,11 +23,11 @@ components:
   app:
     in: .
 
-  # Vrstva 1: Domain
+  # Layer 1: Domain
   domain:
     in: domain/**
 
-  # Vrstva 2: Application
+  # Layer 2: Application
   bus:
     in: application/bus
   bus_middleware:
@@ -39,7 +39,7 @@ components:
   testfx:
     in: '**/testfx/**'
 
-  # Vrstva 3: Infrastructure
+  # Layer 3: Infrastructure
   config:
     in: infrastructure/config/**
   database:
@@ -51,7 +51,7 @@ components:
   sqlite_repos:
     in: infrastructure/sqlite/**
 
-  # Vrstva 4: Presentation
+  # Layer 4: Presentation
   handler:
     in: presentation/http/handler/**
   http_middleware:
@@ -64,7 +64,7 @@ components:
     in: presentation/console/**
 
 deps:
-  # Root – orchestrace
+  # Root — orchestration
   app:
     mayDependOn:
       - bus
@@ -73,11 +73,11 @@ deps:
       - sqlite_base
       - console
 
-  # Domain – čisté jádro
+  # Domain — pure core
   domain:
     anyVendorDeps: true
 
-  # Application – závisí jen na domain
+  # Application — depends on domain only
   bus:
     anyVendorDeps: true
   bus_middleware:
@@ -101,7 +101,7 @@ deps:
       - sqlite_repos
     anyVendorDeps: true
 
-  # Infrastructure – závisí na domain
+  # Infrastructure — depends on domain
   config:
     anyVendorDeps: true
   database:
@@ -118,7 +118,7 @@ deps:
       - sqlite_base
       - database
 
-  # Presentation – závisí na application + infrastructure
+  # Presentation — depends on application + infrastructure
   handler:
     mayDependOn:
       - application

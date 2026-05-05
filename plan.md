@@ -1,8 +1,8 @@
-# Plán implementace
+# Implementation plan
 
-Izolované testy používají real sqlite (`:memory:` nebo `t.TempDir()`), real bus, real handlery. Žádné mocky.
+Isolated tests use real sqlite (`:memory:` or `t.TempDir()`), real bus, real handlers. No mocks.
 
-## Fáze 6: Auth
+## Phase 6: Auth
 
 ### Backend
 
@@ -10,129 +10,129 @@ Izolované testy používají real sqlite (`:memory:` nebo `t.TempDir()`), real 
 - [x] **Task 2** — `LoginHandler.Handle()`: FindByNickname → Verify → GenerateAccessToken → GenerateRefreshToken → tokens.Save
   - Test: `login_handler_test.go` (real sqlite + seeded user) — success / wrong-pwd / unknown-nick / no-token-on-failure
 - [x] **Task 3** — `application/auth/command/refresh_token.go` + handler
-  - Rotace: starý token `MarkUsed`, ne smazán (pro theft detection)
-  - Theft detection: použití použitého tokenu → `DeleteByUserID` (force logout na všech zařízeních)
+  - Rotation: old token `MarkUsed`, not deleted (for theft detection)
+  - Theft detection: reuse of an already-used token → `DeleteByUserID` (force logout on all devices)
   - Test: success / expired / unknown / user-deleted / reuse-triggers-force-logout
 - [x] **Task 4** — `application/auth/command/logout.go` + handler (Permissioned `auth:logout`): claims → `DeleteByUserID`
   - Test: deletes-all / does-not-touch-other-users / no-claims-returns-auth-error / required-permission
 - [x] **Task 5** — `application/profile/command/change_password.go` + handler (Permissioned `profile:update`): claims → FindByID → Verify old → Hash new → Update
   - Test: success / wrong-old-password / no-claims / unknown-user / required-permission
-  - **Refactor:** přesunul `testfx` z `auth/command/internal/` do `application/internal/` (sdílené napříč subpackages)
+  - **Refactor:** moved `testfx` from `auth/command/internal/` to `application/internal/` (shared across subpackages)
 - [x] **Task 6** — `application/profile/query/get_profile.go` + handler (Permissioned `profile:read`): claims.UserID → `FindByID`
   - Test: success / no-claims / unknown-user / required-permission
 - [x] **Task 7** — `domain/shared/permissions_registry.go` — `NewPermissionsRegistry([]Permissioned)` → `All()` / `ForRole(role) []string`
-  - Shared helper `IsPermissionAllowedForRole(permission, role)` v `domain/shared/permission.go`, `PermissionChecker` ho teď používá (DRY)
-  - Test: All sorted+dedup / ForRole(admin) = vše / ForRole(user) = bez `admin:*` / unknown-role = jako user / empty / copy-safety / 8 sub-testů pro helper
+  - Shared helper `IsPermissionAllowedForRole(permission, role)` in `domain/shared/permission.go`, `PermissionChecker` now uses it (DRY)
+  - Test: All sorted+dedup / ForRole(admin) = everything / ForRole(user) = without `admin:*` / unknown-role = like user / empty / copy-safety / 8 sub-tests for the helper
 - [x] **Task 8** — `presentation/http/middleware/auth.go` — parse Bearer → `JwtService.Validate` → `ContextWithClaims`
-  - **Error refactor:** `AuthError` 403→401, přidán `PermissionError` 403 (401 = nejsi přihlášen, 403 = nemáš právo)
-  - **Fixture přesun:** `application/internal/testfx` → `app/internal/testfx` (sdílené přes všechny `app/**` vrstvy)
+  - **Error refactor:** `AuthError` 403→401, added `PermissionError` 403 (401 = not signed in, 403 = no permission)
+  - **Fixture move:** `application/internal/testfx` → `app/internal/testfx` (shared across all `app/**` layers)
   - Test: valid-sets-claims / no-header-passes-through / missing-bearer-prefix-401 / invalid-token-401 / expired-401 / empty-bearer-401
-- [x] **Task 9** — `presentation/http/handler/auth.go` — POST login / refresh / logout přes bus
+- [x] **Task 9** — `presentation/http/handler/auth.go` — POST login / refresh / logout via bus
   - `config.CookieSecure` (env `APP_COOKIE_SECURE`, default true, dev false)
-  - `testfx.NewBuses()` helper — produkčně nakonfigurovaný stack busů
-  - Arch-lint: `deepScan: false` (false positives v DI wiringu v testfx)
-  - 8 E2E testů (real bus + real SQLite): login success / invalid creds / malformed JSON / refresh valid cookie / refresh missing cookie / refresh invalid cookie clears / logout no-claims 401 / logout with claims 204
-- [x] **Task 10** — ProfileHandler (Get, ChangePassword) + server registrace všech rout
-  - `presentation/http/handler/profile.go` — Get vrací userDTO s permissions, ChangePassword 204
-  - `server.go` — public routy + protected (JWT AuthMiddleware wrap) + SPA fallback
-  - 7 E2E testů (get success user / get success admin / get no-claims 401 / change success / change wrong-old 401 / change malformed 400 / change no-claims 401)
-- [x] **Task 11** — Wire DI: všechny auth/profile handlery, `CookieSecure` typed flag, `PermissionsRegistry` provider, `shared.JwtService` binding
-  - `make dev` sestaví binárku, `./bin/app serve` nastartuje, curl smoke test login→profile→logout prošel end-to-end
-- [x] **Task 12** — Permissions v response (už hotové v Task 9/10: `registry.ForRole(role)` přímo v HTTP handleru)
+  - `testfx.NewBuses()` helper — production-configured stack of buses
+  - Arch-lint: `deepScan: false` (false positives in DI wiring inside testfx)
+  - 8 E2E tests (real bus + real SQLite): login success / invalid creds / malformed JSON / refresh valid cookie / refresh missing cookie / refresh invalid cookie clears / logout no-claims 401 / logout with claims 204
+- [x] **Task 10** — ProfileHandler (Get, ChangePassword) + server registration of all routes
+  - `presentation/http/handler/profile.go` — Get returns userDTO with permissions, ChangePassword 204
+  - `server.go` — public routes + protected (JWT AuthMiddleware wrap) + SPA fallback
+  - 7 E2E tests (get success user / get success admin / get no-claims 401 / change success / change wrong-old 401 / change malformed 400 / change no-claims 401)
+- [x] **Task 11** — Wire DI: all auth/profile handlers, `CookieSecure` typed flag, `PermissionsRegistry` provider, `shared.JwtService` binding
+  - `make dev` builds the binary, `./bin/app serve` starts up, curl smoke test login→profile→logout passed end-to-end
+- [x] **Task 12** — Permissions in response (already done in Task 9/10: `registry.ForRole(role)` directly in the HTTP handler)
 
 ### Frontend
 
 - [x] **Task 13** — 401 auto-refresh + retry
-  - Refactor Fetch/Auth na jednosměrné vrstvy (Fetch → Auth → Views), odstraněn auth bridge
-  - `Fetch/`: 6 single-purpose souborů (apiFetch, apiUpload, apiDownload, accessToken, buildHeaders, parseResponse) + index
-  - `Auth/`: 7 single-purpose souborů (state, login, logout, refresh, permissions, authFetch, useAuth) + index
-  - `authFetch` = apiFetch + 401 retry + single-flight coalescing; skip pro `/api/v1/auth/*`
-  - Testy: `tests/fetch/apiFetch.test.ts` (7) + `tests/auth/authFetch.test.ts` (5 integration, mock jen fetch)
-- [x] **Task 14** — `router.ts` — `authGuard` + povinné `meta.requiresAuth` (mirror backendu Permissioned/SkipPermission)
-  - `AppRoute` type forces explicit `meta.requiresAuth: true|false` — TS nepustí route bez deklarace
-  - Runtime fail-closed pro bypass (missing meta → redirect /home + error toast)
-  - Redirect na `/login` s `?redirect=<path>`, toasty (info / error), admin shortcut přes `hasPermission`
-  - Stubs: `LoginView.vue`, `ProfileView.vue`, `AdminUsersView.vue` (Task 15/16/25 rozšíří)
+  - Refactor of Fetch/Auth to one-way layers (Fetch → Auth → Views), removed the auth bridge
+  - `Fetch/`: 6 single-purpose files (apiFetch, apiUpload, apiDownload, accessToken, buildHeaders, parseResponse) + index
+  - `Auth/`: 7 single-purpose files (state, login, logout, refresh, permissions, authFetch, useAuth) + index
+  - `authFetch` = apiFetch + 401 retry + single-flight coalescing; skipped for `/api/v1/auth/*`
+  - Tests: `tests/fetch/apiFetch.test.ts` (7) + `tests/auth/authFetch.test.ts` (5 integration, fetch is the only mock)
+- [x] **Task 14** — `router.ts` — `authGuard` + required `meta.requiresAuth` (mirrors backend Permissioned/SkipPermission)
+  - `AppRoute` type forces explicit `meta.requiresAuth: true|false` — TS rejects routes without a declaration
+  - Runtime fail-closed for bypass (missing meta → redirect /home + error toast)
+  - Redirect to `/login` with `?redirect=<path>`, toasts (info / error), admin shortcut via `hasPermission`
+  - Stubs: `LoginView.vue`, `ProfileView.vue`, `AdminUsersView.vue` (Tasks 15/16/25 will extend)
   - Production routes: `/` + `/login` (public), `/profile` (auth), `/admin/users` (auth + permission)
-  - 8 testů v `tests/router/authGuard.test.ts` (memory history + isolated state)
-- [x] **Task 15** — `app/Auth/Views/LoginView.vue` — form nickname + password, volá `login()`
-  - Error state: zpráva z response do `Input` error slotu + error toast
-  - Redirect: `?redirect` query (z guardu) nebo `/`
-  - Success toast "Vítej zpátky, {nickname}"
-  - Loading state: disabled form + spinner v tlačítku
+  - 8 tests in `tests/router/authGuard.test.ts` (memory history + isolated state)
+- [x] **Task 15** — `app/Auth/Views/LoginView.vue` — form nickname + password, calls `login()`
+  - Error state: message from response into `Input` error slot + error toast
+  - Redirect: `?redirect` query (from guard) or `/`
+  - Success toast "Welcome back, {nickname}"
+  - Loading state: disabled form + spinner in the button
 - [x] **Task 16** — `app/Profile/Views/ProfileView.vue` — user info + change password form
-  - Dvě karty: "Informace o účtu" (nickname, role) + "Změnit heslo" (old + new password)
-  - PUT `/api/v1/profile/password` přes `authFetch` s `{ old_password, new_password }`
-  - Error handling stejný pattern jako LoginView (errors object, clearFieldError, general error box)
-  - Úspěch: toast "Heslo bylo změněno." + reset formu
+  - Two cards: "Account information" (nickname, role) + "Change password" (old + new password)
+  - PUT `/api/v1/profile/password` via `authFetch` with `{ old_password, new_password }`
+  - Error handling follows the same pattern as LoginView (errors object, clearFieldError, general error box)
+  - Success: toast "Password changed." + form reset
 
 ---
 
-## Fáze 7: Admin CRUD
+## Phase 7: Admin CRUD
 
 - [x] **Task 17** — `application/user/command/create_user.go` + handler (Permissioned `admin:users:create`): Validate VO (nickname, role) → check not-empty (password, email) → check duplicate nickname → hash → save → collect `UserCreated`
-  - 7 testů: success / duplicate-nickname (no event) / empty-nickname / invalid-role / empty-password / empty-email / required-permission
+  - 7 tests: success / duplicate-nickname (no event) / empty-nickname / invalid-role / empty-password / empty-email / required-permission
 - [ ] **Task 18** — `application/user/command/update_user.go` + handler
   - Test: seed + update → changes persist
 - [ ] **Task 19** — `application/user/command/delete_user.go` + handler — refuse self-delete
   - Test: seed + delete → 0 users / self-delete → ValidationError
 - [ ] **Task 20** — `application/user/query/list_users.go` + handler
   - Test: seed 3 → expect 3 sorted
-- [ ] **Task 21** — `application/user/event/send_welcome_email.go` — subscribe na `UserCreated` (zatím jen log)
+- [ ] **Task 21** — `application/user/event/send_welcome_email.go` — subscribe to `UserCreated` (just a log for now)
   - Test: dispatch event → log called
 - [ ] **Task 22** — `presentation/http/middleware/role.go` — role guard (admin)
   - Test: httptest → claims.Role=admin → 200, user → 403
-- [ ] **Task 23** — `presentation/http/handler/admin_users.go` — CRUD přes bus
-  - Test: httptest s real stack
-- [ ] **Task 24** — Server registrace admin rout
-- [ ] **Task 25** — `app/Admin/Views/AdminUsersView.vue` — seznam + modal create/edit/delete
-- [ ] **Task 26** — `app/Home/Views/DashboardView.vue` — post-login stránka
+- [ ] **Task 23** — `presentation/http/handler/admin_users.go` — CRUD via bus
+  - Test: httptest with real stack
+- [ ] **Task 24** — Server registration of admin routes
+- [ ] **Task 25** — `app/Admin/Views/AdminUsersView.vue` — list + modal create/edit/delete
+- [ ] **Task 26** — `app/Home/Views/DashboardView.vue` — post-login page
 
 ---
 
-## Ostatní
+## Other
 
 - [ ] **Task 27** — `presentation/http/middleware/security.go` — security headers (HSTS, CSP, X-Frame-Options, Referrer-Policy, Permissions-Policy)
-  - Test: httptest → všechny hlavičky přítomny
-  - Cíl: A+ rating na securityheaders.com
+  - Test: httptest → all headers present
+  - Goal: A+ rating on securityheaders.com
 - [ ] **Task 28** — `Makefile: build-all` — cross-compile matrix (linux/amd64, darwin/arm64, windows/amd64)
 - [ ] **Task 29** — `docker/release/Dockerfile` + `docker-compose.yml`
   - Smoke test: `docker compose up` → `/health` 200
 
 ---
 
-## Fáze: Fronty a scheduled tasks
+## Phase: Queues and scheduled tasks
 
-**Problém:** EventBus je in-memory + synchronní po commit. Crash mezi commitem a dispatchem = ztracený event. Žádný retry, žádné delayed/recurring joby, žádná visibility.
+**Problem:** EventBus is in-memory and synchronous after commit. A crash between commit and dispatch = lost event. No retry, no delayed/recurring jobs, no visibility.
 
 ### Scheduled tasks (cron-like)
 
 - [ ] **Task 30** — `infrastructure/scheduler/scheduler.go` — `Every(interval, name, fn)` + graceful shutdown
-  - Startuje ze serveru, běží v goroutine, respektuje `ctx.Done()`
+  - Started by the server, runs in a goroutine, respects `ctx.Done()`
   - Test: schedule fn → sleep → assert counter incremented
-- [ ] **Task 31** — Zaregistrovat cleanup: `scheduler.Every(1*time.Hour, "cleanup:expired-tokens", tokens.DeleteExpired)`
-  - Řeší narůstání `refresh_tokens` (po expiraci se smažou, použité tokeny i okno theft detection)
+- [ ] **Task 31** — Register cleanup: `scheduler.Every(1*time.Hour, "cleanup:expired-tokens", tokens.DeleteExpired)`
+  - Solves growth of `refresh_tokens` (after expiration they get deleted, both used tokens and the theft-detection window)
 
 ### Persistent job queue (SQLite)
 
-- [ ] **Task 32** — Migrace: `jobs` tabulka (id, kind, payload JSON, run_at, attempts, max_attempts, locked_until, last_error, created_at, completed_at)
-- [ ] **Task 33** — `domain/job/` — `Job` entity, `JobRepository` interface s `Enqueue`, `ClaimDue`, `Complete`, `Fail` metodami
-- [ ] **Task 34** — `infrastructure/sqlite/job/` — implementace s atomickým claim pomocí `UPDATE ... RETURNING`
-- [ ] **Task 35** — `application/job/` — `JobDispatcher` (interface pro enqueue z command handlerů), `JobHandlerRegistry` (mapování kind → fn)
+- [ ] **Task 32** — Migration: `jobs` table (id, kind, payload JSON, run_at, attempts, max_attempts, locked_until, last_error, created_at, completed_at)
+- [ ] **Task 33** — `domain/job/` — `Job` entity, `JobRepository` interface with `Enqueue`, `ClaimDue`, `Complete`, `Fail` methods
+- [ ] **Task 34** — `infrastructure/sqlite/job/` — implementation with atomic claim via `UPDATE ... RETURNING`
+- [ ] **Task 35** — `application/job/` — `JobDispatcher` (interface for enqueue from command handlers), `JobHandlerRegistry` (kind → fn mapping)
 - [ ] **Task 36** — `infrastructure/worker/worker.go` — goroutine worker, poll interval, concurrency, exponential backoff, context cancellation
-  - Test: enqueue fn → worker zpracuje → complete / enqueue failing fn → retry až max_attempts
-- [ ] **Task 37** — Integrace s eventy: `DispatchEventsMiddleware` může volitelně enqueue (pro těžké handlery jako email, external API)
-  - Fast handlery (pure Go logika) zůstávají synchronní
-  - Těžké handlery mají `JobPayload` interface + jsou registrované v `JobHandlerRegistry`
+  - Test: enqueue fn → worker processes it → complete / enqueue failing fn → retry up to max_attempts
+- [ ] **Task 37** — Integration with events: `DispatchEventsMiddleware` may optionally enqueue (for heavy handlers like email, external API)
+  - Fast handlers (pure Go logic) stay synchronous
+  - Heavy handlers have a `JobPayload` interface and are registered in `JobHandlerRegistry`
 
 ### CLI workflow
 
-- [ ] **Task 38** — `./bin/app worker` — samostatný proces jen pro joby (pro horizontální škálování, `./bin/app serve` může worker i vypnout přes env)
+- [ ] **Task 38** — `./bin/app worker` — separate process for jobs only (for horizontal scaling; `./bin/app serve` may also turn the worker off via env)
 
 ---
 
 ## Progress
 
-**Hotovo:** 16 / 38 tasků — celá Fáze 6 (Backend + Frontend) ✓
+**Done:** 16 / 38 tasks — entire Phase 6 (Backend + Frontend) ✓
 
-**Další:** Fáze 7 — Admin CRUD (Task 17+)
+**Next:** Phase 7 — Admin CRUD (Task 17+)

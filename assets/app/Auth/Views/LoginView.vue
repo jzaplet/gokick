@@ -7,10 +7,10 @@ import LoginForm from '@/app/Auth/Components/LoginForm.vue';
         <div class="max-w-md w-full space-y-8">
             <div class="text-center">
                 <h2 class="text-3xl font-extrabold text-gray-900">
-                    Přihlášení
+                    Sign in
                 </h2>
                 <p class="mt-2 text-sm text-gray-600">
-                    Zadejte své přihlašovací údaje
+                    Enter your credentials
                 </p>
             </div>
 

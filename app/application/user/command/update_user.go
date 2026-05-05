@@ -11,8 +11,8 @@ import (
 type UpdateUserCommand struct {
 	ID       string
 	Nickname string
-	Password string // prázdné = beze změny
-	Email    string // prázdné = bez emailu
+	Password string // empty = unchanged
+	Email    string // empty = no email
 	Role     string
 }
 
@@ -59,7 +59,7 @@ func (h *UpdateUserHandler) Handle(ctx context.Context, cmd UpdateUserCommand) e
 		if conflict != nil && conflict.ID != target.ID {
 			return &shared.ValidationError{
 				Field:   "nickname",
-				Message: "uživatel s tímto nickname už existuje",
+				Message: "user with this nickname already exists",
 			}
 		}
 	}

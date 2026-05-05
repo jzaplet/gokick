@@ -28,7 +28,7 @@ func (h *DeleteUserHandler) Handle(ctx context.Context, cmd DeleteUserCommand) e
 	}
 
 	if claims.UserID == cmd.ID {
-		return &shared.ValidationError{Message: "nelze smazat vlastní účet"}
+		return &shared.ValidationError{Message: "cannot delete your own account"}
 	}
 
 	if _, err := h.users.FindByID(ctx, cmd.ID); err != nil {

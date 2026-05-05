@@ -36,7 +36,7 @@ const handleSubmit = async (data: UserFormData): Promise<void> => {
         return;
     }
 
-    success(`Uživatel ${data.nickname} vytvořen.`);
+    success(`User ${data.nickname} created.`);
     void router.push({ name: 'admin-users' });
 };
 
@@ -49,12 +49,12 @@ const handleCancel = (): void => {
     <div class="py-12 px-4 sm:px-6 lg:px-8">
         <div class="max-w-xl mx-auto space-y-6">
             <h1 class="text-3xl font-extrabold text-gray-900">
-                Nový uživatel
+                New user
             </h1>
 
             <UserForm
                 mode="create"
-                submit-label="Vytvořit"
+                submit-label="Create"
                 :is-loading="isLoading"
                 :errors="errors"
                 @submit="handleSubmit"

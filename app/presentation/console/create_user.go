@@ -26,7 +26,7 @@ func (c *CreateUserCommand) Command() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "create-user",
-		Short: "Vytvoří uživatele (s libovolnou rolí — výchozí admin)",
+		Short: "Create a user (any role — defaults to admin)",
 		Example: "  app create-user -n alice -p secret12\n" +
 			"  app create-user -n bob -p secret12 -e bob@example.com -r user",
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -34,10 +34,10 @@ func (c *CreateUserCommand) Command() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&nickname, "nickname", "n", "", "přezdívka (povinné)")
-	cmd.Flags().StringVarP(&password, "password", "p", "", "heslo (povinné)")
-	cmd.Flags().StringVarP(&email, "email", "e", "", "email (volitelné)")
-	cmd.Flags().StringVarP(&role, "role", "r", "admin", "role (admin nebo user)")
+	cmd.Flags().StringVarP(&nickname, "nickname", "n", "", "nickname (required)")
+	cmd.Flags().StringVarP(&password, "password", "p", "", "password (required)")
+	cmd.Flags().StringVarP(&email, "email", "e", "", "email (optional)")
+	cmd.Flags().StringVarP(&role, "role", "r", "admin", "role (admin or user)")
 
 	_ = cmd.MarkFlagRequired("nickname")
 	_ = cmd.MarkFlagRequired("password")
@@ -55,7 +55,7 @@ func (c *CreateUserCommand) run(ctx context.Context, nickname, password, email, 
 		return err
 	}
 
-	fmt.Printf("uživatel %q (%s) vytvořen\n", nickname, role)
+	fmt.Printf("user %q (%s) created\n", nickname, role)
 
 	return nil
 }

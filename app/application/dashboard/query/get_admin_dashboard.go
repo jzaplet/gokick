@@ -30,6 +30,6 @@ func (h *GetAdminDashboardHandler) Handle(
 	}
 
 	return AdminDashboard{
-		Message: "Vítej " + claims.Nickname + " — toto je placeholder admin dashboard.",
+		Message: "Welcome " + claims.Nickname + " — this is a placeholder admin dashboard.",
 	}, nil
 }

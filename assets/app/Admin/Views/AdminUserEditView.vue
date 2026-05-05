@@ -42,7 +42,7 @@ const handleSubmit = async (data: UserFormData): Promise<void> => {
         return;
     }
 
-    success(`Uživatel ${data.nickname} uložen.`);
+    success(`User ${data.nickname} saved.`);
     void router.push({ name: 'admin-users' });
 };
 
@@ -56,7 +56,7 @@ onMounted(async (): Promise<void> => {
     isFetching.value = false;
 
     if (result.success === false) {
-        error('Nepodařilo se načíst uživatele.');
+        error('Failed to load user.');
         void router.push({ name: 'admin-users' });
 
         return;
@@ -65,7 +65,7 @@ onMounted(async (): Promise<void> => {
     const target = result.data.find((u) => u.id === userId);
 
     if (target === undefined) {
-        error('Uživatel nenalezen.');
+        error('User not found.');
         void router.push({ name: 'admin-users' });
 
         return;
@@ -84,7 +84,7 @@ onMounted(async (): Promise<void> => {
     <div class="py-12 px-4 sm:px-6 lg:px-8">
         <div class="max-w-xl mx-auto space-y-6">
             <h1 class="text-3xl font-extrabold text-gray-900">
-                Editace uživatele
+                Edit user
             </h1>
 
             <div
@@ -97,7 +97,7 @@ onMounted(async (): Promise<void> => {
             <UserForm
                 v-else-if="initial !== null"
                 mode="edit"
-                submit-label="Uložit"
+                submit-label="Save"
                 :initial="initial"
                 :is-loading="isLoading"
                 :errors="errors"

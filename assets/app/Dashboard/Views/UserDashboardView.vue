@@ -16,7 +16,7 @@ onMounted(async (): Promise<void> => {
     isLoading.value = false;
 
     if (result.success === false) {
-        error('Nepodařilo se načíst dashboard.');
+        error('Failed to load dashboard.');
 
         return;
     }

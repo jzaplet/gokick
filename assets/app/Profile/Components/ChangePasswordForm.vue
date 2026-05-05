@@ -46,7 +46,7 @@ const handleSubmit = async (): Promise<void> => {
         return;
     }
 
-    success('Heslo bylo změněno.');
+    success('Password changed.');
     resetForm();
 };
 </script>
@@ -54,7 +54,7 @@ const handleSubmit = async (): Promise<void> => {
 <template>
     <div class="bg-white rounded-lg shadow-md p-6 space-y-4">
         <h2 class="text-lg font-semibold text-gray-900">
-            Změnit heslo
+            Change password
         </h2>
 
         <form
@@ -65,7 +65,7 @@ const handleSubmit = async (): Promise<void> => {
                 v-model="form.old_password"
                 name="old_password"
                 type="password"
-                label="Staré heslo"
+                label="Current password"
                 :error="errors.old_password"
                 required
                 :disabled="isLoading"
@@ -76,7 +76,7 @@ const handleSubmit = async (): Promise<void> => {
                 v-model="form.new_password"
                 name="new_password"
                 type="password"
-                label="Nové heslo"
+                label="New password"
                 :error="errors.new_password"
                 required
                 :disabled="isLoading"
@@ -92,8 +92,8 @@ const handleSubmit = async (): Promise<void> => {
                 :loading="isLoading"
                 :disabled="isLoading"
             >
-                <span v-if="isLoading === false">Změnit heslo</span>
-                <span v-else>Ukládám...</span>
+                <span v-if="isLoading === false">Change password</span>
+                <span v-else>Saving...</span>
             </Button>
         </form>
     </div>

@@ -10,7 +10,7 @@ const { user } = useAuth();
     <div class="py-12 px-4 sm:px-6 lg:px-8">
         <div class="max-w-2xl mx-auto space-y-8">
             <h1 class="text-3xl font-extrabold text-gray-900">
-                Profil
+                Profile
             </h1>
 
             <UserInfoCard

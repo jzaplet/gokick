@@ -64,7 +64,7 @@ const handleSubmit = (): void => {
             v-model="form.password"
             name="password"
             type="password"
-            :label="mode === 'create' ? 'Heslo' : 'Heslo (prázdné = beze změny)'"
+            :label="mode === 'create' ? 'Password' : 'Password (leave empty to keep current)'"
             :error="errors.password"
             :required="mode === 'create'"
             :disabled="isLoading"
@@ -75,7 +75,7 @@ const handleSubmit = (): void => {
             v-model="form.email"
             name="email"
             type="email"
-            label="Email (nepovinné)"
+            label="Email (optional)"
             :error="errors.email"
             :disabled="isLoading"
             @update:model-value="() => emit('clearError', 'email')"
@@ -101,7 +101,7 @@ const handleSubmit = (): void => {
                 :disabled="isLoading"
                 @click="emit('cancel')"
             >
-                Zrušit
+                Cancel
             </Button>
             <Button
                 type="submit"

@@ -6,10 +6,13 @@ type Nickname string
 
 func NewNickname(s string) (Nickname, error) {
 	if s == "" {
-		return "", &shared.ValidationError{Field: "nickname", Message: "nickname je povinný"}
+		return "", &shared.ValidationError{Field: "nickname", Message: "nickname is required"}
 	}
 	if len(s) > 50 {
-		return "", &shared.ValidationError{Field: "nickname", Message: "nickname max 50 znaků"}
+		return "", &shared.ValidationError{
+			Field:   "nickname",
+			Message: "nickname must be at most 50 characters",
+		}
 	}
 	return Nickname(s), nil
 }

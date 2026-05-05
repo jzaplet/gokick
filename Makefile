@@ -1,6 +1,6 @@
 .PHONY: install build serve dev di install-tools go-deps lint format test arch-check fe-deps fe-dev fe-build fe-clean
 
-# Instalace
+# Install
 install: go-deps install-tools fe-deps
 
 go-deps:
@@ -31,7 +31,7 @@ lint:
 	go-arch-lint check
 	make documan-lint
 
-# Vývoj
+# Development
 dev: di
 	go build -o bin/app ./cmd/
 
@@ -42,7 +42,7 @@ serve:
 di:
 	cd app/infrastructure/di && wire
 
-# Migrace
+# Migrations
 migrate-create:
 	goose -dir migrations create $(NAME) sql
 
@@ -68,7 +68,7 @@ fe-build:
 fe-clean:
 	rm -rf public/assets public/index.html
 
-# Kvalita
+# Quality
 test:
 	yarn test
 	go test ./app/... ./cmd/... 2>&1 | grep -v '\[no test files\]'

@@ -17,7 +17,7 @@ func NewServeCommand(server *server.Server) *ServeCommand {
 func (c *ServeCommand) Command() *cobra.Command {
 	return &cobra.Command{
 		Use:   "serve",
-		Short: "Spustí HTTP server",
+		Short: "Start the HTTP server",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return c.server.Start()
 		},

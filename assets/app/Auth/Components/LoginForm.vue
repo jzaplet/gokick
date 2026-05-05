@@ -40,7 +40,7 @@ const handleSubmit = async (): Promise<void> => {
         return;
     }
 
-    success(`Vítej zpátky, ${result.data.user.nickname}.`);
+    success(`Welcome back, ${result.data.user.nickname}.`);
 
     const redirectQuery = route.query['redirect'];
     const defaultByRole = result.data.user.role === 'admin'
@@ -62,7 +62,7 @@ const handleSubmit = async (): Promise<void> => {
                 v-model="form.nickname"
                 name="nickname"
                 type="text"
-                label="Přezdívka"
+                label="Nickname"
                 placeholder="admin"
                 :error="errors.nickname"
                 required
@@ -74,7 +74,7 @@ const handleSubmit = async (): Promise<void> => {
                 v-model="form.password"
                 name="password"
                 type="password"
-                label="Heslo"
+                label="Password"
                 :error="errors.password"
                 required
                 :disabled="isLoading"
@@ -92,8 +92,8 @@ const handleSubmit = async (): Promise<void> => {
             :loading="isLoading"
             :disabled="isLoading"
         >
-            <span v-if="isLoading === false">Přihlásit se</span>
-            <span v-else>Přihlašuji...</span>
+            <span v-if="isLoading === false">Sign in</span>
+            <span v-else>Signing in...</span>
         </Button>
     </form>
 </template>

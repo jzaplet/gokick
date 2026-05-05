@@ -21,7 +21,7 @@ const goHome = (): void => {
 
 const handleLogout = async (): Promise<void> => {
     await logout();
-    success('Odhlášení proběhlo.');
+    success('Signed out.');
     void router.push({ name: 'home' });
 };
 </script>
@@ -62,7 +62,7 @@ const handleLogout = async (): Promise<void> => {
                     ]"
                     active-class="!text-orange-700 !bg-orange-50"
                 >
-                    Profil
+                    Profile
                 </RouterLink>
                 <RouterLink
                     v-if="hasPermission('admin:users:read') === true"
@@ -73,7 +73,7 @@ const handleLogout = async (): Promise<void> => {
                     ]"
                     active-class="!text-orange-700 !bg-orange-50"
                 >
-                    Uživatelé
+                    Users
                 </RouterLink>
             </nav>
 
@@ -89,7 +89,7 @@ const handleLogout = async (): Promise<void> => {
                     size="sm"
                     @click="handleLogout"
                 >
-                    Odhlásit
+                    Sign out
                 </Button>
             </div>
         </div>
@@ -119,7 +119,7 @@ const handleLogout = async (): Promise<void> => {
                 ]"
                 active-class="!text-orange-700 !bg-orange-50"
             >
-                Profil
+                Profile
             </RouterLink>
             <RouterLink
                 v-if="hasPermission('admin:users:read') === true"
@@ -130,7 +130,7 @@ const handleLogout = async (): Promise<void> => {
                 ]"
                 active-class="!text-orange-700 !bg-orange-50"
             >
-                Uživatelé
+                Users
             </RouterLink>
         </nav>
     </header>

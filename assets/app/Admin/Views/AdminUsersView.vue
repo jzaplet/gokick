@@ -24,7 +24,7 @@ const fetchUsers = async (): Promise<void> => {
     isLoading.value = false;
 
     if (result.success === false) {
-        error('Nepodařilo se načíst seznam uživatelů.');
+        error('Failed to load user list.');
 
         return;
     }
@@ -63,12 +63,12 @@ const confirmDelete = async (): Promise<void> => {
     );
 
     if (result.success === false) {
-        error(result.data.general ?? 'Smazání selhalo.');
+        error(result.data.general ?? 'Delete failed.');
 
         return;
     }
 
-    success(`Uživatel ${target.nickname} smazán.`);
+    success(`User ${target.nickname} deleted.`);
     await fetchUsers();
 };
 
@@ -87,7 +87,7 @@ onMounted(async (): Promise<void> => {
                 ]"
             >
                 <h1 class="text-3xl font-extrabold text-gray-900">
-                    Správa uživatelů
+                    User management
                 </h1>
 
                 <Button
@@ -95,7 +95,7 @@ onMounted(async (): Promise<void> => {
                     @click="goToCreate"
                 >
                     <PlusIcon class="w-4 h-4" />
-                    Přidat uživatele
+                    Add user
                 </Button>
             </div>
 
@@ -115,12 +115,12 @@ onMounted(async (): Promise<void> => {
 
             <ConfirmModal
                 :show="userToDelete !== null"
-                title="Smazat uživatele"
+                title="Delete user"
                 :message="userToDelete === null
                     ? ''
-                    : `Opravdu smazat uživatele ${userToDelete.nickname}? Akce je nevratná.`"
-                confirm-text="Smazat"
-                cancel-text="Zrušit"
+                    : `Really delete user ${userToDelete.nickname}? This action is irreversible.`"
+                confirm-text="Delete"
+                cancel-text="Cancel"
                 @confirm="confirmDelete"
                 @cancel="cancelDelete"
             />

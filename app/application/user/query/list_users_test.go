@@ -25,7 +25,7 @@ func TestListUsersHandler_ReturnsAll(t *testing.T) {
 		t.Fatalf("count: got %d want 3", len(users))
 	}
 
-	// Repository řadí podle nickname ASC.
+	// Repository orders by nickname ASC.
 	if users[0].Nickname != "alice" || users[1].Nickname != "bob" || users[2].Nickname != "carol" {
 		t.Fatalf("order: got %v", []string{users[0].Nickname, users[1].Nickname, users[2].Nickname})
 	}

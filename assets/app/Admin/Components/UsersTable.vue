@@ -56,7 +56,7 @@ const isSelf = (id: string): boolean => {
                             'text-right text-xs font-medium text-gray-500 uppercase tracking-wider',
                         ]"
                     >
-                        Akce
+                        Actions
                     </th>
                 </tr>
             </thead>
@@ -71,7 +71,7 @@ const isSelf = (id: string): boolean => {
                         <span
                             v-if="isSelf(user.id) === true"
                             class="ml-2 text-xs text-gray-400"
-                        >(vy)</span>
+                        >(you)</span>
                     </td>
                     <td class="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         <span v-if="user.email !== ''">{{ user.email }}</span>
@@ -118,7 +118,7 @@ const isSelf = (id: string): boolean => {
                         colspan="4"
                         class="px-6 py-8 text-center text-sm text-gray-500"
                     >
-                        Žádní uživatelé
+                        No users
                     </td>
                 </tr>
             </tbody>

@@ -8,16 +8,19 @@ import (
 
 type Email string
 
-// NewEmail validuje email. Prázdný řetězec je povolený (email je nepovinný).
+// NewEmail validates the email. Empty string is allowed (email is optional).
 func NewEmail(s string) (Email, error) {
 	if s == "" {
 		return "", nil
 	}
 	if len(s) > 254 {
-		return "", &shared.ValidationError{Field: "email", Message: "email max 254 znaků"}
+		return "", &shared.ValidationError{
+			Field:   "email",
+			Message: "email must be at most 254 characters",
+		}
 	}
 	if !strings.Contains(s, "@") {
-		return "", &shared.ValidationError{Field: "email", Message: "neplatný formát emailu"}
+		return "", &shared.ValidationError{Field: "email", Message: "invalid email format"}
 	}
 	return Email(s), nil
 }

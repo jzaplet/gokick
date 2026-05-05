@@ -11,9 +11,9 @@ import (
 type Application struct {
 	rootCmd    *console.RootCommand
 	migrations *database.MigrationManager
-	// Dead code – Wire vyžaduje consumer pro každý provider, jinak hlásí chybu.
-	// Ve fázi 6 se tyto závislosti přesunou do command/query/HTTP handlerů
-	// a z Application se odeberou.
+	// Dead code – Wire requires a consumer for every provider, otherwise it
+	// reports an error. These dependencies are kept here as placeholders;
+	// they are actually consumed by command/query/HTTP handlers downstream.
 	CommandBus *bus.CommandBus
 	QueryBus   *bus.QueryBus
 	EventBus   *bus.EventBus

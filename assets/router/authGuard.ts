@@ -10,7 +10,7 @@ export const authGuard: NavigationGuard = (to) => {
     const { error, info } = useToast();
 
     if (to.meta.requiresAuth === true && isAuthenticated.value === false) {
-        info('Pro pokračování se přihlaste.');
+        info('Please sign in to continue.');
 
         return {
             name: 'login',
@@ -20,7 +20,7 @@ export const authGuard: NavigationGuard = (to) => {
 
     if (to.meta.requiresPermission !== undefined
         && hasPermission(to.meta.requiresPermission) === false) {
-        error('Na tuto stránku nemáte oprávnění.');
+        error('You do not have permission to access this page.');
 
         return { name: 'home' };
     }

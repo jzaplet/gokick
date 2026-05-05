@@ -5,11 +5,12 @@ import { refresh } from '@/app-ui/Auth/refresh';
 import '@/tailwind.css';
 import '@/img/go-vue-cqrs-ddd.png';
 
-// Access token žije jen v paměti (XSS-rezistentní), takže ho hard refresh
-// stránky vždy vymaže. Refresh token sedí v HttpOnly cookie a přežije —
-// zkusíme tedy obnovit session ze cookie ještě než se mount router-guard.
-// Pokud cookie chybí nebo je neplatná, refresh tiše selže a guard pošle
-// chráněné routy na /login (jako u úplně nového návštěvníka).
+// The access token lives only in memory (XSS-resistant), so a hard page
+// refresh always wipes it. The refresh token sits in an HttpOnly cookie and
+// survives — we therefore attempt to restore the session from the cookie
+// before mounting the router guard. If the cookie is missing or invalid,
+// refresh fails silently and the guard sends protected routes to /login
+// (just like a brand-new visitor).
 const bootstrap = async (): Promise<void> => {
     await refresh();
 

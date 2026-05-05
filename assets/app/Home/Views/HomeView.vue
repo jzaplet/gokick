@@ -30,19 +30,16 @@ const goToAdminUsers = (): void => {
 
 const handleLogout = async (): Promise<void> => {
     await logout();
-    success('Odhlášení proběhlo.');
+    success('Signed out.');
 };
 </script>
 
 <template>
     <div class="flex flex-col items-center justify-center min-h-screen p-10">
-        <h1 class="text-4xl font-bold text-gray-900 text-center">
-            This is your brand new app!
-        </h1>
         <img
             src="@/img/go-vue-cqrs-ddd.png"
             alt="Go Vue CQRS DDD Logo"
-            class="mt-8 max-w-full max-h-[50vh] object-contain"
+            class="max-w-full max-h-[50vh] object-contain"
         >
 
         <div
@@ -54,7 +51,7 @@ const handleLogout = async (): Promise<void> => {
                 size="lg"
                 @click="goToLogin"
             >
-                Přihlásit se
+                Sign in
             </Button>
         </div>
 
@@ -66,7 +63,7 @@ const handleLogout = async (): Promise<void> => {
                 v-if="user !== null"
                 class="text-sm text-gray-600"
             >
-                Přihlášen jako <strong class="text-gray-900">{{ user.nickname }}</strong>
+                Signed in as <strong class="text-gray-900">{{ user.nickname }}</strong>
             </p>
 
             <div class="flex flex-wrap items-center justify-center gap-3">
@@ -81,7 +78,7 @@ const handleLogout = async (): Promise<void> => {
                     variant="secondary"
                     @click="goToProfile"
                 >
-                    Můj profil
+                    My profile
                 </Button>
 
                 <Button
@@ -89,14 +86,14 @@ const handleLogout = async (): Promise<void> => {
                     variant="secondary"
                     @click="goToAdminUsers"
                 >
-                    Správa uživatelů
+                    User management
                 </Button>
 
                 <Button
                     variant="ghost"
                     @click="handleLogout"
                 >
-                    Odhlásit se
+                    Sign out
                 </Button>
             </div>
         </div>

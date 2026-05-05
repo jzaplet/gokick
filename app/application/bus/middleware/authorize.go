@@ -15,7 +15,7 @@ func AuthorizeMiddleware(checker shared.PermissionChecker) bus.Middleware {
 				return nil, err
 			}
 		case shared.SkipPermission:
-			// explicitně přeskočeno
+			// explicitly skipped
 		default:
 			return nil, fmt.Errorf("bus: command %q must implement Permissioned or SkipPermission", name)
 		}

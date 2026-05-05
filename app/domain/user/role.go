@@ -14,6 +14,6 @@ func NewRole(s string) (Role, error) {
 	case RoleAdmin, RoleUser:
 		return Role(s), nil
 	default:
-		return "", &shared.ValidationError{Field: "role", Message: "neplatná role"}
+		return "", &shared.ValidationError{Field: "role", Message: "invalid role"}
 	}
 }
