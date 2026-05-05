@@ -88,10 +88,12 @@ func (s *Server) registerRoutes() *http.ServeMux {
 func (s *Server) buildMiddlewareChain(handler http.Handler) http.Handler {
 	csrf := &http.CrossOriginProtection{}
 
-	// Pořadí: Trace → CORS → CSRF → Logging (→ handler)
-	// Aplikuje se od posledního, takže definice je obrácená:
+	// Pořadí: Trace → Security headers → CORS → CSRF → Logging (→ handler)
+	// HSTS posíláme jen v produkci (gateováno na CookieSecure flag, který už
+	// rozlišuje HTTPS provoz).
 	middlewares := []func(http.Handler) http.Handler{
 		middleware.TraceMiddleware(),
+		middleware.SecurityHeadersMiddleware(s.config.CookieSecure),
 		middleware.CORSMiddleware(s.config.CORSOrigin),
 		csrf.Handler,
 		middleware.LoggingMiddleware(s.logger),
