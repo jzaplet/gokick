@@ -29,10 +29,20 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
-          cache: "yarn"
+        # No `cache: "yarn"` here — setup-node would call `yarn cache dir`
+        # before corepack runs, and the globally-installed Yarn 1 refuses
+        # because package.json pins `packageManager: yarn@4`. We cache via
+        # actions/cache below instead.
 
       - name: Enable corepack
         run: corepack enable
+
+      - name: Cache Yarn 4 (.yarn/cache)
+        uses: actions/cache@v4
+        with:
+          path: .yarn/cache
+          key: yarn-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          restore-keys: yarn-${{ runner.os }}-
 
       - name: Install (Go deps + tools + frontend deps)
         run: make install
