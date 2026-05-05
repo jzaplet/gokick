@@ -1,4 +1,5 @@
 ---
+name: documan
 description: Documentation helper for creating and editing Documan markdown files in docs/. Use when working with project documentation, creating new pages/sections, or editing existing docs.
 ---
 
