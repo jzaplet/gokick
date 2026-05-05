@@ -38,11 +38,26 @@ jobs:
         run: corepack enable
 
       - name: Cache Yarn 4 (.yarn/cache)
+        # `enableGlobalCache: false` in .yarnrc.yml keeps the cache local at
+        # .yarn/cache so this action can target a stable path.
         uses: actions/cache@v4
         with:
           path: .yarn/cache
           key: yarn-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
           restore-keys: yarn-${{ runner.os }}-
+
+      - name: Cache Go tools ($GOBIN binaries + build cache)
+        # `make install-tools` runs 5 `go install ...@latest` commands; each
+        # rebuilds a transitive tree (golangci-lint alone is ~hundreds of
+        # packages). Caching the resulting binaries + go-build cache makes
+        # subsequent runs near-instant.
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/bin
+            ~/.cache/go-build
+          key: go-tools-${{ runner.os }}-${{ hashFiles('Makefile') }}
+          restore-keys: go-tools-${{ runner.os }}-
 
       - name: Install (Go deps + tools + frontend deps)
         run: make install
