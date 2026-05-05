@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"errors"
 
 	"gokick/app/domain/shared"
 	"gokick/app/domain/user"
@@ -46,6 +47,12 @@ func (h *ChangePasswordHandler) Handle(ctx context.Context, cmd ChangePasswordCo
 
 	newPassword, err := user.NewPassword(cmd.NewPassword)
 	if err != nil {
+		// `user.NewPassword` reports a generic `password` field; remap so the
+		// error lands on the form's New Password input rather than `general`.
+		var ve *shared.ValidationError
+		if errors.As(err, &ve) {
+			return &shared.ValidationError{Field: "new_password", Message: ve.Message}
+		}
 		return err
 	}
 

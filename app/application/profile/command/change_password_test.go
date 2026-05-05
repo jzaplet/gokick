@@ -123,8 +123,8 @@ func TestChangePasswordHandler_InvalidNewPassword(t *testing.T) {
 	if !errors.As(err, &ve) {
 		t.Fatalf("expected *shared.ValidationError, got %T: %v", err, err)
 	}
-	if ve.Field != "password" {
-		t.Fatalf("expected field=password, got %s", ve.Field)
+	if ve.Field != "new_password" {
+		t.Fatalf("expected field=new_password, got %s", ve.Field)
 	}
 
 	// Password must remain unchanged.
