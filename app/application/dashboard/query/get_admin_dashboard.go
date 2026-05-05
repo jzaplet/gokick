@@ -20,7 +20,10 @@ func NewGetAdminDashboardHandler() *GetAdminDashboardHandler {
 	return &GetAdminDashboardHandler{}
 }
 
-func (h *GetAdminDashboardHandler) Handle(ctx context.Context, _ GetAdminDashboardQuery) (AdminDashboard, error) {
+func (h *GetAdminDashboardHandler) Handle(
+	ctx context.Context,
+	_ GetAdminDashboardQuery,
+) (AdminDashboard, error) {
 	claims := shared.ClaimsFromContext(ctx)
 	if claims == nil {
 		return AdminDashboard{}, &shared.AuthError{Message: "authentication required"}
