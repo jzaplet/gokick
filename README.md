@@ -11,7 +11,10 @@ description: 'GO CQRS DDD skeleton s Vue 3 SPA, SQLite databází a JWT autentiz
 
 ![GO Kick](./docs/go-vue-cqrs-ddd.png "GO Kick")
 
-Go **DDD** (Domain-Driven Design) skeleton s **CQRS** (Command Query Responsibility Segregation), Vue 3 SPA, SQLite databází a JWT autentizací – vše v jedné binárce.
+Golang **DDD** skeleton s **CQRS** (Command Query Responsibility Segregation), Vue 3 SPA, SQLite databází a JWT autentizací – vše v jedné binárce.
+
+- Dokumentace: <https://gokick.strategio.dev/>
+- GitHub: <https://github.com/jzaplet/gokick>
 
 ## Vlastnosti
 

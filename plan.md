@@ -7,10 +7,10 @@ This file tracks what's left to make it production-ready and to grow it beyond t
 
 ## Build & deploy
 
-- [ ] **Cross-compile matrix** — `make build-all` producing `linux/amd64`, `darwin/arm64`, `windows/amd64` binaries into `dist/`. Single source of artifacts for release tooling.
-- [ ] **E2E smoke test** — shell script that boots the binary against a temp SQLite, runs `login → /api/v1/profile → /api/v1/auth/refresh → /api/v1/auth/logout`, asserts status codes. Run as part of `make test` (or a separate `make e2e`).
-- [ ] **Release Dockerfile** — `docker/release/Dockerfile` based on `gcr.io/distroless/static` or Alpine, copies the linux binary, exposes `:3000`, declares `/data` volume for the SQLite file.
-- [ ] **`docker-compose.yml`** — single `app` service with bind-mounted DB volume + healthcheck on `/health`. Smoke test: `docker compose up -d && curl localhost:3000/health` returns 200.
+- [x] **Production Dockerfile** — `docker/production/Dockerfile` is a 3-stage multi-stage build: `node:24-alpine` Vite SPA build → `golang:1.26-alpine` Go binary build (embeds the SPA) → `alpine:3.20` minimal runtime that runs `serve`. Mount a host volume to `/data` in production for the SQLite file. `make docker-build` is a thin wrapper around `docker build` (no `make build` prerequisite).
+- [x] **`docker-compose.yml`** — `app` service with named volume `app-data` and healthcheck on `/health`. `documan` stays as a separate service for local docs.
+- [x] **GitHub CI** — `.github/workflows/validate.yml` is a single `validate` job: `make install` → `make lint` → `make test` → `make build`. Triggers on push to `main` and on pull requests. No image building in CI. Doc lint is skipped via `SKIP_DOCUMAN=1` (Documan needs Docker; locally it auto-starts via `make documan-lint`).
+- [x] **Local Documan auto-start** — `make documan-{lint,fix,import,vectorize}` prefix each call with `docker compose up -d documan` (idempotent), so a fresh clone runs `make format` without manual setup.
 
 
 ## Background work

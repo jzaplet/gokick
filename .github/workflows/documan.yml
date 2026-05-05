@@ -1,0 +1,26 @@
+name: Documan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# The Documan Dockerfile runs `documan lint` (and `import`) as RUN steps —
+# `docker build` therefore validates every markdown frontmatter, link, and
+# duplicate URI. If anything is wrong the build fails and the PR check fails.
+#
+# A future `deploy` job (push to a registry, gated on `main`) goes here too;
+# see https://docs.documan.ai/ for the secret wiring (DOCUMAN_LICENSE_KEY,
+# DOCUMAN_OPENAI_API_KEY) when you wire it up.
+jobs:
+  lint:
+    name: Lint docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate docs
+        run: docker build -f docker/documan/Dockerfile -t documan-lint:ci .

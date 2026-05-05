@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  # `make lint` would otherwise try to start the documan compose service in
+  # the CI runner. Doc validation lives in its own pipeline:
+  # `.github/workflows/documan.yml` (builds docker/documan/Dockerfile, whose
+  # RUN step performs the lint).
+  SKIP_DOCUMAN: "1"
+
+jobs:
+  validate:
+    name: lint + test + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: "yarn"
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Install (Go deps + tools + frontend deps)
+        run: make install
+
+      - name: Lint
+        run: make lint
+
+      - name: Test
+        run: make test
+
+      - name: Build
+        run: make build

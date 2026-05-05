@@ -30,7 +30,11 @@ func NewSqliteManager(config *config.Config) (*SqliteManager, error) {
 		return nil, err
 	}
 
-	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+	journalMode := config.DBJournalMode
+	if journalMode == "" {
+		journalMode = "WAL"
+	}
+	if _, err := db.Exec("PRAGMA journal_mode=" + journalMode); err != nil {
 		return nil, err
 	}
 	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {

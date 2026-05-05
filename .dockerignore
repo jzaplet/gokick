@@ -1,0 +1,32 @@
+# Excluded from every `docker build` in this repo (root context).
+# Keep this list narrow: anything a Dockerfile might COPY must stay,
+# so docker/documan/Dockerfile (which copies docs/ and README.md) keeps working.
+
+# Heavy build artifacts (rebuilt inside the image where needed)
+node_modules/
+.yarn/cache/
+.yarn/install-state.gz
+.yarn/build-state.yml
+.yarn/unplugged/
+
+# Vite build output (regenerated in stage 1 of the production Dockerfile)
+public/index.html
+public/assets/
+
+# Local runtime state
+.env
+.env.local
+data/
+bin/
+
+# VCS / IDE metadata not needed for builds
+.git/
+.idea/
+.vscode/
+
+# TypeScript build cache
+*.tsbuildinfo
+
+# Logs / temp
+*.log
+*.tmp

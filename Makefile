@@ -1,4 +1,8 @@
-.PHONY: install build serve dev di install-tools go-deps lint format test arch-check fe-deps fe-dev fe-build fe-clean
+.PHONY: install build serve dev di install-tools go-deps lint format test arch-check \
+        fe-deps fe-dev fe-build fe-clean \
+        migrate-create migrate-up migrate-down migrate-status \
+        docker-build \
+        documan documan-import documan-lint documan-fix documan-vectorize
 
 # Install
 install: go-deps install-tools fe-deps
@@ -21,15 +25,15 @@ build: di fe-build
 format:
 	yarn format
 	golines -w .
-	make documan-fix
+	$(MAKE) documan-fix
 
 # Lint — frontend (ESLint strict) + backend (golangci-lint + arch rules) + docs
 lint:
 	yarn lint
 	yarn type-check
 	golangci-lint run ./app/... ./cmd/...
-	go-arch-lint check
-	make documan-lint
+	$(MAKE) arch-check
+	$(MAKE) documan-lint
 
 # Development
 dev: di
@@ -76,18 +80,51 @@ test:
 arch-check:
 	go-arch-lint check
 
+# Production image — multi-stage Dockerfile builds Vite SPA, Go binary, and
+# a minimal Alpine runtime. Self-contained (no `make build` prerequisite).
+docker-build:
+	docker build -f docker/production/Dockerfile -t gokick:latest .
+
 # Documan
+# Each target ensures the container is up (docker compose up -d is idempotent),
+# then execs the documan CLI inside it. First invocation builds the image and
+# runs the lint as part of the build (per docker/documan/Dockerfile).
+#
+# In CI / containerless environments set SKIP_DOCUMAN=1 to make these targets
+# no-ops (e.g. `SKIP_DOCUMAN=1 make lint`). Doc validation in CI is handled by
+# the dedicated `.github/workflows/documan.yml` workflow which builds the
+# Documan Dockerfile directly — no docker compose needed.
 documan:
-	docker compose build --progress=plain documan && docker compose up -d documan
+	docker compose --progress=plain build documan && docker compose up -d documan
 
 documan-import:
+ifdef SKIP_DOCUMAN
+	@echo "documan-import: skipped (SKIP_DOCUMAN=$(SKIP_DOCUMAN))"
+else
+	@docker compose up -d documan >/dev/null
 	docker compose exec -t documan /documan/bin/documan import
+endif
 
 documan-lint:
+ifdef SKIP_DOCUMAN
+	@echo "documan-lint: skipped (SKIP_DOCUMAN=$(SKIP_DOCUMAN))"
+else
+	@docker compose up -d documan >/dev/null
 	docker compose exec -t documan /documan/bin/documan lint
+endif
 
 documan-fix:
+ifdef SKIP_DOCUMAN
+	@echo "documan-fix: skipped (SKIP_DOCUMAN=$(SKIP_DOCUMAN))"
+else
+	@docker compose up -d documan >/dev/null
 	docker compose exec -t documan /documan/bin/documan fix
+endif
 
 documan-vectorize:
+ifdef SKIP_DOCUMAN
+	@echo "documan-vectorize: skipped (SKIP_DOCUMAN=$(SKIP_DOCUMAN))"
+else
+	@docker compose up -d documan >/dev/null
 	docker compose exec -t documan /documan/bin/documan vectorize
+endif

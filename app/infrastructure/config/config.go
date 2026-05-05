@@ -11,6 +11,7 @@ import (
 type Config struct {
 	HTTPPort             string
 	DBPath               string
+	DBJournalMode        string
 	JWTSecret            string
 	JWTAccessExpiration  time.Duration
 	JWTRefreshExpiration time.Duration
@@ -22,11 +23,12 @@ func LoadConfig() (*Config, error) {
 	_ = godotenv.Load()
 
 	config := &Config{
-		HTTPPort:     getEnv("APP_HTTP_PORT", "3000"),
-		DBPath:       getEnv("APP_DB_PATH", "./data/app.db"),
-		JWTSecret:    os.Getenv("APP_JWT_SECRET"),
-		CORSOrigin:   getEnv("APP_CORS_ORIGIN", "http://localhost:5173"),
-		CookieSecure: getEnv("APP_COOKIE_SECURE", "true") == "true",
+		HTTPPort:      getEnv("APP_HTTP_PORT", "3000"),
+		DBPath:        getEnv("APP_DB_PATH", "./data/app.db"),
+		DBJournalMode: getEnv("APP_DB_JOURNAL_MODE", "WAL"),
+		JWTSecret:     os.Getenv("APP_JWT_SECRET"),
+		CORSOrigin:    getEnv("APP_CORS_ORIGIN", "http://localhost:5173"),
+		CookieSecure:  getEnv("APP_COOKIE_SECURE", "true") == "true",
 	}
 
 	var err error
