@@ -55,6 +55,7 @@ type loginRequest struct {
 type userDTO struct {
 	ID          string   `json:"id"`
 	Nickname    string   `json:"nickname"`
+	Email       string   `json:"email"`
 	Role        string   `json:"role"`
 	Permissions []string `json:"permissions"`
 }
@@ -161,6 +162,7 @@ func (h *AuthHandler) writeAuthResponse(w http.ResponseWriter, result authcmd.Lo
 		User: userDTO{
 			ID:          result.User.ID,
 			Nickname:    result.User.Nickname,
+			Email:       result.User.Email,
 			Role:        result.User.Role,
 			Permissions: h.registry.ForRole(result.User.Role),
 		},

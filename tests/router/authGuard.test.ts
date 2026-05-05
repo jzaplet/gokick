@@ -35,6 +35,7 @@ const setLoggedIn = (role: string, permissions: string[] = []): void => {
     user.value = {
         id: 'u-1',
         nickname: 'alice',
+        email: '',
         role,
         permissions,
     };

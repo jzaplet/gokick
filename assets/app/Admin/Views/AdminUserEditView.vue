@@ -4,7 +4,7 @@ import type { UserFormData } from '@/app/Admin/types/UserFormData';
 import type { UserFormErrors } from '@/app/Admin/types/UserFormErrors';
 import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { authFetch } from '@/app-ui/Auth';
+import { authFetch, useAuth } from '@/app-ui/Auth';
 import { useToast } from '@/app-ui/Toast/useToast';
 import Spinner from '@/app-ui/Loading/Spinner.vue';
 import UserForm from '@/app/Admin/Components/UserForm.vue';
@@ -12,6 +12,7 @@ import UserForm from '@/app/Admin/Components/UserForm.vue';
 const router = useRouter();
 const route = useRoute();
 const { success, error } = useToast();
+const { user: currentUser } = useAuth();
 
 const userId = String(route.params['id']);
 const initial = ref<UserFormData | null>(null);
@@ -38,6 +39,18 @@ const handleSubmit = async (data: UserFormData): Promise<void> => {
 
     if (result.success === false) {
         errors.value = result.data;
+
+        return;
+    }
+
+    const isSelf = currentUser.value !== null && currentUser.value.id === userId;
+    const roleChanged = initial.value !== null && initial.value.role !== data.role;
+
+    if (isSelf === true && roleChanged === true) {
+        // Force a full page reload so bootstrap re-runs `refresh()` and the
+        // SPA picks up the new role/permissions from a fresh access token.
+        // A simple router.push would keep the stale JWT in memory.
+        window.location.assign('/admin/users');
 
         return;
     }

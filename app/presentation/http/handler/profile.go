@@ -63,6 +63,7 @@ func (h *ProfileHandler) Get(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, userDTO{
 		ID:          u.ID,
 		Nickname:    u.Nickname,
+		Email:       u.Email,
 		Role:        u.Role,
 		Permissions: h.registry.ForRole(u.Role),
 	})

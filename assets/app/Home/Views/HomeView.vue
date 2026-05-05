@@ -12,20 +12,12 @@ const goToLogin = (): void => {
     void router.push({ name: 'login' });
 };
 
-const goToProfile = (): void => {
-    void router.push({ name: 'profile' });
-};
-
 const goToDashboard = (): void => {
     const name = hasPermission('admin:dashboard:read') === true
         ? 'admin-dashboard'
         : 'user-dashboard';
 
     void router.push({ name });
-};
-
-const goToAdminUsers = (): void => {
-    void router.push({ name: 'admin-users' });
 };
 
 const handleLogout = async (): Promise<void> => {
@@ -76,21 +68,6 @@ const handleLogout = async (): Promise<void> => {
 
                 <Button
                     variant="secondary"
-                    @click="goToProfile"
-                >
-                    My profile
-                </Button>
-
-                <Button
-                    v-if="hasPermission('admin:users:read') === true"
-                    variant="secondary"
-                    @click="goToAdminUsers"
-                >
-                    User management
-                </Button>
-
-                <Button
-                    variant="ghost"
                     @click="handleLogout"
                 >
                     Sign out
