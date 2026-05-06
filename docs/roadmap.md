@@ -1,3 +1,13 @@
+---
+layout: 'page'
+uri: '/roadmap'
+position: 50
+slug: 'roadmap'
+navTitle: 'Roadmap'
+title: 'Roadmap'
+description: 'Co zbývá doplnit, aby byl skeleton připravený pro produkci, a kam dál růst nad rámec startovní šablony.'
+---
+
 # Roadmap
 
 The boilerplate is functional end-to-end: DDD/CQRS backend, Vue 3 SPA, JWT auth with HttpOnly refresh cookie, admin user CRUD, role-based dashboards, security headers, persisted session across page refresh.
