@@ -4,6 +4,17 @@
         docker-build \
         documan documan-import documan-lint documan-fix documan-vectorize
 
+# Tools installed via `go install` land in $GOPATH/bin. We resolve them by
+# absolute path so recipes work even when the user hasn't added that dir to
+# their shell PATH (and to sidestep GNU Make 3.81's broken `export PATH`,
+# which Apple still ships on macOS).
+GOBIN_DIR := $(shell go env GOPATH)/bin
+WIRE := $(GOBIN_DIR)/wire
+GOLINES := $(GOBIN_DIR)/golines
+GOLANGCI_LINT := $(GOBIN_DIR)/golangci-lint
+GOOSE := $(GOBIN_DIR)/goose
+GO_ARCH_LINT := $(GOBIN_DIR)/go-arch-lint
+
 # Install
 install: go-deps install-tools fe-deps
 
@@ -24,14 +35,14 @@ build: di fe-build
 # Format — frontend (ESLint Stylistic) + backend (golines) + docs
 format:
 	yarn format
-	golines -w .
+	$(GOLINES) -w .
 	$(MAKE) documan-fix
 
 # Lint — frontend (ESLint strict) + backend (golangci-lint + arch rules) + docs
 lint:
 	yarn lint
 	yarn type-check
-	golangci-lint run ./app/... ./cmd/...
+	$(GOLANGCI_LINT) run ./app/... ./cmd/...
 	$(MAKE) arch-check
 	$(MAKE) documan-lint
 
@@ -44,20 +55,20 @@ serve:
 
 # DI
 di:
-	cd app/infrastructure/di && wire
+	cd app/infrastructure/di && $(WIRE)
 
 # Migrations
 migrate-create:
-	goose -dir migrations create $(NAME) sql
+	$(GOOSE) -dir migrations create $(NAME) sql
 
 migrate-up:
-	goose -dir migrations sqlite3 $(shell grep APP_DB_PATH .env | cut -d= -f2) up
+	$(GOOSE) -dir migrations sqlite3 $(shell grep APP_DB_PATH .env | cut -d= -f2) up
 
 migrate-down:
-	goose -dir migrations sqlite3 $(shell grep APP_DB_PATH .env | cut -d= -f2) down
+	$(GOOSE) -dir migrations sqlite3 $(shell grep APP_DB_PATH .env | cut -d= -f2) down
 
 migrate-status:
-	goose -dir migrations sqlite3 $(shell grep APP_DB_PATH .env | cut -d= -f2) status
+	$(GOOSE) -dir migrations sqlite3 $(shell grep APP_DB_PATH .env | cut -d= -f2) status
 
 # Frontend
 fe-deps:
@@ -78,7 +89,7 @@ test:
 	go test ./app/... ./cmd/... 2>&1 | grep -v '\[no test files\]'
 
 arch-check:
-	go-arch-lint check
+	$(GO_ARCH_LINT) check
 
 # Production image — multi-stage Dockerfile builds Vite SPA, Go binary, and
 # a minimal Alpine runtime. Self-contained (no `make build` prerequisite).
