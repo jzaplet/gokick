@@ -232,6 +232,11 @@ wire.Bind(new(shared.Seeder), new(*sqlite.Seeder))
 **SVG icons:**
 - Break long `d` attribute values across multiple lines (max 120 chars per line)
 
+**Permissions:**
+- Never hard-code permission strings (`'admin:users:read'`, etc.) anywhere in `assets/`. Use the `Permission` enum from `@/app/Auth/enums/resources` — it mirrors backend `RequiredPermission()` declarations and is the single source of truth on the frontend.
+- `hasPermission` / `hasAllPermissions` / `hasAnyPermission` and `meta.requiresPermission` are typed as `Permission`, so a missing or misspelled value is a compile-time error.
+- Adding a new backend permission means adding a matching entry in `resources.ts`.
+
 **Registration in router:**
 - Every route must declare `meta.requiresAuth: true|false` — enforced via `AppRoute` type. Mirrors backend `Permissioned`/`SkipPermission` rule.
 - Protected routes: `{ requiresAuth: true }`; admin: `{ requiresAuth: true, requiresPermission: 'x:y:z' }`.
@@ -295,3 +300,4 @@ No changes needed in `.go-arch-lint.yml` — wildcards (`domain/**`, `command/**
 - **Permission declaration.** Every command/query must declare permissions. Forgetting both `Permissioned` and `SkipPermission` is a runtime error.
 - **Events use primitives.** Domain events carry only primitive types (string IDs, timestamps), never entities or value objects.
 - **No cross-context imports.** Bounded contexts (`domain/user/`, `domain/token/`) are isolated. Shared types live in `domain/shared/`.
+- **No hard-coded permissions on the frontend.** Every permission reference in `assets/` goes through the `Permission` enum in `assets/app/Auth/enums/resources.ts`. String literals like `'admin:users:read'` in `.vue` / `.ts` files are forbidden.

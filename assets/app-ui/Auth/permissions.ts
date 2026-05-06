@@ -1,4 +1,5 @@
 import { user } from '@/app-ui/Auth/state';
+import type { Permission } from '@/app/Auth/enums/resources';
 
 // Mirrors the backend rule: admin has everything, others rely on the
 // server-supplied user.permissions list.
@@ -11,7 +12,7 @@ export const isAdmin = (): boolean => {
     return hasRole('admin');
 };
 
-export const hasPermission = (permission: string): boolean => {
+export const hasPermission = (permission: Permission): boolean => {
     if (user.value === null) {
         return false;
     }
@@ -23,7 +24,7 @@ export const hasPermission = (permission: string): boolean => {
     return user.value.permissions.includes(permission);
 };
 
-export const hasAllPermissions = (permissions: string[]): boolean => {
+export const hasAllPermissions = (permissions: Permission[]): boolean => {
     for (const permission of permissions) {
         if (hasPermission(permission) === false) {
             return false;
@@ -33,7 +34,7 @@ export const hasAllPermissions = (permissions: string[]): boolean => {
     return true;
 };
 
-export const hasAnyPermission = (permissions: string[]): boolean => {
+export const hasAnyPermission = (permissions: Permission[]): boolean => {
     for (const permission of permissions) {
         if (hasPermission(permission) === true) {
             return true;

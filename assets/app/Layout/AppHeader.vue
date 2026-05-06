@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuth } from '@/app-ui/Auth';
 import { useToast } from '@/app-ui/Toast/useToast';
+import { Permission } from '@/app/Auth/enums/resources';
 import Dropdown from '@/app-ui/Dropdown/Dropdown.vue';
 import UserIcon from '@/app-ui/Icons/UserIcon.vue';
 
@@ -11,7 +12,7 @@ const { success } = useToast();
 const { user, hasPermission, logout } = useAuth();
 
 const dashboardRoute = computed<string>(() => {
-    return hasPermission('admin:dashboard:read') === true
+    return hasPermission(Permission.AdminDashboardRead) === true
         ? 'admin-dashboard'
         : 'user-dashboard';
 });
@@ -56,7 +57,7 @@ const handleLogout = async (): Promise<void> => {
                     Dashboard
                 </RouterLink>
                 <RouterLink
-                    v-if="hasPermission('admin:users:read') === true"
+                    v-if="hasPermission(Permission.AdminUsersRead) === true"
                     :to="{ name: 'admin-users' }"
                     :class="[
                         'px-3 py-1.5 rounded-md text-sm font-medium',
@@ -135,7 +136,7 @@ const handleLogout = async (): Promise<void> => {
                 Dashboard
             </RouterLink>
             <RouterLink
-                v-if="hasPermission('admin:users:read') === true"
+                v-if="hasPermission(Permission.AdminUsersRead) === true"
                 :to="{ name: 'admin-users' }"
                 :class="[
                     'px-3 py-1.5 rounded-md text-sm font-medium',

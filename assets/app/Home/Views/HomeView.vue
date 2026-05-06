@@ -2,6 +2,7 @@
 import { useRouter } from 'vue-router';
 import { useAuth } from '@/app-ui/Auth';
 import { useToast } from '@/app-ui/Toast/useToast';
+import { Permission } from '@/app/Auth/enums/resources';
 import Button from '@/app-ui/Buttons/Button.vue';
 
 const router = useRouter();
@@ -13,7 +14,7 @@ const goToLogin = (): void => {
 };
 
 const goToDashboard = (): void => {
-    const name = hasPermission('admin:dashboard:read') === true
+    const name = hasPermission(Permission.AdminDashboardRead) === true
         ? 'admin-dashboard'
         : 'user-dashboard';
 

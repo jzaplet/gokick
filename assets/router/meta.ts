@@ -5,11 +5,12 @@
    else in the codebase. */
 
 import type { RouteMeta, RouteRecordRaw } from 'vue-router';
+import type { Permission } from '@/app/Auth/enums/resources';
 
 declare module 'vue-router' {
     interface RouteMeta {
         requiresAuth: boolean;
-        requiresPermission?: string;
+        requiresPermission?: Permission;
     }
 }
 

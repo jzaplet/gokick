@@ -1,4 +1,5 @@
 import type { AppRoute } from '@/router/meta';
+import { Permission } from '@/app/Auth/enums/resources';
 import HomeView from '@/app/Home/Views/HomeView.vue';
 import LoginView from '@/app/Auth/Views/LoginView.vue';
 import ProfileView from '@/app/Profile/Views/ProfileView.vue';
@@ -36,7 +37,7 @@ export const routes: AppRoute[] = [
         component: UserDashboardView,
         meta: {
             requiresAuth: true,
-            requiresPermission: 'dashboard:read',
+            requiresPermission: Permission.DashboardRead,
         },
     },
     {
@@ -45,7 +46,7 @@ export const routes: AppRoute[] = [
         component: AdminDashboardView,
         meta: {
             requiresAuth: true,
-            requiresPermission: 'admin:dashboard:read',
+            requiresPermission: Permission.AdminDashboardRead,
         },
     },
     {
@@ -54,7 +55,7 @@ export const routes: AppRoute[] = [
         component: AdminUsersView,
         meta: {
             requiresAuth: true,
-            requiresPermission: 'admin:users:read',
+            requiresPermission: Permission.AdminUsersRead,
         },
     },
     {
@@ -63,7 +64,7 @@ export const routes: AppRoute[] = [
         component: AdminUserCreateView,
         meta: {
             requiresAuth: true,
-            requiresPermission: 'admin:users:create',
+            requiresPermission: Permission.AdminUsersCreate,
         },
     },
     {
@@ -72,7 +73,7 @@ export const routes: AppRoute[] = [
         component: AdminUserEditView,
         meta: {
             requiresAuth: true,
-            requiresPermission: 'admin:users:update',
+            requiresPermission: Permission.AdminUsersUpdate,
         },
     },
 ];
