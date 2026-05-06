@@ -81,7 +81,7 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 	createUserCommand := console.NewCreateUserCommand(createUserHandler)
 	rootCommand := console.NewRootCommand(serveCommand, seedCommand, createUserCommand)
 	migrationManager := database.NewMigrationManager(sqliteManager, logger)
-	application := app.NewApplication(rootCommand, migrationManager, commandBus, queryBus, eventBus, jwtService, tokenRepository)
+	application := app.NewApplication(rootCommand, migrationManager)
 	return application, nil
 }
 
