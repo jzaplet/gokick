@@ -96,7 +96,7 @@ CQRS with three bus types, each with its own middleware chain:
 
 | Bus | Chain | Use |
 |-----|-------|-----|
-| `CommandBus` | Recovery → Logging → Authorize → Transaction → DispatchEvents | Write operations |
+| `CommandBus` | Recovery → Logging → Authorize → DispatchEvents → Transaction | Write operations |
 | `QueryBus` | Recovery → Logging → Authorize | Read operations |
 | `EventBus` | Recovery → Logging | Side-effects after commit |
 
@@ -124,10 +124,10 @@ func (h *ListUsersHandler) Handle(ctx context.Context, q ListUsersQuery) ([]user
 - Admin role has full access; user role is denied `admin:*` permissions
 
 **Event pattern** (`application/event/`):
-- Command handlers collect events via `EventCollector.Collect(event)`
-- Events dispatch after successful transaction commit (`DispatchEventsMiddleware`)
-- On rollback, events are discarded
-- Event handlers register on `EventBus` via `eventBus.Register(eventName, handlerFn)`
+- `DispatchEventsMiddleware` creates a **per-request** `*shared.EventCollector` and stores it in `ctx` (no singleton — race-safe).
+- Command handlers read it via `shared.EventCollectorFromContext(ctx).Collect(event)`. Outside the bus (e.g. CLI bypass) the helper returns a throwaway collector so handlers never nil-check.
+- `DispatchEventsMiddleware` wraps `TransactionMiddleware` (outer). After the transaction commits successfully, the middleware flushes and dispatches events via `EventBus` **synchronously**. On rollback or commit failure, events are discarded.
+- Event handlers register on `EventBus` via `eventBus.Register(eventName, handlerFn)`. They **must not** call `Collect` themselves — for follow-up async work use `JobDispatcher` (roadmap F3).
 
 **Dispatch from HTTP handler:**
 ```go

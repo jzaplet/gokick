@@ -18,7 +18,7 @@ import (
 func newAuthHandler(t *testing.T) (*AuthHandler, *testfx.Fixture) {
 	t.Helper()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "auth_http.db"))
-	cmdBus, _, _, _ := fx.NewBuses()
+	cmdBus, _, _ := fx.NewBuses()
 
 	registry := shared.NewPermissionsRegistry([]shared.Permissioned{
 		authcmd.LogoutCommand{},

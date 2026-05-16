@@ -95,7 +95,7 @@ type CreateUserCommand struct {
 }
 ```
 
-Bypassuje bus (žádný auth context potřeba) a volá přímo `*usercmd.CreateUserHandler.Handle()` -- recykluje stejnou validaci, hashing a unique-nickname check jako HTTP API. Eventy zůstávají v `EventCollector`, který se na konci procesu zahodí.
+Bypassuje bus (žádný auth context potřeba) a volá přímo `*usercmd.CreateUserHandler.Handle()` -- recykluje stejnou validaci, hashing a unique-nickname check jako HTTP API. V handleru `EventCollectorFromContext(ctx)` vrátí throwaway collector (bus tu nepřipravuje per-request collector), takže emitované domain eventy se tiše zahodí — pro CLI to je žádoucí.
 
 ```bash
 ./bin/app create-user -n alice -p secret12              # admin (default)

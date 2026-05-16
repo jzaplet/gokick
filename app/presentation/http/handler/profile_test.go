@@ -19,7 +19,7 @@ import (
 func newProfileHandler(t *testing.T) (*ProfileHandler, *testfx.Fixture) {
 	t.Helper()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "profile_http.db"))
-	cmdBus, qryBus, _, _ := fx.NewBuses()
+	cmdBus, qryBus, _ := fx.NewBuses()
 
 	registry := shared.NewPermissionsRegistry([]shared.Permissioned{
 		authcmd.LogoutCommand{},

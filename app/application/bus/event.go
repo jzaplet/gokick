@@ -16,6 +16,9 @@ func NewEventBus(middlewares ...Middleware) *EventBus {
 	return &EventBus{Bus: newBus(middlewares...), handlers: make(map[string][]EventHandler)}
 }
 
+// Register must only be called during DI wiring (single-goroutine init).
+// Dispatch reads `handlers` without locking and is safe only because no
+// registration happens after the first dispatch.
 func (eb *EventBus) Register(eventName string, handler EventHandler) {
 	eb.handlers[eventName] = append(eb.handlers[eventName], handler)
 }

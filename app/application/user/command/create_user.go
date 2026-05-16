@@ -20,18 +20,15 @@ func (CreateUserCommand) RequiredPermission() string { return "admin:users:creat
 type CreateUserHandler struct {
 	users    user.Repository
 	password shared.PasswordHasher
-	events   *shared.EventCollector
 }
 
 func NewCreateUserHandler(
 	users user.Repository,
 	password shared.PasswordHasher,
-	events *shared.EventCollector,
 ) *CreateUserHandler {
 	return &CreateUserHandler{
 		users:    users,
 		password: password,
-		events:   events,
 	}
 }
 
@@ -77,7 +74,7 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
 		return err
 	}
 
-	h.events.Collect(user.UserCreated{
+	shared.EventCollectorFromContext(ctx).Collect(user.UserCreated{
 		UserID:    u.ID,
 		Nickname:  u.Nickname,
 		Email:     u.Email,

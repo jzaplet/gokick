@@ -12,7 +12,6 @@ import (
 
 	"gokick/app/application/bus"
 	busmw "gokick/app/application/bus/middleware"
-	"gokick/app/domain/shared"
 	"gokick/app/domain/token"
 	"gokick/app/domain/user"
 	"gokick/app/infrastructure/config"
@@ -75,34 +74,27 @@ func (*Fixture) HashToken(raw string) string {
 	return security.HashToken(raw)
 }
 
-// NewBuses wires a production-like CommandBus + QueryBus + EventBus with all
-// middleware (recovery, logging, authorize, transaction, dispatch events) and
-// a shared EventCollector. Logger is silent (io.Discard).
-func (f *Fixture) NewBuses() (*bus.CommandBus, *bus.QueryBus, *bus.EventBus, *shared.EventCollector) {
+// NewBuses wires a production-like CommandBus + QueryBus + EventBus mirroring
+// what container_provider builds (logger silent via io.Discard). Tests that
+// need to inspect collected events should use shared.ContextWithEventCollector
+// directly when invoking a handler outside the bus.
+func (f *Fixture) NewBuses() (*bus.CommandBus, *bus.QueryBus, *bus.EventBus) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	checker := security.NewPermissionChecker()
-	collector := shared.NewEventCollector()
 
 	eventBus := bus.NewEventBus(
 		busmw.RecoveryMiddleware(logger),
 		busmw.LoggingMiddleware(logger),
 	)
 
-	commandBus := bus.NewCommandBus(
-		busmw.RecoveryMiddleware(logger),
-		busmw.LoggingMiddleware(logger),
-		busmw.AuthorizeMiddleware(checker),
+	commandChain := append(busmw.BaseChain(logger, checker),
+		busmw.DispatchEventsMiddleware(logger, eventBus),
 		busmw.TransactionMiddleware(f.DB),
-		busmw.DispatchEventsMiddleware(logger, collector, eventBus),
 	)
 
-	queryBus := bus.NewQueryBus(
-		busmw.RecoveryMiddleware(logger),
-		busmw.LoggingMiddleware(logger),
-		busmw.AuthorizeMiddleware(checker),
-	)
-
-	return commandBus, queryBus, eventBus, collector
+	return bus.NewCommandBus(commandChain...),
+		bus.NewQueryBus(busmw.BaseChain(logger, checker)...),
+		eventBus
 }
 
 // NewJwt returns a JwtService configured with the given access expiration.

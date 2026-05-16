@@ -47,14 +47,14 @@ Parametr `cmd any` umožňuje middleware introspekci -- např. type assert na `s
 | Recovery | `recovery.go` | Zachytí panic, zaloguje stack trace |
 | Logging | `logging.go` | Název handleru, trvání, trace ID |
 | Authorize | `authorize.go` | Type assert na `Permissioned` / `SkipPermission`, volá `PermissionChecker.Check()` |
+| DispatchEvents | `events.go` | Vytvoří per-request `EventCollector` v `ctx`, po úspěšném commitu flushne a dispatchne přes `EventBus` |
 | Transaction | `transaction.go` | BeginTx / Commit / Rollback přes `shared.Transactor` interface |
-| DispatchEvents | `events.go` | Flush `EventCollector` po úspěšném commitu |
 
 ### Tři instance (Wire DI)
 
 | Typ | Chain | Použití |
 |---|---|---|
-| `CommandBus` | Recovery - Logging - Authorize - Transaction - DispatchEvents | Write operace |
+| `CommandBus` | Recovery - Logging - Authorize - DispatchEvents - Transaction | Write operace |
 | `QueryBus` | Recovery - Logging - Authorize | Read operace |
 | `EventBus` | Recovery - Logging | Side-effects po commitu |
 
@@ -71,5 +71,6 @@ Wire je konfiguruje v `container_provider.go` -- každý typ dostane svůj middl
 ## Detaily
 
 - **AuthorizeMiddleware** vynucuje, že každý command/query implementuje buď `Permissioned` (deklaruje required permission), nebo `SkipPermission` (explicitní skip). Pokud neimplementuje ani jeden, middleware vrátí error -- chrání proti zapomenuté deklaraci.
+- **DispatchEventsMiddleware** sedí **uvnitř** chainu, ale **vně** TransactionMiddleware. Při dispatchi vytvoří per-request `EventCollector` v contextu — handlery ho čtou přes `shared.EventCollectorFromContext(ctx)`. Po návratu z `TransactionMiddleware` (commit OK) flushne a dispatchne eventy přes `EventBus` (synchronně). Pokud commit selže, chyba propaguje, eventy se nedispatchují.
 - **TransactionMiddleware** závisí na `shared.Transactor` interface, ne na konkrétní databázi. `SqliteManager` ho implementuje implicitně (duck typing).
-- **DispatchEventsMiddleware** se spouští až po úspěšném commitu transakce. Při rollbacku se eventy zahodí.
+- Per-request collector místo sdíleného singletonu eliminuje race condition u paralelních commandů a zaručuje, že každý dispatch dostane vlastní izolovanou sbírku eventů.

@@ -38,7 +38,7 @@ app/infrastructure/di/
 | **Config** | `config.LoadConfig`, `provideCookieSecure` (-> `handler.CookieSecure`) |
 | **Database** | `database.NewSqliteManager`, `database.NewMigrationManager` |
 | **Security** | `security.NewJwtService`, `providePasswordHasher` (-> `shared.PasswordHasher`), `providePermissionChecker` (-> `shared.PermissionChecker`), `providePermissionsRegistry` (-> `*shared.PermissionsRegistry`) |
-| **Bus** | `provideCommandBus`, `provideQueryBus`, `provideEventBus`, `provideEventCollector` |
+| **Bus** | `provideCommandBus`, `provideQueryBus`, `provideEventBus` |
 | **Repositories** | `sqliteuser.NewRepository`, `sqlitetoken.NewRepository`, `sqlite.NewSeeder` |
 | **Auth handlery** | `authcmd.NewLoginHandler`, `authcmd.NewRefreshTokenHandler`, `authcmd.NewLogoutHandler` |
 | **Profile handlery** | `profilecmd.NewChangePasswordHandler`, `profileqry.NewGetProfileHandler` |
