@@ -76,4 +76,4 @@ Ostatní flagy cookie jsou hardcoded, protože nemá smysl je měnit: `HttpOnly=
 
 ### Documan
 
-`DOCUMAN_HTTP_PORT=3005` — port pro `documan` Docker service definovaný v `docker-compose.yml`. Slouží jen pro lokální preview dokumentace, nesouvisí s aplikační binárkou.
+`DOCUMAN_HTTP_PORT=3006` — port pro `documan` Docker service definovaný v `docker-compose.yml`. Slouží jen pro lokální preview dokumentace, nesouvisí s aplikační binárkou.

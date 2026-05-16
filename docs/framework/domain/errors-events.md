@@ -114,26 +114,17 @@ func (e UserCreated) OccurredAt() time.Time { return e.Timestamp }
 
 ### EventCollector
 
-Sbírá eventy v rámci jednoho command handleru. Žije v `domain/shared/event.go`.
+Sbírá eventy v rámci jednoho command dispatch. Žije v `domain/shared/event.go`. Per-request instanci vytváří `DispatchEventsMiddleware` a ukládá ji do `ctx`; handlery ji čtou helperem `EventCollectorFromContext(ctx)`.
 
 ```go
-type EventCollector struct {
-    events []DomainEvent
-}
+type EventCollector struct { /* mutex + slice */ }
 
-func NewEventCollector() *EventCollector {
-    return &EventCollector{}
-}
+func NewEventCollector() *EventCollector
+func (c *EventCollector) Collect(event DomainEvent)
+func (c *EventCollector) Flush() []DomainEvent
 
-func (c *EventCollector) Collect(event DomainEvent) {
-    c.events = append(c.events, event)
-}
-
-func (c *EventCollector) Flush() []DomainEvent {
-    events := c.events
-    c.events = nil
-    return events
-}
+func ContextWithEventCollector(ctx context.Context) (context.Context, *EventCollector)
+func EventCollectorFromContext(ctx context.Context) *EventCollector
 ```
 
 Použití v command handleru:
@@ -141,7 +132,7 @@ Použití v command handleru:
 ```go
 func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) error {
     // ... vytvoření uživatele ...
-    h.events.Collect(user.UserCreated{
+    shared.EventCollectorFromContext(ctx).Collect(user.UserCreated{
         UserID:    u.ID,
         Nickname:  u.Nickname,
         Email:     u.Email,
@@ -152,16 +143,20 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
 }
 ```
 
+Pokud handler běží mimo bus (např. CLI `create-user`, který bus bypassuje), `EventCollectorFromContext` vrátí throwaway collector — `Collect` projde, ale eventy nikam nejdou.
+
 
 ### Životní cyklus eventů
 
 ```
-1. Command handler volá EventCollector.Collect(event)
-2. TransactionMiddleware commitne transakci
-3. DispatchEventsMiddleware flushne eventy -> async goroutiny přes EventBus
-4. Event handler zpracuje side-effect (email, notifikace)
+1. DispatchEventsMiddleware vytvoří per-request EventCollector v ctx
+2. TransactionMiddleware otevře transakci
+3. Command handler volá EventCollectorFromContext(ctx).Collect(event)
+4. TransactionMiddleware commitne (nebo rollbackne při chybě)
+5. DispatchEventsMiddleware: pokud commit OK, flushne eventy -> EventBus.Dispatch (synchronně)
+6. Event handler zpracuje side-effect (email, notifikace)
 
-Pokud command selže (rollback), eventy se zahodí.
+Pokud command nebo commit selže, chyba propaguje zpět skrz DispatchEvents -> flush se přeskočí, eventy se zahodí.
 ```
 
 

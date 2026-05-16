@@ -39,7 +39,6 @@ func (c CreateUserCommand) RequiredPermission() string { return "admin:users:cre
 type CreateUserHandler struct {
     users    user.Repository        // doménový interface
     password shared.PasswordHasher  // doménový interface
-    events   *shared.EventCollector // sběrač domain eventů (flushne se po commitu)
 }
 
 func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) error {
@@ -83,8 +82,8 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
         return err
     }
 
-    // 4. Domain event -- bus ho dispatchne až po úspěšném commitu transakce
-    h.events.Collect(user.UserCreated{
+    // 4. Domain event -- per-request collector v ctx, bus ho dispatchne po commitu
+    shared.EventCollectorFromContext(ctx).Collect(user.UserCreated{
         UserID:    u.ID,
         Nickname:  u.Nickname,
         Email:     u.Email,

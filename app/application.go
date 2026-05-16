@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"gokick/app/infrastructure/database"
 	"gokick/app/presentation/console"
 )
@@ -20,9 +21,9 @@ func NewApplication(
 	}
 }
 
-func (a *Application) Run() error {
+func (a *Application) Run(ctx context.Context) error {
 	if err := a.migrations.RunUp(); err != nil {
 		return err
 	}
-	return a.rootCmd.Execute()
+	return a.rootCmd.Execute(ctx)
 }

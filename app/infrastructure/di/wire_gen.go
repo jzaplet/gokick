@@ -50,10 +50,9 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 	if err != nil {
 		return nil, err
 	}
-	eventCollector := provideEventCollector()
 	permissionChecker := providePermissionChecker()
 	eventBus := provideEventBus(logger)
-	commandBus := provideCommandBus(logger, sqliteManager, eventCollector, permissionChecker, eventBus)
+	commandBus := provideCommandBus(logger, sqliteManager, permissionChecker, eventBus)
 	repository := user.NewRepository(sqliteManager)
 	tokenRepository := token.NewRepository(sqliteManager)
 	passwordHasher := providePasswordHasher()
@@ -67,7 +66,7 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 	changePasswordHandler := command2.NewChangePasswordHandler(repository, passwordHasher)
 	profileHandler := handler.NewProfileHandler(commandBus, queryBus, getProfileHandler, changePasswordHandler, permissionsRegistry)
 	listUsersHandler := query2.NewListUsersHandler(repository)
-	createUserHandler := command3.NewCreateUserHandler(repository, passwordHasher, eventCollector)
+	createUserHandler := command3.NewCreateUserHandler(repository, passwordHasher)
 	updateUserHandler := command3.NewUpdateUserHandler(repository, passwordHasher)
 	deleteUserHandler := command3.NewDeleteUserHandler(repository)
 	adminUsersHandler := handler.NewAdminUsersHandler(commandBus, queryBus, listUsersHandler, createUserHandler, updateUserHandler, deleteUserHandler)
@@ -87,10 +86,6 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 
 // container_provider.go:
 
-func provideEventCollector() *shared.EventCollector {
-	return shared.NewEventCollector()
-}
-
 func providePasswordHasher() shared.PasswordHasher {
 	return security.NewPasswordHasher()
 }
@@ -102,15 +97,15 @@ func providePermissionChecker() shared.PermissionChecker {
 func provideCommandBus(
 	logger *slog.Logger,
 	db *database.SqliteManager,
-	collector *shared.EventCollector,
 	checker shared.PermissionChecker,
 	eventBus *bus.EventBus,
 ) *bus.CommandBus {
-	return bus.NewCommandBus(middleware.RecoveryMiddleware(logger), middleware.LoggingMiddleware(logger), middleware.AuthorizeMiddleware(checker), middleware.TransactionMiddleware(db), middleware.DispatchEventsMiddleware(logger, collector, eventBus))
+	chain := append(middleware.BaseChain(logger, checker), middleware.DispatchEventsMiddleware(logger, eventBus), middleware.TransactionMiddleware(db))
+	return bus.NewCommandBus(chain...)
 }
 
 func provideQueryBus(logger *slog.Logger, checker shared.PermissionChecker) *bus.QueryBus {
-	return bus.NewQueryBus(middleware.RecoveryMiddleware(logger), middleware.LoggingMiddleware(logger), middleware.AuthorizeMiddleware(checker))
+	return bus.NewQueryBus(middleware.BaseChain(logger, checker)...)
 }
 
 func providePublicFS() fs.FS {

@@ -37,7 +37,7 @@ func (h *SendWelcomeEmailHandler) Handle(ctx context.Context, event user.UserCre
 
 ### Sběr eventů v command handleru
 
-Eventy se sbírají do `EventCollector` až **po úspěšném zápisu**, aby se v případě DB chyby nedispatchoval event s daty, která neuvízla:
+`EventCollector` je per-request — vytváří ho `DispatchEventsMiddleware` na začátku každého dispatch a ukládá do `ctx`. Handler ho čte přes `shared.EventCollectorFromContext(ctx)` a sbírá až **po úspěšném zápisu**, aby se v případě DB chyby nedispatchoval event s daty, která neuvízla:
 
 ```go
 func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) error {
@@ -46,7 +46,7 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
         return err
     }
 
-    h.events.Collect(user.UserCreated{
+    shared.EventCollectorFromContext(ctx).Collect(user.UserCreated{
         UserID:    u.ID,
         Nickname:  u.Nickname,
         Email:     u.Email,
@@ -57,10 +57,13 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
 }
 ```
 
-Bus `DispatchEventsMiddleware` flushne sbírku až po commitu transakce -- pokud Save uspěl, ale commit selže, eventy se zahodí.
+`DispatchEventsMiddleware` sedí v bus chainu vně `TransactionMiddleware`. Pokud commit selže, chyba propaguje zpět do middleware a eventy se nedispatchují.
 
 
 ## Detaily
 
-- Eventy se dispatchují až **po úspěšném commitu** transakce (`DispatchEventsMiddleware`). Při rollbacku se zahodí.
+- Collector žije v contextu, ne v DI — eliminuje race condition u paralelních commandů (každý dispatch má vlastní izolovanou sbírku).
+- Eventy se dispatchují až **po úspěšném commitu** transakce. Při rollbacku se zahodí (chyba propaguje z `TransactionMiddleware` skrz `DispatchEventsMiddleware`, post-processing flush se přeskočí).
+- Dispatch je **synchronní** — `EventBus.Dispatch` volá handlery sériově v request goroutině. Heavy I/O handlery (emaily, externí API) patří do perzistentní job queue (viz [Roadmap fáze 3](/roadmap#fáze-3--perzistentní-job-queue-sqlite)), ne do `EventBus`.
+- `EventCollectorFromContext` u handleru spuštěného mimo bus (např. CLI `create-user`, který bus bypassuje) vrací prázdný throwaway collector — eventy se tiše zahodí.
 - Event handler může selhat bez vlivu na původní command -- chyba se zaloguje, ale command už commitnul.

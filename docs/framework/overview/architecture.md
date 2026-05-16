@@ -34,6 +34,7 @@ presentation --> application --> domain <-- infrastructure
 
 ```
 cmd/main.go
+  -> signal.NotifyContext(SIGINT, SIGTERM)  Root ctx s signal handlingem
   -> di.CreateApplication()                Wire DI vytvoří vše
     -> config.LoadConfig()                 Načtení .env
     -> database.NewSqliteManager()         Připojení k SQLite
@@ -41,9 +42,9 @@ cmd/main.go
     -> bus.NewCommandBus/NewQueryBus/NewEventBus  CQRS busy s middleware chain
     -> server.New(handlers, middlewares)    HTTP server
     -> console.NewRootCommand()            Cobra CLI
-  -> application.Run()
-    -> rootCmd.Execute()                   Cobra parsuje "serve"
-      -> server.Start()                   Naslouchá na portu
+  -> application.Run(ctx)
+    -> rootCmd.Execute(ctx)                Cobra parsuje "serve" (ExecuteContext)
+      -> server.Start(cmd.Context())       Naslouchá na portu, drainuje při ctx.Done()
 ```
 
 
@@ -62,19 +63,21 @@ cmd/main.go
    bus.ExecVoid(ctx, commandBus, "CreateUser", cmd, fn)
 
 4. Bus Middleware (application/bus/middleware/):
-   Recovery -> Logging -> Authorize -> Transaction -> DispatchEvents
+   Recovery -> Logging -> Authorize -> DispatchEvents -> Transaction
    |
    |- Authorize: cmd.(Permissioned) -> PermissionChecker.Check()
+   |- DispatchEvents: vytvoří per-request EventCollector v ctx
    |- Transaction: BEGIN
    +-> handler:
 
 5. Command Handler (application/user/command/):
    NewNickname() -> NewRole() -> repo.FindByNickname() -> password.Hash()
    -> NewUser() -> repo.Save()
+   -> shared.EventCollectorFromContext(ctx).Collect(UserCreated{...})
 
 6. Bus post-handler:
-   Transaction -> COMMIT
-   DispatchEvents -> flush EventCollector -> async goroutiny
+   Transaction -> COMMIT (nebo ROLLBACK při chybě)
+   DispatchEvents -> pokud commit OK, flush EventCollector -> EventBus.Dispatch (synchronně)
 
 7. HTTP Handler: response.JSON(w, 201, nil)
 ```
@@ -97,7 +100,7 @@ HTTP Request -> Trace -> Security headers -> CORS -> CSRF -> Logging -> JWT Auth
 ```
 Command Handler vrátí error
   |
-Bus: Transaction -> ROLLBACK, DispatchEvents -> eventy zahozeny
+Bus: Transaction -> ROLLBACK -> err propaguje skrz DispatchEvents (eventy zahozeny)
   |
 HTTP Handler: response.HandleError(w, err)
   -> ValidationError  -> 400

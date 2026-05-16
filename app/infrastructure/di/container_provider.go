@@ -31,10 +31,6 @@ import (
 	"github.com/google/wire"
 )
 
-func provideEventCollector() *shared.EventCollector {
-	return shared.NewEventCollector()
-}
-
 func providePasswordHasher() shared.PasswordHasher {
 	return security.NewPasswordHasher()
 }
@@ -46,25 +42,18 @@ func providePermissionChecker() shared.PermissionChecker {
 func provideCommandBus(
 	logger *slog.Logger,
 	db *database.SqliteManager,
-	collector *shared.EventCollector,
 	checker shared.PermissionChecker,
 	eventBus *bus.EventBus,
 ) *bus.CommandBus {
-	return bus.NewCommandBus(
-		busmw.RecoveryMiddleware(logger),
-		busmw.LoggingMiddleware(logger),
-		busmw.AuthorizeMiddleware(checker),
+	chain := append(busmw.BaseChain(logger, checker),
+		busmw.DispatchEventsMiddleware(logger, eventBus),
 		busmw.TransactionMiddleware(db),
-		busmw.DispatchEventsMiddleware(logger, collector, eventBus),
 	)
+	return bus.NewCommandBus(chain...)
 }
 
 func provideQueryBus(logger *slog.Logger, checker shared.PermissionChecker) *bus.QueryBus {
-	return bus.NewQueryBus(
-		busmw.RecoveryMiddleware(logger),
-		busmw.LoggingMiddleware(logger),
-		busmw.AuthorizeMiddleware(checker),
-	)
+	return bus.NewQueryBus(busmw.BaseChain(logger, checker)...)
 }
 
 func providePublicFS() fs.FS {
@@ -106,7 +95,6 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 		config.LoadConfig,
 		database.NewSqliteManager,
 		database.NewMigrationManager,
-		provideEventCollector,
 		providePasswordHasher,
 		providePermissionChecker,
 		provideCommandBus,

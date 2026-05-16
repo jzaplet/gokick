@@ -1,14 +1,19 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"gokick/app/domain/shared"
 	"gokick/app/infrastructure/config"
 	"gokick/app/presentation/http/handler"
 	"gokick/app/presentation/http/middleware"
 )
+
+const shutdownGracePeriod = 30 * time.Second
 
 type Server struct {
 	config     *config.Config
@@ -46,14 +51,51 @@ func NewServer(
 	}
 }
 
-func (s *Server) Start() error {
+func (s *Server) Start(ctx context.Context) error {
 	mux := s.registerRoutes()
 	chain := s.buildMiddlewareChain(mux)
 
 	addr := ":" + s.config.HTTPPort
 	s.logger.Info("server: starting", "addr", addr)
+	return runWithShutdown(ctx, &http.Server{Addr: addr, Handler: chain}, s.logger, shutdownGracePeriod)
+}
 
-	return http.ListenAndServe(addr, chain)
+// runWithShutdown runs srv.ListenAndServe in a goroutine and waits for ctx
+// cancellation. On cancel it drains inflight requests via srv.Shutdown with
+// the given grace period. Extracted so server_test.go can exercise the same
+// goroutine + select wiring against a hand-built http.Server.
+func runWithShutdown(
+	ctx context.Context,
+	srv *http.Server,
+	logger *slog.Logger,
+	grace time.Duration,
+) error {
+	serverErr := make(chan error, 1)
+	go func() {
+		err := srv.ListenAndServe()
+		if errors.Is(err, http.ErrServerClosed) {
+			err = nil
+		}
+		serverErr <- err
+	}()
+
+	select {
+	case err := <-serverErr:
+		return err
+	case <-ctx.Done():
+		logger.Info("server: shutdown signal received, draining", "timeout", grace)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), grace)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			logger.Error("server: graceful shutdown failed", "error", err)
+			return err
+		}
+		if err := <-serverErr; err != nil {
+			logger.Error("server: listener exited with error during shutdown", "error", err)
+		}
+		logger.Info("server: stopped")
+		return nil
+	}
 }
 
 func (s *Server) registerRoutes() *http.ServeMux {

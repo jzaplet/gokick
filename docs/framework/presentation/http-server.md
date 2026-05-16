@@ -124,8 +124,20 @@ type HTTPError interface {
 - **Ano** -- použije `HTTPStatus()` (např. 400, 401, 403).
 - **Ne** -- vrátí 500 Internal Server Error.
 
+## Graceful shutdown
+
+`server.Start(ctx context.Context) error` poslouchá na cancellation z ctx. `cmd/main.go` vytvoří root ctx přes `signal.NotifyContext(ctx, SIGINT, SIGTERM)` a propaguje ho přes `Application.Run` → Cobra → `ServeCommand`. Když přijde signál:
+
+1. `ctx.Done()` se odpálí.
+2. `Start` zavolá `http.Server.Shutdown(shutdownCtx)` s 30s timeoutem.
+3. `Shutdown` přestane přijímat nová spojení a počká na dokončení inflight requestů.
+4. Po dokončení (nebo timeoutu) se vrátí; `Run` ukončí proces s exit code 0.
+
+Pokud handler trvá déle než 30s, `Shutdown` vrátí `context.DeadlineExceeded` a `Run` exitne s nenulovým kódem. Pro long-running endpointy (uploads, exports) je 30s konzervativní default — zvedněte `shutdownGracePeriod` v `server.go` podle potřeby.
+
+
 ## Detaily
 
 - Domain error typy (`ValidationError` 400, `AuthError` 401, `PermissionError` 403) implementují `HTTPError` implicitně (duck typing). Žádný import mezi `response/` a `domain/`. Detaily viz [Errors & Events](/framework/domain/errors-events).
-- Server struct drží `*http.ServeMux`, middleware chain a `Start()` metodu, která spustí `http.ListenAndServe`.
+- Server struct drží `*http.ServeMux`, middleware chain a `Start(ctx)` metodu, která spustí `http.Server.ListenAndServe` v goroutině a čeká na `ctx.Done()` nebo server error (viz [Graceful shutdown](#graceful-shutdown)).
 - Response balíček nemá žádné závislosti kromě stdlib.

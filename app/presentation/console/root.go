@@ -1,6 +1,8 @@
 package console
 
 import (
+	"context"
+
 	"github.com/spf13/cobra"
 )
 
@@ -35,6 +37,6 @@ func NewRootCommand(
 	return root
 }
 
-func (r *RootCommand) Execute() error {
-	return r.cmd.Execute()
+func (r *RootCommand) Execute(ctx context.Context) error {
+	return r.cmd.ExecuteContext(ctx)
 }

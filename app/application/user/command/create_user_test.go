@@ -12,11 +12,10 @@ import (
 )
 
 func TestCreateUserHandler_Success(t *testing.T) {
-	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_success.db"))
-	collector := shared.NewEventCollector()
+	ctx, collector := shared.ContextWithEventCollector(context.Background())
 
-	h := NewCreateUserHandler(fx.Users, fx.Hasher, collector)
+	h := NewCreateUserHandler(fx.Users, fx.Hasher)
 	err := h.Handle(ctx, CreateUserCommand{
 		Nickname: "bob",
 		Password: "secret12",
@@ -60,12 +59,11 @@ func TestCreateUserHandler_Success(t *testing.T) {
 }
 
 func TestCreateUserHandler_DuplicateNickname(t *testing.T) {
-	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_dup.db"))
 	fx.SeedUser(t, "alice", "existing", "user")
 
-	collector := shared.NewEventCollector()
-	h := NewCreateUserHandler(fx.Users, fx.Hasher, collector)
+	ctx, collector := shared.ContextWithEventCollector(context.Background())
+	h := NewCreateUserHandler(fx.Users, fx.Hasher)
 
 	err := h.Handle(ctx, CreateUserCommand{
 		Nickname: "alice",
@@ -87,11 +85,10 @@ func TestCreateUserHandler_DuplicateNickname(t *testing.T) {
 }
 
 func TestCreateUserHandler_EmptyNickname(t *testing.T) {
-	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_empty_nick.db"))
 
-	h := NewCreateUserHandler(fx.Users, fx.Hasher, shared.NewEventCollector())
-	err := h.Handle(ctx, CreateUserCommand{
+	h := NewCreateUserHandler(fx.Users, fx.Hasher)
+	err := h.Handle(context.Background(), CreateUserCommand{
 		Nickname: "",
 		Password: "secret12",
 		Email:    "x@y.com",
@@ -108,11 +105,10 @@ func TestCreateUserHandler_EmptyNickname(t *testing.T) {
 }
 
 func TestCreateUserHandler_InvalidRole(t *testing.T) {
-	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_invalid_role.db"))
 
-	h := NewCreateUserHandler(fx.Users, fx.Hasher, shared.NewEventCollector())
-	err := h.Handle(ctx, CreateUserCommand{
+	h := NewCreateUserHandler(fx.Users, fx.Hasher)
+	err := h.Handle(context.Background(), CreateUserCommand{
 		Nickname: "bob",
 		Password: "secret12",
 		Email:    "bob@example.com",
@@ -129,11 +125,10 @@ func TestCreateUserHandler_InvalidRole(t *testing.T) {
 }
 
 func TestCreateUserHandler_EmptyPassword(t *testing.T) {
-	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_empty_pwd.db"))
 
-	h := NewCreateUserHandler(fx.Users, fx.Hasher, shared.NewEventCollector())
-	err := h.Handle(ctx, CreateUserCommand{
+	h := NewCreateUserHandler(fx.Users, fx.Hasher)
+	err := h.Handle(context.Background(), CreateUserCommand{
 		Nickname: "bob",
 		Password: "",
 		Email:    "bob@example.com",
@@ -153,7 +148,7 @@ func TestCreateUserHandler_OptionalEmail(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_optional_email.db"))
 
-	h := NewCreateUserHandler(fx.Users, fx.Hasher, shared.NewEventCollector())
+	h := NewCreateUserHandler(fx.Users, fx.Hasher)
 	err := h.Handle(ctx, CreateUserCommand{
 		Nickname: "bob",
 		Password: "secret12",
@@ -177,11 +172,10 @@ func TestCreateUserHandler_OptionalEmail(t *testing.T) {
 }
 
 func TestCreateUserHandler_InvalidEmail(t *testing.T) {
-	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_invalid_email.db"))
 
-	h := NewCreateUserHandler(fx.Users, fx.Hasher, shared.NewEventCollector())
-	err := h.Handle(ctx, CreateUserCommand{
+	h := NewCreateUserHandler(fx.Users, fx.Hasher)
+	err := h.Handle(context.Background(), CreateUserCommand{
 		Nickname: "bob",
 		Password: "secret12",
 		Email:    "no-at-sign",

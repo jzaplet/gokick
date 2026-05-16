@@ -19,7 +19,7 @@ func (c *ServeCommand) Command() *cobra.Command {
 		Use:   "serve",
 		Short: "Start the HTTP server",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return c.server.Start()
+			return c.server.Start(cmd.Context())
 		},
 	}
 }
