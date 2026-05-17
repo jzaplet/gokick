@@ -64,13 +64,13 @@ func provideJobHandlerRegistry(welcome *jobcmd.SendWelcomeHandler) (*jobapp.Hand
 
 ### 3. Enqueue z command handleru
 
-`Enqueue` má povinné `maxAttempts` jako poziční parametr -- žádný magický default. Hodnotu volíš per kind: `1` pro send-once side effect (welcome mail, audit log), víc pro flaky věci (externí API s občasným timeoutem).
+`Enqueue` má povinné `maxRetries` jako poziční parametr -- žádný magický default. `0` = "vykonej jednou, žádný retry" (welcome mail, audit log). Vyšší pro flaky externí volání (`3` = 3 retries po prvním selhání = až 4 attempts).
 
 ```go
 if err := h.users.Save(ctx, u); err != nil {
     return err
 }
-return shared.JobDispatcherFromContext(ctx).Enqueue(ctx, "welcome:send", 1, WelcomePayload{
+return shared.JobDispatcherFromContext(ctx).Enqueue(ctx, "welcome:send", 0, WelcomePayload{
     UserID: u.ID, Email: u.Email,
 })
 ```
@@ -79,7 +79,7 @@ Dispatcher zkontroluje, že kind je v registru (chytíš překlep v testu, ne v 
 
 ### 4. `make di`
 
-Hotovo. SMTP nefunguje? Worker to za 5s zkusí znovu, pak 10, 20, 40 ... po pěti pokusech označí `failed` (řádek zůstane pro debug).
+Hotovo. SMTP nefunguje? Když máš `maxRetries=3`, worker to za 5s zkusí znovu, pak 10, 20 ... a po 4. selhání (1 původní + 3 retries) označí `failed` (řádek zůstane pro debug). Pokud máš `maxRetries=0`, po prvním selhání rovnou `failed` -- žádný retry.
 
 
 ## Co se ti hodí vědět
@@ -95,7 +95,7 @@ Hotovo. SMTP nefunguje? Worker to za 5s zkusí znovu, pak 10, 20, 40 ... po pět
 | Co | Kde | Default | Jak změnit |
 |---|---|---|---|
 | Které kindy worker zná | `provideJobHandlerRegistry()` v `container_provider.go` | prázdná mapa | Přidej `kind → handler.Handle` entry |
-| `maxAttempts` | Povinný poziční parametr `Enqueue` | bez defaultu (musíš zvolit) | `disp.Enqueue(ctx, "welcome:send", 1, payload)` -- `1` = one shot, vyšší pro flaky externí volání |
-| Odložené spuštění | `shared.WithDelay(d)` při `Enqueue` | spustit ihned | `disp.Enqueue(ctx, kind, 1, payload, shared.WithDelay(time.Hour))` |
+| `maxRetries` | Povinný poziční parametr `Enqueue` | bez defaultu (musíš zvolit) | `disp.Enqueue(ctx, "welcome:send", 0, payload)` -- `0` = no retry, `3` = až 3 retries po prvním selhání |
+| Odložené spuštění | `shared.WithDelay(d)` při `Enqueue` | spustit ihned | `disp.Enqueue(ctx, kind, 0, payload, shared.WithDelay(time.Hour))` |
 | Worker concurrency | `provideWorker` v `container_provider.go` | `1` | Zvyš parametr (pozor na SQLite serializaci) |
 | Poll interval / backoff / lock timeout | Konstanty ve `infrastructure/worker/worker.go` | `1s` / `5s base, 1h cap` / `5min` | Pro reálné nasazení vytáhni do configu |

@@ -21,8 +21,8 @@ func NewRepository(db *database.SqliteManager) *Repository {
 }
 
 func (r *Repository) Enqueue(ctx context.Context, j *job.Job) error {
-	const q = `INSERT INTO jobs (id, kind, payload, run_at, attempts, max_attempts, locked_until, last_error, failed_at, completed_at, created_at)
-		VALUES (:id, :kind, :payload, :run_at, :attempts, :max_attempts, :locked_until, :last_error, :failed_at, :completed_at, :created_at)`
+	const q = `INSERT INTO jobs (id, kind, payload, run_at, attempts, max_retries, locked_until, last_error, failed_at, completed_at, created_at)
+		VALUES (:id, :kind, :payload, :run_at, :attempts, :max_retries, :locked_until, :last_error, :failed_at, :completed_at, :created_at)`
 	_, err := r.Conn(ctx).NamedExecContext(ctx, q, j)
 	return err
 }

@@ -162,7 +162,9 @@ func (w *Worker) handleFailure(
 	jobErr error,
 	duration time.Duration,
 ) {
-	if j.Attempts >= j.MaxAttempts {
+	// j.Attempts is the (1-based) count of times claim has run this job.
+	// retriesUsed = Attempts - 1. Out of retries when retriesUsed >= MaxRetries.
+	if j.Attempts > j.MaxRetries {
 		log.Error("worker: job exhausted retries, marking failed",
 			"duration", duration, "error", jobErr,
 		)

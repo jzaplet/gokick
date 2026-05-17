@@ -29,7 +29,7 @@ func TestDispatcher_EnqueueRegisteredKind(t *testing.T) {
 	d := NewDispatcher(fx.Jobs, newRegistry(t, "welcome:send"))
 
 	payload := map[string]any{"user_id": "u1", "email": "u1@example.com"}
-	if err := d.Enqueue(context.Background(), "welcome:send", 1, payload); err != nil {
+	if err := d.Enqueue(context.Background(), "welcome:send", 0, payload); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 
@@ -49,7 +49,7 @@ func TestDispatcher_EnqueueUnknownKindFails(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "dispatch_unknown.db"))
 	d := NewDispatcher(fx.Jobs, newRegistry(t, "known:kind"))
 
-	err := d.Enqueue(context.Background(), "unknown:kind", 1, nil)
+	err := d.Enqueue(context.Background(), "unknown:kind", 0, nil)
 	if err == nil {
 		t.Fatal("expected error for unknown kind")
 	}
@@ -58,19 +58,25 @@ func TestDispatcher_EnqueueUnknownKindFails(t *testing.T) {
 	}
 }
 
-// maxAttempts must be >= 1 — callers cannot rely on a default.
-func TestDispatcher_EnqueueRejectsZeroMaxAttempts(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "dispatch_zero_max.db"))
+// maxRetries must be >= 0 — callers cannot rely on a default, and negative
+// values would mean "skip even the first attempt" which is nonsensical.
+func TestDispatcher_EnqueueRejectsNegativeMaxRetries(t *testing.T) {
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "dispatch_negative_retries.db"))
 	d := NewDispatcher(fx.Jobs, newRegistry(t, "any:kind"))
 
-	for _, n := range []int{0, -1, -100} {
+	for _, n := range []int{-1, -100} {
 		err := d.Enqueue(context.Background(), "any:kind", n, nil)
 		if err == nil {
-			t.Fatalf("expected error for maxAttempts=%d", n)
+			t.Fatalf("expected error for maxRetries=%d", n)
 		}
-		if !strings.Contains(err.Error(), "maxAttempts >= 1") {
-			t.Fatalf("maxAttempts=%d error: %v", n, err)
+		if !strings.Contains(err.Error(), "maxRetries >= 0") {
+			t.Fatalf("maxRetries=%d error: %v", n, err)
 		}
+	}
+
+	// 0 is valid — one attempt, no retry.
+	if err := d.Enqueue(context.Background(), "any:kind", 0, nil); err != nil {
+		t.Fatalf("maxRetries=0 should be accepted, got %v", err)
 	}
 }
 
@@ -80,7 +86,7 @@ func TestDispatcher_WithDelay_NotClaimableBeforeRunAt(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "dispatch_delay.db"))
 	d := NewDispatcher(fx.Jobs, newRegistry(t, "delayed:kind"))
 
-	if err := d.Enqueue(context.Background(), "delayed:kind", 1, nil, shared.WithDelay(800*time.Millisecond)); err != nil {
+	if err := d.Enqueue(context.Background(), "delayed:kind", 0, nil, shared.WithDelay(800*time.Millisecond)); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 

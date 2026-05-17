@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     payload BLOB NOT NULL,
     run_at DATETIME NOT NULL,
     attempts INTEGER NOT NULL DEFAULT 0,
-    max_attempts INTEGER NOT NULL DEFAULT 5,
+    max_retries INTEGER NOT NULL DEFAULT 0,
     locked_until DATETIME,
     last_error TEXT,
     failed_at DATETIME,

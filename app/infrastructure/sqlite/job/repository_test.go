@@ -38,8 +38,8 @@ func TestRepository_EnqueueAndFind(t *testing.T) {
 	if got.Attempts != 0 {
 		t.Fatalf("attempts: got %d want 0", got.Attempts)
 	}
-	if got.MaxAttempts != 3 {
-		t.Fatalf("max_attempts: got %d want 3", got.MaxAttempts)
+	if got.MaxRetries != 3 {
+		t.Fatalf("max_retries: got %d want 3", got.MaxRetries)
 	}
 }
 

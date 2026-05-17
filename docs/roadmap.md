@@ -133,16 +133,16 @@ Práce, která **musí přežít restart procesu nebo crash**: odesílání emai
 | **Jak worker volá handler?** | Worker má vlastní `runWithinTx` — ne celý middleware chain, jen `BeginTx → handler → MarkComplete → Commit` (rollback při error). Jednodušší než CQRS bus, plus mark-complete-in-handler-tx semantika. |
 | **Mark-complete kdy?** | **Uvnitř handler transakce** (advisor rec). Handler write + MarkComplete commitují atomicky. Handler-fail = celá tx rollback (včetně handler's DB writes) → re-claimable. Idempotence se týká jen *externích* side-effects. |
 | **Delivery semantika** | At-least-once. Handlery **musí být idempotentní** pro externí side effects (mail, API). |
-| **Failure handling** | Exponenciální backoff `2^(attempts-1) * 5s`, cap 1h. `max_attempts` exhausted → `failed_at` + `last_error`. |
+| **Failure handling** | Exponenciální backoff `2^(attempts-1) * 5s`, cap 1h. `max_retries` exhausted → `failed_at` + `last_error`. |
 | **Concurrency default** | **1 worker.** SQLite serializuje writery (WAL: one writer at a time) — víc goroutin nezvýší throughput pro DB-bound joby. Bumpnout, jen pokud handlery jsou I/O-bound mimo SQLite. |
 | **JobDispatcher** | Context-injected (analogie `EventCollectorFromContext`), ne přes konstruktor. Bus middleware vkládá dispatcher do ctx; handler volá `shared.JobDispatcherFromContext(ctx).Enqueue(...)`. |
 | **Atomický claim** | `UPDATE jobs SET locked_until=... WHERE id=(SELECT id FROM jobs WHERE due AND not_locked LIMIT 1) RETURNING *`. Wrap obou stran porovnání `datetime()` — Go time.Time má TZ offset, SQLite `datetime('now')` je UTC bez TZ; lex porovnání by selhalo. |
 
 ### Co bylo uděláno
 
-- [x] **Migrace** — `20260517000001_create_jobs_table.sql` (id, kind, payload, run_at, attempts, max_attempts, locked_until, last_error, failed_at, completed_at, created_at + partial index pro claim).
+- [x] **Migrace** — `20260517000001_create_jobs_table.sql` (id, kind, payload, run_at, attempts, max_retries, locked_until, last_error, failed_at, completed_at, created_at + partial index pro claim).
 - [x] **`domain/job/`** — `Job` entity, `Repository` interface (Enqueue, ClaimDue, MarkComplete, Reschedule, MarkFailed, FindByID).
-- [x] **`domain/shared/job_dispatcher.go`** — `JobDispatcher` interface + `ContextWith/FromContext` helpers + `EnqueueOption` (WithMaxAttempts, WithDelay) + no-op fallback dispatcher.
+- [x] **`domain/shared/job_dispatcher.go`** — `JobDispatcher` interface (povinný `maxRetries` poziční parametr) + `ContextWith/FromContext` helpers + `WithDelay` option + no-op fallback dispatcher.
 - [x] **`infrastructure/sqlite/job/`** — atomický claim přes `UPDATE … RETURNING`.
 - [x] **`application/job/`** — `Dispatcher` (JSON marshal, kind validation), `HandlerRegistry` (constructor-time empty kind check, immutable lookup).
 - [x] **`application/bus/middleware/job_dispatcher.go`** — vkládá dispatcher do ctx před TransactionMiddleware, takže `Enqueue` v handleru se připojí do business tx.
@@ -154,7 +154,7 @@ Práce, která **musí přežít restart procesu nebo crash**: odesílání emai
 ### Regresní testy
 
 - `app/infrastructure/sqlite/job/repository_test.go` (8 testů) — Enqueue/FindByID, ClaimDue empty/skipsLocked/picksOldest/**atomicConcurrent** (20 jobs × 40 goroutines, každý job claimnut přesně 1×), MarkComplete/Reschedule/MarkFailed s lifecycle ověřením.
-- `app/infrastructure/worker/worker_test.go` (6 testů) — handler success/failure/panic, **mark-complete-in-tx atomicity** (handler write + completion commit atomicky; handler-fail rollbackne i handler's writes), max_attempts exhaustion, unknown kind no-retry.
+- `app/infrastructure/worker/worker_test.go` — handler success/failure/panic, **mark-complete-in-tx atomicity** (handler write + completion commit atomicky; handler-fail rollbackne i handler's writes), retries respect maxRetries boundary, unknown kind no-retry, cascade Collect panics.
 - `app/application/job/dispatcher_test.go` (3 testy) — Enqueue valid kind round-trip + JSON payload, unknown kind → error, empty kind v registry → error.
 
 ### Definition of Done — splněno
@@ -208,7 +208,7 @@ Až aplikace začne jezdit v produkci. Bez F1–F3 by observabilita měřila nes
 - [ ] **Sentry**
   - `APP_SENTRY_DSN` env. Když je prázdné, Sentry se neinicializuje.
   - Recovery middleware (HTTP i bus) hlásí panic s `trace_id`, `user_id`, `command/path` v contextu.
-  - Worker stejně — failed job po `max_attempts` jde do Sentry s `kind`, `payload` (truncated), `last_error`.
+  - Worker stejně — failed job po exhausted `max_retries` jde do Sentry s `kind`, `payload` (truncated), `last_error`.
 
 - [ ] **OpenTelemetry (volitelně, později)**
   - Až bude nasazená alespoň jedna další služba (database proxy, search backend, atd.). Pro standalone monolit přidává komplexitu bez návratnosti.
