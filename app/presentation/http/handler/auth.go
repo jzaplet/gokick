@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"time"
 
 	authcmd "gokick/app/application/auth/command"
 	"gokick/app/application/bus"
@@ -170,6 +171,10 @@ func (h *AuthHandler) writeAuthResponse(w http.ResponseWriter, result authcmd.Lo
 }
 
 func (h *AuthHandler) clearRefreshCookie(w http.ResponseWriter) {
+	// MaxAge=-1 is the modern signal to delete the cookie; Expires in the
+	// past is the legacy fallback for browsers (and proxies) that ignore
+	// MaxAge. Belt + suspenders — costs nothing and forecloses one weird
+	// "cookie still present after logout" failure mode.
 	http.SetCookie(w, &http.Cookie{
 		Name:     refreshCookieName,
 		Value:    "",
@@ -178,5 +183,6 @@ func (h *AuthHandler) clearRefreshCookie(w http.ResponseWriter) {
 		Secure:   h.cookieSecure,
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
 	})
 }
