@@ -19,9 +19,19 @@ type JwtService struct {
 	refreshExpiration time.Duration
 }
 
+// minJWTSecretLen is the floor for an HS256 secret. RFC 7518 §3.2 recommends
+// the key be at least as long as the HMAC output (256 bits = 32 bytes).
+const minJWTSecretLen = 32
+
 func NewJwtService(cfg *config.Config) (*JwtService, error) {
 	if cfg.JWTSecret == "" {
 		return nil, fmt.Errorf("security: APP_JWT_SECRET is required")
+	}
+	if len(cfg.JWTSecret) < minJWTSecretLen {
+		return nil, fmt.Errorf(
+			"security: APP_JWT_SECRET must be at least %d characters",
+			minJWTSecretLen,
+		)
 	}
 	return &JwtService{
 		secret:            []byte(cfg.JWTSecret),

@@ -2,13 +2,13 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 
 	"gokick/app/application/bus"
 	usercmd "gokick/app/application/user/command"
 	userqry "gokick/app/application/user/query"
 	"gokick/app/domain/user"
+	"gokick/app/presentation/http/request"
 	"gokick/app/presentation/http/response"
 )
 
@@ -89,7 +89,7 @@ func (h *AdminUsersHandler) List(w http.ResponseWriter, r *http.Request) {
 
 func (h *AdminUsersHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var body createUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := request.DecodeJSON(w, r, &body); err != nil {
 		response.Error(w, http.StatusBadRequest, err)
 
 		return
@@ -122,7 +122,7 @@ func (h *AdminUsersHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 func (h *AdminUsersHandler) Update(w http.ResponseWriter, r *http.Request) {
 	var body updateUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := request.DecodeJSON(w, r, &body); err != nil {
 		response.Error(w, http.StatusBadRequest, err)
 
 		return
