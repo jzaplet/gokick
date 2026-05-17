@@ -30,21 +30,26 @@ func (r *Repository) Enqueue(ctx context.Context, j *job.Job) error {
 // ClaimDue atomically locks the next due row in a single UPDATE … RETURNING.
 // SQLite serializes writers, so concurrent claim attempts queue rather than
 // race; the LIMIT 1 + locked_until guard guarantees each row goes to at most
-// one worker. datetime() wraps every column comparison because Go time.Time
-// serializes with timezone offset (e.g. +02:00) while datetime('now') returns
-// UTC without timezone — direct string comparison would lex-mismatch.
+// one worker. strftime(...%f) wraps every column comparison for two reasons:
+// (1) Go time.Time serializes with timezone offset (e.g. +02:00) while
+// sqlite's 'now' is UTC without timezone — direct string compare would
+// lex-mismatch; (2) plain datetime() truncates fractional seconds, which
+// breaks sub-second delays like WithDelay(800ms) where two rows can share
+// the same whole-second value.
 func (r *Repository) ClaimDue(ctx context.Context, lockFor time.Duration) (*job.Job, error) {
 	const q = `
 		UPDATE jobs
 		SET attempts = attempts + 1,
-		    locked_until = datetime('now', ?)
+		    locked_until = strftime('%Y-%m-%d %H:%M:%f', 'now', ?)
 		WHERE id = (
 		    SELECT id FROM jobs
 		    WHERE completed_at IS NULL
 		      AND failed_at IS NULL
-		      AND datetime(run_at) <= datetime('now')
-		      AND (locked_until IS NULL OR datetime(locked_until) < datetime('now'))
-		    ORDER BY datetime(run_at)
+		      AND strftime('%Y-%m-%d %H:%M:%f', run_at) <= strftime('%Y-%m-%d %H:%M:%f', 'now')
+		      AND (locked_until IS NULL
+		           OR strftime('%Y-%m-%d %H:%M:%f', locked_until)
+		              < strftime('%Y-%m-%d %H:%M:%f', 'now'))
+		    ORDER BY strftime('%Y-%m-%d %H:%M:%f', run_at)
 		    LIMIT 1
 		)
 		RETURNING *`
