@@ -50,6 +50,8 @@ components:
     in: infrastructure/sqlite
   sqlite_repos:
     in: infrastructure/sqlite/**
+  scheduler:
+    in: infrastructure/scheduler/**
 
   # Layer 4: Presentation
   handler:
@@ -117,6 +119,8 @@ deps:
     mayDependOn:
       - sqlite_base
       - database
+  scheduler:
+    anyVendorDeps: true
 
   # Presentation — depends on application + infrastructure
   handler:
@@ -140,6 +144,7 @@ deps:
   console:
     mayDependOn:
       - server
+      - scheduler
       - config
       - database
       - application

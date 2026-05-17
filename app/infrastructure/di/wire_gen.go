@@ -17,8 +17,10 @@ import (
 	command3 "gokick/app/application/user/command"
 	query2 "gokick/app/application/user/query"
 	"gokick/app/domain/shared"
+	token2 "gokick/app/domain/token"
 	"gokick/app/infrastructure/config"
 	"gokick/app/infrastructure/database"
+	"gokick/app/infrastructure/scheduler"
 	"gokick/app/infrastructure/security"
 	"gokick/app/infrastructure/sqlite"
 	"gokick/app/infrastructure/sqlite/token"
@@ -29,6 +31,7 @@ import (
 	"gokick/public"
 	"io/fs"
 	"log/slog"
+	"time"
 )
 
 // Injectors from container_provider.go:
@@ -74,7 +77,11 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 	getAdminDashboardHandler := query3.NewGetAdminDashboardHandler()
 	dashboardHandler := handler.NewDashboardHandler(queryBus, getUserDashboardHandler, getAdminDashboardHandler)
 	serverServer := server.NewServer(configConfig, logger, jwtService, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler)
-	serveCommand := console.NewServeCommand(serverServer)
+	scheduler, err := provideScheduler(logger, tokenRepository)
+	if err != nil {
+		return nil, err
+	}
+	serveCommand := console.NewServeCommand(serverServer, scheduler)
 	seeder := sqlite.NewSeeder(repository, passwordHasher, logger)
 	seedCommand := console.NewSeedCommand(seeder)
 	createUserCommand := console.NewCreateUserCommand(createUserHandler)
@@ -120,6 +127,19 @@ func provideEventBus(logger *slog.Logger) *bus.EventBus {
 // does not need to import the config package.
 func provideCookieSecure(cfg *config.Config) handler.CookieSecure {
 	return handler.CookieSecure(cfg.CookieSecure)
+}
+
+// provideScheduler wires the in-process job scheduler. Add a new Job to the
+// slice for every periodic task (cron-like); the scheduler runs each in its
+// own goroutine and drains them on ctx cancel.
+func provideScheduler(logger *slog.Logger, tokens token2.TokenRepository) (*scheduler.Scheduler, error) {
+	return scheduler.NewScheduler(logger, []scheduler.Job{
+		{
+			Name:     "cleanup:expired-refresh-tokens",
+			Interval: 1 * time.Hour,
+			Fn:       tokens.DeleteExpired,
+		},
+	})
 }
 
 // providePermissionsRegistry collects RequiredPermission() values from every

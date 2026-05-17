@@ -37,7 +37,8 @@ Před každým subcommandem se volá `Application.Run()`, který nejprve aplikuj
 // presentation/console/serve.go
 
 type ServeCommand struct {
-    server *server.Server
+    server    *server.Server
+    scheduler *scheduler.Scheduler
 }
 
 func (c *ServeCommand) Command() *cobra.Command {
@@ -45,11 +46,23 @@ func (c *ServeCommand) Command() *cobra.Command {
         Use:   "serve",
         Short: "Start the HTTP server",
         RunE: func(cmd *cobra.Command, args []string) error {
-            return c.server.Start()
+            ctx := cmd.Context()
+
+            schedulerDone := make(chan struct{})
+            go func() {
+                defer close(schedulerDone)
+                c.scheduler.Run(ctx)
+            }()
+
+            serverErr := c.server.Start(ctx)
+            <-schedulerDone
+            return serverErr
         },
     }
 }
 ```
+
+`ServeCommand` orchestrátor: scheduler + HTTP server sdílí jeden `ctx` z `signal.NotifyContext`. SIGTERM drainuje obojí v tandemu. Detaily v [Scheduler](/framework/infrastructure/scheduler) a [HTTP Server](/framework/presentation/http-server).
 
 Spuštění:
 

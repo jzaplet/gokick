@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Overview:** [Architecture](docs/framework/overview/architecture.md), [Layers](docs/framework/overview/layers.md), [Dev Stack](docs/framework/overview/dev-stack.md)
 - **Domain:** [Entity & Value Objects](docs/framework/domain/entities.md), [Interfaces](docs/framework/domain/interfaces.md), [Errors & Events](docs/framework/domain/errors-events.md)
 - **Application:** [Bus](docs/framework/application/bus.md), [Commands](docs/framework/application/commands.md), [Queries](docs/framework/application/queries.md), [Event Handlers](docs/framework/application/events.md)
-- **Infrastructure:** [Wire DI](docs/framework/infrastructure/wire.md), [Database](docs/framework/infrastructure/database.md), [Security](docs/framework/infrastructure/security.md), [Config](docs/framework/infrastructure/config.md)
+- **Infrastructure:** [Wire DI](docs/framework/infrastructure/wire.md), [Database](docs/framework/infrastructure/database.md), [Security](docs/framework/infrastructure/security.md), [Config](docs/framework/infrastructure/config.md), [Scheduler](docs/framework/infrastructure/scheduler.md)
 - **Presentation:** [Handlers & Middleware](docs/framework/presentation/http-handlers.md), [HTTP Server](docs/framework/presentation/http-server.md), [Console](docs/framework/presentation/console.md)
 
 ## Build & Development Commands
@@ -177,7 +177,7 @@ wire.Bind(new(shared.Seeder), new(*sqlite.Seeder))
 | `http/middleware/` | Trace ID, CORS, CSRF (stdlib Go 1.25), Logging, JWT Auth, Role Guard |
 | `http/response/` | `JSON()`, `Error()`, `HandleError()` — maps domain errors to HTTP status |
 | `http/server/` | `http.ServeMux` routing, middleware chain assembly |
-| `console/` | Cobra CLI commands (`serve`, `seed`) — depend on domain interfaces, not infra |
+| `console/` | Cobra CLI commands (`serve`, `seed`, `create-user`) — `serve` co-runs the in-process scheduler alongside the HTTP server, sharing one ctx so SIGTERM drains both |
 
 **Error → HTTP mapping** (duck typing, no import between response/ and domain/):
 - `*shared.ValidationError` → 400
