@@ -3,6 +3,7 @@
 package di
 
 import (
+	"fmt"
 	app "gokick/app"
 	authcmd "gokick/app/application/auth/command"
 	"gokick/app/application/bus"
@@ -32,7 +33,6 @@ import (
 	httpmw "gokick/app/presentation/http/middleware"
 	"gokick/app/presentation/http/server"
 	"gokick/public"
-	"fmt"
 	"io/fs"
 	"log/slog"
 

@@ -148,7 +148,8 @@ func TestLoginHandler_RecordsSuccessfulLogin(t *testing.T) {
 	}
 
 	events := collector.Drain()
-	if len(events) != 1 || events[0].Action != "auth.login.succeeded" || events[0].TargetID != u.ID {
+	if len(events) != 1 || events[0].Action != "auth.login.succeeded" ||
+		events[0].TargetID != u.ID {
 		t.Fatalf("expected 1 auth.login.succeeded for %s, got %+v", u.ID, events)
 	}
 }

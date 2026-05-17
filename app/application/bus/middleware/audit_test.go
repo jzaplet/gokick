@@ -20,7 +20,8 @@ type captureAudit struct {
 func (c *captureAudit) Save(_ context.Context, rec *shared.AuditRecord) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.failOn != "" && len(rec.Action) >= len(c.failOn) && rec.Action[:len(c.failOn)] == c.failOn {
+	if c.failOn != "" && len(rec.Action) >= len(c.failOn) &&
+		rec.Action[:len(c.failOn)] == c.failOn {
 		return errors.New("audit boom")
 	}
 	c.records = append(c.records, *rec)
