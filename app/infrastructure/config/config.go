@@ -18,6 +18,17 @@ type Config struct {
 	CORSOrigin           string
 	CookieSecure         bool
 	SeedAdminPassword    string
+
+	// TrustProxyHeaders flips IP extraction from RemoteAddr to X-Real-IP.
+	// Leave false unless the app sits behind a reverse proxy that you
+	// trust to rewrite X-Real-IP — any client can forge the header
+	// otherwise and bypass per-IP rate limiting in one curl.
+	TrustProxyHeaders bool
+
+	// Rate-limit rules in "N/duration" form (e.g. "10/min", "5/30s").
+	// Empty disables that limit entirely.
+	RateLimitLogin   string
+	RateLimitRefresh string
 }
 
 func LoadConfig() (*Config, error) {
@@ -31,6 +42,9 @@ func LoadConfig() (*Config, error) {
 		CORSOrigin:        getEnv("APP_CORS_ORIGIN", "http://localhost:5173"),
 		CookieSecure:      getEnv("APP_COOKIE_SECURE", "true") == "true",
 		SeedAdminPassword: os.Getenv("APP_SEED_ADMIN_PASSWORD"),
+		TrustProxyHeaders: getEnv("APP_TRUST_PROXY_HEADERS", "false") == "true",
+		RateLimitLogin:    getEnv("APP_RATE_LIMIT_LOGIN", "10/min"),
+		RateLimitRefresh: getEnv("APP_RATE_LIMIT_REFRESH", "60/min"),
 	}
 
 	var err error

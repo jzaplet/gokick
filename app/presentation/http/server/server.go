@@ -28,10 +28,27 @@ const (
 	maxHeaderBytes    = 1 << 16 // 64 KiB
 )
 
+// RateLimiters bundles the per-endpoint limiters so Wire can hand a single
+// value to the server. Order matches application registration (login,
+// refresh) — add a field here when a new endpoint needs a dedicated bucket.
+type RateLimiters struct {
+	Login   *middleware.RateLimiter
+	Refresh *middleware.RateLimiter
+}
+
+// janitorSweepInterval / janitorDropAfter pin the rate-limiter background
+// sweeper. The interval is well below dropAfter so a quiet bucket actually
+// gets dropped within one sweep instead of lingering forever.
+const (
+	janitorSweepInterval = time.Minute
+	janitorDropAfter     = 5 * time.Minute
+)
+
 type Server struct {
 	config     *config.Config
 	logger     *slog.Logger
 	jwt        shared.JwtService
+	limiters   *RateLimiters
 	health     *handler.HealthHandler
 	spa        *handler.SPAHandler
 	auth       *handler.AuthHandler
@@ -44,6 +61,7 @@ func NewServer(
 	config *config.Config,
 	logger *slog.Logger,
 	jwt shared.JwtService,
+	limiters *RateLimiters,
 	health *handler.HealthHandler,
 	spa *handler.SPAHandler,
 	auth *handler.AuthHandler,
@@ -55,6 +73,7 @@ func NewServer(
 		config:     config,
 		logger:     logger,
 		jwt:        jwt,
+		limiters:   limiters,
 		health:     health,
 		spa:        spa,
 		auth:       auth,
@@ -67,6 +86,11 @@ func NewServer(
 func (s *Server) Start(ctx context.Context) error {
 	mux := s.registerRoutes()
 	chain := s.buildMiddlewareChain(mux)
+
+	// Spawn the rate-limiter janitors so idle buckets don't accumulate.
+	// They stop when ctx is cancelled — same lifecycle as the listener.
+	go s.limiters.Login.Run(ctx, janitorSweepInterval, janitorDropAfter)
+	go s.limiters.Refresh.Run(ctx, janitorSweepInterval, janitorDropAfter)
 
 	addr := ":" + s.config.HTTPPort
 	s.logger.Info("server: starting", "addr", addr)
@@ -127,10 +151,13 @@ func runWithShutdown(
 func (s *Server) registerRoutes() *http.ServeMux {
 	mux := http.NewServeMux()
 
-	// Public — no authentication required.
+	// Public — no authentication required. Auth endpoints carry per-IP
+	// token-bucket limits; everything else relies on the global chain.
+	loginLimit := s.limiters.Login.Middleware()
+	refreshLimit := s.limiters.Refresh.Middleware()
 	mux.HandleFunc("GET /health", s.health.Check)
-	mux.HandleFunc("POST /api/v1/auth/login", s.auth.Login)
-	mux.HandleFunc("POST /api/v1/auth/refresh", s.auth.Refresh)
+	mux.Handle("POST /api/v1/auth/login", loginLimit(http.HandlerFunc(s.auth.Login)))
+	mux.Handle("POST /api/v1/auth/refresh", refreshLimit(http.HandlerFunc(s.auth.Refresh)))
 
 	// Protected — JWT Bearer required (AuthMiddleware populates claims,
 	// bus AuthorizeMiddleware then enforces the per-command permission).

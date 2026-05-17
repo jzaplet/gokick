@@ -7,6 +7,7 @@
 package di
 
 import (
+	"fmt"
 	"gokick/app"
 	"gokick/app/application/auth/command"
 	"gokick/app/application/bus"
@@ -31,6 +32,7 @@ import (
 	"gokick/app/infrastructure/worker"
 	"gokick/app/presentation/console"
 	"gokick/app/presentation/http/handler"
+	middleware2 "gokick/app/presentation/http/middleware"
 	"gokick/app/presentation/http/server"
 	"gokick/public"
 	"io/fs"
@@ -46,6 +48,10 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 		return nil, err
 	}
 	jwtService, err := security.NewJwtService(configConfig)
+	if err != nil {
+		return nil, err
+	}
+	rateLimiters, err := provideRateLimiters(configConfig, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +93,7 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 	getUserDashboardHandler := query3.NewGetUserDashboardHandler()
 	getAdminDashboardHandler := query3.NewGetAdminDashboardHandler()
 	dashboardHandler := handler.NewDashboardHandler(queryBus, getUserDashboardHandler, getAdminDashboardHandler)
-	serverServer := server.NewServer(configConfig, logger, jwtService, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler)
+	serverServer := server.NewServer(configConfig, logger, jwtService, rateLimiters, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler)
 	v2 := provideSchedulerJobs(tokenRepository)
 	scheduler, err := provideScheduler(logger, v2)
 	if err != nil {
@@ -156,6 +162,26 @@ func provideEventBus(logger *slog.Logger, handlers []bus.EventHandlerEntry) *bus
 
 func provideCookieSecure(cfg *config.Config) handler.CookieSecure {
 	return handler.CookieSecure(cfg.CookieSecure)
+}
+
+// provideRateLimiters parses the configured per-IP buckets at startup so a
+// malformed APP_RATE_LIMIT_* fails fast instead of silently disabling
+// protection. Both limiters share the same IPExtractor so behaviour is
+// uniform: switching APP_TRUST_PROXY_HEADERS flips them together.
+func provideRateLimiters(cfg *config.Config, logger *slog.Logger) (*server.RateLimiters, error) {
+	loginRule, err := middleware2.ParseRateRule(cfg.RateLimitLogin)
+	if err != nil {
+		return nil, fmt.Errorf("APP_RATE_LIMIT_LOGIN: %w", err)
+	}
+	refreshRule, err := middleware2.ParseRateRule(cfg.RateLimitRefresh)
+	if err != nil {
+		return nil, fmt.Errorf("APP_RATE_LIMIT_REFRESH: %w", err)
+	}
+	extract := middleware2.NewIPExtractor(cfg.TrustProxyHeaders)
+	return &server.RateLimiters{
+		Login:   middleware2.NewRateLimiter(loginRule, extract, logger),
+		Refresh: middleware2.NewRateLimiter(refreshRule, extract, logger),
+	}, nil
 }
 
 // provideSeedAdminPassword surfaces the seed admin password as a distinct

@@ -28,8 +28,10 @@ import (
 	"gokick/app/infrastructure/worker"
 	"gokick/app/presentation/console"
 	"gokick/app/presentation/http/handler"
+	httpmw "gokick/app/presentation/http/middleware"
 	"gokick/app/presentation/http/server"
 	"gokick/public"
+	"fmt"
 	"io/fs"
 	"log/slog"
 
@@ -94,6 +96,26 @@ func provideEventBus(logger *slog.Logger, handlers []bus.EventHandlerEntry) *bus
 
 func provideCookieSecure(cfg *config.Config) handler.CookieSecure {
 	return handler.CookieSecure(cfg.CookieSecure)
+}
+
+// provideRateLimiters parses the configured per-IP buckets at startup so a
+// malformed APP_RATE_LIMIT_* fails fast instead of silently disabling
+// protection. Both limiters share the same IPExtractor so behaviour is
+// uniform: switching APP_TRUST_PROXY_HEADERS flips them together.
+func provideRateLimiters(cfg *config.Config, logger *slog.Logger) (*server.RateLimiters, error) {
+	loginRule, err := httpmw.ParseRateRule(cfg.RateLimitLogin)
+	if err != nil {
+		return nil, fmt.Errorf("APP_RATE_LIMIT_LOGIN: %w", err)
+	}
+	refreshRule, err := httpmw.ParseRateRule(cfg.RateLimitRefresh)
+	if err != nil {
+		return nil, fmt.Errorf("APP_RATE_LIMIT_REFRESH: %w", err)
+	}
+	extract := httpmw.NewIPExtractor(cfg.TrustProxyHeaders)
+	return &server.RateLimiters{
+		Login:   httpmw.NewRateLimiter(loginRule, extract, logger),
+		Refresh: httpmw.NewRateLimiter(refreshRule, extract, logger),
+	}, nil
 }
 
 // provideSeedAdminPassword surfaces the seed admin password as a distinct
@@ -176,6 +198,7 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 		provideEventHandlers,
 		provideEventBus,
 		provideCookieSecure,
+		provideRateLimiters,
 		provideSeedAdminPassword,
 		provideSchedulerJobs,
 		provideScheduler,
