@@ -28,11 +28,8 @@ type Job struct {
 }
 
 // NewJob constructs a fresh pending Job with a UUIDv7 id and RunAt=now.
-// MaxAttempts defaults to DefaultMaxAttempts when caller passes 0.
+// maxAttempts must be >= 1 — callers are required to pick a value (no default).
 func NewJob(kind string, payload []byte, maxAttempts int) *Job {
-	if maxAttempts <= 0 {
-		maxAttempts = DefaultMaxAttempts
-	}
 	return &Job{
 		ID:          uuid.NewString(),
 		Kind:        kind,
@@ -43,8 +40,3 @@ func NewJob(kind string, payload []byte, maxAttempts int) *Job {
 		CreatedAt:   time.Now(),
 	}
 }
-
-// DefaultMaxAttempts is applied when JobDispatcher.Enqueue doesn't specify.
-// One attempt = no retries. Caller opts into retries with shared.WithMaxAttempts(n)
-// — picking a retry count is a deliberate decision per job kind, not a default.
-const DefaultMaxAttempts = 1

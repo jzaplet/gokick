@@ -23,7 +23,16 @@ func NewDispatcher(repo job.Repository, registry *HandlerRegistry) *Dispatcher {
 	return &Dispatcher{repo: repo, registry: registry}
 }
 
-func (d *Dispatcher) Enqueue(ctx context.Context, kind string, payload any, opts ...shared.EnqueueOption) error {
+func (d *Dispatcher) Enqueue(
+	ctx context.Context,
+	kind string,
+	maxAttempts int,
+	payload any,
+	opts ...shared.EnqueueOption,
+) error {
+	if maxAttempts < 1 {
+		return fmt.Errorf("job: Enqueue(%q) requires maxAttempts >= 1 (got %d)", kind, maxAttempts)
+	}
 	if !d.registry.Has(kind) {
 		return fmt.Errorf("job: unknown kind %q (handler not registered)", kind)
 	}
@@ -38,7 +47,7 @@ func (d *Dispatcher) Enqueue(ctx context.Context, kind string, payload any, opts
 		return fmt.Errorf("job: marshal payload for kind %q: %w", kind, err)
 	}
 
-	j := job.NewJob(kind, raw, options.MaxAttempts)
+	j := job.NewJob(kind, raw, maxAttempts)
 	if options.Delay > 0 {
 		j.RunAt = time.Now().Add(options.Delay)
 	}
