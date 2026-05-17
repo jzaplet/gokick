@@ -9,16 +9,17 @@ import (
 // Implementation lives in infrastructure but the interface stays in domain so
 // handlers depend on it without importing application/job.
 //
-// maxAttempts is a required positional parameter (not an option) — choosing a
-// retry count is a per-kind decision, not something to default. Value must be
-// >= 1: pass 1 for "one shot, no retry"; higher for flaky external work.
+// maxRetries is a required positional parameter (not an option) — choosing a
+// retry count is a per-kind decision, not something to default. 0 means "run
+// once, no retry"; higher for flaky external work (e.g. 3 = up to 3 retries
+// after the first failure, so 4 attempts total).
 //
 // When called from a CommandBus handler (inside a transaction), the enqueue
 // write joins the same transaction — business write and job enqueue commit
 // atomically. From an event handler (post-commit) or CLI, the enqueue runs
 // in its own statement.
 type JobDispatcher interface {
-	Enqueue(ctx context.Context, kind string, maxAttempts int, payload any, opts ...EnqueueOption) error
+	Enqueue(ctx context.Context, kind string, maxRetries int, payload any, opts ...EnqueueOption) error
 }
 
 type EnqueueOptions struct {
@@ -55,3 +56,4 @@ type noopJobDispatcher struct{}
 func (noopJobDispatcher) Enqueue(context.Context, string, int, any, ...EnqueueOption) error {
 	return nil
 }
+

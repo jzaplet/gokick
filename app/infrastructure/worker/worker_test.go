@@ -35,9 +35,9 @@ func newWorker(t *testing.T, fx *testfx.Fixture, kind string, fn jobapp.HandlerF
 	return NewWorker(silentLogger(), fx.Jobs, registry, fx.DB, noopDispatcher(), 1)
 }
 
-func enqueue(t *testing.T, fx *testfx.Fixture, kind string, maxAttempts int) *job.Job {
+func enqueue(t *testing.T, fx *testfx.Fixture, kind string, maxRetries int) *job.Job {
 	t.Helper()
-	j := job.NewJob(kind, []byte(`{}`), maxAttempts)
+	j := job.NewJob(kind, []byte(`{}`), maxRetries)
 	if err := fx.Jobs.Enqueue(context.Background(), j); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
@@ -62,7 +62,7 @@ func runOnce(t *testing.T, w *Worker) {
 func TestWorker_HandlerSuccess_MarksComplete(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "worker_ok.db"))
 	var ran int32
-	j := enqueue(t, fx, "ok:kind", 3)
+	j := enqueue(t, fx, "ok:kind", 2)
 	w := newWorker(t, fx, "ok:kind", func(_ context.Context, _ []byte) error {
 		atomic.AddInt32(&ran, 1)
 		return nil
@@ -105,7 +105,7 @@ func mockUser(id, nickname string) *user.User {
 // MarkComplete commit atomically.
 func TestWorker_HandlerSucceedsWithDBWrite_AllCommitAtomically(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "worker_atomic_ok.db"))
-	j := enqueue(t, fx, "writes:user", 3)
+	j := enqueue(t, fx, "writes:user", 2)
 
 	w := newWorker(t, fx, "writes:user", func(ctx context.Context, _ []byte) error {
 		return fx.Users.Save(ctx, mockUser("uid-1", "nick-1"))
@@ -128,7 +128,7 @@ func TestWorker_HandlerSucceedsWithDBWrite_AllCommitAtomically(t *testing.T) {
 // also gone. Job becomes claimable again.
 func TestWorker_HandlerFails_TxRollsBack_JobStaysClaimable(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "worker_rollback.db"))
-	j := enqueue(t, fx, "fails:write", 5)
+	j := enqueue(t, fx, "fails:write", 4)
 
 	w := newWorker(t, fx, "fails:write", func(ctx context.Context, _ []byte) error {
 		if err := fx.Users.Save(ctx, mockUser("uid-rollback", "nick-rb")); err != nil {
@@ -162,7 +162,7 @@ func TestWorker_HandlerFails_TxRollsBack_JobStaysClaimable(t *testing.T) {
 
 func TestWorker_HandlerPanics_Recovers_AndReschedules(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "worker_panic.db"))
-	j := enqueue(t, fx, "boom", 5)
+	j := enqueue(t, fx, "boom", 4)
 
 	w := newWorker(t, fx, "boom", func(_ context.Context, _ []byte) error {
 		panic("disaster")
@@ -179,11 +179,58 @@ func TestWorker_HandlerPanics_Recovers_AndReschedules(t *testing.T) {
 	}
 }
 
-// MaxAttempts exhaustion: 1 enqueue with MaxAttempts=1; first failure → mark
-// failed (not retry). FailedAt set, job no longer claimable.
-func TestWorker_HandlerExhaustsMaxAttempts_MarksFailed(t *testing.T) {
+// maxRetries=N allows N retries after the first failure. We simulate "already
+// did N attempts" by pre-bumping the attempts column, then run the worker
+// once: claim raises attempts to N+1, handler fails, handleFailure sees
+// attempts > maxRetries and marks failed. Asymmetric case: when attempts is
+// just at the limit (still <= maxRetries), failure must reschedule, not fail.
+func TestWorker_RetriesRespectMaxRetriesBoundary(t *testing.T) {
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "worker_retry_boundary.db"))
+
+	// Two jobs, both maxRetries=2 (so 3 attempts total: original + 2 retries).
+	atBoundary := enqueue(t, fx, "fails:always", 2)
+	exhausted := enqueue(t, fx, "fails:always", 2)
+
+	// atBoundary already tried once → next failure should reschedule (1 retry used so far).
+	if _, err := fx.DB.DB().Exec(`UPDATE jobs SET attempts = 1 WHERE id = ?`, atBoundary.ID); err != nil {
+		t.Fatalf("preset attempts: %v", err)
+	}
+	// exhausted already tried 3 times → next failure must mark failed (retries exhausted).
+	if _, err := fx.DB.DB().Exec(`UPDATE jobs SET attempts = 3 WHERE id = ?`, exhausted.ID); err != nil {
+		t.Fatalf("preset attempts: %v", err)
+	}
+
+	w := newWorker(t, fx, "fails:always", func(_ context.Context, _ []byte) error {
+		return errors.New("nope")
+	})
+
+	// Worker processes one job per poll cycle; runOnce gives ~1 cycle.
+	// Run twice so both jobs get claimed.
+	runOnce(t, w)
+	runOnce(t, w)
+
+	gotAtBoundary, _ := fx.Jobs.FindByID(context.Background(), atBoundary.ID)
+	if gotAtBoundary.FailedAt != nil {
+		t.Fatalf("atBoundary (attempts=2, maxRetries=2) must reschedule, not fail; FailedAt=%v", gotAtBoundary.FailedAt)
+	}
+	if gotAtBoundary.Attempts != 2 {
+		t.Fatalf("atBoundary attempts: got %d want 2", gotAtBoundary.Attempts)
+	}
+
+	gotExhausted, _ := fx.Jobs.FindByID(context.Background(), exhausted.ID)
+	if gotExhausted.FailedAt == nil {
+		t.Fatalf("exhausted (attempts=4, maxRetries=2) must mark failed; got FailedAt=nil")
+	}
+	if gotExhausted.Attempts != 4 {
+		t.Fatalf("exhausted attempts: got %d want 4", gotExhausted.Attempts)
+	}
+}
+
+// Retries exhaustion: enqueue with maxRetries=0; first failure → mark failed.
+// FailedAt set, job no longer claimable.
+func TestWorker_HandlerExhaustsRetries_MarksFailed(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "worker_exhausted.db"))
-	j := enqueue(t, fx, "always:fails", 1)
+	j := enqueue(t, fx, "always:fails", 0)
 
 	w := newWorker(t, fx, "always:fails", func(_ context.Context, _ []byte) error {
 		return errors.New("permanent")
@@ -193,7 +240,7 @@ func TestWorker_HandlerExhaustsMaxAttempts_MarksFailed(t *testing.T) {
 
 	got, _ := fx.Jobs.FindByID(context.Background(), j.ID)
 	if got.FailedAt == nil {
-		t.Fatal("FailedAt must be set after max_attempts reached")
+		t.Fatal("FailedAt must be set after retries reached")
 	}
 	if got.LastError == nil || *got.LastError != "permanent" {
 		t.Fatalf("LastError: got %v", got.LastError)
@@ -211,7 +258,7 @@ func TestWorker_HandlerExhaustsMaxAttempts_MarksFailed(t *testing.T) {
 // rather than recovering inside the handler.
 func TestWorker_HandlerCallingCollectPanics(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "worker_cascade.db"))
-	j := enqueue(t, fx, "cascade", 5)
+	j := enqueue(t, fx, "cascade", 4)
 
 	w := newWorker(t, fx, "cascade", func(ctx context.Context, _ []byte) error {
 		shared.EventCollectorFromContext(ctx).Collect(cascadeEvent{})
@@ -228,7 +275,7 @@ func TestWorker_HandlerCallingCollectPanics(t *testing.T) {
 
 func TestWorker_UnknownKind_MarksFailed_NoRetry(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "worker_unknown.db"))
-	j := enqueue(t, fx, "unregistered", 5)
+	j := enqueue(t, fx, "unregistered", 4)
 
 	// Worker registry only knows "registered" — the enqueued kind is unknown.
 	w := newWorker(t, fx, "registered", func(_ context.Context, _ []byte) error {
