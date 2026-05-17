@@ -8,10 +8,12 @@ import (
 	"gokick/app/application/bus"
 	busmw "gokick/app/application/bus/middleware"
 	dashboardqry "gokick/app/application/dashboard/query"
+	jobapp "gokick/app/application/job"
 	profilecmd "gokick/app/application/profile/command"
 	profileqry "gokick/app/application/profile/query"
 	usercmd "gokick/app/application/user/command"
 	userqry "gokick/app/application/user/query"
+	"gokick/app/domain/job"
 	"gokick/app/domain/shared"
 	"gokick/app/domain/token"
 	"gokick/app/domain/user"
@@ -20,8 +22,10 @@ import (
 	"gokick/app/infrastructure/scheduler"
 	"gokick/app/infrastructure/security"
 	"gokick/app/infrastructure/sqlite"
+	sqlitejob "gokick/app/infrastructure/sqlite/job"
 	sqlitetoken "gokick/app/infrastructure/sqlite/token"
 	sqliteuser "gokick/app/infrastructure/sqlite/user"
+	"gokick/app/infrastructure/worker"
 	"gokick/app/presentation/console"
 	"gokick/app/presentation/http/handler"
 	"gokick/app/presentation/http/server"
@@ -41,13 +45,19 @@ func providePermissionChecker() shared.PermissionChecker {
 	return security.NewPermissionChecker()
 }
 
+// provideCommandBus wires the write-side bus. DispatchEvents wraps Transaction
+// so a failed commit drops events. JobDispatcher sits outside Transaction so
+// the dispatcher is injected before tx begin — Enqueue itself uses Conn(ctx),
+// joining the transaction when called from a handler.
 func provideCommandBus(
 	logger *slog.Logger,
 	db *database.SqliteManager,
 	checker shared.PermissionChecker,
 	eventBus *bus.EventBus,
+	dispatcher shared.JobDispatcher,
 ) *bus.CommandBus {
 	chain := append(busmw.BaseChain(logger, checker),
+		busmw.JobDispatcherMiddleware(dispatcher),
 		busmw.DispatchEventsMiddleware(logger, eventBus),
 		busmw.TransactionMiddleware(db),
 	)
@@ -69,15 +79,10 @@ func provideEventBus(logger *slog.Logger) *bus.EventBus {
 	)
 }
 
-// provideCookieSecure extracts the boolean flag so handler.NewAuthHandler
-// does not need to import the config package.
 func provideCookieSecure(cfg *config.Config) handler.CookieSecure {
 	return handler.CookieSecure(cfg.CookieSecure)
 }
 
-// provideScheduler wires the in-process job scheduler. Add a new Job to the
-// slice for every periodic task (cron-like); the scheduler runs each in its
-// own goroutine and drains them on ctx cancel.
 func provideScheduler(logger *slog.Logger, tokens token.TokenRepository) (*scheduler.Scheduler, error) {
 	return scheduler.NewScheduler(logger, []scheduler.Job{
 		{
@@ -88,9 +93,33 @@ func provideScheduler(logger *slog.Logger, tokens token.TokenRepository) (*sched
 	})
 }
 
-// providePermissionsRegistry collects RequiredPermission() values from every
-// command/query handler that is Permissioned. Adding a new handler requires
-// adding it here too — there is no other permission list in the codebase.
+// provideJobHandlerRegistry collects every kind → handler the binary can
+// process. Empty for now — handlers will be added in subsequent phases as
+// real background work appears.
+func provideJobHandlerRegistry() (*jobapp.HandlerRegistry, error) {
+	return jobapp.NewHandlerRegistry(map[string]jobapp.HandlerFunc{})
+}
+
+// provideJobDispatcher returns the dispatcher as a domain interface so command
+// handlers and event handlers depend on shared.JobDispatcher, not on the
+// concrete application-layer type.
+func provideJobDispatcher(repo job.Repository, registry *jobapp.HandlerRegistry) shared.JobDispatcher {
+	return jobapp.NewDispatcher(repo, registry)
+}
+
+// provideWorker wires the persistent job worker. Concurrency stays at 1 by
+// default because SQLite serializes writers (WAL: one writer at a time);
+// more goroutines don't increase throughput for DB-bound handlers.
+func provideWorker(
+	logger *slog.Logger,
+	repo job.Repository,
+	registry *jobapp.HandlerRegistry,
+	db *database.SqliteManager,
+	dispatcher shared.JobDispatcher,
+) *worker.Worker {
+	return worker.NewWorker(logger, repo, registry, db, dispatcher, 1)
+}
+
 func providePermissionsRegistry() *shared.PermissionsRegistry {
 	return shared.NewPermissionsRegistry([]shared.Permissioned{
 		authcmd.LogoutCommand{},
@@ -117,14 +146,19 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 		provideEventBus,
 		provideCookieSecure,
 		provideScheduler,
+		provideJobHandlerRegistry,
+		provideJobDispatcher,
+		provideWorker,
 		providePermissionsRegistry,
 		security.NewJwtService,
 		wire.Bind(new(shared.JwtService), new(*security.JwtService)),
 		wire.Bind(new(user.Repository), new(*sqliteuser.Repository)),
 		wire.Bind(new(token.TokenRepository), new(*sqlitetoken.Repository)),
+		wire.Bind(new(job.Repository), new(*sqlitejob.Repository)),
 		wire.Bind(new(shared.Seeder), new(*sqlite.Seeder)),
 		sqliteuser.NewRepository,
 		sqlitetoken.NewRepository,
+		sqlitejob.NewRepository,
 		sqlite.NewSeeder,
 		authcmd.NewLoginHandler,
 		authcmd.NewRefreshTokenHandler,
@@ -148,6 +182,7 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 		console.NewServeCommand,
 		console.NewSeedCommand,
 		console.NewCreateUserCommand,
+		console.NewWorkerCommand,
 		console.NewRootCommand,
 		app.NewApplication,
 	)
