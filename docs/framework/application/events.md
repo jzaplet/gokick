@@ -21,7 +21,7 @@ Event handlery reagují na domain eventy -- side-effects po úspěšném commitu
 
 ### Event handler
 
-Event handlery zpracovávají domain eventy dispatched přes `EventBus` (Recovery → Logging). Registrují se v DI kontejneru. Boilerplate sám žádný event handler aktuálně nemá -- následující šablona ukazuje, jak by handler vypadal (např. pro odeslání welcome emailu po vytvoření uživatele):
+Event handlery zpracovávají domain eventy dispatched přes `EventBus` (Recovery → Logging). Boilerplate sám žádný event handler aktuálně nemá -- následující šablona ukazuje, jak by handler vypadal (např. pro odeslání welcome emailu po vytvoření uživatele):
 
 ```go
 // application/user/event/send_welcome_email.go (placeholder)
@@ -30,8 +30,21 @@ type SendWelcomeEmailHandler struct {
     mailer Mailer
 }
 
-func (h *SendWelcomeEmailHandler) Handle(ctx context.Context, event user.UserCreated) error {
-    return h.mailer.Send(event.Email, /* ... */)
+func (h *SendWelcomeEmailHandler) Handle(ctx context.Context, event shared.DomainEvent) error {
+    e := event.(user.UserCreated)
+    return h.mailer.Send(e.Email, /* ... */)
+}
+```
+
+### Registrace event handleru
+
+Jediné místo pro registraci je `provideEventHandlers()` v `infrastructure/di/container_provider.go` -- stejný pattern jako [`providePermissionsRegistry`](/guides/permissions), `provideSchedulerJobs` a `provideJobHandlerRegistry`. `provideEventBus` ten slice přijme a zaregistruje jednotlivé entries při konstrukci busu.
+
+```go
+func provideEventHandlers(welcomeMailer *eventcmd.SendWelcomeEmailHandler) []bus.EventHandlerEntry {
+    return []bus.EventHandlerEntry{
+        {Event: "user.created", Handler: welcomeMailer.Handle},
+    }
 }
 ```
 
