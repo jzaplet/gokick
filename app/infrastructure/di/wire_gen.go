@@ -25,6 +25,7 @@ import (
 	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/scheduler"
 	"gokick/app/infrastructure/security"
+	"gokick/app/infrastructure/sqlite/audit"
 	"gokick/app/infrastructure/sqlite/job"
 	"gokick/app/infrastructure/sqlite/seeder"
 	"gokick/app/infrastructure/sqlite/token"
@@ -51,7 +52,8 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 	if err != nil {
 		return nil, err
 	}
-	rateLimiters, err := provideRateLimiters(configConfig, logger)
+	ipExtractor := provideIPExtractor(configConfig)
+	rateLimiters, err := provideRateLimiters(configConfig, ipExtractor, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +74,8 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 		return nil, err
 	}
 	jobDispatcher := provideJobDispatcher(repository, handlerRegistry)
-	commandBus := provideCommandBus(logger, sqliteManager, permissionChecker, eventBus, jobDispatcher)
+	auditRepository := audit.NewRepository(sqliteManager)
+	commandBus := provideCommandBus(logger, sqliteManager, permissionChecker, eventBus, jobDispatcher, auditRepository)
 	userRepository := user.NewRepository(sqliteManager)
 	tokenRepository := token.NewRepository(sqliteManager)
 	passwordHasher := providePasswordHasher()
@@ -93,7 +96,7 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 	getUserDashboardHandler := query3.NewGetUserDashboardHandler()
 	getAdminDashboardHandler := query3.NewGetAdminDashboardHandler()
 	dashboardHandler := handler.NewDashboardHandler(queryBus, getUserDashboardHandler, getAdminDashboardHandler)
-	serverServer := server.NewServer(configConfig, logger, jwtService, rateLimiters, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler)
+	serverServer := server.NewServer(configConfig, logger, jwtService, rateLimiters, ipExtractor, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler)
 	v2 := provideSchedulerJobs(tokenRepository)
 	scheduler, err := provideScheduler(logger, v2)
 	if err != nil {
@@ -122,8 +125,9 @@ func providePermissionChecker() shared.PermissionChecker {
 	return security.NewPermissionChecker()
 }
 
-// provideCommandBus wires the write-side bus. DispatchEvents wraps Transaction
-// so a failed commit drops events. JobDispatcher sits outside Transaction so
+// provideCommandBus wires the write-side bus. Audit wraps OUTSIDE both
+// DispatchEvents and Transaction so security-relevant events persist even
+// when business work rolls back. JobDispatcher sits outside Transaction so
 // the dispatcher is injected before tx begin — Enqueue itself uses Conn(ctx),
 // joining the transaction when called from a handler.
 func provideCommandBus(
@@ -131,9 +135,10 @@ func provideCommandBus(
 	db *database.SqliteManager,
 	checker shared.PermissionChecker,
 	eventBus *bus.EventBus,
-	dispatcher shared.JobDispatcher,
+	dispatcher shared.JobDispatcher, audit2 shared.AuditLogger,
+
 ) *bus.CommandBus {
-	chain := append(middleware.BaseChain(logger, checker), middleware.JobDispatcherMiddleware(dispatcher), middleware.DispatchEventsMiddleware(logger, eventBus), middleware.TransactionMiddleware(db))
+	chain := append(middleware.BaseChain(logger, checker), middleware.AuditMiddleware(logger, audit2), middleware.JobDispatcherMiddleware(dispatcher), middleware.DispatchEventsMiddleware(logger, eventBus), middleware.TransactionMiddleware(db))
 	return bus.NewCommandBus(chain...)
 }
 
@@ -164,11 +169,21 @@ func provideCookieSecure(cfg *config.Config) handler.CookieSecure {
 	return handler.CookieSecure(cfg.CookieSecure)
 }
 
+// provideIPExtractor is the single source of truth for how a request's
+// client IP is resolved — rate limiters and the audit IP middleware both
+// pull from it so flipping APP_TRUST_PROXY_HEADERS keeps them in sync.
+func provideIPExtractor(cfg *config.Config) middleware2.IPExtractor {
+	return middleware2.NewIPExtractor(cfg.TrustProxyHeaders)
+}
+
 // provideRateLimiters parses the configured per-IP buckets at startup so a
 // malformed APP_RATE_LIMIT_* fails fast instead of silently disabling
-// protection. Both limiters share the same IPExtractor so behaviour is
-// uniform: switching APP_TRUST_PROXY_HEADERS flips them together.
-func provideRateLimiters(cfg *config.Config, logger *slog.Logger) (*server.RateLimiters, error) {
+// protection.
+func provideRateLimiters(
+	cfg *config.Config,
+	extract middleware2.IPExtractor,
+	logger *slog.Logger,
+) (*server.RateLimiters, error) {
 	loginRule, err := middleware2.ParseRateRule(cfg.RateLimitLogin)
 	if err != nil {
 		return nil, fmt.Errorf("APP_RATE_LIMIT_LOGIN: %w", err)
@@ -177,7 +192,6 @@ func provideRateLimiters(cfg *config.Config, logger *slog.Logger) (*server.RateL
 	if err != nil {
 		return nil, fmt.Errorf("APP_RATE_LIMIT_REFRESH: %w", err)
 	}
-	extract := middleware2.NewIPExtractor(cfg.TrustProxyHeaders)
 	return &server.RateLimiters{
 		Login:   middleware2.NewRateLimiter(loginRule, extract, logger),
 		Refresh: middleware2.NewRateLimiter(refreshRule, extract, logger),

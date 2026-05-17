@@ -49,6 +49,7 @@ type Server struct {
 	logger     *slog.Logger
 	jwt        shared.JwtService
 	limiters   *RateLimiters
+	ipExtract  middleware.IPExtractor
 	health     *handler.HealthHandler
 	spa        *handler.SPAHandler
 	auth       *handler.AuthHandler
@@ -62,6 +63,7 @@ func NewServer(
 	logger *slog.Logger,
 	jwt shared.JwtService,
 	limiters *RateLimiters,
+	ipExtract middleware.IPExtractor,
 	health *handler.HealthHandler,
 	spa *handler.SPAHandler,
 	auth *handler.AuthHandler,
@@ -74,6 +76,7 @@ func NewServer(
 		logger:     logger,
 		jwt:        jwt,
 		limiters:   limiters,
+		ipExtract:  ipExtract,
 		health:     health,
 		spa:        spa,
 		auth:       auth,
@@ -183,11 +186,14 @@ func (s *Server) registerRoutes() *http.ServeMux {
 func (s *Server) buildMiddlewareChain(handler http.Handler) http.Handler {
 	csrf := &http.CrossOriginProtection{}
 
-	// Order: Trace → Security headers → CORS → CSRF → Logging (→ handler).
-	// HSTS is only emitted in production (gated on the CookieSecure flag,
-	// which already distinguishes HTTPS traffic).
+	// Order: Trace → IP → Security headers → CORS → CSRF → Logging
+	// (→ handler). HSTS is only emitted in production (gated on the
+	// CookieSecure flag, which already distinguishes HTTPS traffic).
+	// IPMiddleware runs early so every downstream consumer (audit,
+	// logging) sees the same resolved IP in context.
 	middlewares := []func(http.Handler) http.Handler{
 		middleware.TraceMiddleware(),
+		middleware.IPMiddleware(s.ipExtract),
 		middleware.SecurityHeadersMiddleware(s.config.CookieSecure),
 		middleware.CORSMiddleware(s.config.CORSOrigin),
 		csrf.Handler,

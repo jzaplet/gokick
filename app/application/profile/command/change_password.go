@@ -63,5 +63,15 @@ func (h *ChangePasswordHandler) Handle(ctx context.Context, cmd ChangePasswordCo
 
 	u.PasswordHash = newHash
 
-	return h.users.Update(ctx, u)
+	if err := h.users.Update(ctx, u); err != nil {
+		return err
+	}
+
+	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
+		Action:     "user.password_changed",
+		TargetType: "user",
+		TargetID:   u.ID,
+	})
+
+	return nil
 }

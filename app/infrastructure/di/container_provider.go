@@ -21,6 +21,7 @@ import (
 	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/scheduler"
 	"gokick/app/infrastructure/security"
+	sqliteaudit "gokick/app/infrastructure/sqlite/audit"
 	sqlitejob "gokick/app/infrastructure/sqlite/job"
 	sqliteseeder "gokick/app/infrastructure/sqlite/seeder"
 	sqlitetoken "gokick/app/infrastructure/sqlite/token"
@@ -47,8 +48,9 @@ func providePermissionChecker() shared.PermissionChecker {
 	return security.NewPermissionChecker()
 }
 
-// provideCommandBus wires the write-side bus. DispatchEvents wraps Transaction
-// so a failed commit drops events. JobDispatcher sits outside Transaction so
+// provideCommandBus wires the write-side bus. Audit wraps OUTSIDE both
+// DispatchEvents and Transaction so security-relevant events persist even
+// when business work rolls back. JobDispatcher sits outside Transaction so
 // the dispatcher is injected before tx begin — Enqueue itself uses Conn(ctx),
 // joining the transaction when called from a handler.
 func provideCommandBus(
@@ -57,8 +59,10 @@ func provideCommandBus(
 	checker shared.PermissionChecker,
 	eventBus *bus.EventBus,
 	dispatcher shared.JobDispatcher,
+	audit shared.AuditLogger,
 ) *bus.CommandBus {
 	chain := append(busmw.BaseChain(logger, checker),
+		busmw.AuditMiddleware(logger, audit),
 		busmw.JobDispatcherMiddleware(dispatcher),
 		busmw.DispatchEventsMiddleware(logger, eventBus),
 		busmw.TransactionMiddleware(db),
@@ -98,11 +102,21 @@ func provideCookieSecure(cfg *config.Config) handler.CookieSecure {
 	return handler.CookieSecure(cfg.CookieSecure)
 }
 
+// provideIPExtractor is the single source of truth for how a request's
+// client IP is resolved — rate limiters and the audit IP middleware both
+// pull from it so flipping APP_TRUST_PROXY_HEADERS keeps them in sync.
+func provideIPExtractor(cfg *config.Config) httpmw.IPExtractor {
+	return httpmw.NewIPExtractor(cfg.TrustProxyHeaders)
+}
+
 // provideRateLimiters parses the configured per-IP buckets at startup so a
 // malformed APP_RATE_LIMIT_* fails fast instead of silently disabling
-// protection. Both limiters share the same IPExtractor so behaviour is
-// uniform: switching APP_TRUST_PROXY_HEADERS flips them together.
-func provideRateLimiters(cfg *config.Config, logger *slog.Logger) (*server.RateLimiters, error) {
+// protection.
+func provideRateLimiters(
+	cfg *config.Config,
+	extract httpmw.IPExtractor,
+	logger *slog.Logger,
+) (*server.RateLimiters, error) {
 	loginRule, err := httpmw.ParseRateRule(cfg.RateLimitLogin)
 	if err != nil {
 		return nil, fmt.Errorf("APP_RATE_LIMIT_LOGIN: %w", err)
@@ -111,7 +125,6 @@ func provideRateLimiters(cfg *config.Config, logger *slog.Logger) (*server.RateL
 	if err != nil {
 		return nil, fmt.Errorf("APP_RATE_LIMIT_REFRESH: %w", err)
 	}
-	extract := httpmw.NewIPExtractor(cfg.TrustProxyHeaders)
 	return &server.RateLimiters{
 		Login:   httpmw.NewRateLimiter(loginRule, extract, logger),
 		Refresh: httpmw.NewRateLimiter(refreshRule, extract, logger),
@@ -198,6 +211,7 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 		provideEventHandlers,
 		provideEventBus,
 		provideCookieSecure,
+		provideIPExtractor,
 		provideRateLimiters,
 		provideSeedAdminPassword,
 		provideSchedulerJobs,
@@ -212,10 +226,12 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 		wire.Bind(new(token.TokenRepository), new(*sqlitetoken.Repository)),
 		wire.Bind(new(job.Repository), new(*sqlitejob.Repository)),
 		wire.Bind(new(shared.Seeder), new(*sqliteseeder.Seeder)),
+		wire.Bind(new(shared.AuditLogger), new(*sqliteaudit.Repository)),
 		sqliteuser.NewRepository,
 		sqlitetoken.NewRepository,
 		sqlitejob.NewRepository,
 		sqliteseeder.NewSeeder,
+		sqliteaudit.NewRepository,
 		authcmd.NewLoginHandler,
 		authcmd.NewRefreshTokenHandler,
 		authcmd.NewLogoutHandler,

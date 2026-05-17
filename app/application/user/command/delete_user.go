@@ -35,5 +35,15 @@ func (h *DeleteUserHandler) Handle(ctx context.Context, cmd DeleteUserCommand) e
 		return err
 	}
 
-	return h.users.Delete(ctx, cmd.ID)
+	if err := h.users.Delete(ctx, cmd.ID); err != nil {
+		return err
+	}
+
+	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
+		Action:     "user.deleted",
+		TargetType: "user",
+		TargetID:   cmd.ID,
+	})
+
+	return nil
 }

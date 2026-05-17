@@ -76,6 +76,8 @@ func NewLoginHandler(
 }
 
 func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (LoginResult, error) {
+	audit := shared.AuditCollectorFromContext(ctx)
+
 	u, err := h.users.FindByNickname(ctx, cmd.Nickname)
 	if err != nil {
 		return LoginResult{}, err
@@ -101,18 +103,44 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (LoginResul
 		// Bad credentials for a known user → bump the brute-force
 		// counter. Skip the bump while the account is already locked
 		// so attempts during the cooldown don't keep extending it.
-		if u != nil && !locked {
-			_, _ = h.users.RecordFailedLogin(
-				ctx, u.ID, loginLockThreshold, loginLockWindow, loginLockDuration,
-			)
+		failEvent := shared.AuditEvent{
+			Action:   "auth.login.failed",
+			Metadata: map[string]any{"nickname": cmd.Nickname},
 		}
+		if u != nil {
+			failEvent.TargetType = "user"
+			failEvent.TargetID = u.ID
+
+			if !locked {
+				lockedAt, _ := h.users.RecordFailedLogin(
+					ctx, u.ID, loginLockThreshold, loginLockWindow, loginLockDuration,
+				)
+				if lockedAt != nil {
+					audit.Record(shared.AuditEvent{
+						Action:     "auth.account.locked",
+						TargetType: "user",
+						TargetID:   u.ID,
+						Metadata: map[string]any{
+							"locked_until": lockedAt.UTC().Format(time.RFC3339),
+						},
+					})
+				}
+			}
+		}
+		audit.Record(failEvent)
 		return LoginResult{}, &shared.AuthError{Message: "invalid credentials"}
 	}
 
 	if locked {
 		// Correct password but account is in cooldown — still a
 		// neutral error so the response shape doesn't reveal whether
-		// the password was right.
+		// the password was right. Audit records this separately so
+		// operators can see "someone is hammering a locked account".
+		audit.Record(shared.AuditEvent{
+			Action:     "auth.login.blocked_while_locked",
+			TargetType: "user",
+			TargetID:   u.ID,
+		})
 		return LoginResult{}, &shared.AuthError{Message: "invalid credentials"}
 	}
 
@@ -120,6 +148,12 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (LoginResul
 	// starts fresh. Best-effort; a transient DB error here shouldn't
 	// block an otherwise-valid login.
 	_ = h.users.ResetFailedLogin(ctx, u.ID)
+
+	audit.Record(shared.AuditEvent{
+		Action:     "auth.login.succeeded",
+		TargetType: "user",
+		TargetID:   u.ID,
+	})
 
 	accessToken, accessExpiresIn, err := h.jwt.GenerateAccessToken(&shared.AuthClaims{
 		UserID:   u.ID,
