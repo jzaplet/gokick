@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"gokick/app/application/bus"
 	"gokick/app/domain/shared"
 	"gokick/app/internal/testfx"
 )
@@ -195,6 +196,40 @@ func TestLoginHandler_RecordsAccountLockedWhenThresholdReached(t *testing.T) {
 	}
 	if lockEvents != 1 {
 		t.Fatalf("expected exactly 1 auth.account.locked event, got %d", lockEvents)
+	}
+}
+
+// Regression guard for the F4 self-deadlock: LoginHandler dispatched
+// through the real CommandBus (which includes TransactionMiddleware)
+// MUST NOT block. The handler's raw-pool writes (ResetFailedLogin)
+// would otherwise wait forever for the SQLite write lock held by the
+// wrapping tx. SkipsTransaction on LoginCommand is the safeguard;
+// this test fails (deadline) if that opt-out is ever removed.
+func TestLoginHandler_DoesNotDeadlockUnderCommandBus(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_deadlock.db"))
+	fx.SeedUser(t, "jana", "secret123", "user")
+
+	cmdBus, _, _ := fx.NewBuses()
+	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := bus.Exec(ctx, cmdBus.Bus, "Login",
+			LoginCommand{Nickname: "jana", Password: "secret123"},
+			func(ctx context.Context) (LoginResult, error) {
+				return handler.Handle(ctx, LoginCommand{Nickname: "jana", Password: "secret123"})
+			})
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("login through bus: %v", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("login deadlocked under CommandBus — SkipsTransaction is gone")
 	}
 }
 

@@ -17,6 +17,14 @@ type RefreshTokenCommand struct {
 
 func (RefreshTokenCommand) SkipPermissionCheck() {}
 
+// SkipTransaction: see LoginCommand for the rationale. RefreshToken's
+// theft path also calls raw-pool writes (DeleteByUserID via audit
+// trail elsewhere), and the multi-step rotation (FindByHash →
+// MarkUsed → Save new) is intentionally non-atomic — a failed Save
+// after MarkUsed just funnels the user into the next theft-detection
+// cycle on retry.
+func (RefreshTokenCommand) SkipTransaction() {}
+
 type RefreshTokenHandler struct {
 	users  user.Repository
 	tokens token.TokenRepository
