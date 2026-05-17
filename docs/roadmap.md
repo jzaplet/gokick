@@ -221,7 +221,11 @@ Před přidáním nových funkcí proběhl důkladný bezpečnostní audit, kter
   - `SqliteManager` whitelistuje `APP_DB_JOURNAL_MODE` na `WAL|DELETE|MEMORY`.
   - `clearRefreshCookie` kombinuje `MaxAge=-1` + `Expires=epoch` (legacy fallback).
 
-- [x] **Bonus mimo audit**: opraven flaky `TestDispatcher_WithDelay` ve F3 — `ClaimDue` používá `strftime('%Y-%m-%d %H:%M:%f', ...)` místo `datetime()` (subsekundová precizita).
+- [x] **SQLite & concurrency hardening (late phase-4)**
+  - **Deadlock fix `CreateUser` & spol.** — DSN `SqliteManager` přešel z holé cesty na `file:<path>?_txlock=immediate&_pragma=busy_timeout(5000)&_pragma=foreign_keys(on)`. Bus tx pattern read → bcrypt (200 ms) → write pod default DEFERRED tx ztrácel read snapshot, jakmile mezitím commitnul worker/scheduler poll, a follow-up zápis fail-fast jako `SQLITE_BUSY_SNAPSHOT` ("database is locked", busy_timeout to nepokrývá). IMMEDIATE bere write lock při BEGIN → snapshot zůstane validní. `foreign_keys` se nově aplikuje na všechny pool konexe (per-conn pragma).
+  - **`ClaimDue` flake root fix** — F3 přešlo z `datetime()` na `strftime('%f', ...)` pro sub-sekundovou precizi. Probe ale odhalil dvě hlubší trhliny: `strftime('%f', t)` zaokrouhluje na ms round-half-up (Go time s µs ≥ 500 končí o ms napřed) a ncruces WASM `'now'` trailí Go `time.Now()` o ~1 ms. Oprava: srovnání přepsáno na `julianday(...)`, `Enqueue`/`Reschedule` v repo truncate `run_at` na `UTC + ms` přes `msPrecisionUTC` -- obě strany srovnání mají společnou precizi.
+  - **`login_test` arch-lint root fix** — `TestLoginHandler_DoesNotDeadlockUnderCommandBus` importoval `application/bus` přímo (porušení pravidla "application může záviset jen na bus_middleware, ne na bus samotném"). Místo excludeFile workaround přidán `testfx.ExecCommand[R]` wrapper kolem `bus.Exec` (testfx je sanctioned escape hatch); test přepojen.
+  - Regresní testy: `app/infrastructure/database/sqlite_manager_test.go` (`TestSqliteManager_ConcurrentTxWritesDoNotReturnBusy`, 4 goroutines × 25 iterací read-hold-write v tx -- bez fixu padá hned na first iteration); `app/infrastructure/sqlite/job/repository_test.go` stabilní 100× v řadě.
 
 ### Regresní testy
 
