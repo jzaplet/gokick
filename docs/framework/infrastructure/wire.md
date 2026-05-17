@@ -38,9 +38,10 @@ app/infrastructure/di/
 | **Config** | `config.LoadConfig`, `provideCookieSecure` (-> `handler.CookieSecure`) |
 | **Database** | `database.NewSqliteManager`, `database.NewMigrationManager` |
 | **Scheduler** | `provideScheduler` (-> `*scheduler.Scheduler`, registruje cleanup jobs) |
+| **Job Queue** | `provideJobHandlerRegistry`, `provideJobDispatcher` (-> `shared.JobDispatcher`), `provideWorker` (-> `*worker.Worker`) |
 | **Security** | `security.NewJwtService`, `providePasswordHasher` (-> `shared.PasswordHasher`), `providePermissionChecker` (-> `shared.PermissionChecker`), `providePermissionsRegistry` (-> `*shared.PermissionsRegistry`) |
 | **Bus** | `provideCommandBus`, `provideQueryBus`, `provideEventBus` |
-| **Repositories** | `sqliteuser.NewRepository`, `sqlitetoken.NewRepository`, `sqlite.NewSeeder` |
+| **Repositories** | `sqliteuser.NewRepository`, `sqlitetoken.NewRepository`, `sqlitejob.NewRepository`, `sqlite.NewSeeder` |
 | **Auth handlery** | `authcmd.NewLoginHandler`, `authcmd.NewRefreshTokenHandler`, `authcmd.NewLogoutHandler` |
 | **Profile handlery** | `profilecmd.NewChangePasswordHandler`, `profileqry.NewGetProfileHandler` |
 | **User handlery (admin CRUD)** | `usercmd.NewCreateUserHandler`, `usercmd.NewUpdateUserHandler`, `usercmd.NewDeleteUserHandler`, `userqry.NewListUsersHandler` |

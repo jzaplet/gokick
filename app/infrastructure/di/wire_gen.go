@@ -12,10 +12,12 @@ import (
 	"gokick/app/application/bus"
 	"gokick/app/application/bus/middleware"
 	query3 "gokick/app/application/dashboard/query"
+	job2 "gokick/app/application/job"
 	command2 "gokick/app/application/profile/command"
 	"gokick/app/application/profile/query"
 	command3 "gokick/app/application/user/command"
 	query2 "gokick/app/application/user/query"
+	job3 "gokick/app/domain/job"
 	"gokick/app/domain/shared"
 	token2 "gokick/app/domain/token"
 	"gokick/app/infrastructure/config"
@@ -23,8 +25,10 @@ import (
 	"gokick/app/infrastructure/scheduler"
 	"gokick/app/infrastructure/security"
 	"gokick/app/infrastructure/sqlite"
+	"gokick/app/infrastructure/sqlite/job"
 	"gokick/app/infrastructure/sqlite/token"
 	"gokick/app/infrastructure/sqlite/user"
+	"gokick/app/infrastructure/worker"
 	"gokick/app/presentation/console"
 	"gokick/app/presentation/http/handler"
 	"gokick/app/presentation/http/server"
@@ -55,23 +59,29 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 	}
 	permissionChecker := providePermissionChecker()
 	eventBus := provideEventBus(logger)
-	commandBus := provideCommandBus(logger, sqliteManager, permissionChecker, eventBus)
-	repository := user.NewRepository(sqliteManager)
+	repository := job.NewRepository(sqliteManager)
+	handlerRegistry, err := provideJobHandlerRegistry()
+	if err != nil {
+		return nil, err
+	}
+	jobDispatcher := provideJobDispatcher(repository, handlerRegistry)
+	commandBus := provideCommandBus(logger, sqliteManager, permissionChecker, eventBus, jobDispatcher)
+	userRepository := user.NewRepository(sqliteManager)
 	tokenRepository := token.NewRepository(sqliteManager)
 	passwordHasher := providePasswordHasher()
-	loginHandler := command.NewLoginHandler(repository, tokenRepository, passwordHasher, jwtService)
-	refreshTokenHandler := command.NewRefreshTokenHandler(repository, tokenRepository, jwtService)
+	loginHandler := command.NewLoginHandler(userRepository, tokenRepository, passwordHasher, jwtService)
+	refreshTokenHandler := command.NewRefreshTokenHandler(userRepository, tokenRepository, jwtService)
 	logoutHandler := command.NewLogoutHandler(tokenRepository)
 	permissionsRegistry := providePermissionsRegistry()
 	authHandler := handler.NewAuthHandler(cookieSecure, commandBus, loginHandler, refreshTokenHandler, logoutHandler, permissionsRegistry)
 	queryBus := provideQueryBus(logger, permissionChecker)
-	getProfileHandler := query.NewGetProfileHandler(repository)
-	changePasswordHandler := command2.NewChangePasswordHandler(repository, passwordHasher)
+	getProfileHandler := query.NewGetProfileHandler(userRepository)
+	changePasswordHandler := command2.NewChangePasswordHandler(userRepository, passwordHasher)
 	profileHandler := handler.NewProfileHandler(commandBus, queryBus, getProfileHandler, changePasswordHandler, permissionsRegistry)
-	listUsersHandler := query2.NewListUsersHandler(repository)
-	createUserHandler := command3.NewCreateUserHandler(repository, passwordHasher)
-	updateUserHandler := command3.NewUpdateUserHandler(repository, passwordHasher)
-	deleteUserHandler := command3.NewDeleteUserHandler(repository)
+	listUsersHandler := query2.NewListUsersHandler(userRepository)
+	createUserHandler := command3.NewCreateUserHandler(userRepository, passwordHasher)
+	updateUserHandler := command3.NewUpdateUserHandler(userRepository, passwordHasher)
+	deleteUserHandler := command3.NewDeleteUserHandler(userRepository)
 	adminUsersHandler := handler.NewAdminUsersHandler(commandBus, queryBus, listUsersHandler, createUserHandler, updateUserHandler, deleteUserHandler)
 	getUserDashboardHandler := query3.NewGetUserDashboardHandler()
 	getAdminDashboardHandler := query3.NewGetAdminDashboardHandler()
@@ -81,11 +91,13 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 	if err != nil {
 		return nil, err
 	}
-	serveCommand := console.NewServeCommand(serverServer, scheduler)
-	seeder := sqlite.NewSeeder(repository, passwordHasher, logger)
+	worker := provideWorker(logger, repository, handlerRegistry, sqliteManager, jobDispatcher)
+	serveCommand := console.NewServeCommand(serverServer, scheduler, worker)
+	seeder := sqlite.NewSeeder(userRepository, passwordHasher, logger)
 	seedCommand := console.NewSeedCommand(seeder)
 	createUserCommand := console.NewCreateUserCommand(createUserHandler)
-	rootCommand := console.NewRootCommand(serveCommand, seedCommand, createUserCommand)
+	workerCommand := console.NewWorkerCommand(worker)
+	rootCommand := console.NewRootCommand(serveCommand, seedCommand, createUserCommand, workerCommand)
 	migrationManager := database.NewMigrationManager(sqliteManager, logger)
 	application := app.NewApplication(rootCommand, migrationManager)
 	return application, nil
@@ -101,13 +113,18 @@ func providePermissionChecker() shared.PermissionChecker {
 	return security.NewPermissionChecker()
 }
 
+// provideCommandBus wires the write-side bus. DispatchEvents wraps Transaction
+// so a failed commit drops events. JobDispatcher sits outside Transaction so
+// the dispatcher is injected before tx begin — Enqueue itself uses Conn(ctx),
+// joining the transaction when called from a handler.
 func provideCommandBus(
 	logger *slog.Logger,
 	db *database.SqliteManager,
 	checker shared.PermissionChecker,
 	eventBus *bus.EventBus,
+	dispatcher shared.JobDispatcher,
 ) *bus.CommandBus {
-	chain := append(middleware.BaseChain(logger, checker), middleware.DispatchEventsMiddleware(logger, eventBus), middleware.TransactionMiddleware(db))
+	chain := append(middleware.BaseChain(logger, checker), middleware.JobDispatcherMiddleware(dispatcher), middleware.DispatchEventsMiddleware(logger, eventBus), middleware.TransactionMiddleware(db))
 	return bus.NewCommandBus(chain...)
 }
 
@@ -123,15 +140,10 @@ func provideEventBus(logger *slog.Logger) *bus.EventBus {
 	return bus.NewEventBus(middleware.RecoveryMiddleware(logger), middleware.LoggingMiddleware(logger))
 }
 
-// provideCookieSecure extracts the boolean flag so handler.NewAuthHandler
-// does not need to import the config package.
 func provideCookieSecure(cfg *config.Config) handler.CookieSecure {
 	return handler.CookieSecure(cfg.CookieSecure)
 }
 
-// provideScheduler wires the in-process job scheduler. Add a new Job to the
-// slice for every periodic task (cron-like); the scheduler runs each in its
-// own goroutine and drains them on ctx cancel.
 func provideScheduler(logger *slog.Logger, tokens token2.TokenRepository) (*scheduler.Scheduler, error) {
 	return scheduler.NewScheduler(logger, []scheduler.Job{
 		{
@@ -142,9 +154,33 @@ func provideScheduler(logger *slog.Logger, tokens token2.TokenRepository) (*sche
 	})
 }
 
-// providePermissionsRegistry collects RequiredPermission() values from every
-// command/query handler that is Permissioned. Adding a new handler requires
-// adding it here too — there is no other permission list in the codebase.
+// provideJobHandlerRegistry collects every kind → handler the binary can
+// process. Empty for now — handlers will be added in subsequent phases as
+// real background work appears.
+func provideJobHandlerRegistry() (*job2.HandlerRegistry, error) {
+	return job2.NewHandlerRegistry(map[string]job2.HandlerFunc{})
+}
+
+// provideJobDispatcher returns the dispatcher as a domain interface so command
+// handlers and event handlers depend on shared.JobDispatcher, not on the
+// concrete application-layer type.
+func provideJobDispatcher(repo job3.Repository, registry *job2.HandlerRegistry) shared.JobDispatcher {
+	return job2.NewDispatcher(repo, registry)
+}
+
+// provideWorker wires the persistent job worker. Concurrency stays at 1 by
+// default because SQLite serializes writers (WAL: one writer at a time);
+// more goroutines don't increase throughput for DB-bound handlers.
+func provideWorker(
+	logger *slog.Logger,
+	repo job3.Repository,
+	registry *job2.HandlerRegistry,
+	db *database.SqliteManager,
+	dispatcher shared.JobDispatcher,
+) *worker.Worker {
+	return worker.NewWorker(logger, repo, registry, db, dispatcher, 1)
+}
+
 func providePermissionsRegistry() *shared.PermissionsRegistry {
 	return shared.NewPermissionsRegistry([]shared.Permissioned{command.LogoutCommand{}, command2.ChangePasswordCommand{}, query.GetProfileQuery{}, command3.CreateUserCommand{}, command3.UpdateUserCommand{}, command3.DeleteUserCommand{}, query2.ListUsersQuery{}, query3.GetUserDashboardQuery{}, query3.GetAdminDashboardQuery{}})
 }

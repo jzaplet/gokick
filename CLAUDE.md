@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Overview:** [Architecture](docs/framework/overview/architecture.md), [Layers](docs/framework/overview/layers.md), [Dev Stack](docs/framework/overview/dev-stack.md)
 - **Domain:** [Entity & Value Objects](docs/framework/domain/entities.md), [Interfaces](docs/framework/domain/interfaces.md), [Errors & Events](docs/framework/domain/errors-events.md)
 - **Application:** [Bus](docs/framework/application/bus.md), [Commands](docs/framework/application/commands.md), [Queries](docs/framework/application/queries.md), [Event Handlers](docs/framework/application/events.md)
-- **Infrastructure:** [Wire DI](docs/framework/infrastructure/wire.md), [Database](docs/framework/infrastructure/database.md), [Security](docs/framework/infrastructure/security.md), [Config](docs/framework/infrastructure/config.md), [Scheduler](docs/framework/infrastructure/scheduler.md)
+- **Infrastructure:** [Wire DI](docs/framework/infrastructure/wire.md), [Database](docs/framework/infrastructure/database.md), [Security](docs/framework/infrastructure/security.md), [Config](docs/framework/infrastructure/config.md), [Scheduler](docs/framework/infrastructure/scheduler.md), [Job Queue](docs/framework/infrastructure/job-queue.md)
 - **Presentation:** [Handlers & Middleware](docs/framework/presentation/http-handlers.md), [HTTP Server](docs/framework/presentation/http-server.md), [Console](docs/framework/presentation/console.md)
 
 ## Build & Development Commands
@@ -44,7 +44,8 @@ go test ./app/infrastructure/security/ -run TestHash  # Single Go test
 ### CLI Commands
 
 ```bash
-./bin/app serve    # Start HTTP server
+./bin/app serve    # Start HTTP server + in-process scheduler + job worker
+./bin/app worker   # Run only the persistent job worker (no HTTP server)
 ./bin/app seed     # Seed database with default data (admin user)
 ```
 
@@ -82,6 +83,7 @@ Bounded contexts in separate packages. **Never import between contexts** (e.g. `
 | `domain/shared/` | `AuthClaims`, `ValidationError`, `AuthError`, `PermissionError`, `DomainEvent`, `EventCollector`, `PermissionsRegistry`, interfaces (`PasswordHasher`, `PermissionChecker`, `JwtService`, `Transactor`, `Seeder`) |
 | `domain/user/` | `User` entity, `Nickname`/`Role` value objects, `Repository` interface, `UserCreated` event |
 | `domain/token/` | `RefreshToken` entity, `TokenRepository` interface |
+| `domain/job/` | `Job` entity, `Repository` interface — persistent background work queue |
 
 **Conventions:**
 - Entity structs have `db:"..."` tags for sqlx scanning

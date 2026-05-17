@@ -18,7 +18,7 @@ Tento dokument popisuje, co zbývá dořešit, aby byl skeleton připravený pro
 |---|---|---|
 | [1](#fáze-1--stabilizace-event-flow--shutdown) | Stabilizace event flow & graceful shutdown | **Hotovo** |
 | [2](#fáze-2--in-process-scheduler) | In-process scheduler (cron-like) | **Hotovo** |
-| [3](#fáze-3--perzistentní-job-queue-sqlite) | Perzistentní job queue (SQLite) + worker | Plánováno |
+| [3](#fáze-3--perzistentní-job-queue-sqlite) | Perzistentní job queue (SQLite) + worker | **Hotovo** |
 | [4](#fáze-4--hardening) | Rate limiting, audit log, brute-force protection | Plánováno |
 | [5](#fáze-5--observability) | Sentry, strukturované slog atributy, OpenTelemetry | Plánováno |
 
@@ -122,55 +122,47 @@ Cron-like spouštění periodických úkolů uvnitř `serve` procesu. Žádný e
 
 ## Fáze 3 — Perzistentní job queue (SQLite)
 
+**Stav:** Hotovo (2026-05-17).
+
 Práce, která **musí přežít restart procesu nebo crash**: odesílání emailů, externí API volání, cokoli I/O-heavy nebo retry-prone. In-memory `EventBus` na to není stavěný — synchronní dispatch zablokuje response, async goroutina se ztratí při SIGTERM.
 
-### Návrhová rozhodnutí (před implementací)
+### Klíčová rozhodnutí
 
-| Otázka | Doporučení |
+| Otázka | Volba |
 |---|---|
-| **Jak worker volá handler?** | Vlastní zkrácený middleware chain: `Recovery → Logging → Transaction`. **Bez** `Authorize` (job nemá auth claims) a **bez** `DispatchEvents` (job sám může collectovat eventy, ale ne kaskádovat). |
-| **Delivery semantika** | At-least-once. Handlery **musí být idempotentní** — kontrakt v dokumentaci. |
-| **Failure handling** | Exponenciální backoff (`run_at = now + 2^attempts * baseDelay`), `max_attempts` na typ jobu, po vyčerpání → status `failed` + `last_error`. |
-| **Concurrency** | `SELECT … FOR UPDATE SKIP LOCKED` SQLite nepodporuje. Atomický claim přes `UPDATE jobs SET locked_until=... WHERE id=(SELECT id FROM jobs WHERE run_at<=now() AND (locked_until IS NULL OR locked_until<now()) LIMIT 1) RETURNING *` v jedné transakci. |
-| **Event → job bridge** | Opt-in: event handler dostane `JobDispatcher` v konstruktoru a sám rozhodne, jestli běží sync, nebo enqueue. Default zůstává sync — heavy handlery se explicitně přepnou. |
+| **Jak worker volá handler?** | Worker má vlastní `runWithinTx` — ne celý middleware chain, jen `BeginTx → handler → MarkComplete → Commit` (rollback při error). Jednodušší než CQRS bus, plus mark-complete-in-handler-tx semantika. |
+| **Mark-complete kdy?** | **Uvnitř handler transakce** (advisor rec). Handler write + MarkComplete commitují atomicky. Handler-fail = celá tx rollback (včetně handler's DB writes) → re-claimable. Idempotence se týká jen *externích* side-effects. |
+| **Delivery semantika** | At-least-once. Handlery **musí být idempotentní** pro externí side effects (mail, API). |
+| **Failure handling** | Exponenciální backoff `2^(attempts-1) * 5s`, cap 1h. `max_attempts` exhausted → `failed_at` + `last_error`. |
+| **Concurrency default** | **1 worker.** SQLite serializuje writery (WAL: one writer at a time) — víc goroutin nezvýší throughput pro DB-bound joby. Bumpnout, jen pokud handlery jsou I/O-bound mimo SQLite. |
+| **JobDispatcher** | Context-injected (analogie `EventCollectorFromContext`), ne přes konstruktor. Bus middleware vkládá dispatcher do ctx; handler volá `shared.JobDispatcherFromContext(ctx).Enqueue(...)`. |
+| **Atomický claim** | `UPDATE jobs SET locked_until=... WHERE id=(SELECT id FROM jobs WHERE due AND not_locked LIMIT 1) RETURNING *`. Wrap obou stran porovnání `datetime()` — Go time.Time má TZ offset, SQLite `datetime('now')` je UTC bez TZ; lex porovnání by selhalo. |
 
-### Úkoly
+### Co bylo uděláno
 
-- [ ] **Migrace** — nová `migrations/2026xxxxxxxxxx_create_jobs_table.sql`:
-  - sloupce: `id` (UUIDv7 TEXT PK), `kind` (TEXT), `payload` (TEXT, JSON), `run_at` (DATETIME), `attempts` (INTEGER), `max_attempts` (INTEGER), `locked_until` (DATETIME NULL), `last_error` (TEXT NULL), `created_at`, `completed_at` (NULL).
-  - indexy: `(run_at, locked_until)` pro claim query, `(kind, completed_at)` pro monitoring.
+- [x] **Migrace** — `20260517000001_create_jobs_table.sql` (id, kind, payload, run_at, attempts, max_attempts, locked_until, last_error, failed_at, completed_at, created_at + partial index pro claim).
+- [x] **`domain/job/`** — `Job` entity, `Repository` interface (Enqueue, ClaimDue, MarkComplete, Reschedule, MarkFailed, FindByID).
+- [x] **`domain/shared/job_dispatcher.go`** — `JobDispatcher` interface + `ContextWith/FromContext` helpers + `EnqueueOption` (WithMaxAttempts, WithDelay) + no-op fallback dispatcher.
+- [x] **`infrastructure/sqlite/job/`** — atomický claim přes `UPDATE … RETURNING`.
+- [x] **`application/job/`** — `Dispatcher` (JSON marshal, kind validation), `HandlerRegistry` (constructor-time empty kind check, immutable lookup).
+- [x] **`application/bus/middleware/job_dispatcher.go`** — vkládá dispatcher do ctx před TransactionMiddleware, takže `Enqueue` v handleru se připojí do business tx.
+- [x] **`infrastructure/worker/worker.go`** — pool goroutin, claim, **runWithinTx (BeginTx → handler → MarkComplete → Commit)**, panic recovery, exponential backoff, ctx-driven drain.
+- [x] **`presentation/console/worker.go`** — `./bin/app worker` standalone příkaz; `ServeCommand` zároveň co-runs in-process worker s scheduler+server (sdílí jeden ctx).
+- [x] **`.go-arch-lint.yml`** — nová `worker` komponenta, rozšířen `console.mayDependOn` o `worker`, `sqlite_repos`/`worker` mohou importovat `testfx`.
+- [x] **Bonus fix:** `token.TokenRepository.DeleteExpired` měl stejný TZ-format bug jako moje původní claim (no-op v praxi). Opraveno v rámci F3 — F2 cleanup teď reálně maže expired tokeny.
 
-- [ ] **`domain/job/`** — nový bounded kontext.
-  - `Job` entity, `Kind` value object (whitelist přes registry, jinak `ValidationError`), `Repository` interface: `Enqueue`, `ClaimDue(ctx, limit, lockFor)`, `Complete(ctx, id)`, `Fail(ctx, id, err, retryIn)`.
-  - Žádný cross-kontext import — pokud event handler chce enqueueovat, dostane `application.JobDispatcher` interface, ne `*job.Repository`.
+### Regresní testy
 
-- [ ] **`infrastructure/sqlite/job/`** — implementace, claim přes `UPDATE … RETURNING *`.
+- `app/infrastructure/sqlite/job/repository_test.go` (8 testů) — Enqueue/FindByID, ClaimDue empty/skipsLocked/picksOldest/**atomicConcurrent** (20 jobs × 40 goroutines, každý job claimnut přesně 1×), MarkComplete/Reschedule/MarkFailed s lifecycle ověřením.
+- `app/infrastructure/worker/worker_test.go` (6 testů) — handler success/failure/panic, **mark-complete-in-tx atomicity** (handler write + completion commit atomicky; handler-fail rollbackne i handler's writes), max_attempts exhaustion, unknown kind no-retry.
+- `app/application/job/dispatcher_test.go` (3 testy) — Enqueue valid kind round-trip + JSON payload, unknown kind → error, empty kind v registry → error.
 
-- [ ] **`application/job/`**
-  - `JobDispatcher` interface (handlery na něj depend místo na repo).
-  - `JobHandlerRegistry` — mapuje `kind` → `func(ctx context.Context, payload []byte) error`. Naplněno z Wire (každý handler se registruje v `container_provider.go` jak u permission registry).
+### Definition of Done — splněno
 
-- [ ] **`infrastructure/worker/worker.go`**
-  - Goroutine pool (konfigurovatelná concurrency přes `APP_WORKER_CONCURRENCY`, default 4).
-  - Poll interval (default 1s) + `time.AfterFunc` na nejbližší `run_at` aby idle worker nepojídal CPU.
-  - Exponenciální backoff, respektuje `ctx.Done()` (drain inflight job + stop polling).
-  - Per-job `traceID` (samostatný `uuid.NewV7`) propaguje se do logů a do `JobDispatcher.Enqueue(traceID, kind, payload)`.
-
-- [ ] **Event integration**
-  - `DispatchEventsMiddleware` zůstává — jen handlery, které chtějí queue, dostanou `JobDispatcher` v konstruktoru a samy zavolají `Enqueue`.
-  - Rychlé/čisté handlery (např. log entry) běží dál synchronně.
-
-- [ ] **CLI worker subcommand**
-  - `./bin/app worker` — samostatný proces, jen worker pool (žádný HTTP server).
-  - `./bin/app serve` ve výchozím stavu spouští in-process worker (vhodné pro single-binary deploy). Env flag `APP_INPROC_WORKER=false` to vypne pro split deployments (1× serve + N× worker).
-  - V `RootCommand` registrovat nový `WorkerCommand`, v `container_provider.go` přidat provider.
-
-- [ ] **`.go-arch-lint.yml`** — přidat komponenty `worker` (`infrastructure/worker`) a `job_application` (`application/job/**`). `domain/job/**` a `infrastructure/sqlite/job/**` pokrývají existující wildcardy.
-
-### Definition of Done
-- Test: `Enqueue(WelcomeEmail)`, kill worker procesu mid-execution, restart → job se claimne a doběhne.
-- Test: handler vrátí error 3×, čtvrtý pokus dostane status `failed`, `last_error` obsahuje původní chybu.
-- `make arch-check` projde.
+- ✅ `go test -race ./app/... ./cmd/...` všech 17 nových testů projde.
+- ✅ `make arch-check` projde s novou `worker` komponentou.
+- ✅ `golangci-lint` 0 issues.
+- ✅ Manuální smoke: `make serve` → log `worker: starting concurrency=1 kinds=[]` → SIGTERM → `scheduler:`, `worker:`, `server: stopped` v správném pořadí, exit 0.
 
 
 ## Fáze 4 — Hardening

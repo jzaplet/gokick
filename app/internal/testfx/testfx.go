@@ -12,11 +12,13 @@ import (
 
 	"gokick/app/application/bus"
 	busmw "gokick/app/application/bus/middleware"
+	"gokick/app/domain/job"
 	"gokick/app/domain/token"
 	"gokick/app/domain/user"
 	"gokick/app/infrastructure/config"
 	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/security"
+	sqlitejob "gokick/app/infrastructure/sqlite/job"
 	sqlitetoken "gokick/app/infrastructure/sqlite/token"
 	sqliteuser "gokick/app/infrastructure/sqlite/user"
 
@@ -27,6 +29,7 @@ type Fixture struct {
 	DB     *database.SqliteManager
 	Users  user.Repository
 	Tokens token.TokenRepository
+	Jobs   job.Repository
 	Hasher *security.PasswordHasher
 	Jwt    *security.JwtService
 }
@@ -64,6 +67,7 @@ func New(t *testing.T, dbPath string) *Fixture {
 		DB:     db,
 		Users:  sqliteuser.NewRepository(db),
 		Tokens: sqlitetoken.NewRepository(db),
+		Jobs:   sqlitejob.NewRepository(db),
 		Hasher: security.NewPasswordHasher(),
 		Jwt:    jwt,
 	}

@@ -52,6 +52,8 @@ components:
     in: infrastructure/sqlite/**
   scheduler:
     in: infrastructure/scheduler/**
+  worker:
+    in: infrastructure/worker/**
 
   # Layer 4: Presentation
   handler:
@@ -119,7 +121,13 @@ deps:
     mayDependOn:
       - sqlite_base
       - database
+      - testfx
   scheduler:
+    anyVendorDeps: true
+  worker:
+    mayDependOn:
+      - application
+      - testfx
     anyVendorDeps: true
 
   # Presentation — depends on application + infrastructure
@@ -145,6 +153,7 @@ deps:
     mayDependOn:
       - server
       - scheduler
+      - worker
       - config
       - database
       - application
