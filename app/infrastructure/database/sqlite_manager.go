@@ -25,11 +25,6 @@ func NewSqliteManager(config *config.Config) (*SqliteManager, error) {
 		return nil, err
 	}
 
-	db, err := sqlx.Open("sqlite3", config.DBPath)
-	if err != nil {
-		return nil, err
-	}
-
 	journalMode := config.DBJournalMode
 	if journalMode == "" {
 		journalMode = "WAL"
@@ -44,10 +39,40 @@ func NewSqliteManager(config *config.Config) (*SqliteManager, error) {
 		return nil, fmt.Errorf(
 			"database: APP_DB_JOURNAL_MODE must be WAL|DELETE|MEMORY, got %q", journalMode)
 	}
-	if _, err := db.Exec("PRAGMA journal_mode=" + journalMode); err != nil {
+
+	// _txlock=immediate makes sql.DB issue BEGIN IMMEDIATE for every
+	// transaction. Required because the bus pattern is read-then-CPU-then-
+	// write inside one tx (e.g. CreateUser: FindByNickname → bcrypt → Save),
+	// and under WAL with the default DEFERRED a concurrent commit during
+	// the CPU window invalidates the read snapshot and the follow-up write
+	// fails immediately as SQLITE_BUSY_SNAPSHOT (which busy_timeout cannot
+	// retry — it's a fatal-to-tx outcome). IMMEDIATE takes the write lock
+	// at BEGIN so the snapshot can't go stale mid-handler.
+	//
+	// busy_timeout(5000) pairs with the above: short overlaps between the
+	// scheduler/worker poll writes and a user-driven command serialize via
+	// a 5s wait instead of bubbling "database is locked" to the caller.
+	//
+	// foreign_keys is per-connection in SQLite — setting it via DSN
+	// guarantees every pooled connection has it on, not just the one the
+	// first PRAGMA executed against.
+	//
+	// The file: prefix is required for ncruces to parse the query string
+	// at all (driver.go newConnector: query parsing is gated on file:).
+	dsn := "file:" + config.DBPath +
+		"?_txlock=immediate" +
+		"&_pragma=busy_timeout(5000)" +
+		"&_pragma=foreign_keys(on)"
+
+	db, err := sqlx.Open("sqlite3", dsn)
+	if err != nil {
 		return nil, err
 	}
-	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
+
+	// journal_mode is filesystem-persistent (WAL flips the on-disk header)
+	// so a one-shot exec on the pool is enough; later connections inherit
+	// it from the file.
+	if _, err := db.Exec("PRAGMA journal_mode=" + journalMode); err != nil {
 		return nil, err
 	}
 
