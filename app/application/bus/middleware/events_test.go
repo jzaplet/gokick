@@ -127,6 +127,32 @@ func TestEventCollector_Collect_ConcurrentWriters(t *testing.T) {
 	}
 }
 
+// Event handler that calls Collect must panic (cascading events is not
+// supported — handlers must use JobDispatcher for follow-up async work).
+func TestEventBus_Dispatch_CollectFromHandlerPanics(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	eventBus := bus.NewEventBus(RecoveryMiddleware(logger))
+
+	var panicked atomic.Bool
+	eventBus.Register("test.event", func(ctx context.Context, _ shared.DomainEvent) error {
+		defer func() {
+			if r := recover(); r != nil {
+				panicked.Store(true)
+			}
+		}()
+		shared.EventCollectorFromContext(ctx).Collect(testEvent{dispatchID: 999})
+		return nil
+	})
+
+	eventBus.Dispatch(context.Background(), testEvent{dispatchID: 1})
+
+	if !panicked.Load() {
+		t.Fatal("expected Collect from event handler to panic")
+	}
+}
+
 // Verify the noopCommand satisfies SkipPermission at compile time so the
 // AuthorizeMiddleware-less chain in the test above stays correct intent.
 var _ shared.SkipPermission = noopCommand{}

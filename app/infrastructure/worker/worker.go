@@ -135,6 +135,9 @@ func (w *Worker) runWithinTx(ctx context.Context, j *job.Job, handler jobapp.Han
 	}()
 
 	txCtx = shared.ContextWithJobDispatcher(txCtx, w.dispatcher)
+	// Block cascading Collect from inside job handlers — they must use
+	// JobDispatcher (already in ctx above) for follow-up async work.
+	txCtx = shared.ContextWithoutEventCollector(txCtx)
 
 	if handlerErr := handler(txCtx, j.Payload); handlerErr != nil {
 		_ = w.tx.Rollback(txCtx)

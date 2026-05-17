@@ -45,4 +45,6 @@ func NewJob(kind string, payload []byte, maxAttempts int) *Job {
 }
 
 // DefaultMaxAttempts is applied when JobDispatcher.Enqueue doesn't specify.
-const DefaultMaxAttempts = 5
+// One attempt = no retries. Caller opts into retries with shared.WithMaxAttempts(n)
+// — picking a retry count is a deliberate decision per job kind, not a default.
+const DefaultMaxAttempts = 1

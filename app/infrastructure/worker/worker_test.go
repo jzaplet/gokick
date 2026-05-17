@@ -85,6 +85,11 @@ func TestWorker_HandlerSuccess_MarksComplete(t *testing.T) {
 	}
 }
 
+type cascadeEvent struct{}
+
+func (cascadeEvent) EventName() string     { return "cascade.attempt" }
+func (cascadeEvent) OccurredAt() time.Time { return time.Now() }
+
 // Helper: build a User the repository can persist without VO ceremony.
 func mockUser(id, nickname string) *user.User {
 	now := time.Now()
@@ -198,6 +203,26 @@ func TestWorker_HandlerExhaustsMaxAttempts_MarksFailed(t *testing.T) {
 	next, _ := fx.Jobs.ClaimDue(context.Background(), time.Minute)
 	if next != nil {
 		t.Fatal("failed job must not appear in claim again")
+	}
+}
+
+// Job handler that calls Collect must panic. The worker catches the panic
+// and reschedules the job, so the test asserts via the persisted LastError
+// rather than recovering inside the handler.
+func TestWorker_HandlerCallingCollectPanics(t *testing.T) {
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "worker_cascade.db"))
+	j := enqueue(t, fx, "cascade", 5)
+
+	w := newWorker(t, fx, "cascade", func(ctx context.Context, _ []byte) error {
+		shared.EventCollectorFromContext(ctx).Collect(cascadeEvent{})
+		return nil
+	})
+
+	runOnce(t, w)
+
+	got, _ := fx.Jobs.FindByID(context.Background(), j.ID)
+	if got.LastError == nil || !strings.Contains(*got.LastError, "Collect called from an event/job handler") {
+		t.Fatalf("expected LastError mentioning forbidden Collect, got %v", got.LastError)
 	}
 }
 
