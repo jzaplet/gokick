@@ -23,19 +23,43 @@ func NewRepository(db *database.SqliteManager) *Repository {
 func (r *Repository) Enqueue(ctx context.Context, j *job.Job) error {
 	const q = `INSERT INTO jobs (id, kind, payload, run_at, attempts, max_retries, locked_until, last_error, failed_at, completed_at, created_at)
 		VALUES (:id, :kind, :payload, :run_at, :attempts, :max_retries, :locked_until, :last_error, :failed_at, :completed_at, :created_at)`
-	_, err := r.Conn(ctx).NamedExecContext(ctx, q, j)
+	row := *j
+	row.RunAt = msPrecisionUTC(row.RunAt)
+	row.CreatedAt = msPrecisionUTC(row.CreatedAt)
+	_, err := r.Conn(ctx).NamedExecContext(ctx, q, &row)
 	return err
+}
+
+// msPrecisionUTC normalizes a Go time.Time to UTC + millisecond precision
+// before it crosses into SQLite. Required because ncruces' WASM SQLite
+// returns 'now' from a clock that ticks at ~1 ms granularity and trails
+// Go's time.Now() by up to ~1 ms on the same wall clock. A job written
+// with µs precision (e.g. .467806) can therefore beat 'now' in the
+// julianday(run_at) <= julianday('now') check despite being "in the
+// past" on the real clock — ClaimDue then misses a freshly-enqueued row
+// at random. Truncating writes to the lowest common precision removes
+// the race; downstream reads round-trip the exact same ms value.
+func msPrecisionUTC(t time.Time) time.Time {
+	return t.UTC().Truncate(time.Millisecond)
 }
 
 // ClaimDue atomically locks the next due row in a single UPDATE … RETURNING.
 // SQLite serializes writers, so concurrent claim attempts queue rather than
 // race; the LIMIT 1 + locked_until guard guarantees each row goes to at most
-// one worker. strftime(...%f) wraps every column comparison for two reasons:
-// (1) Go time.Time serializes with timezone offset (e.g. +02:00) while
-// sqlite's 'now' is UTC without timezone — direct string compare would
-// lex-mismatch; (2) plain datetime() truncates fractional seconds, which
-// breaks sub-second delays like WithDelay(800ms) where two rows can share
-// the same whole-second value.
+// one worker.
+//
+// All time comparisons go through julianday() (double-precision Julian Day):
+//
+//  1. Timezone-aware: julianday() parses Go's RFC3339 with offset (e.g.
+//     +02:00) and SQLite's UTC 'now' to the same scalar, so a written
+//     run_at compares correctly against 'now' regardless of TZ.
+//  2. Sub-millisecond precision: a Go time.Time has microsecond resolution.
+//     strftime('%f', t) rounds to whole milliseconds (round-half-up), which
+//     pushes any value with µs >= 500 a tick ahead of 'now' even though
+//     real time has already passed it — a job enqueued at T.467806 would
+//     have run_at_str=".468" and lose the race against now_str=".467".
+//     julianday() keeps the full double precision and avoids the rounding
+//     entirely; it's also what WithDelay(800ms) needs for sub-second tests.
 func (r *Repository) ClaimDue(ctx context.Context, lockFor time.Duration) (*job.Job, error) {
 	const q = `
 		UPDATE jobs
@@ -45,11 +69,10 @@ func (r *Repository) ClaimDue(ctx context.Context, lockFor time.Duration) (*job.
 		    SELECT id FROM jobs
 		    WHERE completed_at IS NULL
 		      AND failed_at IS NULL
-		      AND strftime('%Y-%m-%d %H:%M:%f', run_at) <= strftime('%Y-%m-%d %H:%M:%f', 'now')
+		      AND julianday(run_at) <= julianday('now')
 		      AND (locked_until IS NULL
-		           OR strftime('%Y-%m-%d %H:%M:%f', locked_until)
-		              < strftime('%Y-%m-%d %H:%M:%f', 'now'))
-		    ORDER BY strftime('%Y-%m-%d %H:%M:%f', run_at)
+		           OR julianday(locked_until) < julianday('now'))
+		    ORDER BY julianday(run_at)
 		    LIMIT 1
 		)
 		RETURNING *`
@@ -80,7 +103,7 @@ func (r *Repository) Reschedule(
 ) error {
 	_, err := r.Conn(ctx).ExecContext(ctx,
 		`UPDATE jobs SET run_at = ?, last_error = ?, locked_until = NULL WHERE id = ?`,
-		runAt, lastErr, id)
+		msPrecisionUTC(runAt), lastErr, id)
 	return err
 }
 
