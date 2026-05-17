@@ -87,7 +87,8 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 	getAdminDashboardHandler := query3.NewGetAdminDashboardHandler()
 	dashboardHandler := handler.NewDashboardHandler(queryBus, getUserDashboardHandler, getAdminDashboardHandler)
 	serverServer := server.NewServer(configConfig, logger, jwtService, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler)
-	scheduler, err := provideScheduler(logger, tokenRepository)
+	v := provideSchedulerJobs(tokenRepository)
+	scheduler, err := provideScheduler(logger, v)
 	if err != nil {
 		return nil, err
 	}
@@ -144,14 +145,21 @@ func provideCookieSecure(cfg *config.Config) handler.CookieSecure {
 	return handler.CookieSecure(cfg.CookieSecure)
 }
 
-func provideScheduler(logger *slog.Logger, tokens token2.TokenRepository) (*scheduler.Scheduler, error) {
-	return scheduler.NewScheduler(logger, []scheduler.Job{
+// provideSchedulerJobs is the single source of truth for periodic in-process
+// jobs — mirrors providePermissionsRegistry / provideJobHandlerRegistry. Add
+// a new Job here; provideScheduler stays decoupled from job business.
+func provideSchedulerJobs(tokens token2.TokenRepository) []scheduler.Job {
+	return []scheduler.Job{
 		{
 			Name:     "cleanup:expired-refresh-tokens",
 			Interval: 1 * time.Hour,
 			Fn:       tokens.DeleteExpired,
 		},
-	})
+	}
+}
+
+func provideScheduler(logger *slog.Logger, jobs []scheduler.Job) (*scheduler.Scheduler, error) {
+	return scheduler.NewScheduler(logger, jobs)
 }
 
 // provideJobHandlerRegistry collects every kind → handler the binary can
