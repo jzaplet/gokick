@@ -69,8 +69,10 @@ func TestRateLimiter_RefillRestoresCapacity(t *testing.T) {
 	t.Parallel()
 	l := NewRateLimiter(RateRule{Tokens: 2, Per: time.Second}, remoteIP, silentLogger())
 	now := time.Now()
-	if !l.allow("ip", now) || !l.allow("ip", now) {
-		t.Fatal("initial burst must succeed")
+	for i := 0; i < 2; i++ {
+		if !l.allow("ip", now) {
+			t.Fatalf("initial burst request %d must succeed", i+1)
+		}
 	}
 	if l.allow("ip", now) {
 		t.Fatal("over-burst must be blocked")
