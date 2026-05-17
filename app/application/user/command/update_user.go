@@ -46,6 +46,17 @@ func (h *UpdateUserHandler) Handle(ctx context.Context, cmd UpdateUserCommand) e
 		return err
 	}
 
+	// Mirror DeleteUserHandler's self-lockout guard: don't let an admin
+	// demote themselves out of admin and lock the org out of admin ops.
+	// Self-update of other fields (nickname, password, email) stays allowed.
+	claims := shared.ClaimsFromContext(ctx)
+	if claims != nil && claims.UserID == target.ID && string(role) != string(user.RoleAdmin) {
+		return &shared.ValidationError{
+			Field:   "role",
+			Message: "cannot change your own role",
+		}
+	}
+
 	email, err := user.NewEmail(cmd.Email)
 	if err != nil {
 		return err

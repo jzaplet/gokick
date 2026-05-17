@@ -141,3 +141,56 @@ func TestUpdateUserCommand_RequiredPermission(t *testing.T) {
 		t.Fatalf("expected admin:users:update, got %q", got)
 	}
 }
+
+// Mirror of DeleteUserHandler's self-lockout guard: an admin must not be
+// able to demote themselves out of the admin role and lock the org out
+// of admin operations. Self-update of nickname/password/email remains OK.
+func TestUpdateUserHandler_BlocksSelfDemote(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "update_self_demote.db"))
+	admin := fx.SeedUser(t, "boss", "secret12", "admin")
+
+	authedCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{
+		UserID: admin.ID,
+		Role:   admin.Role,
+	})
+
+	h := NewUpdateUserHandler(fx.Users, fx.Hasher)
+	err := h.Handle(authedCtx, UpdateUserCommand{
+		ID:       admin.ID,
+		Nickname: admin.Nickname,
+		Email:    admin.Email,
+		Role:     "user",
+	})
+
+	var ve *shared.ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("expected *shared.ValidationError, got %T: %v", err, err)
+	}
+	if ve.Field != "role" {
+		t.Fatalf("expected field=role, got %s", ve.Field)
+	}
+}
+
+// Counterpart: same admin updating non-role fields must still succeed.
+func TestUpdateUserHandler_SelfUpdateKeepingRoleIsAllowed(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "update_self_keep.db"))
+	admin := fx.SeedUser(t, "boss", "secret12", "admin")
+
+	authedCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{
+		UserID: admin.ID,
+		Role:   admin.Role,
+	})
+
+	h := NewUpdateUserHandler(fx.Users, fx.Hasher)
+	err := h.Handle(authedCtx, UpdateUserCommand{
+		ID:       admin.ID,
+		Nickname: "boss-renamed",
+		Email:    "boss@example.com",
+		Role:     "admin",
+	})
+	if err != nil {
+		t.Fatalf("self-update of non-role fields must be allowed, got %v", err)
+	}
+}

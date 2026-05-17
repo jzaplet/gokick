@@ -2,12 +2,12 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 
 	authcmd "gokick/app/application/auth/command"
 	"gokick/app/application/bus"
 	"gokick/app/domain/shared"
+	"gokick/app/presentation/http/request"
 	"gokick/app/presentation/http/response"
 )
 
@@ -68,7 +68,7 @@ type loginResponse struct {
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var body loginRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := request.DecodeJSON(w, r, &body); err != nil {
 		response.Error(w, http.StatusBadRequest, err)
 
 		return

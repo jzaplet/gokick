@@ -13,7 +13,20 @@ import (
 	"gokick/app/presentation/http/middleware"
 )
 
-const shutdownGracePeriod = 30 * time.Second
+const (
+	shutdownGracePeriod = 30 * time.Second
+
+	// Conservative defaults that protect against Slowloris and oversized
+	// header attacks without being so tight that legitimate slow clients
+	// (mobile networks, large form posts) get cut off. Tune via constants
+	// if your traffic profile differs — they're not environment-driven on
+	// purpose, since the values should not vary per deployment.
+	readHeaderTimeout = 10 * time.Second
+	readTimeout       = 30 * time.Second
+	writeTimeout      = 30 * time.Second
+	idleTimeout       = 60 * time.Second
+	maxHeaderBytes    = 1 << 16 // 64 KiB
+)
 
 type Server struct {
 	config     *config.Config
@@ -59,7 +72,15 @@ func (s *Server) Start(ctx context.Context) error {
 	s.logger.Info("server: starting", "addr", addr)
 	return runWithShutdown(
 		ctx,
-		&http.Server{Addr: addr, Handler: chain},
+		&http.Server{
+			Addr:              addr,
+			Handler:           chain,
+			ReadHeaderTimeout: readHeaderTimeout,
+			ReadTimeout:       readTimeout,
+			WriteTimeout:      writeTimeout,
+			IdleTimeout:       idleTimeout,
+			MaxHeaderBytes:    maxHeaderBytes,
+		},
 		s.logger,
 		shutdownGracePeriod,
 	)

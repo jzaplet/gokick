@@ -68,6 +68,8 @@ components:
     in: presentation/http/handler/**
   http_middleware:
     in: presentation/http/middleware/**
+  request:
+    in: presentation/http/request/**
   response:
     in: presentation/http/response/**
   server:
@@ -147,8 +149,11 @@ deps:
     mayDependOn:
       - application
       - bus
+      - request
       - response
       - testfx
+  request:
+    anyVendorDeps: true
   http_middleware:
     mayDependOn:
       - security
