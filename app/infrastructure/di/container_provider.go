@@ -17,6 +17,7 @@ import (
 	"gokick/app/domain/user"
 	"gokick/app/infrastructure/config"
 	"gokick/app/infrastructure/database"
+	"gokick/app/infrastructure/scheduler"
 	"gokick/app/infrastructure/security"
 	"gokick/app/infrastructure/sqlite"
 	sqlitetoken "gokick/app/infrastructure/sqlite/token"
@@ -29,6 +30,7 @@ import (
 	"log/slog"
 
 	"github.com/google/wire"
+	"time"
 )
 
 func providePasswordHasher() shared.PasswordHasher {
@@ -73,6 +75,19 @@ func provideCookieSecure(cfg *config.Config) handler.CookieSecure {
 	return handler.CookieSecure(cfg.CookieSecure)
 }
 
+// provideScheduler wires the in-process job scheduler. Add a new Job to the
+// slice for every periodic task (cron-like); the scheduler runs each in its
+// own goroutine and drains them on ctx cancel.
+func provideScheduler(logger *slog.Logger, tokens token.TokenRepository) (*scheduler.Scheduler, error) {
+	return scheduler.NewScheduler(logger, []scheduler.Job{
+		{
+			Name:     "cleanup:expired-refresh-tokens",
+			Interval: 1 * time.Hour,
+			Fn:       tokens.DeleteExpired,
+		},
+	})
+}
+
 // providePermissionsRegistry collects RequiredPermission() values from every
 // command/query handler that is Permissioned. Adding a new handler requires
 // adding it here too — there is no other permission list in the codebase.
@@ -101,6 +116,7 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 		provideQueryBus,
 		provideEventBus,
 		provideCookieSecure,
+		provideScheduler,
 		providePermissionsRegistry,
 		security.NewJwtService,
 		wire.Bind(new(shared.JwtService), new(*security.JwtService)),

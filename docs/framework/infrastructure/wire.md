@@ -37,6 +37,7 @@ app/infrastructure/di/
 |---|---|
 | **Config** | `config.LoadConfig`, `provideCookieSecure` (-> `handler.CookieSecure`) |
 | **Database** | `database.NewSqliteManager`, `database.NewMigrationManager` |
+| **Scheduler** | `provideScheduler` (-> `*scheduler.Scheduler`, registruje cleanup jobs) |
 | **Security** | `security.NewJwtService`, `providePasswordHasher` (-> `shared.PasswordHasher`), `providePermissionChecker` (-> `shared.PermissionChecker`), `providePermissionsRegistry` (-> `*shared.PermissionsRegistry`) |
 | **Bus** | `provideCommandBus`, `provideQueryBus`, `provideEventBus` |
 | **Repositories** | `sqliteuser.NewRepository`, `sqlitetoken.NewRepository`, `sqlite.NewSeeder` |

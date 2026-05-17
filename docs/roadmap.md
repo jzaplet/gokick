@@ -17,7 +17,7 @@ Tento dokument popisuje, co zbývá dořešit, aby byl skeleton připravený pro
 | Fáze | Téma | Stav |
 |---|---|---|
 | [1](#fáze-1--stabilizace-event-flow--shutdown) | Stabilizace event flow & graceful shutdown | **Hotovo** |
-| [2](#fáze-2--in-process-scheduler) | In-process scheduler (cron-like) | Plánováno |
+| [2](#fáze-2--in-process-scheduler) | In-process scheduler (cron-like) | **Hotovo** |
 | [3](#fáze-3--perzistentní-job-queue-sqlite) | Perzistentní job queue (SQLite) + worker | Plánováno |
 | [4](#fáze-4--hardening) | Rate limiting, audit log, brute-force protection | Plánováno |
 | [5](#fáze-5--observability) | Sentry, strukturované slog atributy, OpenTelemetry | Plánováno |
@@ -75,30 +75,49 @@ Než šlo přidat jakýkoli background pattern (scheduler, worker), musel být s
 
 ## Fáze 2 — In-process scheduler
 
-Cron-like spouštění periodických úkolů uvnitř `serve` procesu. Žádný externí cron, žádný DB-backed scheduler — jen goroutina s tickerem registrovaná z DI. První konkrétní uživatel: cleanup expirovaných `refresh_tokens` (`token.TokenRepository.DeleteExpired` už v doméně existuje, jen ho nikdo nevolá).
+**Stav:** Hotovo (2026-05-17).
 
-### Úkoly
+Cron-like spouštění periodických úkolů uvnitř `serve` procesu. Žádný externí cron, žádný DB-backed scheduler — goroutiny s tickerem registrované přes Wire DI. První konkrétní uživatel: cleanup expirovaných `refresh_tokens`.
 
-- [ ] **`infrastructure/scheduler/scheduler.go`**
-  - API: `Every(interval time.Duration, name string, fn func(ctx context.Context) error)`.
-  - Graceful shutdown přes `ctx.Done()` — propojí se s `ctx` z Fáze 1.
-  - Per-job logging (`name`, `duration`, `error`) přes injektovaný `*slog.Logger`.
-  - Při startu validuje, že žádné dva joby nemají stejný `name`.
+### Co bylo uděláno
 
-- [ ] **Spuštění ze serveru**
-  - V `serve` příkazu (nebo přes `Application.Run`) vytvořit scheduler, registrovat joby a spustit ve své goroutině před `server.Start`.
-  - Při shutdown signal: nejprve scheduler stop, pak HTTP server stop.
+- [x] **`infrastructure/scheduler/scheduler.go`**
+  - API: `NewScheduler(logger, []Job{...})` + `Run(ctx)`. Constructor validuje unikátnost jmen, nenulové intervaly, non-nil Fn.
+  - Per-job goroutina s `time.Ticker` + `select` na `ctx.Done()`.
+  - **Run-once-then-tick** semantika: Fn proběhne ihned po startu, pak periodicky. Garantuje aspoň jeden cleanup za lifetime frekventně restartovaného procesu.
+  - **Panic recovery per-tick**: panicující job se zaloguje a další tick proběhne normálně; sourozenecké joby nejsou ovlivněny.
+  - Error z Fn se loguje, ale tikání pokračuje (idempotentní semantika).
 
-- [ ] **Refresh token cleanup job**
-  - `scheduler.Every(1*time.Hour, "cleanup:expired-refresh-tokens", tokens.DeleteExpired)`.
-  - Tip: rozšířit kritérium v `DeleteExpired` o `used_at < now() - theftWindow` (např. 24h), aby se mazaly i už rotované tokeny po dohrání theft-detection okna.
-  - Dispatch jde mimo `CommandBus` (žádný auth context, žádná transakce nutná — `DELETE` v jedné statement je atomický). Job dostává čistý `context.WithTimeout` z scheduleru.
+- [x] **Lifecycle v `ServeCommand`**
+  - `RunE` spustí `scheduler.Run(ctx)` v goroutině před `server.Start(ctx)`.
+  - Společný `ctx` z `signal.NotifyContext` → SIGTERM drainuje scheduler i server v tandemu.
+  - `schedulerDone` channel garantuje, že `RunE` nevrátí, dokud scheduler nedrainuje.
 
-- [ ] **`.go-arch-lint.yml`** — přidat komponentu `scheduler` (a později `worker` ve Fázi 3). Wildcard `infrastructure/**` neexistuje, každá nová podsložka potřebuje explicitní záznam.
+- [x] **Refresh token cleanup job**
+  - `Name: "cleanup:expired-refresh-tokens"`, `Interval: 1h`, `Fn: tokens.DeleteExpired`.
+  - `DeleteExpired` ponechán beze změny — `WHERE expires_at < datetime('now')`. Rozšíření o `used_at` bylo původně v roadmapě, ale po review zahozeno (used token zůstává v DB do `expires_at` pro theft-detection okno; smazat dřív = ztráta signálu bez bezpečnostního přínosu).
 
-### Definition of Done
-- `make serve`, počkat hodinu, `refresh_tokens` se vyčistí, log obsahuje řádek `scheduler: job completed name=cleanup:expired-refresh-tokens duration=…`.
-- `SIGTERM` ukončí scheduler před HTTP serverem; žádný job se neukončí uprostřed.
+- [x] **`.go-arch-lint.yml`** — přidána komponenta `scheduler` (`infrastructure/scheduler/**`), rozšířen `console.mayDependOn` o `scheduler`.
+
+- [x] **DI** — `provideScheduler(logger, tokens) (*scheduler.Scheduler, error)` v `container_provider.go`. Wire propojí `*Scheduler` → `ServeCommand`. Validation error z constructoru bublí přes `CreateApplication` → fail-fast při startu.
+
+### Regresní testy
+
+`app/infrastructure/scheduler/scheduler_test.go` (7 testů):
+
+- `TestScheduler_RunsAndStops` — krátký interval (10ms) + counter; ověří run-once-then-tick + graceful drain
+- `TestNewScheduler_DuplicateName` — duplicitní jméno → error z constructoru
+- `TestNewScheduler_InvalidJob` — prázdné jméno / nulový interval / nil Fn (3 subtests)
+- `TestScheduler_PanicInOneJobKeepsOthersRunning` — panic v jednom jobu, sourozenecké pokračují
+- `TestScheduler_ErrorReturnedJobKeepsTicking` — error z Fn nezhasí ticker
+- `TestScheduler_ImmediateCancelDoesNotHang` — cancel mezi ticky preempuje ticker
+
+### Definition of Done — splněno
+
+- ✅ `go test -race ./app/...` všech 7 nových testů projde.
+- ✅ `make arch-check` projde s novou `scheduler` komponentou.
+- ✅ `golangci-lint` 0 issues.
+- ✅ Manuální smoke: `make serve` → log `scheduler: starting jobs=1` + `cleanup:expired-refresh-tokens` proběhl 333µs po startu (run-once tick) + `SIGTERM` → `scheduler: stopped` před `server: stopped`, exit 0.
 
 
 ## Fáze 3 — Perzistentní job queue (SQLite)
