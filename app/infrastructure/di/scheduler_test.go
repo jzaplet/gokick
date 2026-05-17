@@ -17,9 +17,9 @@ func (stubTokens) Save(context.Context, *token.RefreshToken) error { return nil 
 func (stubTokens) FindByHash(context.Context, string) (*token.RefreshToken, error) {
 	return nil, nil
 }
-func (stubTokens) MarkUsed(context.Context, string) error       { return nil }
-func (stubTokens) DeleteByUserID(context.Context, string) error { return nil }
-func (stubTokens) DeleteExpired(context.Context) error          { return nil }
+func (stubTokens) MarkUsed(context.Context, string) (bool, error) { return true, nil }
+func (stubTokens) DeleteByUserID(context.Context, string) error   { return nil }
+func (stubTokens) DeleteExpired(context.Context) error            { return nil }
 
 // Catches a "someone added a duplicate name (or invalid interval, or nil Fn)
 // to provideSchedulerJobs" regression at test time instead of at process

@@ -66,10 +66,16 @@ func (h *RefreshTokenHandler) Handle(
 		return LoginResult{}, &shared.AuthError{Message: "user no longer exists"}
 	}
 
-	// Rotate: mark the current token as used (so reuse can be detected),
-	// then issue a fresh pair.
-	if err := h.tokens.MarkUsed(ctx, hash); err != nil {
+	// Rotate: atomically mark the current token as used. If the update
+	// touched 0 rows, a concurrent request rotated it first — treat that
+	// as theft (the raw token is now in two places) and revoke everything.
+	marked, err := h.tokens.MarkUsed(ctx, hash)
+	if err != nil {
 		return LoginResult{}, err
+	}
+	if !marked {
+		_ = h.tokens.DeleteByUserID(ctx, existing.UserID)
+		return LoginResult{}, &shared.AuthError{Message: "refresh token reuse detected"}
 	}
 
 	accessToken, accessExpiresIn, err := h.jwt.GenerateAccessToken(&shared.AuthClaims{

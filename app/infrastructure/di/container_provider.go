@@ -21,8 +21,8 @@ import (
 	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/scheduler"
 	"gokick/app/infrastructure/security"
-	"gokick/app/infrastructure/sqlite"
 	sqlitejob "gokick/app/infrastructure/sqlite/job"
+	sqliteseeder "gokick/app/infrastructure/sqlite/seeder"
 	sqlitetoken "gokick/app/infrastructure/sqlite/token"
 	sqliteuser "gokick/app/infrastructure/sqlite/user"
 	"gokick/app/infrastructure/worker"
@@ -94,6 +94,13 @@ func provideEventBus(logger *slog.Logger, handlers []bus.EventHandlerEntry) *bus
 
 func provideCookieSecure(cfg *config.Config) handler.CookieSecure {
 	return handler.CookieSecure(cfg.CookieSecure)
+}
+
+// provideSeedAdminPassword surfaces the seed admin password as a distinct
+// Wire-bound type so the seeder's constructor can take it without colliding
+// with other strings in the DI graph.
+func provideSeedAdminPassword(cfg *config.Config) sqliteseeder.SeedAdminPassword {
+	return sqliteseeder.SeedAdminPassword(cfg.SeedAdminPassword)
 }
 
 // provideSchedulerJobs is the single source of truth for periodic in-process
@@ -169,6 +176,7 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 		provideEventHandlers,
 		provideEventBus,
 		provideCookieSecure,
+		provideSeedAdminPassword,
 		provideSchedulerJobs,
 		provideScheduler,
 		provideJobHandlerRegistry,
@@ -180,11 +188,11 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 		wire.Bind(new(user.Repository), new(*sqliteuser.Repository)),
 		wire.Bind(new(token.TokenRepository), new(*sqlitetoken.Repository)),
 		wire.Bind(new(job.Repository), new(*sqlitejob.Repository)),
-		wire.Bind(new(shared.Seeder), new(*sqlite.Seeder)),
+		wire.Bind(new(shared.Seeder), new(*sqliteseeder.Seeder)),
 		sqliteuser.NewRepository,
 		sqlitetoken.NewRepository,
 		sqlitejob.NewRepository,
-		sqlite.NewSeeder,
+		sqliteseeder.NewSeeder,
 		authcmd.NewLoginHandler,
 		authcmd.NewRefreshTokenHandler,
 		authcmd.NewLogoutHandler,

@@ -22,8 +22,7 @@ import Toast from './Toast.vue';
             :type="toast.type"
             @close="remove(toast)"
         >
-            <!-- eslint-disable-next-line vue/no-v-html -- Toast messages are internal, not user-generated -->
-            <div v-html="toast.message" />
+            <div>{{ toast.message }}</div>
         </Toast>
     </TransitionGroup>
 </template>

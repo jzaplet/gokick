@@ -24,8 +24,8 @@ import (
 	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/scheduler"
 	"gokick/app/infrastructure/security"
-	"gokick/app/infrastructure/sqlite"
 	"gokick/app/infrastructure/sqlite/job"
+	"gokick/app/infrastructure/sqlite/seeder"
 	"gokick/app/infrastructure/sqlite/token"
 	"gokick/app/infrastructure/sqlite/user"
 	"gokick/app/infrastructure/worker"
@@ -95,8 +95,9 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 	}
 	worker := provideWorker(logger, repository, handlerRegistry, sqliteManager, jobDispatcher)
 	serveCommand := console.NewServeCommand(serverServer, scheduler, worker)
-	seeder := sqlite.NewSeeder(userRepository, passwordHasher, logger)
-	seedCommand := console.NewSeedCommand(seeder)
+	seedAdminPassword := provideSeedAdminPassword(configConfig)
+	seederSeeder := seeder.NewSeeder(userRepository, passwordHasher, seedAdminPassword, logger)
+	seedCommand := console.NewSeedCommand(seederSeeder)
 	createUserCommand := console.NewCreateUserCommand(createUserHandler)
 	workerCommand := console.NewWorkerCommand(worker)
 	rootCommand := console.NewRootCommand(serveCommand, seedCommand, createUserCommand, workerCommand)
@@ -155,6 +156,13 @@ func provideEventBus(logger *slog.Logger, handlers []bus.EventHandlerEntry) *bus
 
 func provideCookieSecure(cfg *config.Config) handler.CookieSecure {
 	return handler.CookieSecure(cfg.CookieSecure)
+}
+
+// provideSeedAdminPassword surfaces the seed admin password as a distinct
+// Wire-bound type so the seeder's constructor can take it without colliding
+// with other strings in the DI graph.
+func provideSeedAdminPassword(cfg *config.Config) seeder.SeedAdminPassword {
+	return seeder.SeedAdminPassword(cfg.SeedAdminPassword)
 }
 
 // provideSchedulerJobs is the single source of truth for periodic in-process
