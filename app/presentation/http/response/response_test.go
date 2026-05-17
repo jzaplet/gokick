@@ -13,8 +13,8 @@ type fakeHTTPErr struct {
 	status int
 }
 
-func (e *fakeHTTPErr) Error() string    { return e.msg }
-func (e *fakeHTTPErr) HTTPStatus() int  { return e.status }
+func (e *fakeHTTPErr) Error() string   { return e.msg }
+func (e *fakeHTTPErr) HTTPStatus() int { return e.status }
 
 func TestHandleError_HTTPErrorPropagatesStatusAndMessage(t *testing.T) {
 	rec := httptest.NewRecorder()

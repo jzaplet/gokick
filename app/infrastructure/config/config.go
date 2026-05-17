@@ -44,7 +44,7 @@ func LoadConfig() (*Config, error) {
 		SeedAdminPassword: os.Getenv("APP_SEED_ADMIN_PASSWORD"),
 		TrustProxyHeaders: getEnv("APP_TRUST_PROXY_HEADERS", "false") == "true",
 		RateLimitLogin:    getEnv("APP_RATE_LIMIT_LOGIN", "10/min"),
-		RateLimitRefresh: getEnv("APP_RATE_LIMIT_REFRESH", "60/min"),
+		RateLimitRefresh:  getEnv("APP_RATE_LIMIT_REFRESH", "60/min"),
 	}
 
 	var err error
