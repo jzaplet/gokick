@@ -14,6 +14,9 @@ exclude:
 
 excludeFiles:
   - infrastructure/database/migration_manager.go
+  # External `_test` package self-imports the production package for
+  # NewSeeder / SeedAdminPassword — arch-lint flags this as a cycle.
+  - infrastructure/sqlite/seeder/seeder_test.go
 
 commonComponents:
   - domain
@@ -49,7 +52,12 @@ components:
   sqlite_base:
     in: infrastructure/sqlite
   sqlite_repos:
-    in: infrastructure/sqlite/**
+    in:
+      - infrastructure/sqlite/job/**
+      - infrastructure/sqlite/token/**
+      - infrastructure/sqlite/user/**
+  sqlite_seeder:
+    in: infrastructure/sqlite/seeder/**
   scheduler:
     in: infrastructure/scheduler/**
   worker:
@@ -120,6 +128,10 @@ deps:
   sqlite_repos:
     mayDependOn:
       - sqlite_base
+      - database
+      - testfx
+  sqlite_seeder:
+    mayDependOn:
       - database
       - testfx
   scheduler:
