@@ -150,7 +150,7 @@ bus.Exec[[]user.User](ctx, h.queryBus.Bus, "ListUsers", q, func(ctx context.Cont
 | Package | Purpose |
 |---------|---------|
 | `config/` | `LoadConfig()` from `.env` via godotenv → `*Config` struct |
-| `database/` | `SqliteManager` (connection, WAL, foreign keys), `MigrationManager` (Goose), transaction context (`BeginTx`/`Commit`/`Rollback`) |
+| `database/` | `SqliteManager` (connection, WAL, `_txlock=immediate`, `busy_timeout`, `foreign_keys` via DSN), `MigrationManager` (Goose), transaction context (`BeginTx`/`Commit`/`Rollback`) |
 | `sqlite/` | `BaseRepository` (embed in repos for transparent tx support via `r.Conn(ctx)`) |
 | `sqlite/user/` | `user.Repository` implementation (incl. `RecordFailedLogin` / `ResetFailedLogin`, raw-pool on purpose) |
 | `sqlite/token/` | `token.TokenRepository` implementation |

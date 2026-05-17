@@ -29,7 +29,12 @@ func (m *SqliteManager) DB() *sqlx.DB
 func (m *SqliteManager) Close() error
 ```
 
-Při vytvoření nastavuje WAL mode a foreign keys. Implementuje `shared.Transactor` interface (duck typing) -- používá ho `TransactionMiddleware`.
+Při vytvoření otevírá pool s DSN `file:<path>?_txlock=immediate&_pragma=busy_timeout(5000)&_pragma=foreign_keys(on)` a separátně zapne `PRAGMA journal_mode=WAL|DELETE|MEMORY` (whitelistované přes `APP_DB_JOURNAL_MODE`). Implementuje `shared.Transactor` interface (duck typing) -- používá ho `TransactionMiddleware`.
+
+- `_txlock=immediate` -- každý `BeginTx` startuje jako `BEGIN IMMEDIATE`, ne deferred. Bus handler typicky čte (`FindBy…`) → CPU drží (např. bcrypt 200 ms) → zapisuje (`Save`). Pod default deferred-tx by mezitím commitnutý sourozenec writer (worker poll, scheduler) zneplatnil read snapshot a follow-up zápis by selhal okamžitě jako `SQLITE_BUSY_SNAPSHOT` (busy_timeout to nepokrývá, je to fatal-to-tx). IMMEDIATE bere write lock už při BEGIN -- snapshot zůstává validní celou dobu handleru.
+- `busy_timeout(5000)` -- překryvy mezi worker/scheduler writy a user requestem serializují čekáním až 5 s místo "database is locked".
+- `foreign_keys(on)` v DSN, ne jako `PRAGMA exec` -- FK je per-connection v SQLite a `db.Exec("PRAGMA foreign_keys=ON")` by ho zapnul jen na jedné poolované konexi. DSN zaručuje, že každá nově otevřená conn FK má.
+- `file:` prefix je u ncruces driveru povinný -- bez něj query string ignoruje.
 
 Transakce v contextu:
 
@@ -141,7 +146,11 @@ wire.Bind(new(user.Repository), new(*sqliteuser.Repository))
 
 ## Detaily
 
-- SQLite je nastaven na WAL mode a foreign keys enabled.
+- SQLite je nastaven na WAL + `_txlock=immediate` + `busy_timeout(5000)` + `foreign_keys(on)` (viz `SqliteManager` výše).
 - Repozitáře používají `sqlx` named queries (`NamedExecContext`) -- mapují struct fields přímo na SQL.
-- Všechny repozitáře volají `r.Conn(ctx)` -- nikdy přímo `r.DB.DB()`. Tím je zaručena transparentní účast v transakci.
-- Aktuální repozitáře: `sqlite/user/` (`user.Repository`), `sqlite/token/` (`token.TokenRepository`).
+- Repozitáře volají `r.Conn(ctx)` -- nikdy přímo `r.DB.DB()`. Tím je zaručena transparentní účast v transakci. **Výjimka:** zápisy, které MUSÍ přežít rollback obklopující bus tx, vědomě jdou raw poolem (`r.DB.DB()`):
+  - `user.Repository.RecordFailedLogin` / `ResetFailedLogin` -- bruteforce counter nesmí být shozen rollbackem failed-login handleru.
+  - `audit.Repository.Save` -- security audit trail musí persistovat i u neúspěšných commandů (Audit middleware proto sedí mimo Transaction middleware).
+  Žádné jiné repo legitimně raw pool nepoužívá; každá výjimka má komentář u metody s důvodem.
+- Aktuální repozitáře: `sqlite/user/` (`user.Repository`), `sqlite/token/` (`token.TokenRepository`), `sqlite/job/` (`job.Repository`), `sqlite/audit/` (`shared.AuditLogger`), `sqlite/seeder/` (`shared.Seeder`).
+- `sqlite/job/` má dvě precision-citlivá specifika u srovnání času: (1) SQL používá `julianday(...)` ne `strftime('%f', ...)` -- strftime na ms zaokrouhluje round-half-up, takže Go time s µs ≥ 500 by skončilo o ms napřed proti `'now'`; (2) `Enqueue`/`Reschedule` truncate `run_at` na `UTC + ms` přes `msPrecisionUTC` -- ncruces WASM `'now'` trailí Go `time.Now()` o ~1 ms a bez zarovnání na společnou precizi `ClaimDue` nahodile čerstvě enqueueovaný řádek nevidí.
