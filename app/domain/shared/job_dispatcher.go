@@ -19,7 +19,13 @@ import (
 // atomically. From an event handler (post-commit) or CLI, the enqueue runs
 // in its own statement.
 type JobDispatcher interface {
-	Enqueue(ctx context.Context, kind string, maxRetries int, payload any, opts ...EnqueueOption) error
+	Enqueue(
+		ctx context.Context,
+		kind string,
+		maxRetries int,
+		payload any,
+		opts ...EnqueueOption,
+	) error
 }
 
 type EnqueueOptions struct {
@@ -56,4 +62,3 @@ type noopJobDispatcher struct{}
 func (noopJobDispatcher) Enqueue(context.Context, string, int, any, ...EnqueueOption) error {
 	return nil
 }
-
