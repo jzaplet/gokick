@@ -64,11 +64,13 @@ func provideJobHandlerRegistry(welcome *jobcmd.SendWelcomeHandler) (*jobapp.Hand
 
 ### 3. Enqueue z command handleru
 
+`Enqueue` má povinné `maxAttempts` jako poziční parametr -- žádný magický default. Hodnotu volíš per kind: `1` pro send-once side effect (welcome mail, audit log), víc pro flaky věci (externí API s občasným timeoutem).
+
 ```go
 if err := h.users.Save(ctx, u); err != nil {
     return err
 }
-return shared.JobDispatcherFromContext(ctx).Enqueue(ctx, "welcome:send", WelcomePayload{
+return shared.JobDispatcherFromContext(ctx).Enqueue(ctx, "welcome:send", 1, WelcomePayload{
     UserID: u.ID, Email: u.Email,
 })
 ```
@@ -93,7 +95,7 @@ Hotovo. SMTP nefunguje? Worker to za 5s zkusí znovu, pak 10, 20, 40 ... po pět
 | Co | Kde | Default | Jak změnit |
 |---|---|---|---|
 | Které kindy worker zná | `provideJobHandlerRegistry()` v `container_provider.go` | prázdná mapa | Přidej `kind → handler.Handle` entry |
-| `max_attempts` per enqueue | `shared.WithMaxAttempts(n)` při `Enqueue` | `1` (one shot, žádný retry) | `disp.Enqueue(ctx, kind, payload, shared.WithMaxAttempts(5))` -- volíš to per kind, ne magická hodnota napříč |
-| Odložené spuštění | `shared.WithDelay(d)` při `Enqueue` | spustit ihned | `disp.Enqueue(..., shared.WithDelay(time.Hour))` |
+| `maxAttempts` | Povinný poziční parametr `Enqueue` | bez defaultu (musíš zvolit) | `disp.Enqueue(ctx, "welcome:send", 1, payload)` -- `1` = one shot, vyšší pro flaky externí volání |
+| Odložené spuštění | `shared.WithDelay(d)` při `Enqueue` | spustit ihned | `disp.Enqueue(ctx, kind, 1, payload, shared.WithDelay(time.Hour))` |
 | Worker concurrency | `provideWorker` v `container_provider.go` | `1` | Zvyš parametr (pozor na SQLite serializaci) |
 | Poll interval / backoff / lock timeout | Konstanty ve `infrastructure/worker/worker.go` | `1s` / `5s base, 1h cap` / `5min` | Pro reálné nasazení vytáhni do configu |
