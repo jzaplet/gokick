@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Guides:** [Authentication](docs/guides/auth.md), [Permissions](docs/guides/permissions.md), [Forms & Validation](docs/guides/forms.md), [Frontend Utils](docs/guides/frontend-utils.md)
 - **Overview:** [Architecture](docs/framework/overview/architecture.md), [Layers](docs/framework/overview/layers.md), [Dev Stack](docs/framework/overview/dev-stack.md)
 - **Domain:** [Entity & Value Objects](docs/framework/domain/entities.md), [Interfaces](docs/framework/domain/interfaces.md), [Errors & Events](docs/framework/domain/errors-events.md)
-- **Application:** [Bus](docs/framework/application/bus.md), [Commands](docs/framework/application/commands.md), [Queries](docs/framework/application/queries.md), [Event Handlers](docs/framework/application/events.md)
+- **Application:** [Bus](docs/framework/application/bus.md), [Commands](docs/framework/application/commands.md), [Queries](docs/framework/application/queries.md), [Event Handlers](docs/framework/application/events.md), [Audit Log](docs/framework/application/audit.md)
 - **Infrastructure:** [Wire DI](docs/framework/infrastructure/wire.md), [Database](docs/framework/infrastructure/database.md), [Security](docs/framework/infrastructure/security.md), [Config](docs/framework/infrastructure/config.md), [Scheduler](docs/framework/infrastructure/scheduler.md), [Job Queue](docs/framework/infrastructure/job-queue.md)
 - **Presentation:** [Handlers & Middleware](docs/framework/presentation/http-handlers.md), [HTTP Server](docs/framework/presentation/http-server.md), [Console](docs/framework/presentation/console.md)
 
@@ -51,7 +51,7 @@ go test ./app/infrastructure/security/ -run TestHash  # Single Go test
 
 ### Environment
 
-Copy `.env.example` to `.env`. Key vars: `APP_HTTP_PORT`, `APP_DB_PATH`, `APP_JWT_SECRET`, `APP_CORS_ORIGIN`, `APP_JWT_ACCESS_EXPIRATION`, `APP_JWT_REFRESH_EXPIRATION`, `APP_COOKIE_SECURE`. Full reference: [Config](docs/framework/infrastructure/config.md).
+Copy `.env.example` to `.env`. Key vars: `APP_HTTP_PORT`, `APP_DB_PATH`, `APP_JWT_SECRET` (≥ 32 chars), `APP_CORS_ORIGIN`, `APP_JWT_ACCESS_EXPIRATION`, `APP_JWT_REFRESH_EXPIRATION`, `APP_COOKIE_SECURE`, `APP_SEED_ADMIN_PASSWORD` (required by `./bin/app seed`), `APP_TRUST_PROXY_HEADERS` (flip to `true` only behind a trusted reverse proxy — flips IP source for rate limit + audit), `APP_RATE_LIMIT_LOGIN`, `APP_RATE_LIMIT_REFRESH`. Full reference: [Config](docs/framework/infrastructure/config.md).
 
 ## Architecture
 
@@ -80,7 +80,7 @@ Bounded contexts in separate packages. **Never import between contexts** (e.g. `
 
 | Package | Contains |
 |---------|----------|
-| `domain/shared/` | `AuthClaims`, `ValidationError`, `AuthError`, `PermissionError`, `DomainEvent`, `EventCollector`, `PermissionsRegistry`, interfaces (`PasswordHasher`, `PermissionChecker`, `JwtService`, `Transactor`, `Seeder`) |
+| `domain/shared/` | `AuthClaims`, `ValidationError`, `AuthError`, `PermissionError`, `DomainEvent`, `EventCollector`, `AuditCollector` + `AuditEvent` / `AuditRecord`, `PermissionsRegistry`, interfaces (`PasswordHasher`, `PermissionChecker`, `JwtService`, `Transactor`, `Seeder`, `AuditLogger`, `JobDispatcher`) |
 | `domain/user/` | `User` entity, `Nickname`/`Role` value objects, `Repository` interface, `UserCreated` event |
 | `domain/token/` | `RefreshToken` entity, `TokenRepository` interface |
 | `domain/job/` | `Job` entity, `Repository` interface — persistent background work queue |
@@ -98,9 +98,11 @@ CQRS with three bus types, each with its own middleware chain:
 
 | Bus | Chain | Use |
 |-----|-------|-----|
-| `CommandBus` | Recovery → Logging → Authorize → DispatchEvents → Transaction | Write operations |
+| `CommandBus` | Recovery → Logging → Authorize → Audit → JobDispatcher → DispatchEvents → Transaction | Write operations |
 | `QueryBus` | Recovery → Logging → Authorize | Read operations |
 | `EventBus` | Recovery → Logging | Side-effects after commit |
+
+**Audit middleware lives OUTSIDE Transaction** so security-relevant events (login_failed, account_locked, theft_detected) persist even when the business tx rolls back. Audit write failures are logged but never propagated to the caller.
 
 **Command pattern** (`application/command/`):
 ```go
@@ -149,9 +151,12 @@ bus.Exec[[]user.User](ctx, h.queryBus.Bus, "ListUsers", q, func(ctx context.Cont
 |---------|---------|
 | `config/` | `LoadConfig()` from `.env` via godotenv → `*Config` struct |
 | `database/` | `SqliteManager` (connection, WAL, foreign keys), `MigrationManager` (Goose), transaction context (`BeginTx`/`Commit`/`Rollback`) |
-| `sqlite/` | `BaseRepository` (embed in repos for transparent tx support via `r.Conn(ctx)`), `Seeder` |
-| `sqlite/user/` | `user.Repository` implementation |
+| `sqlite/` | `BaseRepository` (embed in repos for transparent tx support via `r.Conn(ctx)`) |
+| `sqlite/user/` | `user.Repository` implementation (incl. `RecordFailedLogin` / `ResetFailedLogin`, raw-pool on purpose) |
 | `sqlite/token/` | `token.TokenRepository` implementation |
+| `sqlite/job/` | `job.Repository` implementation |
+| `sqlite/audit/` | `shared.AuditLogger` implementation (raw-pool — survives business rollback) |
+| `sqlite/seeder/` | `shared.Seeder` implementation (`SeedAdminPassword` Wire-distinct type) |
 | `security/` | `JwtService` (HS256 access + crypto/rand refresh), `PasswordHasher` (SHA-256 prehash + bcrypt), `PermissionChecker` |
 | `di/` | Wire compile-time DI. `container_provider.go` (wireinject tag) + generated `wire_gen.go` |
 
@@ -298,8 +303,9 @@ No changes needed in `.go-arch-lint.yml` — wildcards (`domain/**`, `command/**
 
 - **Domain interfaces only.** Command/query handlers, seeders, and CLI commands depend on domain interfaces (`user.Repository`, `shared.Seeder`), never on concrete infrastructure types (`*sqliteuser.Repository`, `*sqlite.Seeder`).
 - **Bus dispatch required.** All commands/queries go through the bus — never call handlers directly from HTTP handlers. The bus provides recovery, logging, authorization, transactions, and event dispatch.
-- **`r.Conn(ctx)` in repositories.** Always use `r.Conn(ctx)` (from embedded `BaseRepository`), never `r.DB.DB()` directly. This ensures transparent transaction participation.
+- **`r.Conn(ctx)` in repositories.** Always use `r.Conn(ctx)` (from embedded `BaseRepository`), never `r.DB.DB()` directly. This ensures transparent transaction participation. **Exception:** writes that MUST persist even when the surrounding bus tx rolls back — `user.Repository.RecordFailedLogin/ResetFailedLogin` and `audit.Repository.Save` — use `r.DB.DB()` on purpose. These are the only legitimate raw-pool callers; document the reason in the method comment.
 - **Permission declaration.** Every command/query must declare permissions. Forgetting both `Permissioned` and `SkipPermission` is a runtime error.
 - **Events use primitives.** Domain events carry only primitive types (string IDs, timestamps), never entities or value objects.
 - **No cross-context imports.** Bounded contexts (`domain/user/`, `domain/token/`) are isolated. Shared types live in `domain/shared/`.
+- **Audit events for security-relevant work.** Handlers that mutate auth state or user records call `shared.AuditCollectorFromContext(ctx).Record(...)`. The collector returns a throwaway when no bus is active (CLI bypass), so the call is always safe. Action names follow the dotted convention `domain.event` (`auth.login.failed`, `user.role_changed`, etc.).
 - **No hard-coded permissions on the frontend.** Every permission reference in `assets/` goes through the `Permission` enum in `assets/app/Auth/enums/resources.ts`. String literals like `'admin:users:read'` in `.vue` / `.ts` files are forbidden.
