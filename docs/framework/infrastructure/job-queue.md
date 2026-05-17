@@ -6,67 +6,94 @@ slug: 'framework-infrastructure-job-queue'
 parent: 'framework-infrastructure'
 navTitle: 'Job Queue'
 title: 'Job Queue'
-description: 'Perzistentní job queue v SQLite -- background práce co musí přežít restart, mark-complete-in-handler-tx.'
+description: 'Perzistentní fronta pro background práci -- jak rozjet úlohu, která musí proběhnout i když proces mezitím spadne.'
 ---
 
 # Job Queue
 
 
-## Proč
+## K čemu ti to je
 
-Background práce, která **musí přežít restart procesu nebo crash**: odesílání emailů, externí API volání, retry-prone I/O. Pro periodické maintenance bez perzistence patří úloha do [Scheduleru](/framework/infrastructure/scheduler).
+[Events](/framework/application/events) řeší synchronní reakci v request goroutině -- skvělé pro rychlé side-effects. Pomalý handler ale prodlouží HTTP response a SIGTERM mu uřízne inflight práci. Pro odeslání emailu přes SMTP, volání externího API nebo cokoli retry-prone potřebuješ **perzistenci**.
 
-Tři kontrakty:
+Job Queue je SQLite tabulka `jobs`. Command handler zavolá `Enqueue("welcome:send", payload)` -- zapíše se řádek **ve stejné transakci** jako business write. Worker (goroutina nebo samostatný `./bin/app worker` proces) si ho vyzvedne a zavolá handler. Když spadne, retry s exponential backoff. Když crashne celý proces, restart pokračuje tam, kde skončil.
 
-1. **Atomicita business write + enqueue.** Command handler může zapsat uživatele a zaregistrovat welcome job ve stejné transakci.
-2. **At-least-once delivery.** Handler může běžet víc než jednou (crash, commit failure). Handlery musí být idempotentní pro **externí** side effects.
-3. **Mark-complete v handler's tx.** Handler success + MarkComplete commitují atomicky; handler-fail rollbackne i handler's DB writes. Žádné částečné stavy.
+Tři garance:
+
+1. **Atomicita business write + enqueue.** Uložení uživatele a enqueue welcome jobu jdou v jedné DB transakci. Buď obojí, nebo nic.
+2. **At-least-once delivery.** Job proběhne minimálně jednou. Handler musí být idempotentní pro **externí** side effects (poslat dva maily je špatně).
+3. **Mark-complete v handlerově tx.** "Job hotový" se zapíše ve stejné transakci jako handler's DB writes. Handler-fail = celá tx rollback, žádné částečné stavy.
 
 
-## Jak
+## Krok za krokem
 
-Tři komponenty:
+Scénář: po `CreateUser` poslat welcome email přes SMTP (pomalé, může selhat).
 
-| Vrstva | Soubor | Co dělá |
-|---|---|---|
-| `job.Repository` | `domain/job/`, `infrastructure/sqlite/job/` | Atomický `UPDATE … RETURNING` claim, MarkComplete, Reschedule, MarkFailed |
-| `shared.JobDispatcher` | `domain/shared/job_dispatcher.go` + `application/job/dispatcher.go` | Enqueue z handleru přes ctx (`JobDispatcherFromContext`) |
-| `worker.Worker` | `infrastructure/worker/worker.go` | Pool goroutin, claim, run-in-tx, mark-complete, backoff |
+### 1. Handler funkce
 
-### Enqueue z command handleru
-
-`JobDispatcherMiddleware` vloží dispatcher do ctx ještě před `TransactionMiddleware`, takže `Enqueue` se připojí do business transakce — buď oboje commitne, nebo nic.
+`application/user/job/send_welcome.go`:
 
 ```go
-func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) error {
-    if err := h.users.Save(ctx, u); err != nil {
+type WelcomePayload struct {
+    UserID string `json:"user_id"`
+    Email  string `json:"email"`
+}
+
+func (h *SendWelcomeHandler) Handle(ctx context.Context, payload []byte) error {
+    var p WelcomePayload
+    if err := json.Unmarshal(payload, &p); err != nil {
         return err
     }
-    return shared.JobDispatcherFromContext(ctx).Enqueue(ctx, "welcome:send", map[string]string{
-        "user_id": u.ID,
+    return h.mailer.Send(p.Email, "Welcome!", /* ... */)
+}
+```
+
+Vrátí error → worker zařadí retry. Vrátí nil → job complete.
+
+### 2. Zaregistruj v `provideJobHandlerRegistry`
+
+`infrastructure/di/container_provider.go` -- stejný pattern jako [events](/framework/application/events) a [scheduler](/framework/infrastructure/scheduler):
+
+```go
+func provideJobHandlerRegistry(welcome *jobcmd.SendWelcomeHandler) (*jobapp.HandlerRegistry, error) {
+    return jobapp.NewHandlerRegistry(map[string]jobapp.HandlerFunc{
+        "welcome:send": welcome.Handle,
     })
 }
 ```
 
-### Registrace handleru
+### 3. Enqueue z command handleru
 
-`provideJobHandlerRegistry` v `infrastructure/di/container_provider.go` — analogie [`providePermissionsRegistry`](/guides/permissions). Worker odmítne enqueue neznámého kindu, neznámý kind v DB → `MarkFailed` (žádný retry).
+```go
+if err := h.users.Save(ctx, u); err != nil {
+    return err
+}
+return shared.JobDispatcherFromContext(ctx).Enqueue(ctx, "welcome:send", WelcomePayload{
+    UserID: u.ID, Email: u.Email,
+})
+```
 
-### Worker flow
+Dispatcher zkontroluje, že kind je v registru (chytíš překlep v testu, ne v produkci), payload zapíše do `jobs` -- ve stejné transakci jako `users.Save` výše.
 
-1. **Claim** — atomický `UPDATE jobs SET locked_until=…, attempts=attempts+1 … RETURNING *` (skip locked + completed + failed; oldest first).
-2. **BeginTx** + injekt dispatcher do ctx (handler může enqueueovat další joby).
-3. **handler(txCtx, payload)** — payload je raw JSON bytes; handler si unmarshaluje.
-4. Success → `MarkComplete` v stejné tx → `Commit` (atomický business write + completion).
-5. Failure / panic → `Rollback` (zahodí handler's DB writes) → `Reschedule` s exponential backoff (`2^(attempts-1) * 5s`, cap 1h), nebo `MarkFailed` po vyčerpání `max_attempts`.
+### 4. `make di`
 
-`ServeCommand` spouští worker in-process spolu se schedulerem a serverem; samostatný `./bin/app worker` proces dělá totéž bez HTTP.
+Hotovo. SMTP nefunguje? Worker to za 5s zkusí znovu, pak 10, 20, 40 ... po pěti pokusech označí `failed` (řádek zůstane pro debug).
 
 
-## Detaily
+## Co se ti hodí vědět
 
-- **Mark-complete-in-tx rationale.** Alternativa „mark complete po commitu" otevírá okno crash → duplicate side effect. Náš pattern: handler authors přemýšlejí o idempotenci jen pro *externí* side effects (HTTP, mail), DB writes jsou bezpečně rollbackovatelné.
-- **SQLite concurrency.** Default `concurrency=1`. WAL = jeden writer napříč celou DB; víc workerů nezvýší throughput DB-bound handlerů. Bumpnout, jen pokud handlery jsou I/O-bound mimo SQLite.
-- **`datetime()` wrap.** Go `time.Time` se ukládá s TZ offsetem (`+02:00`), SQLite `datetime('now')` vrací UTC bez TZ. Claim a další porovnání wrappují obě strany v `datetime(...)` aby SQLite normalizovala. Stejný fix byl aplikován na `token.DeleteExpired` (byl no-op v produkci).
-- **No-op dispatcher mimo bus.** `JobDispatcherFromContext` vrací silent dispatcher pokud middleware ctx nepřipravil (CLI bypass, testy bez bus) — handler nikdy nil-checkuje, ale eventy se zahodí.
-- **Žádný cascade z event handleru.** Event handler může `Enqueue` (dispatcher je v ctx), ale nesmí volat `EventCollectorFromContext.Collect` (viz [Events](/framework/application/events)).
+- **Mark-complete v handlerově tx.** Bez toho by crash mezi handler-commit a mark-complete způsobil duplicate side effect. Náš pattern: handler authors přemýšlejí o idempotenci jen pro **externí** side effects -- DB writes se rollbacknou společně s "job hotový" flagem.
+- **Default 1 worker.** SQLite serializuje writery (WAL: jeden writer na celou DB). Víc workerů nezvýší throughput DB-bound handlerů. Bumpnout má smysl, jen když jsou handlery I/O-bound mimo SQLite.
+- **Standalone `./bin/app worker` proces** spustí jen worker bez HTTP serveru -- vhodné pro split deploy (1× serve + N× worker, sdílená SQLite).
+- **Cascade jobs OK, cascade events ne.** Job handler může enqueueovat další jobs (`JobDispatcher` je v ctx). Ale **nesmí** volat `EventCollectorFromContext.Collect(...)` -- to funguje jen v request goroutině.
+
+
+## Co lze nastavit
+
+| Co | Kde | Default | Jak změnit |
+|---|---|---|---|
+| Které kindy worker zná | `provideJobHandlerRegistry()` v `container_provider.go` | prázdná mapa | Přidej `kind → handler.Handle` entry |
+| `max_attempts` per enqueue | `shared.WithMaxAttempts(n)` při `Enqueue` | `5` | `disp.Enqueue(ctx, kind, payload, shared.WithMaxAttempts(10))` |
+| Odložené spuštění | `shared.WithDelay(d)` při `Enqueue` | spustit ihned | `disp.Enqueue(..., shared.WithDelay(time.Hour))` |
+| Worker concurrency | `provideWorker` v `container_provider.go` | `1` | Zvyš parametr (pozor na SQLite serializaci) |
+| Poll interval / backoff / lock timeout | Konstanty ve `infrastructure/worker/worker.go` | `1s` / `5s base, 1h cap` / `5min` | Pro reálné nasazení vytáhni do configu |
