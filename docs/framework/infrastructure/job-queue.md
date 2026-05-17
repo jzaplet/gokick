@@ -69,4 +69,4 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
 - **SQLite concurrency.** Default `concurrency=1`. WAL = jeden writer napříč celou DB; víc workerů nezvýší throughput DB-bound handlerů. Bumpnout, jen pokud handlery jsou I/O-bound mimo SQLite.
 - **`datetime()` wrap.** Go `time.Time` se ukládá s TZ offsetem (`+02:00`), SQLite `datetime('now')` vrací UTC bez TZ. Claim a další porovnání wrappují obě strany v `datetime(...)` aby SQLite normalizovala. Stejný fix byl aplikován na `token.DeleteExpired` (byl no-op v produkci).
 - **No-op dispatcher mimo bus.** `JobDispatcherFromContext` vrací silent dispatcher pokud middleware ctx nepřipravil (CLI bypass, testy bez bus) — handler nikdy nil-checkuje, ale eventy se zahodí.
-- **Žádný cascade z event handleru.** Event handler může `Enqueue` (dispatcher je v ctx), ale nesmí volat `EventCollectorFromContext.Collect` (viz [Event Flow](/framework/application/event-flow)).
+- **Žádný cascade z event handleru.** Event handler může `Enqueue` (dispatcher je v ctx), ale nesmí volat `EventCollectorFromContext.Collect` (viz [Events](/framework/application/events)).
