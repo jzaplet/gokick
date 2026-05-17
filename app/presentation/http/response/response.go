@@ -44,10 +44,10 @@ func Error(w http.ResponseWriter, status int, err error) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-// genericInternalError is returned to the client on any non-HTTPError so we
-// don't leak raw repo errors, panic messages, or other internals. Operators
-// can correlate the real error via the trace_id surfaced in logs.
-var genericInternalError = errors.New("internal server error")
+// errInternal is returned to the client on any non-HTTPError so we don't
+// leak raw repo errors, panic messages, or other internals. Operators can
+// correlate the real error via the trace_id surfaced in logs.
+var errInternal = errors.New("internal server error")
 
 func HandleError(w http.ResponseWriter, err error) {
 	var httpErr HTTPError
@@ -55,5 +55,5 @@ func HandleError(w http.ResponseWriter, err error) {
 		Error(w, httpErr.HTTPStatus(), err)
 		return
 	}
-	Error(w, http.StatusInternalServerError, genericInternalError)
+	Error(w, http.StatusInternalServerError, errInternal)
 }
