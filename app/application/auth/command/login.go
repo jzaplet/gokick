@@ -39,6 +39,16 @@ type LoginHandler struct {
 // value here is irrelevant, only the cost-12 bcrypt comparison time is.
 const dummyPasswordPlaceholder = "TIMING-PLACEHOLDER-NOT-A-REAL-PASSWORD"
 
+// Brute-force lock thresholds. Hardcoded rather than env-driven because
+// the right values are well-known and tuning them per-deployment hides
+// the protection in config rather than in the code. Adjust here if a
+// future deployment has a strong reason to differ.
+const (
+	loginLockThreshold = 5
+	loginLockWindow    = 10 * time.Minute
+	loginLockDuration  = 15 * time.Minute
+)
+
 func NewLoginHandler(
 	users user.Repository,
 	tokens token.TokenRepository,
@@ -72,19 +82,44 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (LoginResul
 	}
 
 	// Always call Verify so an attacker timing the response can't tell
-	// whether the nickname existed: the user-not-found branch verifies
-	// against a startup-precomputed dummy hash, matching the bcrypt
-	// cost of the user-found branch. The boolean below collapses both
-	// outcomes into one neutral AuthError after the work is done.
+	// whether the nickname existed OR whether the account is locked:
+	// every branch pays the bcrypt cost on a real hash. Decisions
+	// below collapse all failure modes into one neutral AuthError.
 	hash := h.dummyHash
 	if u != nil {
 		hash = u.PasswordHash
 	}
 	verifyErr := h.password.Verify(cmd.Password, hash)
 
+	// Lock check happens AFTER Verify so timing stays uniform across
+	// "locked", "wrong password", and "unknown user" — without this,
+	// a locked-account response would skip Verify and become measurably
+	// faster, leaking lock state.
+	locked := u != nil && u.LockedUntil.Valid && time.Now().Before(u.LockedUntil.Time)
+
 	if u == nil || verifyErr != nil {
+		// Bad credentials for a known user → bump the brute-force
+		// counter. Skip the bump while the account is already locked
+		// so attempts during the cooldown don't keep extending it.
+		if u != nil && !locked {
+			_, _ = h.users.RecordFailedLogin(
+				ctx, u.ID, loginLockThreshold, loginLockWindow, loginLockDuration,
+			)
+		}
 		return LoginResult{}, &shared.AuthError{Message: "invalid credentials"}
 	}
+
+	if locked {
+		// Correct password but account is in cooldown — still a
+		// neutral error so the response shape doesn't reveal whether
+		// the password was right.
+		return LoginResult{}, &shared.AuthError{Message: "invalid credentials"}
+	}
+
+	// Successful login → clear the counter so the next failure cycle
+	// starts fresh. Best-effort; a transient DB error here shouldn't
+	// block an otherwise-valid login.
+	_ = h.users.ResetFailedLogin(ctx, u.ID)
 
 	accessToken, accessExpiresIn, err := h.jwt.GenerateAccessToken(&shared.AuthClaims{
 		UserID:   u.ID,
