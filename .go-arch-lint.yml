@@ -20,6 +20,9 @@ excludeFiles:
   # Same self-import quirk: audit/repository_test.go is `package audit_test`
   # importing the audit package to construct *Repository directly.
   - infrastructure/sqlite/audit/repository_test.go
+  # Same self-import quirk: sqlite_manager_test.go is `package database_test`
+  # importing the database package to drive *SqliteManager from a black-box test.
+  - infrastructure/database/sqlite_manager_test.go
 
 commonComponents:
   - domain
