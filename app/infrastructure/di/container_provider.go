@@ -123,7 +123,10 @@ func provideJobHandlerRegistry() (*jobapp.HandlerRegistry, error) {
 // provideJobDispatcher returns the dispatcher as a domain interface so command
 // handlers and event handlers depend on shared.JobDispatcher, not on the
 // concrete application-layer type.
-func provideJobDispatcher(repo job.Repository, registry *jobapp.HandlerRegistry) shared.JobDispatcher {
+func provideJobDispatcher(
+	repo job.Repository,
+	registry *jobapp.HandlerRegistry,
+) shared.JobDispatcher {
 	return jobapp.NewDispatcher(repo, registry)
 }
 

@@ -121,7 +121,11 @@ func (w *Worker) processOne(ctx context.Context, slot int) {
 // the same transaction before commit. Handler failure rolls back the entire
 // transaction (including any DB writes the handler made), so the job stays
 // claimable for retry without partial state lingering.
-func (w *Worker) runWithinTx(ctx context.Context, j *job.Job, handler jobapp.HandlerFunc) (err error) {
+func (w *Worker) runWithinTx(
+	ctx context.Context,
+	j *job.Job,
+	handler jobapp.HandlerFunc,
+) (err error) {
 	txCtx, err := w.tx.BeginTx(ctx)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)

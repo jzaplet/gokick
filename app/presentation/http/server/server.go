@@ -57,7 +57,12 @@ func (s *Server) Start(ctx context.Context) error {
 
 	addr := ":" + s.config.HTTPPort
 	s.logger.Info("server: starting", "addr", addr)
-	return runWithShutdown(ctx, &http.Server{Addr: addr, Handler: chain}, s.logger, shutdownGracePeriod)
+	return runWithShutdown(
+		ctx,
+		&http.Server{Addr: addr, Handler: chain},
+		s.logger,
+		shutdownGracePeriod,
+	)
 }
 
 // runWithShutdown runs srv.ListenAndServe in a goroutine and waits for ctx

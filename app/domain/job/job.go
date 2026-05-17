@@ -18,8 +18,8 @@ type Job struct {
 	Kind        string     `db:"kind"`
 	Payload     []byte     `db:"payload"`
 	RunAt       time.Time  `db:"run_at"`
-	Attempts    int        `db:"attempts"`     // 0-based count of how many times claim has run this job
-	MaxRetries  int        `db:"max_retries"`  // 0 = no retry, just the first attempt; N = up to N retries after the first failure
+	Attempts    int        `db:"attempts"`    // 0-based count of how many times claim has run this job
+	MaxRetries  int        `db:"max_retries"` // 0 = no retry, just the first attempt; N = up to N retries after the first failure
 	LockedUntil *time.Time `db:"locked_until"`
 	LastError   *string    `db:"last_error"`
 	FailedAt    *time.Time `db:"failed_at"`

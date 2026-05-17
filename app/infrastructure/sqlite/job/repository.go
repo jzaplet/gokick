@@ -67,7 +67,12 @@ func (r *Repository) MarkComplete(ctx context.Context, id string) error {
 	return err
 }
 
-func (r *Repository) Reschedule(ctx context.Context, id string, runAt time.Time, lastErr string) error {
+func (r *Repository) Reschedule(
+	ctx context.Context,
+	id string,
+	runAt time.Time,
+	lastErr string,
+) error {
 	_, err := r.Conn(ctx).ExecContext(ctx,
 		`UPDATE jobs SET run_at = ?, last_error = ?, locked_until = NULL WHERE id = ?`,
 		runAt, lastErr, id)

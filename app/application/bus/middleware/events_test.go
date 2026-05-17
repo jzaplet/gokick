@@ -66,15 +66,21 @@ func TestDispatchEventsMiddleware_PerRequestIsolation(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			cmd := noopCommand{dispatchID: i}
-			err := bus.ExecVoid(context.Background(), commandBus.Bus, "Noop", cmd, func(ctx context.Context) error {
-				// Tiny stagger to maximise interleaving across dispatches.
-				time.Sleep(time.Duration(i%5) * time.Microsecond)
-				shared.EventCollectorFromContext(ctx).Collect(testEvent{
-					dispatchID: cmd.dispatchID,
-					at:         time.Now(),
-				})
-				return nil
-			})
+			err := bus.ExecVoid(
+				context.Background(),
+				commandBus.Bus,
+				"Noop",
+				cmd,
+				func(ctx context.Context) error {
+					// Tiny stagger to maximise interleaving across dispatches.
+					time.Sleep(time.Duration(i%5) * time.Microsecond)
+					shared.EventCollectorFromContext(ctx).Collect(testEvent{
+						dispatchID: cmd.dispatchID,
+						at:         time.Now(),
+					})
+					return nil
+				},
+			)
 			if err != nil {
 				atomic.AddInt32(&mismatch, 1)
 			}
@@ -89,11 +95,19 @@ func TestDispatchEventsMiddleware_PerRequestIsolation(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	if got := len(seen); got != dispatches {
-		t.Fatalf("seen distinct dispatchIDs: got %d want %d (cross-contamination dropped some events)", got, dispatches)
+		t.Fatalf(
+			"seen distinct dispatchIDs: got %d want %d (cross-contamination dropped some events)",
+			got,
+			dispatches,
+		)
 	}
 	for id, count := range seen {
 		if count != 1 {
-			t.Fatalf("dispatchID=%d delivered %d times (want exactly 1) — collector leaked between dispatches", id, count)
+			t.Fatalf(
+				"dispatchID=%d delivered %d times (want exactly 1) — collector leaked between dispatches",
+				id,
+				count,
+			)
 		}
 	}
 }

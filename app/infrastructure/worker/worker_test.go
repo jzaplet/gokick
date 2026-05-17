@@ -211,7 +211,10 @@ func TestWorker_RetriesRespectMaxRetriesBoundary(t *testing.T) {
 
 	gotAtBoundary, _ := fx.Jobs.FindByID(context.Background(), atBoundary.ID)
 	if gotAtBoundary.FailedAt != nil {
-		t.Fatalf("atBoundary (attempts=2, maxRetries=2) must reschedule, not fail; FailedAt=%v", gotAtBoundary.FailedAt)
+		t.Fatalf(
+			"atBoundary (attempts=2, maxRetries=2) must reschedule, not fail; FailedAt=%v",
+			gotAtBoundary.FailedAt,
+		)
 	}
 	if gotAtBoundary.Attempts != 2 {
 		t.Fatalf("atBoundary attempts: got %d want 2", gotAtBoundary.Attempts)
@@ -268,7 +271,8 @@ func TestWorker_HandlerCallingCollectPanics(t *testing.T) {
 	runOnce(t, w)
 
 	got, _ := fx.Jobs.FindByID(context.Background(), j.ID)
-	if got.LastError == nil || !strings.Contains(*got.LastError, "Collect called from an event/job handler") {
+	if got.LastError == nil ||
+		!strings.Contains(*got.LastError, "Collect called from an event/job handler") {
 		t.Fatalf("expected LastError mentioning forbidden Collect, got %v", got.LastError)
 	}
 }

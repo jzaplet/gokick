@@ -35,7 +35,11 @@ func NewScheduler(logger *slog.Logger, jobs []Job) (*Scheduler, error) {
 			return nil, fmt.Errorf("scheduler: job name is required")
 		}
 		if j.Interval <= 0 {
-			return nil, fmt.Errorf("scheduler: job %q has non-positive interval %s", j.Name, j.Interval)
+			return nil, fmt.Errorf(
+				"scheduler: job %q has non-positive interval %s",
+				j.Name,
+				j.Interval,
+			)
 		}
 		if j.Fn == nil {
 			return nil, fmt.Errorf("scheduler: job %q has nil Fn", j.Name)
