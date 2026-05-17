@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"gokick/app/application/bus"
 	"gokick/app/domain/shared"
 	"gokick/app/internal/testfx"
 )
@@ -215,7 +214,7 @@ func TestLoginHandler_DoesNotDeadlockUnderCommandBus(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := bus.Exec(ctx, cmdBus.Bus, "Login",
+		_, err := testfx.ExecCommand(ctx, cmdBus, "Login",
 			LoginCommand{Nickname: "jana", Password: "secret123"},
 			func(ctx context.Context) (LoginResult, error) {
 				return handler.Handle(ctx, LoginCommand{Nickname: "jana", Password: "secret123"})
