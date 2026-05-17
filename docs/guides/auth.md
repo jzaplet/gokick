@@ -79,6 +79,39 @@ hasAnyPermission(['admin:users:read', 'admin:users:create']);  // stačí jedna
 Kompletní přehled všech `useAuth()` metod viz [Frontend Utils – useAuth](/guides/frontend-utils#useauth).
 
 
+## Rate limiting
+
+Per-IP token bucket na auth endpointech. Defaultně `10/min` na `/login` a `60/min` na `/refresh`. Při překročení vrátí backend `429 Too Many Requests` s `Retry-After` headerem.
+
+| Env | Default | Význam |
+|---|---|---|
+| `APP_RATE_LIMIT_LOGIN` | `10/min` | Per-IP bucket pro `/api/v1/auth/login`. Formát: `N/sec`, `N/min`, `N/hour` nebo `N/Xs|Xm|Xh`. Prázdná hodnota = vypnuto. |
+| `APP_RATE_LIMIT_REFRESH` | `60/min` | Stejný formát pro `/api/v1/auth/refresh`. |
+| `APP_TRUST_PROXY_HEADERS` | `false` | Když `true`, IP se čte z `X-Real-IP` (nutné za reverse proxy, která hlavičku přepisuje). Defaultně `RemoteAddr`. **Pozor:** zapni jen tehdy, pokud proxy hlavičku skutečně přepisuje — jinak ji může spoofnout libovolný klient a obejít limit. |
+
+Buckety jsou per-IP a per-endpoint. Janitor v Go goroutině uklízí idle buckety (≥ 5 min) aby paměť nerostla pod stuffing útokem.
+
+
+## Brute-force ochrana
+
+Doplněk k rate limitingu — chrání i tehdy, když útočník rotuje přes mnoho IP adres. Po **5 failed login attempts uvnitř 10minutového okna** se účet zamkne na **15 minut**. Locked účet s **správným** heslem vrátí stejnou neutrální chybu `invalid credentials` — response nikde neprozradí, zda byl problém v hesle nebo v locku.
+
+Stav žije na `users` řádku:
+
+| Sloupec | Význam |
+|---|---|
+| `failed_login_attempts` | Aktuální počítadlo. Reset na 0 po úspěšném loginu **nebo** po dosažení threshold (lock se aktivuje, počítadlo se vynuluje). |
+| `last_failed_login_at` | Poslední neúspěch — slouží k window check. |
+| `locked_until` | Pokud `!= NULL` a v budoucnosti, accept attempts jsou no-op + audit `auth.login.blocked_while_locked` (počítadlo se nezvyšuje, lock se neprodlužuje). |
+
+Implementační detail: counter update běží **mimo** business transakci (přes raw connection pool), aby přežil rollback způsobený AuthError, který handler na konci vrátí. Jediný SQL `UPDATE ... CASE` rozhoduje atomicky o resetu / inkrementu / locku — žádný read-modify-write race.
+
+
+## Audit log
+
+Každý security-relevantní krok (úspěšný/neúspěšný login, lock, theft, change password, CRUD na uživatelích) padá do append-only tabulky `audit_log`. Detaily a integration pattern: viz [Audit log](/framework/application/audit).
+
+
 ## Session lifecycle
 
 1. **Otevření / hard refresh stránky** → `assets/app.ts:bootstrap()` zavolá `refresh()` ještě před mountem routeru. Pokud je refresh cookie platná, session se obnoví seamless (nový access token + populace `user` state). Když cookie chybí nebo je neplatná, `refresh()` tiše selže a route guard pošle chráněné routy na `/login`.

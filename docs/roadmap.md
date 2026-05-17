@@ -19,7 +19,7 @@ Tento dokument popisuje, co zbývá dořešit, aby byl skeleton připravený pro
 | [1](#fáze-1--stabilizace-event-flow--shutdown) | Stabilizace event flow & graceful shutdown | **Hotovo** |
 | [2](#fáze-2--in-process-scheduler) | In-process scheduler (cron-like) | **Hotovo** |
 | [3](#fáze-3--perzistentní-job-queue-sqlite) | Perzistentní job queue (SQLite) + worker | **Hotovo** |
-| [4](#fáze-4--hardening) | Rate limiting, audit log, brute-force protection | Plánováno |
+| [4](#fáze-4--hardening) | Rate limiting, audit log, brute-force protection | **Hotovo** |
 | [5](#fáze-5--observability) | Sentry, strukturované slog atributy, OpenTelemetry | Plánováno |
 
 Fáze 1–3 řeší **background work** — jejich pořadí je závazné, každá další staví na předchozí (graceful shutdown z F1 je prerekvizita scheduleru z F2, scheduler je prerekvizita worker poolingu v F3). Fáze 4 a 5 jsou nezávislé a lze je řadit podle priority.
@@ -167,31 +167,82 @@ Práce, která **musí přežít restart procesu nebo crash**: odesílání emai
 
 ## Fáze 4 — Hardening
 
-Nezávislé bezpečnostní zpevnění. Lze řadit/odsunout podle priority projektu.
+**Stav:** Hotovo (2026-05-17).
 
-### Úkoly
+Před přidáním nových funkcí proběhl důkladný bezpečnostní audit, který odhalil tři exploitovatelné vady a sedm hardening položek nad rámec původně plánovaných tří F4 témat. Vše do jednoho PR rozděleného na šest commitů (audit fix → critical → hardening → rate limit → brute-force → audit log → polish).
 
-- [ ] **Rate limiting na auth endpointech**
-  - Token bucket nebo sliding window per IP (extrahované z `X-Forwarded-For` při běhu za reverse proxy).
-  - Primárně `POST /api/v1/auth/login` a `POST /api/v1/auth/refresh`.
-  - Implementace: middleware v `presentation/http/middleware/ratelimit.go`, in-memory (sync.Map + bucket struct) — pro single-binary dostačuje. Při multi-replica setupu pozdější přechod na Redis nebo SQLite-backed counter.
-  - Konfigurace: `APP_RATE_LIMIT_LOGIN=10/min`, `APP_RATE_LIMIT_REFRESH=60/min`.
+### Klíčová rozhodnutí
 
-- [ ] **Audit log**
-  - Nová tabulka `audit_log` (`id`, `actor_user_id`, `actor_ip`, `action`, `target_type`, `target_id`, `metadata` JSON, `created_at`).
-  - Append-only — žádné `UPDATE`/`DELETE`.
-  - Sběr v command handlerech přes nový `domain/shared/audit.go AuditLogger` interface (analogie `EventCollector`, ale flush mimo transakci, aby selhání auditu neshodilo command).
-  - Příklady událostí: login success/failure, role change, user delete, password change, refresh token theft detection.
-  - Užitečné jak pro compliance, tak pro debugging incidentů.
+| Otázka | Volba |
+|---|---|
+| **XFF trust pro rate limit** | Žádný XFF parsing. Default `RemoteAddr`; `APP_TRUST_PROXY_HEADERS=true` opt-in čte `X-Real-IP`. XFF + spoof bypass je footgun, ne feature. |
+| **Audit middleware umístění** | Outside `Transaction` i `DispatchEvents`. Flushuje **i na error** (login_failed musí persistovat při AuthError). Audit-write failure se loguje, ale nepropaguje. |
+| **Brute-force vs login timing** | Vždy `Verify` (proti dummy hashi pokud user nebo lock) → pak větvení. Lock check **po** Verify, jinak by čas odpovědi prozradil lock state. |
+| **Atomic failed-login counter** | Single `UPDATE` s vnořeným `CASE` — žádný read-modify-write race. Counter reset na 0 po locku; reset window 10 min. |
+| **Lock policy** | 5 failed/10min ⇒ lock 15min. Útoky na locked účet nezvyšují counter (no-op + audit). |
+| **CSRF token endpoint** | Vynecháno dle dohody — `http.CrossOriginProtection` (Go 1.25) stačí pro same-site. |
 
-- [ ] **Brute-force ochrana přes account lock**
-  - Doplněk k rate limitingu — 5 failed login attempts za 10 min ⇒ account lock na 15 min.
-  - Sloupec `users.locked_until` (`DATETIME NULL`), počítadlo `failed_login_attempts` (INTEGER) reset na úspěšný login.
-  - `LoginHandler` po failed pokusu inkrementuje, po locked-out vrací neutrální chybu (neprozrazuje, že je účet zamčený).
+### Co bylo uděláno
 
-- [ ] **CSRF token endpoint (volitelně)**
-  - Dnes `http.CrossOriginProtection` (Go 1.25 stdlib) řeší same-site případ.
-  - Až by SPA běžela na jiném originu, doplnit double-submit cookie pattern: endpoint `GET /api/v1/csrf` vrací token, frontend ho posílá v `X-CSRF-Token` hlavičce, server porovnává s cookie hodnotou.
+- [x] **Kritické fixy z auditu**
+  - **XSS přes `ToastContainer.vue v-html`** — odstranění `v-html`, render přes `{{ }}`.
+  - **Refresh-token race** — `MarkUsed` nově `UPDATE ... WHERE token_hash=? AND used_at IS NULL` + `RowsAffected==1` guard; loser → theft detection.
+  - **Default admin seed pwd** — vyžaduje `APP_SEED_ADMIN_PASSWORD` validovaný přes `user.NewPassword`; seeder přesunut do `infrastructure/sqlite/seeder/`.
+
+- [x] **HTTP boundary hardening**
+  - `http.Server` timeouty (ReadHeader/Read/Write/Idle) + `MaxHeaderBytes 64 KiB`.
+  - Nový `presentation/http/request` package: `DecodeJSON` aplikuje `MaxBytesReader 1 MiB` + `DisallowUnknownFields`; všechny handlery přepnuty.
+  - `response.HandleError` vrací generic `"internal server error"` pro non-HTTPError (žádný leak DB/panic stringů).
+  - `TraceMiddleware` validuje inbound `X-Trace-Id` (regex `[A-Za-z0-9_-]{8,64}`) — blokuje log injection + spoofing.
+  - `LoginHandler` precomputuje dummy bcrypt hash při startu a vždy `Verify` (nelze časem zjistit existenci uživatele ani lock state).
+  - `NewJwtService` odmítá `APP_JWT_SECRET` kratší než 32 znaků (RFC 7518).
+  - `UpdateUserHandler` blokuje self-demote z admin role (mirror existující `DeleteUser` self-lockout guardu).
+
+- [x] **Rate limiting**
+  - `presentation/http/middleware/ratelimit.go`: per-IP token bucket, background janitor drop idle ≥ 5min.
+  - Defaults `APP_RATE_LIMIT_LOGIN=10/min`, `APP_RATE_LIMIT_REFRESH=60/min`. Parse: `N/sec|min|hour|Xs|Xm|Xh`; empty = disabled.
+  - `IPExtractor` sdílen s audit IP middleware — flip `APP_TRUST_PROXY_HEADERS` mění oba.
+
+- [x] **Brute-force account lock**
+  - Migration `20260517000002_add_user_lock_columns.sql` (`failed_login_attempts INTEGER`, `last_failed_login_at DATETIME`, `locked_until DATETIME`).
+  - `user.Repository.RecordFailedLogin` / `ResetFailedLogin` — single atomic SQL UPDATE, **outside** caller's tx (counter musí přežít AuthError rollback).
+  - `LoginHandler`: po Verify větví. Lock check po Verify → konstantní čas. Locked attempty = no-op + audit `auth.login.blocked_while_locked`.
+
+- [x] **Audit log**
+  - Migration `20260517000003_create_audit_log.sql` (append-only `audit_log` s `actor_user_id`, `actor_ip`, `action`, `target_*`, JSON `metadata`).
+  - `domain/shared/audit.go`: `AuditEvent`, `AuditCollector` (mutex-safe), `AuditLogger` port, `ContextWithActorIP` helpers.
+  - `application/bus/middleware/audit.go`: wraps outside Transaction; flushuje regardless of err přes `context.WithoutCancel`. Write failure se loguje, ne propaguje.
+  - `infrastructure/sqlite/audit/repository.go`: `r.DB.DB()` (raw pool, mimo business tx).
+  - `presentation/http/middleware/ip.go`: stash IP do ctx pro audit.
+  - Handler integrace: `auth.login.{succeeded,failed,blocked_while_locked}`, `auth.account.locked`, `auth.token.theft_detected` (2 reasons), `user.{created,role_changed,deleted}`, `user.password_changed`.
+
+- [x] **Polish**
+  - CORS přidá `Vary: Origin` (shared cache safety).
+  - `SqliteManager` whitelistuje `APP_DB_JOURNAL_MODE` na `WAL|DELETE|MEMORY`.
+  - `clearRefreshCookie` kombinuje `MaxAge=-1` + `Expires=epoch` (legacy fallback).
+
+- [x] **Bonus mimo audit**: opraven flaky `TestDispatcher_WithDelay` ve F3 — `ClaimDue` používá `strftime('%Y-%m-%d %H:%M:%f', ...)` místo `datetime()` (subsekundová precizita).
+
+### Regresní testy
+
+- `app/presentation/http/request/decode_test.go` — body size, unknown fields, trailing JSON
+- `app/presentation/http/response/response_test.go` — generic 500 sanitization
+- `app/presentation/http/middleware/trace_test.go` — log injection rejection
+- `app/presentation/http/middleware/ratelimit_test.go` — parse, bucket allow/refill, sweep, 429+Retry-After, IP extractor matrix
+- `app/infrastructure/sqlite/user/repository_test.go` — RecordFailedLogin (increment, threshold, window), ResetFailedLogin
+- `app/infrastructure/sqlite/token/repository_test.go` — `MarkUsed` race guard
+- `app/infrastructure/sqlite/audit/repository_test.go` — Save persistence
+- `app/infrastructure/sqlite/seeder/seeder_test.go` — required password validation
+- `app/domain/shared/audit_test.go` — collector concurrency, throwaway fallback
+- `app/application/bus/middleware/audit_test.go` — flush on err, actor/IP stamping, persist failure swallowed
+- `app/application/auth/command/login_test.go` — brute-force lock + audit recording (login.succeeded, login.failed, account.locked)
+- `app/application/user/command/update_user_test.go` — self-demote blocked
+
+### Definition of Done — splněno
+
+- ✅ `go test -race ./app/... ./cmd/...` všech nových + existujících testů projde
+- ✅ `make arch-check` projde s novou komponentou `sqlite_seeder`, `sqlite_audit` (oba `sqlite/**`), `request`
+- ✅ Manuální smoke: `make serve` + curl proti `/auth/login` s 11 wrong passwords → 11. 429 + Retry-After; po 10 valid attempts → po 5 failed `auth.account.locked` row v `audit_log`.
 
 
 ## Fáze 5 — Observability
