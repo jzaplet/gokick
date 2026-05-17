@@ -101,6 +101,23 @@ func (f *Fixture) NewBuses() (*bus.CommandBus, *bus.QueryBus, *bus.EventBus) {
 		eventBus
 }
 
+// ExecCommand dispatches cmd through cmdBus to handlerFn and returns the
+// handler's typed result. Use this in handler tests that need the full
+// middleware chain (tx, audit, events, …) wrapped around a call —
+// importing `application/bus` directly from a handler package would
+// violate the arch-lint rule that `application` components depend on
+// `bus_middleware` only, not the bus itself. testfx is the sanctioned
+// escape hatch (it already wires the bus for fixtures).
+func ExecCommand[R any](
+	ctx context.Context,
+	cmdBus *bus.CommandBus,
+	name string,
+	cmd any,
+	handlerFn func(ctx context.Context) (R, error),
+) (R, error) {
+	return bus.Exec(ctx, cmdBus.Bus, name, cmd, handlerFn)
+}
+
 // NewJwt returns a JwtService configured with the given access expiration.
 // Use when a test needs only JWT (no DB) or a non-default access expiry
 // (e.g. negative duration for expired-token scenarios).
