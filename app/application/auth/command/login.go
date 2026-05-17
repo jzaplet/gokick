@@ -18,6 +18,14 @@ type LoginCommand struct {
 
 func (LoginCommand) SkipPermissionCheck() {}
 
+// SkipTransaction keeps LoginCommand out of the bus-managed tx. The
+// handler touches user.RecordFailedLogin / ResetFailedLogin (raw pool)
+// — wrapping the whole thing in a write tx would self-deadlock under
+// SQLite (raw-pool write waits for the tx this handler hasn't
+// returned from). The handler's own writes are single-statement and
+// safe to auto-commit individually.
+func (LoginCommand) SkipTransaction() {}
+
 type LoginResult struct {
 	User             user.User
 	AccessToken      string
