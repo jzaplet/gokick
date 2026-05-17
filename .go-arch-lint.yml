@@ -53,6 +53,7 @@ components:
     in: infrastructure/sqlite
   sqlite_repos:
     in:
+      - infrastructure/sqlite/audit/**
       - infrastructure/sqlite/job/**
       - infrastructure/sqlite/token/**
       - infrastructure/sqlite/user/**

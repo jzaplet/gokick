@@ -82,5 +82,12 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
 		Timestamp: time.Now(),
 	})
 
+	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
+		Action:     "user.created",
+		TargetType: "user",
+		TargetID:   u.ID,
+		Metadata:   map[string]any{"role": u.Role},
+	})
+
 	return nil
 }

@@ -49,10 +49,18 @@ func (h *RefreshTokenHandler) Handle(
 		return LoginResult{}, &shared.AuthError{Message: "invalid refresh token"}
 	}
 
+	audit := shared.AuditCollectorFromContext(ctx)
+
 	// Theft detection: a token that was already rotated is being presented again.
 	// Assume credentials are compromised and log the user out on all devices.
 	if existing.UsedAt != nil {
 		_ = h.tokens.DeleteByUserID(ctx, existing.UserID)
+		audit.Record(shared.AuditEvent{
+			Action:     "auth.token.theft_detected",
+			TargetType: "user",
+			TargetID:   existing.UserID,
+			Metadata:   map[string]any{"reason": "reused_after_rotation"},
+		})
 		return LoginResult{}, &shared.AuthError{Message: "refresh token reuse detected"}
 	}
 
@@ -75,6 +83,12 @@ func (h *RefreshTokenHandler) Handle(
 	}
 	if !marked {
 		_ = h.tokens.DeleteByUserID(ctx, existing.UserID)
+		audit.Record(shared.AuditEvent{
+			Action:     "auth.token.theft_detected",
+			TargetType: "user",
+			TargetID:   existing.UserID,
+			Metadata:   map[string]any{"reason": "concurrent_rotation_race"},
+		})
 		return LoginResult{}, &shared.AuthError{Message: "refresh token reuse detected"}
 	}
 

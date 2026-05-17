@@ -131,6 +131,72 @@ func TestLoginHandler_LocksAfterFiveFailures(t *testing.T) {
 	fx.AssertTokenCount(t, 0)
 }
 
+// Audit events are recorded into the collector exposed via context.
+// Verifying both the success and the failure path here means the
+// integration with bus middleware is the only remaining wiring concern.
+func TestLoginHandler_RecordsSuccessfulLogin(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_audit_ok.db"))
+	u := fx.SeedUser(t, "gina", "correct-pw", "user")
+
+	collector := &shared.AuditCollector{}
+	ctx = shared.ContextWithAuditCollector(ctx, collector)
+
+	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
+	if _, err := handler.Handle(ctx, LoginCommand{Nickname: "gina", Password: "correct-pw"}); err != nil {
+		t.Fatalf("login: %v", err)
+	}
+
+	events := collector.Drain()
+	if len(events) != 1 || events[0].Action != "auth.login.succeeded" || events[0].TargetID != u.ID {
+		t.Fatalf("expected 1 auth.login.succeeded for %s, got %+v", u.ID, events)
+	}
+}
+
+func TestLoginHandler_RecordsFailedLoginWithNickname(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_audit_fail.db"))
+	fx.SeedUser(t, "henry", "correct-pw", "user")
+
+	collector := &shared.AuditCollector{}
+	ctx = shared.ContextWithAuditCollector(ctx, collector)
+
+	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
+	_, _ = handler.Handle(ctx, LoginCommand{Nickname: "henry", Password: "wrong"})
+
+	events := collector.Drain()
+	if len(events) != 1 || events[0].Action != "auth.login.failed" {
+		t.Fatalf("expected 1 auth.login.failed, got %+v", events)
+	}
+	if events[0].Metadata["nickname"] != "henry" {
+		t.Fatalf("metadata.nickname: %v", events[0].Metadata["nickname"])
+	}
+}
+
+func TestLoginHandler_RecordsAccountLockedWhenThresholdReached(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_audit_lock.db"))
+	fx.SeedUser(t, "ivan", "correct-pw", "user")
+
+	collector := &shared.AuditCollector{}
+	ctx = shared.ContextWithAuditCollector(ctx, collector)
+
+	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
+	for i := 0; i < loginLockThreshold; i++ {
+		_, _ = handler.Handle(ctx, LoginCommand{Nickname: "ivan", Password: "wrong"})
+	}
+
+	var lockEvents int
+	for _, e := range collector.Drain() {
+		if e.Action == "auth.account.locked" {
+			lockEvents++
+		}
+	}
+	if lockEvents != 1 {
+		t.Fatalf("expected exactly 1 auth.account.locked event, got %d", lockEvents)
+	}
+}
+
 // A successful login clears the counter so the next failure cycle
 // starts fresh.
 func TestLoginHandler_SuccessResetsCounter(t *testing.T) {

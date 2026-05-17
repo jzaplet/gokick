@@ -87,10 +87,25 @@ func (h *UpdateUserHandler) Handle(ctx context.Context, cmd UpdateUserCommand) e
 		target.PasswordHash = hash
 	}
 
+	roleChanged := target.Role != string(role)
+
 	target.Nickname = string(nickname)
 	target.Email = string(email)
 	target.Role = string(role)
 	target.UpdatedAt = time.Now()
 
-	return h.users.Update(ctx, target)
+	if err := h.users.Update(ctx, target); err != nil {
+		return err
+	}
+
+	if roleChanged {
+		shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
+			Action:     "user.role_changed",
+			TargetType: "user",
+			TargetID:   target.ID,
+			Metadata:   map[string]any{"new_role": target.Role},
+		})
+	}
+
+	return nil
 }
