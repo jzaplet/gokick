@@ -58,7 +58,8 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 		return nil, err
 	}
 	permissionChecker := providePermissionChecker()
-	eventBus := provideEventBus(logger)
+	v := provideEventHandlers()
+	eventBus := provideEventBus(logger, v)
 	repository := job.NewRepository(sqliteManager)
 	handlerRegistry, err := provideJobHandlerRegistry()
 	if err != nil {
@@ -87,8 +88,8 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 	getAdminDashboardHandler := query3.NewGetAdminDashboardHandler()
 	dashboardHandler := handler.NewDashboardHandler(queryBus, getUserDashboardHandler, getAdminDashboardHandler)
 	serverServer := server.NewServer(configConfig, logger, jwtService, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler)
-	v := provideSchedulerJobs(tokenRepository)
-	scheduler, err := provideScheduler(logger, v)
+	v2 := provideSchedulerJobs(tokenRepository)
+	scheduler, err := provideScheduler(logger, v2)
 	if err != nil {
 		return nil, err
 	}
@@ -137,8 +138,19 @@ func providePublicFS() fs.FS {
 	return public.FS
 }
 
-func provideEventBus(logger *slog.Logger) *bus.EventBus {
-	return bus.NewEventBus(middleware.RecoveryMiddleware(logger), middleware.LoggingMiddleware(logger))
+// provideEventHandlers is the single source of truth for event subscriptions
+// — mirrors providePermissionsRegistry / provideSchedulerJobs. Add a new
+// entry here; provideEventBus wires them up during construction.
+func provideEventHandlers() []bus.EventHandlerEntry {
+	return []bus.EventHandlerEntry{}
+}
+
+func provideEventBus(logger *slog.Logger, handlers []bus.EventHandlerEntry) *bus.EventBus {
+	eb := bus.NewEventBus(middleware.RecoveryMiddleware(logger), middleware.LoggingMiddleware(logger))
+	for _, h := range handlers {
+		eb.Register(h.Event, h.Handler)
+	}
+	return eb
 }
 
 func provideCookieSecure(cfg *config.Config) handler.CookieSecure {

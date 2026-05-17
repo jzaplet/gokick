@@ -72,11 +72,24 @@ func providePublicFS() fs.FS {
 	return public.FS
 }
 
-func provideEventBus(logger *slog.Logger) *bus.EventBus {
-	return bus.NewEventBus(
+// provideEventHandlers is the single source of truth for event subscriptions
+// — mirrors providePermissionsRegistry / provideSchedulerJobs. Add a new
+// entry here; provideEventBus wires them up during construction.
+func provideEventHandlers() []bus.EventHandlerEntry {
+	return []bus.EventHandlerEntry{
+		// {Event: "user.created", Handler: welcomeMailer.Handle},
+	}
+}
+
+func provideEventBus(logger *slog.Logger, handlers []bus.EventHandlerEntry) *bus.EventBus {
+	eb := bus.NewEventBus(
 		busmw.RecoveryMiddleware(logger),
 		busmw.LoggingMiddleware(logger),
 	)
+	for _, h := range handlers {
+		eb.Register(h.Event, h.Handler)
+	}
+	return eb
 }
 
 func provideCookieSecure(cfg *config.Config) handler.CookieSecure {
@@ -150,6 +163,7 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 		providePermissionChecker,
 		provideCommandBus,
 		provideQueryBus,
+		provideEventHandlers,
 		provideEventBus,
 		provideCookieSecure,
 		provideSchedulerJobs,
