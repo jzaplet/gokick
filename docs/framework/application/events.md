@@ -84,7 +84,7 @@ func provideEventHandlers(welcome *eventcmd.SendWelcomeEmailHandler) []bus.Event
 - **Dispatch je synchronní v request goroutině.** Pomalý handler prodlouží HTTP response. Pro odeslání mailu, externí API a podobné věci použij [Job Queue](/framework/infrastructure/job-queue) -- handler tam jen `JobDispatcherFromContext(ctx).Enqueue(...)` a vrátí se hned.
 - **Když handler selže**, command už commitnul -- error se zaloguje, uživatel dostane 200/201. Z handleru nemůžeš odvolat command.
 - **Eventy = primitivy** (`string`, `time.Time`), žádné entity ani VOs. Aby je mohl konzumovat cizí kontext bez importu a aby šly serializovat pro job queue.
-- **Bez kaskády**: event handler nesmí volat `Collect(...)`. Sběrač se flushuje jen jednou. Pro další asynchronní práci sáhni po `JobDispatcher`.
+- **Bez kaskády (strojově vynuceno)**: když event handler zavolá `Collect(...)`, runtime panic s jasnou hláškou. Pro další asynchronní práci použij `JobDispatcher`.
 - **Mimo bus** (CLI `create-user`) vrátí `EventCollectorFromContext` *throwaway* sběrač -- `Collect` projde, ale eventy nikam nejdou. Žádný welcome mail pro seedovaného admina.
 
 

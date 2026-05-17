@@ -85,7 +85,7 @@ Hotovo. SMTP nefunguje? Worker to za 5s zkusí znovu, pak 10, 20, 40 ... po pět
 - **Mark-complete v handlerově tx.** Bez toho by crash mezi handler-commit a mark-complete způsobil duplicate side effect. Náš pattern: handler authors přemýšlejí o idempotenci jen pro **externí** side effects -- DB writes se rollbacknou společně s "job hotový" flagem.
 - **Default 1 worker.** SQLite serializuje writery (WAL: jeden writer na celou DB). Víc workerů nezvýší throughput DB-bound handlerů. Bumpnout má smysl, jen když jsou handlery I/O-bound mimo SQLite.
 - **Standalone `./bin/app worker` proces** spustí jen worker bez HTTP serveru -- vhodné pro split deploy (1× serve + N× worker, sdílená SQLite).
-- **Cascade jobs OK, cascade events ne.** Job handler může enqueueovat další jobs (`JobDispatcher` je v ctx). Ale **nesmí** volat `EventCollectorFromContext.Collect(...)` -- to funguje jen v request goroutině.
+- **Cascade jobs OK, cascade events ne (strojově vynuceno).** Job handler může enqueueovat další jobs (`JobDispatcher` je v ctx). Když ale zavolá `EventCollectorFromContext.Collect(...)`, runtime panic — sběrač eventů se flushuje jen v command request goroutině, ne ve workeru. Worker chybu zachytí, zaloguje, job se reschedule.
 
 
 ## Co lze nastavit
@@ -93,7 +93,7 @@ Hotovo. SMTP nefunguje? Worker to za 5s zkusí znovu, pak 10, 20, 40 ... po pět
 | Co | Kde | Default | Jak změnit |
 |---|---|---|---|
 | Které kindy worker zná | `provideJobHandlerRegistry()` v `container_provider.go` | prázdná mapa | Přidej `kind → handler.Handle` entry |
-| `max_attempts` per enqueue | `shared.WithMaxAttempts(n)` při `Enqueue` | `5` | `disp.Enqueue(ctx, kind, payload, shared.WithMaxAttempts(10))` |
+| `max_attempts` per enqueue | `shared.WithMaxAttempts(n)` při `Enqueue` | `1` (one shot, žádný retry) | `disp.Enqueue(ctx, kind, payload, shared.WithMaxAttempts(5))` -- volíš to per kind, ne magická hodnota napříč |
 | Odložené spuštění | `shared.WithDelay(d)` při `Enqueue` | spustit ihned | `disp.Enqueue(..., shared.WithDelay(time.Hour))` |
 | Worker concurrency | `provideWorker` v `container_provider.go` | `1` | Zvyš parametr (pozor na SQLite serializaci) |
 | Poll interval / backoff / lock timeout | Konstanty ve `infrastructure/worker/worker.go` | `1s` / `5s base, 1h cap` / `5min` | Pro reálné nasazení vytáhni do configu |
