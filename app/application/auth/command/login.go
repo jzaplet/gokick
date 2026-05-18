@@ -108,34 +108,7 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (LoginResul
 	locked := u != nil && u.LockedUntil.Valid && time.Now().Before(u.LockedUntil.Time)
 
 	if u == nil || verifyErr != nil {
-		// Bad credentials for a known user → bump the brute-force
-		// counter. Skip the bump while the account is already locked
-		// so attempts during the cooldown don't keep extending it.
-		failEvent := shared.AuditEvent{
-			Action:   "auth.login.failed",
-			Metadata: map[string]any{"nickname": cmd.Nickname},
-		}
-		if u != nil {
-			failEvent.TargetType = "user"
-			failEvent.TargetID = u.ID
-
-			if !locked {
-				lockedAt, _ := h.users.RecordFailedLogin(
-					ctx, u.ID, loginLockThreshold, loginLockWindow, loginLockDuration,
-				)
-				if lockedAt != nil {
-					audit.Record(shared.AuditEvent{
-						Action:     "auth.account.locked",
-						TargetType: "user",
-						TargetID:   u.ID,
-						Metadata: map[string]any{
-							"locked_until": lockedAt.UTC().Format(time.RFC3339),
-						},
-					})
-				}
-			}
-		}
-		audit.Record(failEvent)
+		h.handleFailedLogin(ctx, audit, cmd.Nickname, u, locked)
 		return LoginResult{}, &shared.AuthError{Message: "invalid credentials"}
 	}
 
@@ -195,4 +168,47 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (LoginResul
 		RefreshToken:     rawRefresh,
 		RefreshExpiresAt: expiresAt,
 	}, nil
+}
+
+// handleFailedLogin records the auth.login.failed event, bumps the
+// brute-force counter for known users (unless already locked), and emits
+// auth.account.locked when this attempt is the one that crosses the
+// threshold. Skips the counter bump during cooldown so repeated attempts
+// against a locked account don't keep extending the lock.
+func (h *LoginHandler) handleFailedLogin(
+	ctx context.Context,
+	audit *shared.AuditCollector,
+	nickname string,
+	u *user.User,
+	locked bool,
+) {
+	failEvent := shared.AuditEvent{
+		Action:   "auth.login.failed",
+		Metadata: map[string]any{"nickname": nickname},
+	}
+	if u != nil {
+		failEvent.TargetType = "user"
+		failEvent.TargetID = u.ID
+	}
+	audit.Record(failEvent)
+
+	if u == nil || locked {
+		return
+	}
+
+	lockedAt, _ := h.users.RecordFailedLogin(
+		ctx, u.ID, loginLockThreshold, loginLockWindow, loginLockDuration,
+	)
+	if lockedAt == nil {
+		return
+	}
+
+	audit.Record(shared.AuditEvent{
+		Action:     "auth.account.locked",
+		TargetType: "user",
+		TargetID:   u.ID,
+		Metadata: map[string]any{
+			"locked_until": lockedAt.UTC().Format(time.RFC3339),
+		},
+	})
 }
