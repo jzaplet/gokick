@@ -15,6 +15,12 @@ GOLANGCI_LINT := $(GOBIN_DIR)/golangci-lint
 GOOSE := $(GOBIN_DIR)/goose
 GO_ARCH_LINT := $(GOBIN_DIR)/go-arch-lint
 
+# Release version stamped into the binary (-X main.release) and the SPA bundle
+# (VITE_SENTRY_RELEASE) — both feed the Sentry release so issues group by
+# deployed version. Derived from the latest git tag locally; CI / the Docker
+# build override it with the release tag. Falls back to the short commit SHA.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null)
+
 # Install
 install: go-deps install-tools fe-deps
 
@@ -30,7 +36,7 @@ install-tools:
 
 # Build — frontend first (Vite → public/), then Go (embeds public/)
 build: di fe-build
-	go build -ldflags="-s -w" -o bin/app ./cmd/
+	go build -ldflags="-s -w -X main.release=$(VERSION)" -o bin/app ./cmd/
 
 # Format — frontend (ESLint Stylistic) + backend (golines) + docs
 format:
@@ -91,7 +97,7 @@ fe-dev:
 	yarn dev
 
 fe-build:
-	yarn build
+	VITE_SENTRY_RELEASE=$(VERSION) yarn build
 
 fe-clean:
 	rm -rf public/assets public/index.html
@@ -107,7 +113,7 @@ arch-check:
 # Production image — multi-stage Dockerfile builds Vite SPA, Go binary, and
 # a minimal Alpine runtime. Self-contained (no `make build` prerequisite).
 docker-build:
-	docker build -f docker/production/Dockerfile -t gokick:latest .
+	docker build --build-arg VERSION=$(VERSION) -f docker/production/Dockerfile -t gokick:latest .
 
 # Documan
 # Each target ensures the container is up (docker compose up -d is idempotent),

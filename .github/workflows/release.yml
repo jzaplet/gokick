@@ -1,0 +1,69 @@
+name: Release
+
+# Builds the production image on a v* tag and stamps the release version (the
+# git tag) into the Go binary (main.release) and the SPA bundle
+# (VITE_SENTRY_RELEASE) → the Sentry release.
+#
+# Pushing to GHCR is OFF by default — gokick is a template and a fork must not
+# auto-publish. To publish, set a repository variable RELEASE_PUSH=true
+# (Settings → Secrets and variables → Actions → Variables). No secret needed:
+# GHCR auth uses the built-in GITHUB_TOKEN. With it unset the job still BUILDS
+# the image (validating the release compiles) but does not push.
+#
+# Note: the first successful push creates the GHCR package PRIVATE by default.
+# If you want anonymous `docker pull` of :latest, flip it to public once in the
+# package settings (Package → Package settings → Change visibility).
+#
+# Tags don't trigger validate.yml, so this re-validates compilation only (the
+# image build runs `go build` + `vite build`). Cut release tags from a green main.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    name: build + push image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Authenticate only when actually pushing.
+      - name: Log in to GHCR
+        if: vars.RELEASE_PUSH == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image tags & labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          # Image tag = the raw git tag (e.g. v1.2.3). type=ref guarantees a tag
+          # even for a non-semver v* tag; type=semver enables `latest=auto`,
+          # which moves :latest only for non-prerelease semver tags.
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern={{raw}}
+          flavor: latest=auto
+
+      - name: Build (push only when RELEASE_PUSH=true)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/production/Dockerfile
+          push: ${{ vars.RELEASE_PUSH == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}

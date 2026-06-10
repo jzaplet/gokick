@@ -25,6 +25,11 @@ COPY assets ./assets
 COPY index.html vite.config.ts tsconfig.json env.d.ts ./
 COPY public/embed.go public/favicon.ico ./public/
 
+# Release version → baked into the SPA bundle as the Sentry release. Empty when
+# not passed (e.g. `make docker-build` without a tag), which Sentry treats as
+# no release. (ARG must be re-declared per stage — a pre-FROM ARG doesn't reach here.)
+ARG VERSION=""
+ENV VITE_SENTRY_RELEASE=${VERSION}
 RUN yarn build
 
 
@@ -33,6 +38,10 @@ RUN yarn build
 ###############################################################################
 FROM golang:1.26-alpine AS backend
 WORKDIR /build
+
+# Release version → stamped into the binary as main.release (the Sentry
+# release). Re-declared here because ARGs don't cross stages.
+ARG VERSION=""
 
 COPY go.mod go.sum ./
 RUN go mod download
@@ -45,7 +54,7 @@ COPY --from=frontend /build/public ./public
 ENV CGO_ENABLED=0 GOOS=linux
 RUN go build \
     -trimpath \
-    -ldflags="-s -w" \
+    -ldflags="-s -w -X main.release=${VERSION}" \
     -o /out/app \
     ./cmd
 
