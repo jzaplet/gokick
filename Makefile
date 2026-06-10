@@ -1,4 +1,4 @@
-.PHONY: install build serve dev di install-tools go-deps lint format test arch-check \
+.PHONY: install build serve dev di install-tools go-deps lint format format-check test arch-check \
         fe-deps fe-dev fe-build fe-clean \
         migrate-create migrate-up migrate-down migrate-status \
         docker-build \
@@ -38,13 +38,26 @@ format:
 	$(GOLINES) -w .
 	$(MAKE) documan-fix
 
-# Lint — frontend (ESLint strict) + backend (golangci-lint + arch rules) + docs
+# Lint — frontend (ESLint strict) + backend (golangci-lint + arch rules +
+# golines format check) + docs
 lint:
 	yarn lint
 	yarn type-check
 	$(GOLANGCI_LINT) run ./app/... ./cmd/...
 	$(MAKE) arch-check
+	$(MAKE) format-check
 	$(MAKE) documan-lint
+
+# Fail if any Go file is not golines-formatted. golines is not covered by
+# golangci-lint, so without this gate `make format` drift slips in unnoticed
+# (it runs only via `make format`, never in CI otherwise). Fix with `make format`.
+format-check:
+	@unformatted="$$($(GOLINES) -l .)"; \
+	if [ -n "$$unformatted" ]; then \
+		echo "golines: the following files are not formatted (run 'make format'):"; \
+		echo "$$unformatted"; \
+		exit 1; \
+	fi
 
 # Development
 dev: di
