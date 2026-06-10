@@ -15,9 +15,14 @@ export const initSentry = (app: App): void => {
         return;
     }
 
+    // Baked in at build time from the git tag (Makefile / Dockerfile). An empty
+    // string would create a bogus empty-named release, so map it to undefined.
+    const release = import.meta.env.VITE_SENTRY_RELEASE;
+
     Sentry.init({
         app,
         dsn,
         environment: import.meta.env.VITE_SENTRY_ENVIRONMENT ?? 'development',
+        release: release === '' ? undefined : release,
     });
 };

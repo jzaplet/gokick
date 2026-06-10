@@ -75,7 +75,9 @@ Neočekávaná selhání se hlásí do Sentry. **Není to logovací cesta** — 
 - **BE hooky:** bus `RecoveryMiddleware`, **HTTP `RecoveryMiddleware`** (panika → log + report + 500), worker (exhausted retries). Reporter přidá `trace_id`/`user_id` z ctx + předané tagy (`command` / `job_kind` / `method` / `path`).
 - **Lifecycle:** `Init` při startu, `defer Flush` v `main` (a explicitně před `os.Exit`) — `CaptureException` je async, panika / `os.Exit` by jinak event ztratily.
 - **FE:** `@sentry/vue` v `assets/app.ts`, gated na `VITE_SENTRY_DSN`. Zachytává Vue chyby + unhandled promise rejections; handled API 4xx z `authFetch`/`apiFetch` se nehlásí.
-- **Config:** `APP_SENTRY_DSN` + `APP_SENTRY_ENVIRONMENT` (+ volitelně `APP_SENTRY_RELEASE`) (BE), `VITE_SENTRY_DSN` + `VITE_SENTRY_ENVIRONMENT` (FE). FE a BE jsou dva Sentry projekty → dva DSN.
+- **Config:** `APP_SENTRY_DSN` + `APP_SENTRY_ENVIRONMENT` (BE), `VITE_SENTRY_DSN` + `VITE_SENTRY_ENVIRONMENT` (FE). FE a BE jsou dva Sentry projekty → dva DSN.
+- **Release verze (z git tagu):** stampuje se při buildu — do binárky přes `-ldflags "-X main.release=<tag>"` (`cmd/version.go`, fallback `APP_SENTRY_RELEASE`) a do SPA bundlu přes `VITE_SENTRY_RELEASE`. Lokálně `make build` bere `git describe --tags`; release workflow tag. Tím se Sentry issues grupují podle nasazené verze. Verze se loguje i na startu (`starting gokick version=…`).
+- **Release workflow** (`.github/workflows/release.yml`, na `v*` tag): postaví produkční image s verzí z tagu. **Push do GHCR je default vypnutý** (gokick je šablona) — povolíš repo proměnnou `RELEASE_PUSH=true` (Settings → Actions → Variables), žádný secret (GHCR jede přes `GITHUB_TOKEN`). Bez ní se image jen postaví (ověří release build), nepushne.
 
 > **Follow-up pro čitelné FE traces:** bez nahraných source maps jsou FE stack traces minifikované (nečitelné). Až bude reálný DSN, přidat `@sentry/vite-plugin` + `SENTRY_AUTH_TOKEN` do buildu (upload source maps). Do té doby FE Sentry funguje, ale traces nejsou rozbalené.
 

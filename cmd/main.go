@@ -22,11 +22,12 @@ func main() {
 
 	logger := newLogger(os.Getenv("APP_LOG_FORMAT"), parseLogLevel(os.Getenv("APP_LOG_LEVEL")))
 	slog.SetDefault(logger)
+	logger.Info("starting gokick", "version", releaseVersion())
 
 	reporter, err := newErrorReporter(
 		os.Getenv("APP_SENTRY_DSN"),
 		os.Getenv("APP_SENTRY_ENVIRONMENT"),
-		os.Getenv("APP_SENTRY_RELEASE"),
+		releaseVersion(),
 	)
 	if err != nil {
 		logger.Error("failed to initialize error reporter", "error", err)
