@@ -35,8 +35,8 @@ type AdminUsersHandler struct {
 
 func (h *AdminUsersHandler) Create(w http.ResponseWriter, r *http.Request) {
     var cmd command.CreateUserCommand
-    if err := json.NewDecoder(r.Body).Decode(&cmd); err != nil {
-        response.HandleError(w, err)
+    if err := request.DecodeJSON(w, r, &cmd); err != nil {
+        response.Error(w, http.StatusBadRequest, err)
         return
     }
 
@@ -75,7 +75,7 @@ mux.HandleFunc("GET /health", health.Check)
 - **Command (bez výsledku):** `bus.ExecVoid()` -- použít pro create, update, delete.
 - **Query (s výsledkem):** `bus.Exec[R]()` -- typovaný generický návrat.
 
-Error handling je centralizovaný přes `response.HandleError(w, err)` -- handler se nestará o mapování error na HTTP status. Viz [Error typy](/framework/domain/errors-events).
+Chyby z bus dispatche jsou centralizované přes `response.HandleError(w, err)` -- ten mapuje doménové typy na HTTP status (handler se o mapování nestará). Výjimkou je dekódování vstupu: selhání `request.DecodeJSON` handler mapuje explicitně přes `response.Error(w, http.StatusBadRequest, err)`, protože "špatný JSON" je vždy 400 a nemá procházet doménovým mapováním. Viz [Error typy](/framework/domain/errors-events).
 
 ### Middleware chain
 
@@ -84,6 +84,7 @@ Balíček `presentation/http/middleware/`. Každý middleware je `func(http.Hand
 | Middleware | Soubor | Popis |
 |---|---|---|
 | Trace | `trace.go` | Generování/propagace X-Trace-Id |
+| IP | `ip.go` | Resoluce klientské IP do contextu (sdíleno s rate limitem a auditem) |
 | Security headers | `security.go` | HSTS (gateováno na `APP_COOKIE_SECURE`), CSP, X-Frame-Options, Permissions-Policy a další |
 | CORS | `cors.go` | Povolení cross-origin (Vite dev) |
 | CSRF | -- | `http.CrossOriginProtection` (Go 1.25 stdlib) |
@@ -95,14 +96,16 @@ Pořadí chain podle typu routy:
 ```
 Request
   /health, /api/v1/auth/{login,refresh}
-      -> Trace -> Security headers -> CORS -> CSRF -> Logging -> Handler
+      -> Trace -> IP -> Security headers -> CORS -> CSRF -> Logging -> Handler
 
   /api/v1/... (chráněné)
-      -> Trace -> Security headers -> CORS -> CSRF -> Logging -> JWT Auth -> Handler
+      -> Trace -> IP -> Security headers -> CORS -> CSRF -> Logging -> JWT Auth -> Handler
 
   /{path...} (SPA)
-      -> Static File / SPA Fallback
+      -> Trace -> IP -> Security headers -> CORS -> CSRF -> Logging -> SPA Fallback
 ```
+
+SPA catch-all (`GET /{path...}`) je registrovaný do **téhož** muxu, který obaluje globální chain -- **neobchází** middleware (žádný static-file bypass). Jen běží jako poslední route, takže explicitní cesty vyhrávají.
 
 Oddělení admin / uživatel routes řeší bus `AuthorizeMiddleware` skrze `Permissioned.RequiredPermission()` -- žádný role-guard HTTP middleware není potřeba, protože pravidlo "admin má všechno, ostatní role jsou zamítnuti pro `admin:*`" platí pro každý command i query.
 

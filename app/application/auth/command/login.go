@@ -130,12 +130,6 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (LoginResul
 	// block an otherwise-valid login.
 	_ = h.users.ResetFailedLogin(ctx, u.ID)
 
-	audit.Record(shared.AuditEvent{
-		Action:     "auth.login.succeeded",
-		TargetType: "user",
-		TargetID:   u.ID,
-	})
-
 	accessToken, accessExpiresIn, err := h.jwt.GenerateAccessToken(&shared.AuthClaims{
 		UserID:   u.ID,
 		Role:     u.Role,
@@ -160,6 +154,16 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (LoginResul
 	if err := h.tokens.Save(ctx, rt); err != nil {
 		return LoginResult{}, err
 	}
+
+	// Record success only after the token is actually issued and saved.
+	// audit.md defines auth.login.succeeded as "po vydání tokenu" — emitting
+	// it before tokens.Save would log a success for a login that then failed
+	// on the save and returned an error to the caller.
+	audit.Record(shared.AuditEvent{
+		Action:     "auth.login.succeeded",
+		TargetType: "user",
+		TargetID:   u.ID,
+	})
 
 	return LoginResult{
 		User:             *u,

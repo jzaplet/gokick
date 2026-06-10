@@ -17,12 +17,15 @@ type RefreshTokenCommand struct {
 
 func (RefreshTokenCommand) SkipPermissionCheck() {}
 
-// SkipTransaction: see LoginCommand for the rationale. RefreshToken's
-// theft path also calls raw-pool writes (DeleteByUserID via audit
-// trail elsewhere), and the multi-step rotation (FindByHash →
-// MarkUsed → Save new) is intentionally non-atomic — a failed Save
-// after MarkUsed just funnels the user into the next theft-detection
-// cycle on retry.
+// SkipTransaction keeps RefreshToken out of the bus tx — but for a different
+// reason than LoginCommand (which is about a raw-pool self-deadlock). The theft
+// path calls tokens.DeleteByUserID and then returns an AuthError. DeleteByUserID
+// is tx-aware (r.Conn), so under a bus tx that AuthError would roll the deletion
+// BACK and defeat the force-logout the theft response depends on. Running
+// outside the tx lets the cleanup auto-commit and persist. The happy-path
+// rotation (FindByHash → MarkUsed → Save) is consequently non-atomic, which is
+// safe: a failed Save after MarkUsed just funnels the next attempt into theft
+// detection on retry.
 func (RefreshTokenCommand) SkipTransaction() {}
 
 type RefreshTokenHandler struct {

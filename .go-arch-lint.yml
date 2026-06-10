@@ -23,18 +23,47 @@ excludeFiles:
   # Same self-import quirk: sqlite_manager_test.go is `package database_test`
   # importing the database package to drive *SqliteManager from a black-box test.
   - infrastructure/database/sqlite_manager_test.go
+  # Integration tests that wire real fixtures (testfx) / black-box self-import to
+  # exercise production behavior end-to-end. Same sanctioned test-only exception
+  # as the entries above — these files are tests, never imported by production.
+  - application/bus/middleware/zz_audit_test.go
+  - infrastructure/database/zz_audit_test.go
+  - presentation/console/zz_audit_test.go
+  - presentation/http/server/zz_audit_test.go
+  # Gap-closure black-box / fixture-wired tests from the curated coverage pass —
+  # same test-only rationale (build a full server / run migrations / wire testfx).
+  - infrastructure/database/zz_gap_test.go
+  - presentation/console/zz_gap_test.go
+  - presentation/http/server/zz_gap_test.go
+  - app/zz_gap_test.go
+  # `package domain_test` living in the bare domain/ dir (parent of the bounded
+  # contexts) — self-walking tests that re-assert the layer rule; match no
+  # component's `in:` glob, so attach-exempt them.
+  - domain/zz_audit_test.go
+  - domain/zz_gap_test.go
 
+# Only shared/ is common (AuthClaims, errors, ports). The bounded contexts
+# (user/token/job) are NOT common, so importing one from another is a
+# component-rule violation — this is what enforces "no cross-context imports".
 commonComponents:
-  - domain
+  - domain_shared
 
 components:
   # Root
   app:
     in: .
 
-  # Layer 1: Domain
-  domain:
-    in: domain/**
+  # Layer 1: Domain — split per bounded context so cross-context imports
+  # (e.g. domain/user -> domain/token) are caught instead of hidden inside one
+  # `domain/**` component.
+  domain_shared:
+    in: domain/shared/**
+  domain_user:
+    in: domain/user/**
+  domain_token:
+    in: domain/token/**
+  domain_job:
+    in: domain/job/**
 
   # Layer 2: Application
   bus:
@@ -94,8 +123,16 @@ deps:
       - sqlite_base
       - console
 
-  # Domain — pure core
-  domain:
+  # Domain — pure core. Each bounded context may use domain_shared (common)
+  # and vendor (uuid) but NOT another context. No mayDependOn between them is
+  # the enforcement.
+  domain_shared:
+    anyVendorDeps: true
+  domain_user:
+    anyVendorDeps: true
+  domain_token:
+    anyVendorDeps: true
+  domain_job:
     anyVendorDeps: true
 
   # Application — depends on domain only
@@ -107,6 +144,9 @@ deps:
   application:
     mayDependOn:
       - testfx
+      - domain_user
+      - domain_token
+      - domain_job
     anyVendorDeps: true
 
   # Test fixtures — may wire real infrastructure for integration tests.
@@ -120,6 +160,9 @@ deps:
       - config
       - sqlite_base
       - sqlite_repos
+      - domain_user
+      - domain_token
+      - domain_job
     anyVendorDeps: true
 
   # Infrastructure — depends on domain
@@ -139,16 +182,22 @@ deps:
       - sqlite_base
       - database
       - testfx
+      - domain_user
+      - domain_token
+      - domain_job
   sqlite_seeder:
     mayDependOn:
       - database
       - testfx
+      - domain_user
   scheduler:
     anyVendorDeps: true
   worker:
     mayDependOn:
       - application
       - testfx
+      - domain_user
+      - domain_job
     anyVendorDeps: true
 
   # Presentation — depends on application + infrastructure
@@ -159,6 +208,7 @@ deps:
       - request
       - response
       - testfx
+      - domain_user
   request:
     anyVendorDeps: true
   http_middleware:

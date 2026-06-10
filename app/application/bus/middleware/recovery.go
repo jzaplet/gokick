@@ -3,15 +3,23 @@ package middleware
 import (
 	"context"
 	"fmt"
-	"gokick/app/application/bus"
 	"log/slog"
+	"runtime/debug"
+
+	"gokick/app/application/bus"
 )
 
 func RecoveryMiddleware(logger *slog.Logger) bus.Middleware {
 	return func(ctx context.Context, name string, cmd any, next func(ctx context.Context) (any, error)) (result any, err error) {
 		defer func() {
 			if r := recover(); r != nil {
-				logger.Error("bus: panic recovered", "command", name, "panic", r)
+				// Capture the stack at the point of recovery so the log shows
+				// where the panic originated, not just its value.
+				logger.Error("bus: panic recovered",
+					"command", name,
+					"panic", r,
+					"stack", string(debug.Stack()),
+				)
 				err = fmt.Errorf("bus: panic in %s: %v", name, r)
 			}
 		}()

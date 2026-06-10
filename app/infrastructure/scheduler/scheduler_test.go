@@ -174,6 +174,55 @@ func TestScheduler_ErrorReturnedJobKeepsTicking(t *testing.T) {
 	}
 }
 
+// Two independent Scheduler instances running a job with the SAME name both
+// tick — there is no multi-instance coordination (no shared lock, no dedup by
+// name). This documents the single-process assumption: run two replicas and a
+// once-per-interval job fires once PER replica, not once globally. If anyone
+// ever bolts on cross-instance locking, the shared counter would stop doubling
+// and this test would catch the behavior change.
+func TestScheduler_TwoInstancesTickIndependently(t *testing.T) {
+	t.Parallel()
+
+	var ticks int32
+	newOne := func() *Scheduler {
+		s, err := NewScheduler(silentLogger(), []Job{
+			{Name: "cleanup", Interval: time.Hour, Fn: func(_ context.Context) error {
+				atomic.AddInt32(&ticks, 1)
+				return nil
+			}},
+		})
+		if err != nil {
+			t.Fatalf("NewScheduler: %v", err)
+		}
+		return s
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{}, 2)
+	for _, s := range []*Scheduler{newOne(), newOne()} {
+		go func(s *Scheduler) {
+			defer func() { done <- struct{}{} }()
+			s.Run(ctx)
+		}(s)
+	}
+
+	// A long Interval means only the run-once tick fires before we cancel, so
+	// the count is exactly "one per instance" — no coordination would let it be 2.
+	time.Sleep(40 * time.Millisecond)
+	cancel()
+	for range 2 {
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("a scheduler instance did not drain after cancel")
+		}
+	}
+
+	if got := atomic.LoadInt32(&ticks); got != 2 {
+		t.Fatalf("two instances should each run the job once (no coordination): got %d ticks, want 2", got)
+	}
+}
+
 // Cancel arrives after the first run-once tick completed; ctx.Done() must
 // preempt the long ticker wait so the goroutine exits without leaking.
 func TestScheduler_CancelDuringTickerWait(t *testing.T) {

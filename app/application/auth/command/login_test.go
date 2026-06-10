@@ -8,8 +8,17 @@ import (
 	"time"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/token"
 	"gokick/app/internal/testfx"
 )
+
+// saveFailsTokenRepo is a TokenRepository whose Save always fails; the other
+// methods are never called on the success login path under test.
+type saveFailsTokenRepo struct{ token.TokenRepository }
+
+func (saveFailsTokenRepo) Save(context.Context, *token.RefreshToken) error {
+	return errors.New("refresh token save failed")
+}
 
 func TestLoginHandler_Success(t *testing.T) {
 	ctx := context.Background()
@@ -256,5 +265,104 @@ func TestLoginHandler_SuccessResetsCounter(t *testing.T) {
 	got, _ := fx.Users.FindByID(ctx, u.ID)
 	if got.FailedLoginAttempts != 0 {
 		t.Fatalf("success must reset counter, got %d", got.FailedLoginAttempts)
+	}
+}
+
+// A login attempt against a locked account with the CORRECT password is a
+// neutral no-op that emits auth.login.blocked_while_locked (audit.md table +
+// guide-auth-perm-36). Without this test the event has zero coverage.
+func TestLoginHandler_BlockedWhileLockedEmitsAudit(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_blocked_audit.db"))
+	u := fx.SeedUser(t, "mona", "correct-pw", "user")
+
+	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
+	for i := 0; i < loginLockThreshold; i++ {
+		_, _ = handler.Handle(ctx, LoginCommand{Nickname: "mona", Password: "wrong"})
+	}
+
+	// Correct password, but the account is locked → blocked_while_locked.
+	collector := &shared.AuditCollector{}
+	lockedCtx := shared.ContextWithAuditCollector(ctx, collector)
+	_, err := handler.Handle(lockedCtx, LoginCommand{Nickname: "mona", Password: "correct-pw"})
+	var authErr *shared.AuthError
+	if !errors.As(err, &authErr) {
+		t.Fatalf("locked account must return *shared.AuthError, got %T: %v", err, err)
+	}
+	var blocked int
+	for _, e := range collector.Drain() {
+		if e.Action == "auth.login.blocked_while_locked" && e.TargetID == u.ID {
+			blocked++
+		}
+	}
+	if blocked != 1 {
+		t.Fatalf("expected exactly 1 auth.login.blocked_while_locked, got %d", blocked)
+	}
+}
+
+// While an account is locked, a further WRONG-password attempt must not bump
+// the counter or extend the lock (auth.md: "počítadlo se nezvyšuje, lock se
+// neprodlužuje"). handleFailedLogin short-circuits on the locked branch; this
+// test is the only guard that the short-circuit stays.
+func TestLoginHandler_WrongPasswordWhileLockedDoesNotExtendLock(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_locked_noextend.db"))
+	u := fx.SeedUser(t, "nina", "correct-pw", "user")
+
+	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
+	for i := 0; i < loginLockThreshold; i++ {
+		_, _ = handler.Handle(ctx, LoginCommand{Nickname: "nina", Password: "wrong"})
+	}
+
+	locked, _ := fx.Users.FindByID(ctx, u.ID)
+	if !locked.LockedUntil.Valid {
+		t.Fatal("setup: account should be locked after threshold")
+	}
+	beforeCounter := locked.FailedLoginAttempts
+	beforeLockedUntil := locked.LockedUntil.Time
+
+	// One more wrong attempt while locked.
+	_, _ = handler.Handle(ctx, LoginCommand{Nickname: "nina", Password: "wrong"})
+
+	after, _ := fx.Users.FindByID(ctx, u.ID)
+	if after.FailedLoginAttempts != beforeCounter {
+		t.Fatalf(
+			"counter must not change while locked: got %d want %d",
+			after.FailedLoginAttempts,
+			beforeCounter,
+		)
+	}
+	if !after.LockedUntil.Time.Equal(beforeLockedUntil) {
+		t.Fatalf(
+			"lock must not be extended while locked: got %v want %v",
+			after.LockedUntil.Time,
+			beforeLockedUntil,
+		)
+	}
+}
+
+// Regression: a login with valid credentials that fails to ISSUE the token
+// (GenerateAccessToken / refresh Save) must NOT leave an auth.login.succeeded
+// row. The event means "an access-granting login happened" (audit.md); because
+// login is SkipTransaction and AuditMiddleware flushes even on handler error,
+// recording success before the token was persisted would forge a "succeeded"
+// trail for a login that returned 500 and granted nothing.
+func TestLoginHandler_NoSuccessAuditWhenTokenSaveFails(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_save_fails.db"))
+	fx.SeedUser(t, "olga", "correct-pw", "user")
+
+	collector := &shared.AuditCollector{}
+	ctx = shared.ContextWithAuditCollector(ctx, collector)
+
+	handler := NewLoginHandler(fx.Users, saveFailsTokenRepo{}, fx.Hasher, fx.Jwt)
+	if _, err := handler.Handle(ctx, LoginCommand{Nickname: "olga", Password: "correct-pw"}); err == nil {
+		t.Fatal("expected the refresh-token Save failure to propagate")
+	}
+
+	for _, e := range collector.Drain() {
+		if e.Action == "auth.login.succeeded" {
+			t.Fatal("must NOT record auth.login.succeeded when no token was issued")
+		}
 	}
 }

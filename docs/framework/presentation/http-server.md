@@ -139,5 +139,5 @@ Pokud handler trvá déle než 30s, `Shutdown` vrátí `context.DeadlineExceeded
 ## Detaily
 
 - Domain error typy (`ValidationError` 400, `AuthError` 401, `PermissionError` 403) implementují `HTTPError` implicitně (duck typing). Žádný import mezi `response/` a `domain/`. Detaily viz [Errors & Events](/framework/domain/errors-events).
-- Server struct drží `*http.ServeMux`, middleware chain a `Start(ctx)` metodu, která spustí `http.Server.ListenAndServe` v goroutině a čeká na `ctx.Done()` nebo server error (viz [Graceful shutdown](#graceful-shutdown)).
+- Server struct drží konfiguraci, logger, JWT service, rate-limitery, IP extractor a HTTP handlery -- **ne** `*http.ServeMux` ani middleware chain. Ty se staví per-call uvnitř `Start`: `registerRoutes()` vrátí lokální `*http.ServeMux` a `buildMiddlewareChain()` ho obalí. `Start(ctx)` pak spustí `http.Server.ListenAndServe` v goroutině a čeká na `ctx.Done()` nebo server error (viz [Graceful shutdown](#graceful-shutdown)).
 - Response balíček nemá žádné závislosti kromě stdlib.

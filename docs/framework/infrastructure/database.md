@@ -142,7 +142,7 @@ wire.Bind(new(user.Repository), new(*sqliteuser.Repository))
 
 ### Seeder
 
-`sqlite.NewSeeder()` závisí na `user.Repository` (doménový interface) -- seeduje výchozí admin účet (nickname `admin`, heslo `admin`). Seeder **neběží automaticky** -- spouští se ručně přes CLI `./bin/app seed`. Idempotentní: pokud uživatel `admin` existuje, nic nedělá. Pro vytvoření dalších uživatelů s libovolnou rolí slouží `./bin/app create-user`.
+`seeder.NewSeeder()` závisí na `user.Repository` (doménový interface) -- seeduje výchozí admin účet (nickname `admin`, heslo z **povinného a validovaného** `APP_SEED_ADMIN_PASSWORD`; žádné guessable default — seed bez nastaveného hesla selže). Seeder **neběží automaticky** -- spouští se ručně přes CLI `./bin/app seed`. Idempotentní: pokud uživatel `admin` existuje, nic nedělá. Pro vytvoření dalších uživatelů s libovolnou rolí slouží `./bin/app create-user`.
 
 ## Detaily
 

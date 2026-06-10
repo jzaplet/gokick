@@ -41,12 +41,13 @@ func AuditMiddleware(logger *slog.Logger, audit shared.AuditLogger) bus.Middlewa
 		}
 
 		// Detach cancellation: a client that disconnected mid-request
-		// shouldn't be able to abort the audit write. Timestamp here
-		// (not in the handler) so all events from one command share
-		// the wall clock the middleware saw.
+		// shouldn't be able to abort the audit write. Timestamp once here
+		// (not per event, not in the handler) so all events from one command
+		// share the wall clock the middleware saw.
 		flushCtx := context.WithoutCancel(ctxWithCollector)
+		now := time.Now()
 		for _, evt := range events {
-			if err := writeRecord(flushCtx, audit, evt); err != nil {
+			if err := writeRecord(flushCtx, audit, evt, now); err != nil {
 				logger.Error("audit: write failed",
 					"action", evt.Action,
 					"command", name,
@@ -59,11 +60,16 @@ func AuditMiddleware(logger *slog.Logger, audit shared.AuditLogger) bus.Middlewa
 	}
 }
 
-func writeRecord(ctx context.Context, audit shared.AuditLogger, evt shared.AuditEvent) error {
+func writeRecord(
+	ctx context.Context,
+	audit shared.AuditLogger,
+	evt shared.AuditEvent,
+	now time.Time,
+) error {
 	rec := &shared.AuditRecord{
 		ID:        uuid.New().String(),
 		Action:    evt.Action,
-		CreatedAt: time.Now(),
+		CreatedAt: now,
 	}
 
 	if claims := shared.ClaimsFromContext(ctx); claims != nil && claims.UserID != "" {
