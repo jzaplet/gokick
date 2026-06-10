@@ -22,6 +22,16 @@ const (
 	defaultBaseBackoff  = 5 * time.Second
 )
 
+// Worker-local structured-log keys (cross-cutting ones live in shared.LogKey*).
+// sloglint's no-raw-keys forbids bare string keys, so every key is a constant.
+const (
+	logKeySlot        = "slot"
+	logKeyJobID       = "job_id"
+	logKeyAttempts    = "attempts"
+	logKeyConcurrency = "concurrency"
+	logKeyKinds       = "kinds"
+)
+
 type Worker struct {
 	logger      *slog.Logger
 	repo        job.Repository
@@ -55,8 +65,8 @@ func NewWorker(
 // Run starts the worker pool and blocks until ctx is cancelled.
 func (w *Worker) Run(ctx context.Context) {
 	w.logger.Info("worker: starting",
-		"concurrency", w.concurrency,
-		"kinds", w.registry.Kinds(),
+		logKeyConcurrency, w.concurrency,
+		logKeyKinds, w.registry.Kinds(),
 	)
 
 	var wg sync.WaitGroup
@@ -91,7 +101,7 @@ func (w *Worker) loop(ctx context.Context, slot int) {
 func (w *Worker) processOne(ctx context.Context, slot int) {
 	j, err := w.repo.ClaimDue(ctx, defaultLockFor)
 	if err != nil {
-		w.logger.Error("worker: claim failed", "slot", slot, "error", err)
+		w.logger.Error("worker: claim failed", logKeySlot, slot, shared.LogKeyError, err)
 		return
 	}
 	if j == nil {
@@ -99,13 +109,13 @@ func (w *Worker) processOne(ctx context.Context, slot int) {
 	}
 
 	log := w.logger.With(
-		"slot",
+		logKeySlot,
 		slot,
-		"job_id",
+		logKeyJobID,
 		j.ID,
 		shared.LogKeyJobKind,
 		j.Kind,
-		"attempts",
+		logKeyAttempts,
 		j.Attempts,
 	)
 
@@ -179,10 +189,10 @@ func (w *Worker) handleFailure(
 	// retriesUsed = Attempts - 1. Out of retries when retriesUsed >= MaxRetries.
 	if j.Attempts > j.MaxRetries {
 		log.Error("worker: job exhausted retries, marking failed",
-			shared.DurationMsAttr(duration), "error", jobErr,
+			shared.DurationMsAttr(duration), slog.Any(shared.LogKeyError, jobErr),
 		)
 		if err := w.repo.MarkFailed(ctx, j.ID, jobErr.Error()); err != nil {
-			log.Error("worker: mark failed write errored", "error", err)
+			log.Error("worker: mark failed write errored", shared.LogKeyError, err)
 		}
 		return
 	}
@@ -191,15 +201,12 @@ func (w *Worker) handleFailure(
 	runAt := time.Now().Add(delay)
 	log.Warn(
 		"worker: job failed, retry scheduled",
-		shared.DurationMsAttr(
-			duration,
-		),
+		shared.DurationMsAttr(duration),
 		shared.MillisAttr(shared.LogKeyRetryInMs, delay),
-		"error",
-		jobErr,
+		slog.Any(shared.LogKeyError, jobErr),
 	)
 	if err := w.repo.Reschedule(ctx, j.ID, runAt, jobErr.Error()); err != nil {
-		log.Error("worker: reschedule write errored", "error", err)
+		log.Error("worker: reschedule write errored", shared.LogKeyError, err)
 	}
 }
 

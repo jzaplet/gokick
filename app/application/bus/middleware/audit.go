@@ -50,7 +50,7 @@ func AuditMiddleware(logger *slog.Logger, audit shared.AuditLogger) bus.Middlewa
 			if err := writeRecord(flushCtx, audit, evt, now); err != nil {
 				logger.LogAttrs(flushCtx, slog.LevelError, "audit: write failed",
 					append(shared.LogAttrs(flushCtx),
-						slog.String("action", evt.Action),
+						slog.String(logKeyAction, evt.Action),
 						slog.String(shared.LogKeyCommand, name),
 						slog.Any(shared.LogKeyError, err),
 					)...)

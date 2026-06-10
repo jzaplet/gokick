@@ -9,6 +9,14 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
+// Migration-local structured-log keys. sloglint's no-raw-keys forbids bare
+// string keys.
+const (
+	logKeyFrom    = "from"
+	logKeyTo      = "to"
+	logKeyVersion = "version"
+)
+
 type MigrationManager struct {
 	db     *sqlx.DB
 	logger *slog.Logger
@@ -38,9 +46,9 @@ func (m *MigrationManager) RunUp() error {
 	after, _ := goose.GetDBVersion(m.db.DB)
 
 	if after > before {
-		m.logger.Info("migrations: applied", "from", before, "to", after)
+		m.logger.Info("migrations: applied", logKeyFrom, before, logKeyTo, after)
 	} else {
-		m.logger.Info("migrations: up to date", "version", after)
+		m.logger.Info("migrations: up to date", logKeyVersion, after)
 	}
 
 	return nil

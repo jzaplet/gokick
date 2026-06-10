@@ -44,6 +44,13 @@ const (
 	janitorDropAfter     = 5 * time.Minute
 )
 
+// Server-local structured-log keys (cross-cutting ones live in shared.LogKey*).
+// sloglint's no-raw-keys forbids bare string keys.
+const (
+	logKeyAddr    = "addr"
+	logKeyTimeout = "timeout"
+)
+
 type Server struct {
 	config     *config.Config
 	logger     *slog.Logger
@@ -96,7 +103,7 @@ func (s *Server) Start(ctx context.Context) error {
 	go s.limiters.Refresh.Run(ctx, janitorSweepInterval, janitorDropAfter)
 
 	addr := ":" + s.config.HTTPPort
-	s.logger.Info("server: starting", "addr", addr)
+	s.logger.Info("server: starting", logKeyAddr, addr)
 	return runWithShutdown(
 		ctx,
 		&http.Server{
@@ -136,15 +143,19 @@ func runWithShutdown(
 	case err := <-serverErr:
 		return err
 	case <-ctx.Done():
-		logger.Info("server: shutdown signal received, draining", "timeout", grace)
+		logger.Info("server: shutdown signal received, draining", logKeyTimeout, grace)
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), grace)
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
-			logger.Error("server: graceful shutdown failed", "error", err)
+			logger.Error("server: graceful shutdown failed", shared.LogKeyError, err)
 			return err
 		}
 		if err := <-serverErr; err != nil {
-			logger.Error("server: listener exited with error during shutdown", "error", err)
+			logger.Error(
+				"server: listener exited with error during shutdown",
+				shared.LogKeyError,
+				err,
+			)
 		}
 		logger.Info("server: stopped")
 		return nil

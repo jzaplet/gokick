@@ -1,0 +1,105 @@
+version: "2"
+
+# Logging discipline is enforced statically so neither a developer nor an AI can
+# quietly diverge from the structured-slog path — which would lose log data into
+# stdout, a file, a second logger, or a third-party lib. See
+# docs/framework/infrastructure/observability.md. Static analysis stops the
+# accidental/casual divergences (the 95% that matters); a determined bypass
+# (raw syscall.Write, go:linkname, an outbound net.Dial sink) is out of reach of
+# name-based linting and is accepted as residual.
+linters:
+  enable:
+    - depguard
+    - forbidigo
+    - sloglint
+  settings:
+    depguard:
+      rules:
+        # Allow-list, not deny-list: every import not listed is rejected. This
+        # closes the ENTIRE third-party-logger class (charmbracelet/log, glog,
+        # hclog, apex/log, go-kit/log, log15, sentry-go, the OTel logs SDK, a
+        # vendored fork, …) in one move — adding any of them fails the lint by
+        # import alone. Trade-off: a new dependency needs an entry here, matching
+        # the explicit-list discipline already used in .go-arch-lint.yml.
+        main:
+          allow:
+            - $gostd
+            - gokick
+            - github.com/golang-jwt/jwt/v5
+            - github.com/google/uuid
+            - github.com/google/wire
+            - github.com/jmoiron/sqlx
+            - github.com/joho/godotenv
+            - github.com/ncruces/go-sqlite3
+            - github.com/pressly/goose/v3
+            - github.com/spf13/cobra
+            - golang.org/x/crypto
+          deny:
+            # Carve-outs from $gostd: stdlib packages that are alternative log
+            # sinks rather than the injected *slog.Logger.
+            - pkg: log/syslog
+              desc: "use the injected *slog.Logger; syslog is a divergent sink"
+    forbidigo:
+      forbid:
+        # Printing to stdout instead of logging (CLI command output excepted below).
+        - pattern: ^fmt\.(Print|Printf|Println)$
+          msg: "do not print to stdout; log via the injected *slog.Logger (CLI command output is the only exception)"
+        - pattern: ^(print|println)$
+          msg: "do not use the print/println builtins; log via the injected *slog.Logger"
+        # The stdlib log package — package funcs and constructors.
+        - pattern: ^log\.(Print|Printf|Println|Fatal|Fatalf|Fatalln|Panic|Panicf|Panicln|New|Default)$
+          msg: "do not use the stdlib log package; log via the injected *slog.Logger"
+        # Constructing a logger or handler anywhere but the one seam.
+        - pattern: ^slog\.New
+          msg: "construct the logger only in cmd/logger.go (the single OTel seam); inject *slog.Logger everywhere else"
+        # The global default logger — both the read (Default) side; no-global
+        # (sloglint) covers slog.Info() etc. Banning Default() stops the
+        # slog.Default().Info(...) method-chain that evades no-global.
+        - pattern: ^slog\.Default$
+          msg: "do not use the global default logger; inject *slog.Logger"
+        # Writing to the std streams directly.
+        - pattern: ^os\.(Stdout|Stderr)$
+          msg: "do not touch os.Stdout/os.Stderr directly; the logger owns stderr (cmd/logger.go only)"
+        # Opening files / fds to write to — this is how log data leaks into a
+        # file off the slog path. The app has no direct file I/O (SQLite goes
+        # through its driver); add a narrow exception here if that ever changes.
+        - pattern: ^os\.(Create|OpenFile|WriteFile|NewFile)$
+          msg: "do not open files/fds directly; log via the injected *slog.Logger (this is the 'logging to a file' leak)"
+        - pattern: ^syscall\.Write$
+          msg: "do not write to a raw fd; log via the injected *slog.Logger"
+    sloglint:
+      no-mixed-args: true # never mix key-value pairs with slog.Attr in one call
+      no-global: all # forbid the global default logger; use the injected one
+      static-msg: true # log messages must be constant strings
+      no-raw-keys: true # every attribute key must be a constant
+      key-naming-case: snake # keys are snake_case
+  exclusions:
+    rules:
+      # CLI commands legitimately print user-facing results to stdout.
+      - path: app/presentation/console/
+        text: do not print to stdout
+        linters:
+          - forbidigo
+      # The logger constructor builds the slog handler and owns stderr.
+      - path: cmd/
+        text: construct the logger only in cmd/logger.go|os.Stdout/os.Stderr
+        linters:
+          - forbidigo
+      # main.go sets the process-wide default logger at bootstrap.
+      - path: cmd/
+        linters:
+          - sloglint
+      # log.go DEFINES the key constants and the key-parameterized attr helpers
+      # (MillisAttr); enforcing no-raw-keys on the helper itself is circular.
+      - path: app/domain/shared/log.go
+        linters:
+          - sloglint
+      # Test fixtures build throwaway loggers; tests use ad-hoc keys/messages.
+      - path: app/internal/testfx/
+        linters:
+          - forbidigo
+          - sloglint
+      - path: _test\.go
+        linters:
+          - sloglint
+          - forbidigo

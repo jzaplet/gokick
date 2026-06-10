@@ -11,6 +11,10 @@ import (
 	"github.com/google/uuid"
 )
 
+// logKeyNickname is the seeder's only structured-log key. sloglint's
+// no-raw-keys forbids bare string keys.
+const logKeyNickname = "nickname"
+
 // SeedAdminPassword is a Wire-distinct alias so the DI graph can bind the
 // admin-seed password without colliding with other string values.
 type SeedAdminPassword string
@@ -71,6 +75,6 @@ func (s *Seeder) Seed(ctx context.Context) error {
 		return err
 	}
 
-	s.logger.Info("seeded default admin user", "nickname", "admin")
+	s.logger.Info("seeded default admin user", logKeyNickname, "admin")
 	return nil
 }

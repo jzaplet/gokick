@@ -26,7 +26,7 @@ func DispatchEventsMiddleware(
 			logger.LogAttrs(ctxWithCollector, slog.LevelInfo, "bus: event dispatched",
 				append(shared.LogAttrs(ctxWithCollector),
 					slog.String(shared.LogKeyEvent, event.EventName()),
-					slog.String("source_command", name),
+					slog.String(logKeySourceCommand, name),
 				)...)
 			eventBus.Dispatch(ctxWithCollector, event)
 		}

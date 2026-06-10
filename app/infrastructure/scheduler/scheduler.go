@@ -17,6 +17,14 @@ import (
 	"gokick/app/domain/shared"
 )
 
+// Scheduler-local structured-log keys (cross-cutting ones live in
+// shared.LogKey*). sloglint's no-raw-keys forbids bare string keys.
+const (
+	logKeyName  = "name"
+	logKeyJobs  = "jobs"
+	logKeyPanic = "panic"
+)
+
 type JobFunc func(ctx context.Context) error
 
 type Job struct {
@@ -61,7 +69,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 		s.logger.Info("scheduler: no jobs registered")
 		return
 	}
-	s.logger.Info("scheduler: starting", "jobs", len(s.jobs))
+	s.logger.Info("scheduler: starting", logKeyJobs, len(s.jobs))
 
 	var wg sync.WaitGroup
 	for _, j := range s.jobs {
@@ -98,7 +106,7 @@ func (s *Scheduler) runJob(ctx context.Context, j Job) {
 func (s *Scheduler) tick(ctx context.Context, j Job) {
 	defer func() {
 		if r := recover(); r != nil {
-			s.logger.Error("scheduler: job panicked", "name", j.Name, "panic", r)
+			s.logger.Error("scheduler: job panicked", logKeyName, j.Name, logKeyPanic, r)
 		}
 	}()
 
@@ -108,13 +116,15 @@ func (s *Scheduler) tick(ctx context.Context, j Job) {
 	if err != nil {
 		s.logger.Error(
 			"scheduler: job failed",
-			"name",
-			j.Name,
+			slog.String(logKeyName, j.Name),
 			shared.DurationMsAttr(duration),
-			"error",
-			err,
+			slog.Any(shared.LogKeyError, err),
 		)
 		return
 	}
-	s.logger.Info("scheduler: job completed", "name", j.Name, shared.DurationMsAttr(duration))
+	s.logger.Info(
+		"scheduler: job completed",
+		slog.String(logKeyName, j.Name),
+		shared.DurationMsAttr(duration),
+	)
 }
