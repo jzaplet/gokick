@@ -245,7 +245,7 @@ Před přidáním nových funkcí proběhl důkladný bezpečnostní audit, kter
 ### Definition of Done — splněno
 
 - ✅ `go test -race ./app/... ./cmd/...` všech nových + existujících testů projde
-- ✅ `make arch-check` projde s novou komponentou `sqlite_seeder`, `sqlite_audit` (oba `sqlite/**`), `request`
+- ✅ `make arch-check` projde s novými komponentami `sqlite_seeder` (`infrastructure/sqlite/seeder/**`) a `request` (`presentation/http/request/**`). Audit repo **nemá** vlastní komponentu — `infrastructure/sqlite/audit/**` je položkou enumerovaného `sqlite_repos` (vedle `job`/`token`/`user`).
 - ✅ Manuální smoke: `make serve` + curl proti `/auth/login` s 11 wrong passwords → 11. 429 + Retry-After; po 10 valid attempts → po 5 failed `auth.account.locked` row v `audit_log`.
 
 

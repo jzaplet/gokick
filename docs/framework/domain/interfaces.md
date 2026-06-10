@@ -36,6 +36,10 @@ type Repository interface {
     FindByNickname(ctx context.Context, nickname string) (*User, error)
     FindAllActive(ctx context.Context) ([]User, error)
     FindAll(ctx context.Context) ([]User, error)
+    // Brute-force lock counter — implementace běží na raw poolu (mimo caller tx),
+    // viz Authentication guide.
+    RecordFailedLogin(ctx context.Context, userID string, threshold int, window, lockDuration time.Duration) (*time.Time, error)
+    ResetFailedLogin(ctx context.Context, userID string) error
 }
 ```
 
@@ -52,7 +56,7 @@ package token
 type TokenRepository interface {
     Save(ctx context.Context, token *RefreshToken) error
     FindByHash(ctx context.Context, hash string) (*RefreshToken, error)
-    MarkUsed(ctx context.Context, hash string) error
+    MarkUsed(ctx context.Context, hash string) (bool, error)
     DeleteByUserID(ctx context.Context, userID string) error
     DeleteExpired(ctx context.Context) error
 }
@@ -185,7 +189,7 @@ func ContextWithTraceID(ctx context.Context, traceID string) context.Context
 
 ## Detaily
 
-- Všechny interfaces používají `context.Context` jako první parametr -- umožňuje předávat transakci, claims, trace ID.
+- **Repository a I/O porty** (`user.Repository`, `token.TokenRepository`, `AuditLogger`, `Transactor`, `Seeder`, `job.Repository`, `PermissionChecker`) berou `context.Context` jako první parametr -- umožňuje předávat transakci, claims, trace ID. **Čisté výpočetní porty** (`PasswordHasher`, `JwtService`) ho záměrně nemají -- nedělají I/O ani nečtou z contextu.
 - Repository interfaces vrací pointery na entity (`*User`, `*RefreshToken`), ne hodnoty.
 - `FindByNickname` vrací `nil, nil` když uživatel neexistuje (ne error) -- umožňuje kontrolu existence bez error handlingu.
 - `FindByID` vrací `*shared.ValidationError` když uživatel neexistuje -- protože volání s neexistujícím ID je vstupní chyba.

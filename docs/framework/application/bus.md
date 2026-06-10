@@ -47,6 +47,8 @@ Parametr `cmd any` umožňuje middleware introspekci -- např. type assert na `s
 | Recovery | `recovery.go` | Zachytí panic, zaloguje stack trace |
 | Logging | `logging.go` | Název handleru, trvání, trace ID |
 | Authorize | `authorize.go` | Type assert na `Permissioned` / `SkipPermission`, volá `PermissionChecker.Check()` |
+| Audit | `audit.go` | Drainuje `AuditCollector` po handleru a zapisuje přes `AuditLogger` — **vně** Transaction, takže přežije rollback ([Audit log](/framework/application/audit)) |
+| JobDispatcher | `job_dispatcher.go` | Injektuje `JobDispatcher` do `ctx`; enqueue z handleru joinuje business tx |
 | DispatchEvents | `events.go` | Vytvoří per-request `EventCollector` v `ctx`, po úspěšném commitu flushne a dispatchne přes `EventBus` |
 | Transaction | `transaction.go` | BeginTx / Commit / Rollback přes `shared.Transactor` interface |
 
@@ -54,7 +56,7 @@ Parametr `cmd any` umožňuje middleware introspekci -- např. type assert na `s
 
 | Typ | Chain | Použití |
 |---|---|---|
-| `CommandBus` | Recovery - Logging - Authorize - DispatchEvents - Transaction | Write operace |
+| `CommandBus` | Recovery - Logging - Authorize - Audit - JobDispatcher - DispatchEvents - Transaction | Write operace |
 | `QueryBus` | Recovery - Logging - Authorize | Read operace |
 | `EventBus` | Recovery - Logging | Side-effects po commitu |
 

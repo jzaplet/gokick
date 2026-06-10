@@ -122,7 +122,7 @@ make arch-check    # go-arch-lint se instaluje automaticky přes make install
 
 Hlavní body konfigurace:
 - `workdir: app` -- všechny cesty relativně k `app/`
-- `commonComponents: [domain]` -- domain je automaticky dostupná všem
+- `commonComponents: [domain_shared]` -- pouze `domain/shared/` (sdílené typy a porty) je dostupná všem; bounded kontexty (`domain_user`, `domain_token`, ...) common **nejsou**
 - `exclude: [infrastructure/di/**]` -- DI balíček nemá omezení
 - `excludeFiles: [infrastructure/database/migration_manager.go]` -- lifecycle soubor mimo kontrolu
 - Každá komponenta má `mayDependOn` seznam povolených závislostí
@@ -136,7 +136,7 @@ Každý doménový kontext (`domain/user/`, `domain/token/`, ...) je izolovaný 
 - Eventy používají jen primitivy (string ID, ne celé entity).
 - go-arch-lint zachytí cross-domain import při `make arch-check`.
 
-Nový kontext (např. `domain/order/`) nevyžaduje žádnou změnu v `.go-arch-lint.yml` -- wildcard `domain/**` pokrývá všechny subbalíčky automaticky. Totéž platí pro `application/<domain>/command/**`, `infrastructure/sqlite/**` atd.
+Nový kontext (např. `domain/order/`) **vyžaduje** vlastní komponentu v `.go-arch-lint.yml` -- právě to, že každý kontext je samostatná komponenta (a `domain/**` není jeden společný wildcard), je důvod, proč go-arch-lint cross-context import vůbec zachytí. Cenou za tu izolaci je explicitní zápis: přidat komponentu `domain_order`, povolit ji v `mayDependOn` u každého konzumenta (`application`, `sqlite_repos`, `testfx`, ...) a přidat `infrastructure/sqlite/order/**` do `sqlite_repos`. Naproti tomu broad-glob komponenty (`application/**`, `presentation/http/handler/**`) nové subbalíčky pokrývají automaticky.
 
 ### Přidání nové feature (checklist)
 

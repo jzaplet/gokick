@@ -161,7 +161,7 @@ Uživatel opraví pole → chyba zmizí. `authFetch` na 401 automaticky refreshn
 - **Bezpečnost.** Frontend validace je jen UX — útočník ji obejde. Backend validuje tak jako tak.
 - **Konzistence hlášek.** Stejný handler volá HTTP, CLI i test. Všude stejná zpráva pro stejný případ.
 
-**Povolené výjimky** — nativní asistence prohlížeče: `required`, `type="email"`, `minlength`, `pattern`. Ukazují tooltip, ale pravda přichází z backendu.
+**Nativní asistence prohlížeče** funguje jen přes atributy, které `<Input>` reálně propíše na DOM — dnes pouze `type` (takže `type="email"` dá nativní kontrolu formátu). Pozor: prop `required` na `<Input>` je **čistě vizuální** — vykreslí hvězdičku `*` u labelu, ale nepropisuje HTML atribut `required`, takže z něj žádný browser tooltip nepřijde; `minlength`/`pattern` `<Input>` zatím nepropisuje vůbec. Pravda tak jako tak přichází z backendu.
 
 
 ## Kam dál

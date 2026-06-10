@@ -27,7 +27,7 @@ corepack enable
 cp .env.example .env    # upravit APP_JWT_SECRET
 make install
 make build && make serve
-./bin/app seed           # výchozí admin:admin
+./bin/app seed           # admin účet, heslo z APP_SEED_ADMIN_PASSWORD (povinné)
 ```
 
 ## Make příkazy

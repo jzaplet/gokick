@@ -11,7 +11,7 @@ import '@/img/go-vue-cqrs-ddd.png';
 // before mounting the router guard. If the cookie is missing or invalid,
 // refresh fails silently and the guard sends protected routes to /login
 // (just like a brand-new visitor).
-const bootstrap = async (): Promise<void> => {
+export const bootstrap = async (): Promise<void> => {
     await refresh();
 
     createApp(App).use(router).mount('#app');

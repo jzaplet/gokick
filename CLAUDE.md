@@ -90,7 +90,7 @@ Bounded contexts in separate packages. **Never import between contexts** (e.g. `
 - Value objects return `*shared.ValidationError` on invalid input
 - Factory functions (`NewUser`) accept value objects, not raw strings
 - Repository interfaces return `nil, nil` for "not found" lookups (except `FindByID` which returns `ValidationError`)
-- New bounded context = new package under `domain/` (arch-lint wildcard `domain/**` covers it automatically)
+- New bounded context = new package under `domain/` **plus its own arch-lint component** (`domain_user`, `domain_token`, …). Each context is a separate component precisely so a cross-context import fails the lint — the trade-off is there is no `domain/**` catch-all, so a new context needs a `domain_<ctx>` entry + a `mayDependOn` grant from each consumer (see the checklist below)
 
 ### Application Layer (`app/application/`)
 
@@ -297,7 +297,7 @@ wire.Bind(new(shared.Seeder), new(*sqlite.Seeder))
 6. **`infrastructure/di/container_provider.go`** — add Wire providers + `wire.Bind` for interfaces
 7. **`make di && make arch-check`** — regenerate DI + verify layer rules
 
-No changes needed in `.go-arch-lint.yml` — wildcards (`domain/**`, `command/**`, `sqlite/**`) cover new packages automatically.
+Broad-glob components auto-cover new sub-packages: a new `application/<ctx>/command/` matches `application/**`, a new handler matches `presentation/http/handler/**`. But the **bounded-context** components are enumerated, not wildcarded — `domain` is split per context (`domain_user`, `domain_token`, `domain_job`) and `sqlite_repos` lists each repo dir — exactly so a cross-context import is caught. So adding a new context (`domain/order/`, `infrastructure/sqlite/order/`) **does** require editing `.go-arch-lint.yml`: add a `domain_order` component, grant it in each consumer's `mayDependOn` (`application`, `sqlite_repos`, `testfx`, …), and add `infrastructure/sqlite/order/**` to `sqlite_repos`. That ~6-line edit is the price of enforcing cross-context isolation in the linter.
 
 ## Key Invariants
 

@@ -95,7 +95,7 @@ func (c *SeedCommand) Command() *cobra.Command {
 Spuštění:
 
 ```bash
-./bin/app seed   # vytvoří admin/admin pokud ještě neexistuje
+./bin/app seed   # vytvoří admin účet (heslo z APP_SEED_ADMIN_PASSWORD) pokud ještě neexistuje
 ```
 
 ### Create-user command
@@ -122,5 +122,5 @@ Flagy: `-n/--nickname` (povinné), `-p/--password` (povinné), `-e/--email` (vol
 
 - Root command (`root.go`) registruje všechny subcommandy.
 - Každý příkaz dostává závislosti přes DI (Wire) a závisí na doménové interfaces (např. `shared.Seeder`), případně na application handlerech (`*usercmd.CreateUserHandler`) -- ne na konkrétní infrastruktuře.
-- Komponenta `console` v `.go-arch-lint.yml` má `mayDependOn: [server, config, database, application, bus]` -- CLI volá application handlery stejně jako HTTP handlery.
+- Komponenta `console` v `.go-arch-lint.yml` má `mayDependOn: [server, scheduler, worker, config, database, application, bus]` -- CLI volá application handlery stejně jako HTTP handlery a `serve` co-spouští scheduler + worker.
 - Nové příkazy se přidávají stejným patternem: struct s `Command() *cobra.Command` metodou, registrace v root commandu.

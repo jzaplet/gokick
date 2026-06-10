@@ -134,3 +134,47 @@ func TestRefreshTokenHandler_ReuseTriggersForceLogout(t *testing.T) {
 		t.Fatal("expected newly-issued token to be revoked after theft detection")
 	}
 }
+
+// The theft path must emit auth.token.theft_detected with metadata {reason}
+// (audit.md table + app-events-audit-40). The behavioral test above proves the
+// force-logout; this proves the security event operators rely on to SEE it.
+func TestRefreshTokenHandler_ReuseRecordsTheftAudit(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "refresh_theft_audit.db"))
+	u := fx.SeedUser(t, "alice", "pwd", "user")
+	raw := fx.SeedRefreshToken(t, u.ID, time.Now().Add(24*time.Hour))
+
+	handler := NewRefreshTokenHandler(fx.Users, fx.Tokens, fx.Jwt)
+
+	// First rotation consumes the raw token (no collector needed here).
+	if _, err := handler.Handle(ctx, RefreshTokenCommand{RawToken: raw}); err != nil {
+		t.Fatalf("first refresh: %v", err)
+	}
+
+	// Reuse the already-rotated token with a collector attached.
+	collector := &shared.AuditCollector{}
+	auditCtx := shared.ContextWithAuditCollector(ctx, collector)
+	if _, err := handler.Handle(auditCtx, RefreshTokenCommand{RawToken: raw}); err == nil {
+		t.Fatal("expected AuthError on token reuse")
+	}
+
+	var theft *shared.AuditEvent
+	for _, e := range collector.Drain() {
+		if e.Action == "auth.token.theft_detected" {
+			ev := e
+			theft = &ev
+		}
+	}
+	if theft == nil {
+		t.Fatal("expected an auth.token.theft_detected audit event")
+	}
+	if theft.TargetID != u.ID {
+		t.Fatalf("theft target_id: got %q want %q", theft.TargetID, u.ID)
+	}
+	if theft.Metadata["reason"] != "reused_after_rotation" {
+		t.Fatalf(
+			"theft reason metadata: got %v want reused_after_rotation",
+			theft.Metadata["reason"],
+		)
+	}
+}
