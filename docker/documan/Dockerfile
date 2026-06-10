@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # check=skip=SecretsUsedInArgOrEnv
-FROM jzaplet/documan:2.13.0
+FROM jzaplet/documan:2.15.0
 
 COPY ./docs /documan/data/docs
 COPY ./README.md /documan/data/README.md
