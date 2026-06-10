@@ -21,14 +21,13 @@ func DispatchEventsMiddleware(
 			return result, err
 		}
 
-		traceID := shared.TraceIDFromContext(ctxWithCollector)
 		// Event handlers must not Collect — Flush runs once.
 		for _, event := range collector.Flush() {
-			logger.Info("bus: event dispatched",
-				"trace_id", traceID,
-				"event", event.EventName(),
-				"source_command", name,
-			)
+			logger.LogAttrs(ctxWithCollector, slog.LevelInfo, "bus: event dispatched",
+				append(shared.LogAttrs(ctxWithCollector),
+					slog.String(shared.LogKeyEvent, event.EventName()),
+					slog.String("source_command", name),
+				)...)
 			eventBus.Dispatch(ctxWithCollector, event)
 		}
 
