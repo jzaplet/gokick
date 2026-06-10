@@ -27,7 +27,7 @@ func TestDispatchEventsMiddleware_DiscardsEventsUnlessCommitSucceeds(t *testing.
 	// plus a counter of how many events actually reached the bus.
 	newChain := func(tx *stubTx) (func(handlerErr error) error, *int32) {
 		var dispatched int32
-		eventBus := bus.NewEventBus(RecoveryMiddleware(logger))
+		eventBus := bus.NewEventBus(RecoveryMiddleware(logger, shared.NopReporter{}))
 		eventBus.Register("test.event", func(_ context.Context, _ shared.DomainEvent) error {
 			atomic.AddInt32(&dispatched, 1)
 			return nil

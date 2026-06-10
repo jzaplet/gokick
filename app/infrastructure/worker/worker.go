@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -30,10 +31,13 @@ const (
 	logKeyAttempts    = "attempts"
 	logKeyConcurrency = "concurrency"
 	logKeyKinds       = "kinds"
+	logKeyPanic       = "panic"
+	logKeyStack       = "stack"
 )
 
 type Worker struct {
 	logger      *slog.Logger
+	reporter    shared.ErrorReporter
 	repo        job.Repository
 	registry    *jobapp.HandlerRegistry
 	tx          shared.Transactor
@@ -43,6 +47,7 @@ type Worker struct {
 
 func NewWorker(
 	logger *slog.Logger,
+	reporter shared.ErrorReporter,
 	repo job.Repository,
 	registry *jobapp.HandlerRegistry,
 	tx shared.Transactor,
@@ -54,6 +59,7 @@ func NewWorker(
 	}
 	return &Worker{
 		logger:      logger,
+		reporter:    reporter,
 		repo:        repo,
 		registry:    registry,
 		tx:          tx,
@@ -121,8 +127,14 @@ func (w *Worker) processOne(ctx context.Context, slot int) {
 
 	handler, ok := w.registry.Lookup(j.Kind)
 	if !ok {
-		// Unknown kind = permanent failure; no retry.
+		// Unknown kind = permanent terminal failure; no retry. Report it: this
+		// is the deploy/registry-skew case (a producer enqueued a kind this
+		// binary has no handler for), exactly what error tracking is for.
 		log.Error("worker: unknown job kind, marking failed")
+		w.reporter.Capture(ctx, fmt.Errorf("worker: unknown job kind %q", j.Kind),
+			slog.String(shared.LogKeyJobKind, j.Kind),
+			slog.String(logKeyJobID, j.ID),
+		)
 		_ = w.repo.MarkFailed(ctx, j.ID, fmt.Sprintf("unknown kind %q", j.Kind))
 		return
 	}
@@ -153,6 +165,14 @@ func (w *Worker) runWithinTx(
 	defer func() {
 		if r := recover(); r != nil {
 			_ = w.tx.Rollback(txCtx)
+			// Log the stack at recover time. handleFailure reports the panic to
+			// the error tracker later (after the handler frames have unwound),
+			// so the origin stack survives only here — mirrors the bus/HTTP
+			// recovery middleware which also log debug.Stack().
+			w.logger.LogAttrs(ctx, slog.LevelError, "worker: handler panicked",
+				slog.Any(logKeyPanic, r),
+				slog.String(logKeyStack, string(debug.Stack())),
+			)
 			err = fmt.Errorf("handler panic: %v", r)
 		}
 	}()
@@ -190,6 +210,12 @@ func (w *Worker) handleFailure(
 	if j.Attempts > j.MaxRetries {
 		log.Error("worker: job exhausted retries, marking failed",
 			shared.DurationMsAttr(duration), slog.Any(shared.LogKeyError, jobErr),
+		)
+		// Terminal failure — report to the error tracker (no-op without a DSN).
+		// Retries that will be re-attempted are intentionally NOT reported.
+		w.reporter.Capture(ctx, fmt.Errorf("job %q exhausted retries: %w", j.Kind, jobErr),
+			slog.String(shared.LogKeyJobKind, j.Kind),
+			slog.String(logKeyJobID, j.ID),
 		)
 		if err := w.repo.MarkFailed(ctx, j.ID, jobErr.Error()); err != nil {
 			log.Error("worker: mark failed write errored", shared.LogKeyError, err)

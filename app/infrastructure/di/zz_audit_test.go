@@ -93,7 +93,7 @@ func TestCommandBus_EventsDispatchAfterCommit(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	checker := security.NewPermissionChecker()
-	eventBus := provideEventBus(logger, provideEventHandlers())
+	eventBus := provideEventBus(logger, provideEventHandlers(), shared.NopReporter{})
 
 	var (
 		handlerFired atomic.Int32
@@ -117,6 +117,7 @@ func TestCommandBus_EventsDispatchAfterCommit(t *testing.T) {
 		eventBus,
 		noopDispatcher{},
 		sqliteaudit.NewRepository(fx.DB),
+		shared.NopReporter{},
 	)
 
 	const nick = "committed-user"
@@ -170,7 +171,7 @@ func TestCommandBus_EventsDiscardedOnRollback(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	checker := security.NewPermissionChecker()
-	eventBus := provideEventBus(logger, provideEventHandlers())
+	eventBus := provideEventBus(logger, provideEventHandlers(), shared.NopReporter{})
 
 	var handlerFired atomic.Int32
 	eventBus.Register("di.test.row_visible", func(context.Context, shared.DomainEvent) error {
@@ -185,6 +186,7 @@ func TestCommandBus_EventsDiscardedOnRollback(t *testing.T) {
 		eventBus,
 		noopDispatcher{},
 		sqliteaudit.NewRepository(fx.DB),
+		shared.NopReporter{},
 	)
 
 	const nick = "rolledback-user"
@@ -229,7 +231,7 @@ func TestQueryBus_AuthorizeEnforced(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	checker := security.NewPermissionChecker()
-	queryBus := provideQueryBus(logger, checker)
+	queryBus := provideQueryBus(logger, checker, shared.NopReporter{})
 
 	// Denied: authenticated non-admin caller → role gate rejects the admin query.
 	userCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{UserID: "u1", Role: "user"})

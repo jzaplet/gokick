@@ -255,7 +255,10 @@ func TestDispatchEventsMiddleware_AfterCommitSideEffectWithRealDB(t *testing.T) 
 	logger := quietLogger()
 
 	run := func(t *testing.T, nickname string, handlerErr error) (fired bool, rowVisible bool) {
-		eventBus := bus.NewEventBus(mw.RecoveryMiddleware(logger), mw.LoggingMiddleware(logger))
+		eventBus := bus.NewEventBus(
+			mw.RecoveryMiddleware(logger, shared.NopReporter{}),
+			mw.LoggingMiddleware(logger),
+		)
 		var dispatched bool
 		eventBus.Register("test.event", func(_ context.Context, _ shared.DomainEvent) error {
 			dispatched = true

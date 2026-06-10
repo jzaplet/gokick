@@ -43,7 +43,7 @@ import (
 
 // Injectors from container_provider.go:
 
-func CreateApplication(logger *slog.Logger) (*app.Application, error) {
+func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app.Application, error) {
 	configConfig, err := config.LoadConfig()
 	if err != nil {
 		return nil, err
@@ -67,7 +67,7 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 	}
 	permissionChecker := providePermissionChecker()
 	v := provideEventHandlers()
-	eventBus := provideEventBus(logger, v)
+	eventBus := provideEventBus(logger, v, reporter)
 	repository := job.NewRepository(sqliteManager)
 	handlerRegistry, err := provideJobHandlerRegistry()
 	if err != nil {
@@ -75,7 +75,7 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 	}
 	jobDispatcher := provideJobDispatcher(repository, handlerRegistry)
 	auditRepository := audit.NewRepository(sqliteManager)
-	commandBus := provideCommandBus(logger, sqliteManager, permissionChecker, eventBus, jobDispatcher, auditRepository)
+	commandBus := provideCommandBus(logger, sqliteManager, permissionChecker, eventBus, jobDispatcher, auditRepository, reporter)
 	userRepository := user.NewRepository(sqliteManager)
 	tokenRepository := token.NewRepository(sqliteManager)
 	passwordHasher := providePasswordHasher()
@@ -84,7 +84,7 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 	logoutHandler := command.NewLogoutHandler(tokenRepository)
 	permissionsRegistry := providePermissionsRegistry()
 	authHandler := handler.NewAuthHandler(cookieSecure, commandBus, loginHandler, refreshTokenHandler, logoutHandler, permissionsRegistry)
-	queryBus := provideQueryBus(logger, permissionChecker)
+	queryBus := provideQueryBus(logger, permissionChecker, reporter)
 	getProfileHandler := query.NewGetProfileHandler(userRepository)
 	changePasswordHandler := command2.NewChangePasswordHandler(userRepository, passwordHasher)
 	profileHandler := handler.NewProfileHandler(commandBus, queryBus, getProfileHandler, changePasswordHandler, permissionsRegistry)
@@ -96,13 +96,13 @@ func CreateApplication(logger *slog.Logger) (*app.Application, error) {
 	getUserDashboardHandler := query3.NewGetUserDashboardHandler()
 	getAdminDashboardHandler := query3.NewGetAdminDashboardHandler()
 	dashboardHandler := handler.NewDashboardHandler(queryBus, getUserDashboardHandler, getAdminDashboardHandler)
-	serverServer := server.NewServer(configConfig, logger, jwtService, rateLimiters, ipExtractor, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler)
+	serverServer := server.NewServer(configConfig, logger, reporter, jwtService, rateLimiters, ipExtractor, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler)
 	v2 := provideSchedulerJobs(tokenRepository)
 	scheduler, err := provideScheduler(logger, v2)
 	if err != nil {
 		return nil, err
 	}
-	worker := provideWorker(logger, repository, handlerRegistry, sqliteManager, jobDispatcher)
+	worker := provideWorker(logger, reporter, repository, handlerRegistry, sqliteManager, jobDispatcher)
 	serveCommand := console.NewServeCommand(serverServer, scheduler, worker)
 	seedAdminPassword := provideSeedAdminPassword(configConfig)
 	seederSeeder := seeder.NewSeeder(userRepository, passwordHasher, seedAdminPassword, logger)
@@ -137,13 +137,18 @@ func provideCommandBus(
 	eventBus *bus.EventBus,
 	dispatcher shared.JobDispatcher, audit2 shared.AuditLogger,
 
+	reporter shared.ErrorReporter,
 ) *bus.CommandBus {
-	chain := append(middleware.BaseChain(logger, checker), middleware.AuditMiddleware(logger, audit2), middleware.JobDispatcherMiddleware(dispatcher), middleware.DispatchEventsMiddleware(logger, eventBus), middleware.TransactionMiddleware(db))
+	chain := append(middleware.BaseChain(logger, checker, reporter), middleware.AuditMiddleware(logger, audit2), middleware.JobDispatcherMiddleware(dispatcher), middleware.DispatchEventsMiddleware(logger, eventBus), middleware.TransactionMiddleware(db))
 	return bus.NewCommandBus(chain...)
 }
 
-func provideQueryBus(logger *slog.Logger, checker shared.PermissionChecker) *bus.QueryBus {
-	return bus.NewQueryBus(middleware.BaseChain(logger, checker)...)
+func provideQueryBus(
+	logger *slog.Logger,
+	checker shared.PermissionChecker,
+	reporter shared.ErrorReporter,
+) *bus.QueryBus {
+	return bus.NewQueryBus(middleware.BaseChain(logger, checker, reporter)...)
 }
 
 func providePublicFS() fs.FS {
@@ -157,8 +162,12 @@ func provideEventHandlers() []bus.EventHandlerEntry {
 	return []bus.EventHandlerEntry{}
 }
 
-func provideEventBus(logger *slog.Logger, handlers []bus.EventHandlerEntry) *bus.EventBus {
-	eb := bus.NewEventBus(middleware.RecoveryMiddleware(logger), middleware.LoggingMiddleware(logger))
+func provideEventBus(
+	logger *slog.Logger,
+	handlers []bus.EventHandlerEntry,
+	reporter shared.ErrorReporter,
+) *bus.EventBus {
+	eb := bus.NewEventBus(middleware.RecoveryMiddleware(logger, reporter), middleware.LoggingMiddleware(logger))
 	for _, h := range handlers {
 		eb.Register(h.Event, h.Handler)
 	}
@@ -244,12 +253,13 @@ func provideJobDispatcher(
 // more goroutines don't increase throughput for DB-bound handlers.
 func provideWorker(
 	logger *slog.Logger,
+	reporter shared.ErrorReporter,
 	repo job3.Repository,
 	registry *job2.HandlerRegistry,
 	db *database.SqliteManager,
 	dispatcher shared.JobDispatcher,
 ) *worker.Worker {
-	return worker.NewWorker(logger, repo, registry, db, dispatcher, 1)
+	return worker.NewWorker(logger, reporter, repo, registry, db, dispatcher, 1)
 }
 
 func providePermissionsRegistry() *shared.PermissionsRegistry {

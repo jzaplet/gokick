@@ -36,7 +36,7 @@ func TestDispatchEventsMiddleware_PerRequestIsolation(t *testing.T) {
 	const dispatches = 200
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	eventBus := bus.NewEventBus(RecoveryMiddleware(logger))
+	eventBus := bus.NewEventBus(RecoveryMiddleware(logger, shared.NopReporter{}))
 
 	// Handler records (sourceDispatchID, eventDispatchID) pairs. Without
 	// per-request isolation we'd see pairs where sourceDispatchID != eventDispatchID.
@@ -54,7 +54,7 @@ func TestDispatchEventsMiddleware_PerRequestIsolation(t *testing.T) {
 	})
 
 	commandBus := bus.NewCommandBus(
-		RecoveryMiddleware(logger),
+		RecoveryMiddleware(logger, shared.NopReporter{}),
 		DispatchEventsMiddleware(logger, eventBus),
 		// No TransactionMiddleware — we're isolating the event flow itself.
 	)
@@ -147,7 +147,7 @@ func TestEventBus_Dispatch_CollectFromHandlerPanics(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	eventBus := bus.NewEventBus(RecoveryMiddleware(logger))
+	eventBus := bus.NewEventBus(RecoveryMiddleware(logger, shared.NopReporter{}))
 
 	var panicked atomic.Bool
 	eventBus.Register("test.event", func(ctx context.Context, _ shared.DomainEvent) error {

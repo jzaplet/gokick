@@ -54,6 +54,7 @@ const (
 type Server struct {
 	config     *config.Config
 	logger     *slog.Logger
+	reporter   shared.ErrorReporter
 	jwt        shared.JwtService
 	limiters   *RateLimiters
 	ipExtract  middleware.IPExtractor
@@ -68,6 +69,7 @@ type Server struct {
 func NewServer(
 	config *config.Config,
 	logger *slog.Logger,
+	reporter shared.ErrorReporter,
 	jwt shared.JwtService,
 	limiters *RateLimiters,
 	ipExtract middleware.IPExtractor,
@@ -81,6 +83,7 @@ func NewServer(
 	return &Server{
 		config:     config,
 		logger:     logger,
+		reporter:   reporter,
 		jwt:        jwt,
 		limiters:   limiters,
 		ipExtract:  ipExtract,
@@ -197,13 +200,15 @@ func (s *Server) registerRoutes() *http.ServeMux {
 func (s *Server) buildMiddlewareChain(handler http.Handler) http.Handler {
 	csrf := &http.CrossOriginProtection{}
 
-	// Order: Trace → IP → Security headers → CORS → CSRF → Logging
-	// (→ handler). HSTS is only emitted in production (gated on the
+	// Order: Trace → Recovery → IP → Security headers → CORS → CSRF →
+	// Logging (→ handler). HSTS is only emitted in production (gated on the
 	// CookieSecure flag, which already distinguishes HTTPS traffic).
-	// IPMiddleware runs early so every downstream consumer (audit,
-	// logging) sees the same resolved IP in context.
+	// Recovery sits just inside Trace so trace_id is in ctx while it still
+	// wraps every other middleware. IPMiddleware runs early so every
+	// downstream consumer (audit, logging) sees the same resolved IP.
 	middlewares := []func(http.Handler) http.Handler{
 		middleware.TraceMiddleware(),
+		middleware.RecoveryMiddleware(s.logger, s.reporter),
 		middleware.IPMiddleware(s.ipExtract),
 		middleware.SecurityHeadersMiddleware(s.config.CookieSecure),
 		middleware.CORSMiddleware(s.config.CORSOrigin),

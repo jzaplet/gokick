@@ -2,6 +2,7 @@ import { createApp } from 'vue';
 import App from '@/App.vue';
 import { router } from '@/router';
 import { refresh } from '@/app-ui/Auth/refresh';
+import { initSentry } from '@/app-ui/Sentry/initSentry';
 import '@/tailwind.css';
 import '@/img/go-vue-cqrs-ddd.png';
 
@@ -12,9 +13,15 @@ import '@/img/go-vue-cqrs-ddd.png';
 // refresh fails silently and the guard sends protected routes to /login
 // (just like a brand-new visitor).
 export const bootstrap = async (): Promise<void> => {
+    const app = createApp(App);
+
+    // Init error tracking before the first await so failures during refresh and
+    // mount are captured too (no-op without VITE_SENTRY_DSN).
+    initSentry(app);
+
     await refresh();
 
-    createApp(App).use(router).mount('#app');
+    app.use(router).mount('#app');
 };
 
 void bootstrap();

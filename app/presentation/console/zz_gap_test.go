@@ -96,6 +96,7 @@ func serveTestServer(logger *slog.Logger) *server.Server {
 	return server.NewServer(
 		&config.Config{HTTPPort: "0", CookieSecure: false, CORSOrigin: "*"},
 		logger,
+		shared.NopReporter{},
 		nil, // jwt — only used by registerRoutes' AuthMiddleware wrapper, never invoked
 		limiters,
 		extract,
@@ -115,7 +116,7 @@ func serveTestWorker(t *testing.T, fx *testfx.Fixture, logger *slog.Logger) *wor
 		t.Fatalf("registry: %v", err)
 	}
 	dispatcher := shared.JobDispatcherFromContext(context.Background())
-	return worker.NewWorker(logger, fx.Jobs, registry, fx.DB, dispatcher, 1)
+	return worker.NewWorker(logger, shared.NopReporter{}, fx.Jobs, registry, fx.DB, dispatcher, 1)
 }
 
 // TestServeCommand_SchedulerDoneGatesReturnAndSharesCtx is the load-bearing

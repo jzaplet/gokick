@@ -251,7 +251,7 @@ Před přidáním nových funkcí proběhl důkladný bezpečnostní audit, kter
 
 ## Fáze 5 — Observability
 
-**Stav:** Probíhá — strukturované slog atributy hotové (2026-06-10), Sentry a OpenTelemetry zbývají.
+**Stav:** Probíhá — strukturované slog atributy + Sentry (BE i FE) hotové (2026-06-10); zbývá už jen OpenTelemetry (volitelně).
 
 Až aplikace začne jezdit v produkci. Bez F1–F3 by observabilita měřila nestabilní systém.
 
@@ -265,10 +265,11 @@ Až aplikace začne jezdit v produkci. Bez F1–F3 by observabilita měřila nes
   - **Statické vynucení** (`.golangci.yml`): `depguard` (zákaz cizích loggerů) + `forbidigo` (`fmt.Print*`, stdlib `log`, `slog.New*` mimo `cmd/`, `os.Stdout/Stderr`) + `sloglint` (`no-global`, `static-msg`, `no-raw-keys`, `key-naming-case: snake`, `no-mixed-args`). Tím nelze logovat jinou cestou — všechny klíče převedeny na konstanty (cross-cutting `shared.LogKey*`, komponentní `logKey*`). Ověřeno probem se všemi bypass vektory.
   - Testy: `app/domain/shared/log_test.go`, `app/application/bus/middleware/logging_test.go`, `cmd/logger_test.go`.
 
-- [ ] **Sentry**
-  - `APP_SENTRY_DSN` env. Když je prázdné, Sentry se neinicializuje.
-  - Recovery middleware (HTTP i bus) hlásí panic s `trace_id`, `user_id`, `command/path` v contextu.
-  - Worker stejně — failed job po exhausted `max_retries` jde do Sentry s `kind`, `payload` (truncated), `last_error`.
+- [x] **Sentry (BE + FE)** — Hotovo (2026-06-10). Rozsah A: jen chyby & paniky.
+  - Port `shared.ErrorReporter` (`Capture`/`Flush`) + `NopReporter`; staven v `cmd/sentry.go`, gated na `APP_SENTRY_DSN` (prázdné = no-op). `defer Flush` v `main` (+ před `os.Exit`), protože `CaptureException` je async.
+  - **Přidán HTTP `RecoveryMiddleware`** (dosud chyběl) — panika mimo bus → log + report + 500. Bus recovery + worker (exhausted retries) hlásí taky. Tagy `trace_id`/`user_id` z ctx + `command`/`job_kind`/`method`/`path`.
+  - **FE:** `@sentry/vue` v `assets/app.ts`, gated na `VITE_SENTRY_DSN`; Vue chyby + unhandled rejections. Follow-up: source-map upload (`@sentry/vite-plugin`) pro čitelné traces.
+  - sentry-go vědomě přidán do depguard allowlistu (jinak ho enforcement blokuje). Viz [Observability](/framework/infrastructure/observability).
 
 - [ ] **OpenTelemetry (volitelně, později)**
   - Až bude nasazená alespoň jedna další služba (database proxy, search backend, atd.). Pro standalone monolit přidává komplexitu bez návratnosti.

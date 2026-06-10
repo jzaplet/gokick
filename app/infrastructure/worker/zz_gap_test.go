@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	jobapp "gokick/app/application/job"
+	"gokick/app/domain/shared"
 	"gokick/app/internal/testfx"
 )
 
@@ -37,7 +38,15 @@ func TestNewWorker_DefaultConcurrency(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			w := NewWorker(silentLogger(), nil, registry, nil, noopDispatcher(), c.request)
+			w := NewWorker(
+				silentLogger(),
+				shared.NopReporter{},
+				nil,
+				registry,
+				nil,
+				noopDispatcher(),
+				c.request,
+			)
 			if w.concurrency != c.want {
 				t.Fatalf("NewWorker(..., %d).concurrency: got %d want %d",
 					c.request, w.concurrency, c.want)

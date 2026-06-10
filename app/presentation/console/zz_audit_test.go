@@ -31,7 +31,15 @@ func newTestWorker(t *testing.T, fx *testfx.Fixture) *worker.Worker {
 		t.Fatalf("registry: %v", err)
 	}
 	dispatcher := shared.JobDispatcherFromContext(context.Background())
-	return worker.NewWorker(silentLogger(), fx.Jobs, registry, fx.DB, dispatcher, 1)
+	return worker.NewWorker(
+		silentLogger(),
+		shared.NopReporter{},
+		fx.Jobs,
+		registry,
+		fx.DB,
+		dispatcher,
+		1,
+	)
 }
 
 // ---------------------------------------------------------------------------
