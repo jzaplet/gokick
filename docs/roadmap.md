@@ -262,6 +262,7 @@ Až aplikace začne jezdit v produkci. Bez F1–F3 by observabilita měřila nes
   - `user_id` doplněn do bus `LoggingMiddleware`; korelace přes `LogAttrs` i v recovery / events / audit middleware a HTTP request logu.
   - Sjednoceno napříč vrstvami: `duration`→`duration_ms` (bus / HTTP / worker / scheduler), worker `kind`→`job_kind`, `attempt`→`attempts`, `retry_in`→`retry_in_ms`. Komponentně-lokální klíče (`addr`, `slot`, `name`, `nickname`) ponechány.
   - Logger constructor vyextrahován do `cmd/logger.go` (testovatelný, env-driven přes `APP_LOG_FORMAT` / `APP_LOG_LEVEL`) — záměrně jediný šev, kam později zapadne OTel handler. Viz [Observability](/framework/infrastructure/observability).
+  - **Statické vynucení** (`.golangci.yml`): `depguard` (zákaz cizích loggerů) + `forbidigo` (`fmt.Print*`, stdlib `log`, `slog.New*` mimo `cmd/`, `os.Stdout/Stderr`) + `sloglint` (`no-global`, `static-msg`, `no-raw-keys`, `key-naming-case: snake`, `no-mixed-args`). Tím nelze logovat jinou cestou — všechny klíče převedeny na konstanty (cross-cutting `shared.LogKey*`, komponentní `logKey*`). Ověřeno probem se všemi bypass vektory.
   - Testy: `app/domain/shared/log_test.go`, `app/application/bus/middleware/logging_test.go`, `cmd/logger_test.go`.
 
 - [ ] **Sentry**

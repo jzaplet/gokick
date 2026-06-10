@@ -34,7 +34,22 @@ Aplikace loguje strukturovaně přes Go `log/slog` do stderr. Tato stránka popi
 | `retry_in_ms` | odklad dalšího pokusu jobu |
 | `error` / `event` / `job_kind` | chyba / jméno domain eventu / druh jobu |
 
-Pravidlo: standardizovanou korelační/měřící slovní zásobu produkují helpery a konstanty — `shared.LogAttrs` (`trace_id` + `user_id`), `shared.DurationMsAttr` (`duration_ms`) a konstanty `shared.LogKey*` — používané hlavně v **bus middleware**, kde na konzistenci záleží nejvíc. Leaf komponenty (worker, scheduler, server, CLI), všudypřítomný klíč `error` a jednorázové komponentní klíče (`addr`, `slot`, `name`, `nickname`) mohou používat prosté literály.
+Pravidlo: **každý klíč je Go konstanta** (vynuceno staticky, viz níže) — nikdy holý string literál. Cross-cutting klíče jsou v `shared.LogKey*` (`trace_id`, `user_id`, `command`, `duration_ms`, `error`, `event`, `job_kind`, `retry_in_ms`); komponentně-specifické klíče jako package-local `logKey*` konstanty v dané komponentě (`addr`/`timeout` v serveru, `slot`/`job_id`/`attempts` ve workeru, `from`/`to`/`version` v migracích…). `domain/shared` tak nezná infra klíče. Korelaci produkuje `shared.LogAttrs`, dobu `shared.DurationMsAttr`.
+
+
+## Statické vynucení
+
+Logování má **jedinou cestu** a žádný vývojář ani AI ji nemůže nepozorovaně obejít — `.golangci.yml` to hlídá při lintu (a tím v CI). Konkrétně:
+
+- **`depguard` — import allow-list** (ne deny-list): povolen jen stdlib (`$gostd`), `gokick` a explicitně vyjmenované přímé závislosti. Tím padá **celá třída** cizích loggerů jedním tahem — `charmbracelet/log`, `glog`, `hclog`, `apex/log`, `go-kit/log`, `log15`, `sentry-go`, OTel logs SDK i vendored fork — neprojdou už importem. `log/syslog` je navíc explicitně deny. *Daň:* nová závislost = nový řádek v allow (stejná disciplína jako `.go-arch-lint.yml`).
+- **`forbidigo`** — zakázaná volání: `fmt.Print*` + `print`/`println` (stdout), stdlib `log.*` (vč. `log.New`/`log.Default`), `slog.New*` (konstrukce loggeru/handleru) mimo `cmd/`, `slog.Default()` (chain bypass `no-global`), `os.Stdout`/`os.Stderr`, **`os.Create`/`os.OpenFile`/`os.WriteFile`/`os.NewFile`** (otevření souboru/fd — přesně „logování do souboru") a `syscall.Write`.
+- **`sloglint`** — `no-global` (žádný globální default logger — jen injektovaný), `static-msg` (zprávy konstantní), `no-raw-keys` (každý klíč konstanta), `key-naming-case: snake`, `no-mixed-args` (nemíchat kv páry a `slog.Attr`).
+
+Výjimky (úzké, přes `linters.exclusions`): `presentation/console/` smí `fmt.Print` (CLI výstup pro uživatele), `cmd/` smí `slog.New` + `os.Stderr` (konstruktor loggeru), `internal/testfx/` a `*_test.go` jsou z forbidigo/sloglint vyňaté, `domain/shared/log.go` definuje klíče a key-parametrizované helpery (tedy mimo `no-raw-keys`).
+
+Rozsah byl ověřen adverzariálně (red-team probe): zavřené jsou všechny *náhodné* vektory — logování do souboru, `fmt.Fprintf` na soubor (zdroj souboru je zakázán), cizí logger, `slog.Default().Info()`, druhý slog logger. **Reziduum (vědomě, mimo dosah name-based lintu):** odhodlaný bypass přes `net.Dial` socket sink, `go:linkname`/raw runtime, nebo zápis na fd získaný cestou, kterou linter nepojmenuje.
+
+> Statická analýza zastaví *náhodný* drift (o ten tu jde), ne odhodlaný bypass. A vynucuje *call-site* disciplínu, ne runtime doručení (ztráta při pádu / zachytávání stderr je ops). Pozn.: CI instaluje `golangci-lint@latest` (build s Go z `go.mod`), takže nehrozí version skew, kdy by se lint tiše neprovedl.
 
 
 ## Korelace: `LogAttrs(ctx)`

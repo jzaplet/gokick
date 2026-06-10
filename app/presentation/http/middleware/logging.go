@@ -7,6 +7,13 @@ import (
 	"time"
 )
 
+// HTTP-middleware-local structured-log keys (cross-cutting ones live in
+// shared.LogKey*). sloglint's no-raw-keys forbids bare string keys.
+const (
+	logKeyMethod = "method"
+	logKeyPath   = "path"
+)
+
 func LoggingMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -16,8 +23,8 @@ func LoggingMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
 
 			logger.LogAttrs(r.Context(), slog.LevelInfo, "http: request",
 				append(shared.LogAttrs(r.Context()),
-					slog.String("method", r.Method),
-					slog.String("path", r.URL.Path),
+					slog.String(logKeyMethod, r.Method),
+					slog.String(logKeyPath, r.URL.Path),
 					shared.DurationMsAttr(time.Since(start)),
 				)...)
 		})

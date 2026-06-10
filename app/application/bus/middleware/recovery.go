@@ -19,8 +19,8 @@ func RecoveryMiddleware(logger *slog.Logger) bus.Middleware {
 				logger.LogAttrs(ctx, slog.LevelError, "bus: panic recovered",
 					append(shared.LogAttrs(ctx),
 						slog.String(shared.LogKeyCommand, name),
-						slog.Any("panic", r),
-						slog.String("stack", string(debug.Stack())),
+						slog.Any(logKeyPanic, r),
+						slog.String(logKeyStack, string(debug.Stack())),
 					)...)
 				err = fmt.Errorf("bus: panic in %s: %v", name, r)
 			}
