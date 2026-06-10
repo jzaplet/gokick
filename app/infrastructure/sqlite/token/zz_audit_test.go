@@ -114,7 +114,9 @@ func TestDeleteExpired_KeepsUsedButUnexpiredToken(t *testing.T) {
 		t.Fatalf("FindByHash(used, post-cleanup): %v", err)
 	}
 	if survivor == nil {
-		t.Fatal("used-but-unexpired token must survive DeleteExpired (used_at not part of condition)")
+		t.Fatal(
+			"used-but-unexpired token must survive DeleteExpired (used_at not part of condition)",
+		)
 	}
 	if survivor.UsedAt == nil {
 		t.Fatal("surviving token must still have used_at set")

@@ -77,7 +77,10 @@ func TestApplicationRun_MigratesBeforeSubcommand(t *testing.T) {
 		t.Fatalf("precondition query: %v", err)
 	}
 	if before != 0 {
-		t.Fatalf("precondition: users table already exists before Run (got %d), test would be vacuous", before)
+		t.Fatalf(
+			"precondition: users table already exists before Run (got %d), test would be vacuous",
+			before,
+		)
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -118,7 +121,9 @@ func TestApplicationRun_MigratesBeforeSubcommand(t *testing.T) {
 	// overview-09 + presentation-02: migrations had already created the schema
 	// at the moment the subcommand body executed.
 	if !probe.usersTablePresent {
-		t.Fatal("users table absent when subcommand ran: Run did not apply migrations before the subcommand")
+		t.Fatal(
+			"users table absent when subcommand ran: Run did not apply migrations before the subcommand",
+		)
 	}
 }
 
@@ -162,9 +167,13 @@ func TestApplicationRun_StopsWhenMigrationFails(t *testing.T) {
 
 	runErr := application.Run(context.Background())
 	if runErr == nil {
-		t.Fatal("Run returned nil even though migrations could not run; the RunUp error guard is missing")
+		t.Fatal(
+			"Run returned nil even though migrations could not run; the RunUp error guard is missing",
+		)
 	}
 	if probe.called {
-		t.Fatal("subcommand ran despite a migration failure; Run did not short-circuit on RunUp error")
+		t.Fatal(
+			"subcommand ran despite a migration failure; Run did not short-circuit on RunUp error",
+		)
 	}
 }

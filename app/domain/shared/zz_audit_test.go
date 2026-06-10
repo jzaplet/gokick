@@ -140,7 +140,9 @@ func TestEventCollectorFromContext_ThrowawayOutsideBus(t *testing.T) {
 	// returned collector is a throwaway, not a persistent one anybody flushes.
 	c2 := EventCollectorFromContext(ctx)
 	if c1 == c2 {
-		t.Fatal("outside the bus each call must return a fresh throwaway collector, got the same instance")
+		t.Fatal(
+			"outside the bus each call must return a fresh throwaway collector, got the same instance",
+		)
 	}
 
 	// Collect succeeds (does not panic — this is not a forbidden collector) and
@@ -167,6 +169,8 @@ func TestEventCollectorFromContext_ReturnsInstalledCollector(t *testing.T) {
 	ctx, installed := ContextWithEventCollector(context.Background())
 
 	if got := EventCollectorFromContext(ctx); got != installed {
-		t.Fatal("inside the bus, EventCollectorFromContext must return the installed collector, not a throwaway")
+		t.Fatal(
+			"inside the bus, EventCollectorFromContext must return the installed collector, not a throwaway",
+		)
 	}
 }

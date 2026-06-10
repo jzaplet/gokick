@@ -191,7 +191,10 @@ func TestServeCommand_SchedulerDoneGatesReturnAndSharesCtx(t *testing.T) {
 	// roadmap-21: RunE must NOT have returned — the scheduler hasn't drained.
 	select {
 	case err := <-runReturned:
-		t.Fatalf("RunE returned before the scheduler drained (schedulerDone not awaited): err=%v", err)
+		t.Fatalf(
+			"RunE returned before the scheduler drained (schedulerDone not awaited): err=%v",
+			err,
+		)
 	case <-time.After(150 * time.Millisecond):
 	}
 

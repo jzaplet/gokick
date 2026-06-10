@@ -95,7 +95,8 @@ func TestSqliteManager_ForeignKeysEnabledPerConnection(t *testing.T) {
 		t.Fatalf("create child: %v", err)
 	}
 
-	_, err = mgr.DB().Exec(`INSERT INTO child (id, parent_id) VALUES (?, ?)`, "c1", "does-not-exist")
+	_, err = mgr.DB().
+		Exec(`INSERT INTO child (id, parent_id) VALUES (?, ?)`, "c1", "does-not-exist")
 	if err == nil {
 		t.Fatal("expected FOREIGN KEY constraint violation, got nil error (foreign_keys is OFF)")
 	}

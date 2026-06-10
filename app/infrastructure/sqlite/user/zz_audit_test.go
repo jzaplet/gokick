@@ -92,7 +92,9 @@ func TestRecordFailedLogin_SurvivesOuterTxRollback(t *testing.T) {
 	select {
 	case res = <-done:
 	case <-time.After(8 * time.Second):
-		t.Fatal("RecordFailedLogin did not complete after outer tx rollback (busy_timeout would be ~5s)")
+		t.Fatal(
+			"RecordFailedLogin did not complete after outer tx rollback (busy_timeout would be ~5s)",
+		)
 	}
 	if res.err != nil {
 		t.Fatalf("RecordFailedLogin returned error after rollback: %v", res.err)
@@ -102,7 +104,10 @@ func TestRecordFailedLogin_SurvivesOuterTxRollback(t *testing.T) {
 	// would error). The counter increment must have survived the rollback.
 	got := mustFindByID(t, fx, u.ID)
 	if got.FailedLoginAttempts != 1 {
-		t.Fatalf("counter must survive outer-tx rollback (raw pool): got %d want 1", got.FailedLoginAttempts)
+		t.Fatalf(
+			"counter must survive outer-tx rollback (raw pool): got %d want 1",
+			got.FailedLoginAttempts,
+		)
 	}
 }
 
@@ -145,6 +150,9 @@ func TestResetFailedLogin_SurvivesOuterTxRollback(t *testing.T) {
 
 	got := mustFindByID(t, fx, u.ID)
 	if got.FailedLoginAttempts != 0 {
-		t.Fatalf("counter clear must survive outer-tx rollback (raw pool): got %d want 0", got.FailedLoginAttempts)
+		t.Fatalf(
+			"counter clear must survive outer-tx rollback (raw pool): got %d want 0",
+			got.FailedLoginAttempts,
+		)
 	}
 }

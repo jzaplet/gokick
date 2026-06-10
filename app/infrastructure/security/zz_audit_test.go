@@ -42,7 +42,9 @@ func TestHash_PrehashDiscriminatesBeyond72Bytes(t *testing.T) {
 	// The discriminating assertion: b differs from a only past byte 72, so it MUST NOT
 	// verify. Without the prehash this would erroneously succeed (bcrypt truncation).
 	if err := h.Verify(b, hash); err == nil {
-		t.Fatal("expected Verify to fail for a password differing only past byte 72 (prehash missing?)")
+		t.Fatal(
+			"expected Verify to fail for a password differing only past byte 72 (prehash missing?)",
+		)
 	}
 }
 

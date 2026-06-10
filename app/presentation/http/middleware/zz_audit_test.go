@@ -88,10 +88,14 @@ func TestCORSMiddleware_SetsAllowHeadersAndPassesThroughGET(t *testing.T) {
 
 	const origin = "http://localhost:5173"
 	called := false
-	handler := CORSMiddleware(origin)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		called = true
-		w.WriteHeader(http.StatusOK)
-	}))
+	handler := CORSMiddleware(
+		origin,
+	)(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			called = true
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/anything", nil)
 	rec := httptest.NewRecorder()
@@ -158,7 +162,11 @@ func TestCORSMiddleware_AddsVaryOrigin(t *testing.T) {
 		handler.ServeHTTP(rec, req)
 
 		if !slices.Contains(rec.Header().Values("Vary"), "Origin") {
-			t.Fatalf("%s: Vary header must contain Origin, got %v", method, rec.Header().Values("Vary"))
+			t.Fatalf(
+				"%s: Vary header must contain Origin, got %v",
+				method,
+				rec.Header().Values("Vary"),
+			)
 		}
 	}
 }

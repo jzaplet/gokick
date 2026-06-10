@@ -53,7 +53,10 @@ func TestQueryBus_AuthorizeDeniesUnpermittedQuery(t *testing.T) {
 
 	var permErr *shared.PermissionError
 	if !errors.As(err, &permErr) {
-		t.Fatalf("QueryBus must run Authorize and surface the denial as *PermissionError, got %v", err)
+		t.Fatalf(
+			"QueryBus must run Authorize and surface the denial as *PermissionError, got %v",
+			err,
+		)
 	}
 	if ran {
 		t.Fatal("handler must NOT run when the query is denied (QueryBus is fail-closed)")
@@ -138,7 +141,10 @@ func TestDispatchEventsMiddleware_EventHandlerErrorDoesNotFailCommand(t *testing
 		},
 	)
 	if err != nil {
-		t.Fatalf("a failing event handler must not fail the (already-committed) command, got %v", err)
+		t.Fatalf(
+			"a failing event handler must not fail the (already-committed) command, got %v",
+			err,
+		)
 	}
 	if result != "command-ok" {
 		t.Fatalf("command result must be preserved, got %v", result)
