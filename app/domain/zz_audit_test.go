@@ -134,7 +134,9 @@ func TestDomainImportsAreStdlibUuidOrDomainOnly(t *testing.T) {
 			if !importAllowed(imp) {
 				t.Errorf(
 					"domain file %s imports forbidden package %q: domain may depend only on stdlib, %q, or other gokick/app/domain/ packages",
-					file, imp, allowedVendor,
+					file,
+					imp,
+					allowedVendor,
 				)
 			}
 		}
@@ -171,7 +173,12 @@ func TestDomainNeverImportsOuterLayers(t *testing.T) {
 					break
 				}
 			}
-			t.Errorf("domain file %s imports %s package %q (forbidden by the layer dependency rule)", file, layer, imp)
+			t.Errorf(
+				"domain file %s imports %s package %q (forbidden by the layer dependency rule)",
+				file,
+				layer,
+				imp,
+			)
 		}
 	}
 }
@@ -191,7 +198,10 @@ func TestDomainImportsIncludeUuid(t *testing.T) {
 			}
 		}
 	}
-	t.Fatalf("expected at least one domain file to import %q; none did (parser may not be seeing real imports)", allowedVendor)
+	t.Fatalf(
+		"expected at least one domain file to import %q; none did (parser may not be seeing real imports)",
+		allowedVendor,
+	)
 }
 
 // TestIsStdlibClassification documents and locks the stdlib-vs-module

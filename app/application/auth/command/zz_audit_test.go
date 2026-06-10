@@ -212,7 +212,10 @@ func TestLoginHandler_AccountLockedEventCarriesLockedUntilMetadata(t *testing.T)
 
 	rawLockedUntil, ok := lockEvent.Metadata["locked_until"]
 	if !ok {
-		t.Fatalf("auth.account.locked must carry locked_until metadata, got %+v", lockEvent.Metadata)
+		t.Fatalf(
+			"auth.account.locked must carry locked_until metadata, got %+v",
+			lockEvent.Metadata,
+		)
 	}
 	lockedUntilStr, ok := rawLockedUntil.(string)
 	if !ok {

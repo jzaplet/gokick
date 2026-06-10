@@ -92,7 +92,10 @@ func TestBuildMiddlewareChain_TraceRunsBeforeHandlerAndHeadersApplied(t *testing
 
 	// CORSMiddleware effect — origin reflected from config.
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "https://app.example.com" {
-		t.Fatalf("Access-Control-Allow-Origin: got %q want configured origin — CORS not in chain", got)
+		t.Fatalf(
+			"Access-Control-Allow-Origin: got %q want configured origin — CORS not in chain",
+			got,
+		)
 	}
 }
 
@@ -104,9 +107,11 @@ func TestBuildMiddlewareChain_HSTSGatedByCookieSecure(t *testing.T) {
 
 	fire := func(cookieSecure bool) string {
 		s := chainOnlyServer(cookieSecure)
-		chain := s.buildMiddlewareChain(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		}))
+		chain := s.buildMiddlewareChain(
+			http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}),
+		)
 		req := httptest.NewRequest(http.MethodGet, "/health", nil)
 		req.RemoteAddr = "203.0.113.7:5555"
 		rec := httptest.NewRecorder()
@@ -198,8 +203,13 @@ func TestRegisterRoutes_ProtectedRoutesRejectInvalidBearer(t *testing.T) {
 			mux.ServeHTTP(rec, req)
 
 			if rec.Code != http.StatusUnauthorized {
-				t.Fatalf("%s %s with invalid Bearer: got %d want 401 (route missing or not auth-wrapped); body=%s",
-					tc.method, tc.path, rec.Code, rec.Body.String())
+				t.Fatalf(
+					"%s %s with invalid Bearer: got %d want 401 (route missing or not auth-wrapped); body=%s",
+					tc.method,
+					tc.path,
+					rec.Code,
+					rec.Body.String(),
+				)
 			}
 		})
 	}
@@ -220,8 +230,11 @@ func TestRegisterRoutes_PublicRoutesSkipAuth(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /health with invalid Bearer: got %d want 200 — /health must NOT be auth-wrapped; body=%s",
-			rec.Code, rec.Body.String())
+		t.Fatalf(
+			"GET /health with invalid Bearer: got %d want 200 — /health must NOT be auth-wrapped; body=%s",
+			rec.Code,
+			rec.Body.String(),
+		)
 	}
 }
 

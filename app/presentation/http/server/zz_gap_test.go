@@ -56,8 +56,11 @@ func TestBuildMiddlewareChain_CSRFBlocksCrossSitePOST(t *testing.T) {
 		chain.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusForbidden {
-			t.Fatalf("cross-site POST: got %d want 403 — CrossOriginProtection not in chain; body=%s",
-				rec.Code, rec.Body.String())
+			t.Fatalf(
+				"cross-site POST: got %d want 403 — CrossOriginProtection not in chain; body=%s",
+				rec.Code,
+				rec.Body.String(),
+			)
 		}
 		if *reached {
 			t.Fatal("terminal handler ran on a cross-site POST — CSRF did not block the request")
@@ -76,8 +79,11 @@ func TestBuildMiddlewareChain_CSRFBlocksCrossSitePOST(t *testing.T) {
 		chain.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusOK {
-			t.Fatalf("same-origin POST: got %d want 200 — chain rejected a non-cross-site POST; body=%s",
-				rec.Code, rec.Body.String())
+			t.Fatalf(
+				"same-origin POST: got %d want 200 — chain rejected a non-cross-site POST; body=%s",
+				rec.Code,
+				rec.Body.String(),
+			)
 		}
 		if !*reached {
 			t.Fatal("terminal handler did not run on a same-origin POST — chain over-blocked")
@@ -113,8 +119,11 @@ func TestServer_SPAFallbackServesIndexForUnknownPath(t *testing.T) {
 	stack.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("GET unknown no-dot path: got %d want 200 — SPA catch-all not registered/reachable; body=%s",
-			rec.Code, rec.Body.String())
+		t.Fatalf(
+			"GET unknown no-dot path: got %d want 200 — SPA catch-all not registered/reachable; body=%s",
+			rec.Code,
+			rec.Body.String(),
+		)
 	}
 	if ct := rec.Header().Get("Content-Type"); ct != "text/html; charset=utf-8" {
 		t.Fatalf("SPA fallback Content-Type: got %q want text/html; charset=utf-8", ct)
@@ -261,25 +270,38 @@ func TestRegisterRoutes_BindsAdminAndDashboardRoutesToHandlers(t *testing.T) {
 	// PUT /api/v1/admin/users/{id} -> UpdateUserHandler. Update and Delete both return 204,
 	// so status can't separate them; the post-state (target still present with role flipped
 	// user->admin) proves the request hit Update, not Delete.
-	t.Run("PUT admin/users/{id} -> Update (204, target survives with new role)", func(t *testing.T) {
-		target := fx.SeedUser(t, "puttarget", "old-password", "user")
-		rec := do(http.MethodPut, "/api/v1/admin/users/"+target.ID, map[string]string{
-			"nickname": "puttarget", // unchanged nickname avoids the conflict-lookup branch
-			"password": "",          // empty = unchanged
-			"email":    "puttarget@example.com",
-			"role":     "admin", // the observable mutation that distinguishes Update from Delete
-		})
-		if rec.Code != http.StatusNoContent {
-			t.Fatalf("got %d want 204 — PUT not bound to Update; body=%s", rec.Code, rec.Body.String())
-		}
-		got, err := fx.Users.FindByID(context.Background(), target.ID)
-		if err != nil {
-			t.Fatalf("target user missing after PUT — route deleted instead of updated: %v", err)
-		}
-		if got.Role != "admin" {
-			t.Fatalf("target role after PUT: got %q want admin — Update did not apply the role change", got.Role)
-		}
-	})
+	t.Run(
+		"PUT admin/users/{id} -> Update (204, target survives with new role)",
+		func(t *testing.T) {
+			target := fx.SeedUser(t, "puttarget", "old-password", "user")
+			rec := do(http.MethodPut, "/api/v1/admin/users/"+target.ID, map[string]string{
+				"nickname": "puttarget", // unchanged nickname avoids the conflict-lookup branch
+				"password": "",          // empty = unchanged
+				"email":    "puttarget@example.com",
+				"role":     "admin", // the observable mutation that distinguishes Update from Delete
+			})
+			if rec.Code != http.StatusNoContent {
+				t.Fatalf(
+					"got %d want 204 — PUT not bound to Update; body=%s",
+					rec.Code,
+					rec.Body.String(),
+				)
+			}
+			got, err := fx.Users.FindByID(context.Background(), target.ID)
+			if err != nil {
+				t.Fatalf(
+					"target user missing after PUT — route deleted instead of updated: %v",
+					err,
+				)
+			}
+			if got.Role != "admin" {
+				t.Fatalf(
+					"target role after PUT: got %q want admin — Update did not apply the role change",
+					got.Role,
+				)
+			}
+		},
+	)
 
 	// DELETE /api/v1/admin/users/{id} -> DeleteUserHandler. Same 204 as Update; the post-state
 	// (target removed) proves the request hit Delete, not Update.
@@ -287,7 +309,11 @@ func TestRegisterRoutes_BindsAdminAndDashboardRoutesToHandlers(t *testing.T) {
 		target := fx.SeedUser(t, "deltarget", "pw-to-delete", "user")
 		rec := do(http.MethodDelete, "/api/v1/admin/users/"+target.ID, nil)
 		if rec.Code != http.StatusNoContent {
-			t.Fatalf("got %d want 204 — DELETE not bound to Delete; body=%s", rec.Code, rec.Body.String())
+			t.Fatalf(
+				"got %d want 204 — DELETE not bound to Delete; body=%s",
+				rec.Code,
+				rec.Body.String(),
+			)
 		}
 		if _, err := fx.Users.FindByID(context.Background(), target.ID); err == nil {
 			t.Fatal("target user still present after DELETE — route updated instead of deleting")
@@ -299,10 +325,17 @@ func TestRegisterRoutes_BindsAdminAndDashboardRoutesToHandlers(t *testing.T) {
 	t.Run("GET dashboard/user -> User (200, user-dashboard body)", func(t *testing.T) {
 		rec := do(http.MethodGet, "/api/v1/dashboard/user", nil)
 		if rec.Code != http.StatusOK {
-			t.Fatalf("got %d want 200 — dashboard/user not bound to User; body=%s", rec.Code, rec.Body.String())
+			t.Fatalf(
+				"got %d want 200 — dashboard/user not bound to User; body=%s",
+				rec.Code,
+				rec.Body.String(),
+			)
 		}
 		if !strings.Contains(rec.Body.String(), "user dashboard") {
-			t.Fatalf("dashboard/user body %q missing 'user dashboard' — route bound to the wrong query", rec.Body.String())
+			t.Fatalf(
+				"dashboard/user body %q missing 'user dashboard' — route bound to the wrong query",
+				rec.Body.String(),
+			)
 		}
 	})
 
@@ -310,10 +343,17 @@ func TestRegisterRoutes_BindsAdminAndDashboardRoutesToHandlers(t *testing.T) {
 	t.Run("GET dashboard/admin -> Admin (200, admin-dashboard body)", func(t *testing.T) {
 		rec := do(http.MethodGet, "/api/v1/dashboard/admin", nil)
 		if rec.Code != http.StatusOK {
-			t.Fatalf("got %d want 200 — dashboard/admin not bound to Admin; body=%s", rec.Code, rec.Body.String())
+			t.Fatalf(
+				"got %d want 200 — dashboard/admin not bound to Admin; body=%s",
+				rec.Code,
+				rec.Body.String(),
+			)
 		}
 		if !strings.Contains(rec.Body.String(), "admin dashboard") {
-			t.Fatalf("dashboard/admin body %q missing 'admin dashboard' — route bound to the wrong query", rec.Body.String())
+			t.Fatalf(
+				"dashboard/admin body %q missing 'admin dashboard' — route bound to the wrong query",
+				rec.Body.String(),
+			)
 		}
 	})
 }

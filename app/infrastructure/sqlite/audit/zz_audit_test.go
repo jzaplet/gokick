@@ -78,7 +78,10 @@ func TestRepository_SaveSurvivesBusinessRollback(t *testing.T) {
 		t.Fatalf("count control row: %v", err)
 	}
 	if controlCount != 0 {
-		t.Fatalf("control row survived rollback — rollback did not take effect: got %d want 0", controlCount)
+		t.Fatalf(
+			"control row survived rollback — rollback did not take effect: got %d want 0",
+			controlCount,
+		)
 	}
 }
 
@@ -112,7 +115,9 @@ func TestRepository_SaveIsAppendOnlyInsert(t *testing.T) {
 		CreatedAt: time.Now(),
 	}
 	if err := r.Save(ctx, second); err == nil {
-		t.Fatalf("second Save with duplicate id succeeded — Save is no longer append-only (upsert?)")
+		t.Fatalf(
+			"second Save with duplicate id succeeded — Save is no longer append-only (upsert?)",
+		)
 	}
 
 	// The stored row must still reflect the FIRST write, untouched.

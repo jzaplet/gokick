@@ -50,13 +50,22 @@ func TestCommandBus_AuthorizeBlocksDeniedCommand(t *testing.T) {
 
 	// Authenticated but non-admin caller: the checker reaches the role gate and
 	// denies the admin-only command with a PermissionError (not AuthError).
-	ctx := shared.ContextWithClaims(context.Background(), &shared.AuthClaims{UserID: "u1", Role: "user"})
+	ctx := shared.ContextWithClaims(
+		context.Background(),
+		&shared.AuthClaims{UserID: "u1", Role: "user"},
+	)
 
 	var handlerRan bool
-	err := bus.ExecVoid(ctx, cmdBus.Bus, "DeniedCreate", deniedAdminCmd{}, func(context.Context) error {
-		handlerRan = true
-		return nil
-	})
+	err := bus.ExecVoid(
+		ctx,
+		cmdBus.Bus,
+		"DeniedCreate",
+		deniedAdminCmd{},
+		func(context.Context) error {
+			handlerRan = true
+			return nil
+		},
+	)
 
 	var permErr *shared.PermissionError
 	if !errors.As(err, &permErr) {
@@ -101,29 +110,42 @@ func TestCommandBus_EventsDispatchAfterCommit(t *testing.T) {
 		return nil
 	})
 
-	cmdBus := provideCommandBus(logger, fx.DB, checker, eventBus, noopDispatcher{}, sqliteaudit.NewRepository(fx.DB))
+	cmdBus := provideCommandBus(
+		logger,
+		fx.DB,
+		checker,
+		eventBus,
+		noopDispatcher{},
+		sqliteaudit.NewRepository(fx.DB),
+	)
 
 	const nick = "committed-user"
-	err := bus.ExecVoid(ctx, cmdBus.Bus, "CreateThenEmit", skipPermCmd{}, func(ctx context.Context) error {
-		nn, e := user.NewNickname(nick)
-		if e != nil {
-			return e
-		}
-		em, e := user.NewEmail(nick + "@example.com")
-		if e != nil {
-			return e
-		}
-		r, e := user.NewRole("user")
-		if e != nil {
-			return e
-		}
-		u := user.NewUser(nn, "hash", em, r)
-		if e := fx.Users.Save(ctx, u); e != nil { // joins the bus tx via Conn(ctx)
-			return e
-		}
-		shared.EventCollectorFromContext(ctx).Collect(rowVisibleEvent{nickname: nick})
-		return nil
-	})
+	err := bus.ExecVoid(
+		ctx,
+		cmdBus.Bus,
+		"CreateThenEmit",
+		skipPermCmd{},
+		func(ctx context.Context) error {
+			nn, e := user.NewNickname(nick)
+			if e != nil {
+				return e
+			}
+			em, e := user.NewEmail(nick + "@example.com")
+			if e != nil {
+				return e
+			}
+			r, e := user.NewRole("user")
+			if e != nil {
+				return e
+			}
+			u := user.NewUser(nn, "hash", em, r)
+			if e := fx.Users.Save(ctx, u); e != nil { // joins the bus tx via Conn(ctx)
+				return e
+			}
+			shared.EventCollectorFromContext(ctx).Collect(rowVisibleEvent{nickname: nick})
+			return nil
+		},
+	)
 	if err != nil {
 		t.Fatalf("command failed: %v", err)
 	}
@@ -132,7 +154,9 @@ func TestCommandBus_EventsDispatchAfterCommit(t *testing.T) {
 		t.Fatalf("event handler must fire exactly once after commit, fired %d", handlerFired.Load())
 	}
 	if !rowVisible.Load() {
-		t.Fatal("business row must be committed (visible on a separate connection) before events dispatch — DispatchEvents must wrap Transaction")
+		t.Fatal(
+			"business row must be committed (visible on a separate connection) before events dispatch — DispatchEvents must wrap Transaction",
+		)
 	}
 }
 
@@ -154,20 +178,33 @@ func TestCommandBus_EventsDiscardedOnRollback(t *testing.T) {
 		return nil
 	})
 
-	cmdBus := provideCommandBus(logger, fx.DB, checker, eventBus, noopDispatcher{}, sqliteaudit.NewRepository(fx.DB))
+	cmdBus := provideCommandBus(
+		logger,
+		fx.DB,
+		checker,
+		eventBus,
+		noopDispatcher{},
+		sqliteaudit.NewRepository(fx.DB),
+	)
 
 	const nick = "rolledback-user"
-	err := bus.ExecVoid(ctx, cmdBus.Bus, "CreateThenFail", skipPermCmd{}, func(ctx context.Context) error {
-		nn, _ := user.NewNickname(nick)
-		em, _ := user.NewEmail(nick + "@example.com")
-		r, _ := user.NewRole("user")
-		u := user.NewUser(nn, "hash", em, r)
-		if e := fx.Users.Save(ctx, u); e != nil {
-			return e
-		}
-		shared.EventCollectorFromContext(ctx).Collect(rowVisibleEvent{nickname: nick})
-		return errors.New("boom")
-	})
+	err := bus.ExecVoid(
+		ctx,
+		cmdBus.Bus,
+		"CreateThenFail",
+		skipPermCmd{},
+		func(ctx context.Context) error {
+			nn, _ := user.NewNickname(nick)
+			em, _ := user.NewEmail(nick + "@example.com")
+			r, _ := user.NewRole("user")
+			u := user.NewUser(nn, "hash", em, r)
+			if e := fx.Users.Save(ctx, u); e != nil {
+				return e
+			}
+			shared.EventCollectorFromContext(ctx).Collect(rowVisibleEvent{nickname: nick})
+			return errors.New("boom")
+		},
+	)
 	if err == nil {
 		t.Fatal("expected handler error to propagate")
 	}
@@ -197,10 +234,16 @@ func TestQueryBus_AuthorizeEnforced(t *testing.T) {
 	// Denied: authenticated non-admin caller → role gate rejects the admin query.
 	userCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{UserID: "u1", Role: "user"})
 	var deniedHandlerRan bool
-	_, err := bus.Exec[int](userCtx, queryBus.Bus, "DeniedQuery", deniedAdminCmd{}, func(context.Context) (int, error) {
-		deniedHandlerRan = true
-		return 1, nil
-	})
+	_, err := bus.Exec[int](
+		userCtx,
+		queryBus.Bus,
+		"DeniedQuery",
+		deniedAdminCmd{},
+		func(context.Context) (int, error) {
+			deniedHandlerRan = true
+			return 1, nil
+		},
+	)
 	var permErr *shared.PermissionError
 	if !errors.As(err, &permErr) {
 		t.Fatalf("denied query must yield *shared.PermissionError, got %v", err)
@@ -211,9 +254,15 @@ func TestQueryBus_AuthorizeEnforced(t *testing.T) {
 
 	// Permitted: admin claims satisfy the same permission → handler runs.
 	adminCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{UserID: "u1", Role: "admin"})
-	got, err := bus.Exec[int](adminCtx, queryBus.Bus, "AllowedQuery", deniedAdminCmd{}, func(context.Context) (int, error) {
-		return 42, nil
-	})
+	got, err := bus.Exec[int](
+		adminCtx,
+		queryBus.Bus,
+		"AllowedQuery",
+		deniedAdminCmd{},
+		func(context.Context) (int, error) {
+			return 42, nil
+		},
+	)
 	if err != nil {
 		t.Fatalf("permitted query must pass Authorize: %v", err)
 	}
@@ -292,7 +341,10 @@ func TestProvideIPExtractor_SharedByRateLimitAndAudit(t *testing.T) {
 		t.Fatalf("trustProxy=true: first request got %d want 200", code)
 	}
 	if code := rateCode(limTrust, "9.9.9.9", "2.2.2.2:2222"); code != http.StatusTooManyRequests {
-		t.Fatalf("trustProxy=true: second request (same X-Real-IP) got %d want 429 — limiter must key on the extractor's IP", code)
+		t.Fatalf(
+			"trustProxy=true: second request (same X-Real-IP) got %d want 429 — limiter must key on the extractor's IP",
+			code,
+		)
 	}
 
 	// --- trustProxy = false: RemoteAddr is authoritative; X-Real-IP ignored.
@@ -300,7 +352,10 @@ func TestProvideIPExtractor_SharedByRateLimitAndAudit(t *testing.T) {
 
 	gotActorNoTrust := actorIPFor(t, extractNoTrust, "9.9.9.9", "203.0.113.7:5555")
 	if gotActorNoTrust != "203.0.113.7" {
-		t.Fatalf("trustProxy=false: ActorIP got %q want 203.0.113.7 (RemoteAddr host)", gotActorNoTrust)
+		t.Fatalf(
+			"trustProxy=false: ActorIP got %q want 203.0.113.7 (RemoteAddr host)",
+			gotActorNoTrust,
+		)
 	}
 	limNoTrust := httpmw.NewRateLimiter(oneToken, extractNoTrust, logger)
 	// Same RemoteAddr, different X-Real-IP → keyed on RemoteAddr → 2nd is 429.
@@ -308,7 +363,10 @@ func TestProvideIPExtractor_SharedByRateLimitAndAudit(t *testing.T) {
 		t.Fatalf("trustProxy=false: first request got %d want 200", code)
 	}
 	if code := rateCode(limNoTrust, "8.8.8.8", "203.0.113.7:5555"); code != http.StatusTooManyRequests {
-		t.Fatalf("trustProxy=false: second request (same RemoteAddr) got %d want 429 — limiter must key on RemoteAddr when proxy headers are untrusted", code)
+		t.Fatalf(
+			"trustProxy=false: second request (same RemoteAddr) got %d want 429 — limiter must key on RemoteAddr when proxy headers are untrusted",
+			code,
+		)
 	}
 }
 
@@ -317,9 +375,13 @@ func TestProvideIPExtractor_SharedByRateLimitAndAudit(t *testing.T) {
 func actorIPFor(t *testing.T, extract httpmw.IPExtractor, realIP, remoteAddr string) string {
 	t.Helper()
 	var got string
-	h := httpmw.IPMiddleware(extract)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		got = shared.ActorIPFromContext(r.Context())
-	}))
+	h := httpmw.IPMiddleware(
+		extract,
+	)(
+		http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			got = shared.ActorIPFromContext(r.Context())
+		}),
+	)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.RemoteAddr = remoteAddr
 	if realIP != "" {

@@ -219,7 +219,10 @@ func TestScheduler_TwoInstancesTickIndependently(t *testing.T) {
 	}
 
 	if got := atomic.LoadInt32(&ticks); got != 2 {
-		t.Fatalf("two instances should each run the job once (no coordination): got %d ticks, want 2", got)
+		t.Fatalf(
+			"two instances should each run the job once (no coordination): got %d ticks, want 2",
+			got,
+		)
 	}
 }
 

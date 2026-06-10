@@ -199,7 +199,8 @@ func TestUserCreated_Shape(t *testing.T) {
 	if !ev.OccurredAt().Equal(ev.Timestamp) {
 		t.Fatalf("OccurredAt: got %v want %v", ev.OccurredAt(), ev.Timestamp)
 	}
-	if ev.UserID != "id-1" || ev.Nickname != "bob" || ev.Email != "bob@example.com" || ev.Role != "user" {
+	if ev.UserID != "id-1" || ev.Nickname != "bob" || ev.Email != "bob@example.com" ||
+		ev.Role != "user" {
 		t.Fatalf("fields not preserved: %+v", ev)
 	}
 
@@ -231,7 +232,9 @@ func TestUserCreated_OnlyPrimitiveFields(t *testing.T) {
 		default:
 			t.Fatalf(
 				"field %s has non-primitive type %s (kind %s); domain events must carry only primitives or time.Time",
-				f.Name, f.Type, f.Type.Kind(),
+				f.Name,
+				f.Type,
+				f.Type.Kind(),
 			)
 		}
 	}

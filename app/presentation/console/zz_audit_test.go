@@ -261,7 +261,9 @@ func TestWorkerCommand_RunDrainsOnContextCancel(t *testing.T) {
 			t.Fatalf("worker RunE returned error: %v", err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("worker RunE did not return after context cancel — cmd.Context() not forwarded to worker.Run")
+		t.Fatal(
+			"worker RunE did not return after context cancel — cmd.Context() not forwarded to worker.Run",
+		)
 	}
 }
 

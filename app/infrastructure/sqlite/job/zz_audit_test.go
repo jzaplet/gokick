@@ -72,6 +72,9 @@ func TestRepository_ClaimDue_ReclaimsAfterLockExpiry(t *testing.T) {
 		t.Fatalf("reclaimed id: got %q want %q (must be the same orphaned row)", reclaimed.ID, j.ID)
 	}
 	if reclaimed.Attempts != 2 {
-		t.Fatalf("attempts after reclaim: got %d want 2 (reclaim must bump attempts)", reclaimed.Attempts)
+		t.Fatalf(
+			"attempts after reclaim: got %d want 2 (reclaim must bump attempts)",
+			reclaimed.Attempts,
+		)
 	}
 }

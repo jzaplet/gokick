@@ -70,13 +70,18 @@ func TestAuditMiddleware_PersistsAcrossBusinessRollback(t *testing.T) {
 
 	// handler writes a user row (joins the tx via r.Conn), records an audit
 	// event, then fails -> the user row must roll back, the audit row must not.
-	_, err := audit(context.Background(), "Login", plainCmd{}, func(ctx context.Context) (any, error) {
-		return txmw(ctx, "Login", plainCmd{}, func(ctx context.Context) (any, error) {
-			seedUserInTx(t, fx, ctx, nickname)
-			shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{Action: action})
-			return nil, errors.New("invalid credentials")
-		})
-	})
+	_, err := audit(
+		context.Background(),
+		"Login",
+		plainCmd{},
+		func(ctx context.Context) (any, error) {
+			return txmw(ctx, "Login", plainCmd{}, func(ctx context.Context) (any, error) {
+				seedUserInTx(t, fx, ctx, nickname)
+				shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{Action: action})
+				return nil, errors.New("invalid credentials")
+			})
+		},
+	)
 	if err == nil || err.Error() != "invalid credentials" {
 		t.Fatalf("handler error must propagate, got %v", err)
 	}
@@ -88,7 +93,11 @@ func TestAuditMiddleware_PersistsAcrossBusinessRollback(t *testing.T) {
 
 	// Audit row survived the rollback (raw pool, outside the tx).
 	if got := countRows(t, fx, `SELECT COUNT(*) FROM audit_log WHERE action = ?`, action); got != 1 {
-		t.Fatalf("audit row must survive business rollback, found %d rows for action %q", got, action)
+		t.Fatalf(
+			"audit row must survive business rollback, found %d rows for action %q",
+			got,
+			action,
+		)
 	}
 }
 
@@ -141,7 +150,11 @@ func TestAuditMiddleware_PerRequestCollectorIsolation(t *testing.T) {
 			"flushed another command's event", collated.mismatches)
 	}
 	if got := collated.total; got != commands {
-		t.Fatalf("persisted records: got %d want %d (collector leaked or dropped events)", got, commands)
+		t.Fatalf(
+			"persisted records: got %d want %d (collector leaked or dropped events)",
+			got,
+			commands,
+		)
 	}
 	for i := 0; i < commands; i++ {
 		if c := collated.count[strconv.Itoa(i)]; c != 1 {
@@ -222,7 +235,10 @@ func TestAuditMiddleware_FlushUsesDetachedContext(t *testing.T) {
 		t.Fatal("Save must run even though the request context was cancelled")
 	}
 	if sentinel.ctxErr != nil {
-		t.Fatalf("flush must use a detached (non-cancelled) context, Save saw ctx.Err()=%v", sentinel.ctxErr)
+		t.Fatalf(
+			"flush must use a detached (non-cancelled) context, Save saw ctx.Err()=%v",
+			sentinel.ctxErr,
+		)
 	}
 }
 
@@ -249,13 +265,18 @@ func TestDispatchEventsMiddleware_AfterCommitSideEffectWithRealDB(t *testing.T) 
 		dispatch := mw.DispatchEventsMiddleware(logger, eventBus)
 		txmw := mw.TransactionMiddleware(fx.DB)
 
-		_, _ = dispatch(context.Background(), "Cmd", plainCmd{}, func(ctx context.Context) (any, error) {
-			return txmw(ctx, "Cmd", plainCmd{}, func(ctx context.Context) (any, error) {
-				seedUserInTx(t, fx, ctx, nickname) // write joins the tx via r.Conn
-				shared.EventCollectorFromContext(ctx).Collect(auditDomainEvent{at: time.Now()})
-				return nil, handlerErr
-			})
-		})
+		_, _ = dispatch(
+			context.Background(),
+			"Cmd",
+			plainCmd{},
+			func(ctx context.Context) (any, error) {
+				return txmw(ctx, "Cmd", plainCmd{}, func(ctx context.Context) (any, error) {
+					seedUserInTx(t, fx, ctx, nickname) // write joins the tx via r.Conn
+					shared.EventCollectorFromContext(ctx).Collect(auditDomainEvent{at: time.Now()})
+					return nil, handlerErr
+				})
+			},
+		)
 
 		visible := countRows(t, fx, `SELECT COUNT(*) FROM users WHERE nickname = ?`, nickname) == 1
 		return dispatched, visible
@@ -267,7 +288,9 @@ func TestDispatchEventsMiddleware_AfterCommitSideEffectWithRealDB(t *testing.T) 
 			t.Fatal("event handler must fire after a successful commit")
 		}
 		if !visible {
-			t.Fatal("committed row must be visible on the main pool (dispatch happened post-commit)")
+			t.Fatal(
+				"committed row must be visible on the main pool (dispatch happened post-commit)",
+			)
 		}
 	})
 
@@ -302,14 +325,19 @@ func TestJobDispatcherMiddleware_EnqueueJoinsBusinessTx(t *testing.T) {
 	txmw := mw.TransactionMiddleware(fx.DB)
 
 	runOnce := func(kind string, handlerErr error) {
-		_, _ = jobmw(context.Background(), "Cmd", plainCmd{}, func(ctx context.Context) (any, error) {
-			return txmw(ctx, "Cmd", plainCmd{}, func(ctx context.Context) (any, error) {
-				if err := shared.JobDispatcherFromContext(ctx).Enqueue(ctx, kind, 0, nil); err != nil {
-					return nil, err
-				}
-				return nil, handlerErr
-			})
-		})
+		_, _ = jobmw(
+			context.Background(),
+			"Cmd",
+			plainCmd{},
+			func(ctx context.Context) (any, error) {
+				return txmw(ctx, "Cmd", plainCmd{}, func(ctx context.Context) (any, error) {
+					if err := shared.JobDispatcherFromContext(ctx).Enqueue(ctx, kind, 0, nil); err != nil {
+						return nil, err
+					}
+					return nil, handlerErr
+				})
+			},
+		)
 	}
 
 	// Rollback path: handler errors -> the enqueued job must roll back with it.

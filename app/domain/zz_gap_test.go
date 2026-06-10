@@ -164,16 +164,22 @@ func TestHandlersDoNotImportSqliteSecurityOrEvent(t *testing.T) {
 		}
 	}
 	if !sawResponse || !sawBus {
-		t.Fatalf("positive control failed (sawResponse=%v sawBus=%v): parser did not see the imports handlers are known to declare — the walk is not reading real code",
-			sawResponse, sawBus)
+		t.Fatalf(
+			"positive control failed (sawResponse=%v sawBus=%v): parser did not see the imports handlers are known to declare — the walk is not reading real code",
+			sawResponse,
+			sawBus,
+		)
 	}
 
 	// The actual invariant.
 	for file, imps := range byFile {
 		for _, imp := range imps {
 			if forbiddenHandlerImport(imp) {
-				t.Errorf("handler file %s imports forbidden package %q: HTTP handlers must not reach into sqlite, security, or application event packages — go through the bus / domain interfaces instead",
-					file, imp)
+				t.Errorf(
+					"handler file %s imports forbidden package %q: HTTP handlers must not reach into sqlite, security, or application event packages — go through the bus / domain interfaces instead",
+					file,
+					imp,
+				)
 			}
 		}
 	}
@@ -202,7 +208,10 @@ func TestForbiddenHandlerImportClassification(t *testing.T) {
 		{"gokick/app/application/user/command", false},
 		{"gokick/app/application/user/query", false},
 		{"gokick/app/application/dashboard/query", false},
-		{"gokick/app/domain/shared", false}, // holds DomainEvent/EventCollector — must NOT match the event rule
+		{
+			"gokick/app/domain/shared",
+			false,
+		}, // holds DomainEvent/EventCollector — must NOT match the event rule
 		{"gokick/app/domain/user", false},
 		{"gokick/app/presentation/http/response", false},
 		{"gokick/app/presentation/http/request", false},
