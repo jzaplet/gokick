@@ -83,7 +83,7 @@ func TestScheduler_StartupLogReportsJobCount(t *testing.T) {
 // job name and the execution duration. Long interval + a signal channel closed
 // inside Fn means exactly one tick (the run-once) completes before we cancel, so
 // the assertion targets a single deterministic completion line. The duration
-// value is non-deterministic, so we assert the duration= key is present, not a
+// value is non-deterministic, so we assert the duration_ms= key is present, not a
 // specific value.
 func TestScheduler_CompletedTickLogsNameAndDuration(t *testing.T) {
 	t.Parallel()
@@ -124,7 +124,7 @@ func TestScheduler_CompletedTickLogsNameAndDuration(t *testing.T) {
 	if !strings.Contains(out, `name=cleanup`) {
 		t.Fatalf("completion line should carry the job name; got:\n%s", out)
 	}
-	if !strings.Contains(out, "duration=") {
+	if !strings.Contains(out, "duration_ms=") {
 		t.Fatalf("completion line should carry the execution duration; got:\n%s", out)
 	}
 }

@@ -98,7 +98,16 @@ func (w *Worker) processOne(ctx context.Context, slot int) {
 		return
 	}
 
-	log := w.logger.With("slot", slot, "job_id", j.ID, "kind", j.Kind, "attempt", j.Attempts)
+	log := w.logger.With(
+		"slot",
+		slot,
+		"job_id",
+		j.ID,
+		shared.LogKeyJobKind,
+		j.Kind,
+		"attempts",
+		j.Attempts,
+	)
 
 	handler, ok := w.registry.Lookup(j.Kind)
 	if !ok {
@@ -113,7 +122,7 @@ func (w *Worker) processOne(ctx context.Context, slot int) {
 		w.handleFailure(ctx, log, j, err, time.Since(start))
 		return
 	}
-	log.Info("worker: job completed", "duration", time.Since(start))
+	log.Info("worker: job completed", shared.DurationMsAttr(time.Since(start)))
 }
 
 // runWithinTx opens a transaction, injects the dispatcher, invokes the
@@ -170,7 +179,7 @@ func (w *Worker) handleFailure(
 	// retriesUsed = Attempts - 1. Out of retries when retriesUsed >= MaxRetries.
 	if j.Attempts > j.MaxRetries {
 		log.Error("worker: job exhausted retries, marking failed",
-			"duration", duration, "error", jobErr,
+			shared.DurationMsAttr(duration), "error", jobErr,
 		)
 		if err := w.repo.MarkFailed(ctx, j.ID, jobErr.Error()); err != nil {
 			log.Error("worker: mark failed write errored", "error", err)
@@ -180,8 +189,14 @@ func (w *Worker) handleFailure(
 
 	delay := backoff(j.Attempts)
 	runAt := time.Now().Add(delay)
-	log.Warn("worker: job failed, retry scheduled",
-		"duration", duration, "retry_in", delay, "error", jobErr,
+	log.Warn(
+		"worker: job failed, retry scheduled",
+		shared.DurationMsAttr(
+			duration,
+		),
+		shared.MillisAttr(shared.LogKeyRetryInMs, delay),
+		"error",
+		jobErr,
 	)
 	if err := w.repo.Reschedule(ctx, j.ID, runAt, jobErr.Error()); err != nil {
 		log.Error("worker: reschedule write errored", "error", err)

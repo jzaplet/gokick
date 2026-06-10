@@ -7,6 +7,7 @@ import (
 	"runtime/debug"
 
 	"gokick/app/application/bus"
+	"gokick/app/domain/shared"
 )
 
 func RecoveryMiddleware(logger *slog.Logger) bus.Middleware {
@@ -15,11 +16,12 @@ func RecoveryMiddleware(logger *slog.Logger) bus.Middleware {
 			if r := recover(); r != nil {
 				// Capture the stack at the point of recovery so the log shows
 				// where the panic originated, not just its value.
-				logger.Error("bus: panic recovered",
-					"command", name,
-					"panic", r,
-					"stack", string(debug.Stack()),
-				)
+				logger.LogAttrs(ctx, slog.LevelError, "bus: panic recovered",
+					append(shared.LogAttrs(ctx),
+						slog.String(shared.LogKeyCommand, name),
+						slog.Any("panic", r),
+						slog.String("stack", string(debug.Stack())),
+					)...)
 				err = fmt.Errorf("bus: panic in %s: %v", name, r)
 			}
 		}()

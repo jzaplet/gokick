@@ -20,7 +20,7 @@ Tento dokument popisuje, co zbývá dořešit, aby byl skeleton připravený pro
 | [2](#fáze-2--in-process-scheduler) | In-process scheduler (cron-like) | **Hotovo** |
 | [3](#fáze-3--perzistentní-job-queue-sqlite) | Perzistentní job queue (SQLite) + worker | **Hotovo** |
 | [4](#fáze-4--hardening) | Rate limiting, audit log, brute-force protection | **Hotovo** |
-| [5](#fáze-5--observability) | Sentry, strukturované slog atributy, OpenTelemetry | Plánováno |
+| [5](#fáze-5--observability) | Sentry, strukturované slog atributy, OpenTelemetry | Probíhá |
 
 Fáze 1–3 řeší **background work** — jejich pořadí je závazné, každá další staví na předchozí (graceful shutdown z F1 je prerekvizita scheduleru z F2, scheduler je prerekvizita worker poolingu v F3). Fáze 4 a 5 jsou nezávislé a lze je řadit podle priority.
 
@@ -251,14 +251,18 @@ Před přidáním nových funkcí proběhl důkladný bezpečnostní audit, kter
 
 ## Fáze 5 — Observability
 
+**Stav:** Probíhá — strukturované slog atributy hotové (2026-06-10), Sentry a OpenTelemetry zbývají.
+
 Až aplikace začne jezdit v produkci. Bez F1–F3 by observabilita měřila nestabilní systém.
 
 ### Úkoly
 
-- [ ] **Strukturované slog atributy — audit konzistence**
-  - Sjednotit naming napříč middleware vrstvami: `trace_id`, `user_id`, `command`, `duration_ms`, `event`, `job_kind`.
-  - Doplnit `user_id` do bus `LoggingMiddleware` (dnes loguje jen `trace_id` a `command`).
-  - Vytvořit helper `shared.LogAttrs(ctx) []slog.Attr` — vrací standardní set atributů z contextu.
+- [x] **Strukturované slog atributy — audit konzistence** — Hotovo (2026-06-10).
+  - `app/domain/shared/log.go`: konstanty klíčů (`LogKeyTraceID/UserID/Command/DurationMs/RetryInMs/Error/Event/JobKind`), `LogAttrs(ctx) []slog.Attr` (jediný zdroj korelace `trace_id` + `user_id`, zároveň šev pro budoucí `span_id`), `DurationMsAttr`/`MillisAttr` (číselné `duration_ms` ve zlomku ms, µs přesnost).
+  - `user_id` doplněn do bus `LoggingMiddleware`; korelace přes `LogAttrs` i v recovery / events / audit middleware a HTTP request logu.
+  - Sjednoceno napříč vrstvami: `duration`→`duration_ms` (bus / HTTP / worker / scheduler), worker `kind`→`job_kind`, `attempt`→`attempts`, `retry_in`→`retry_in_ms`. Komponentně-lokální klíče (`addr`, `slot`, `name`, `nickname`) ponechány.
+  - Logger constructor vyextrahován do `cmd/logger.go` (testovatelný, env-driven přes `APP_LOG_FORMAT` / `APP_LOG_LEVEL`) — záměrně jediný šev, kam později zapadne OTel handler. Viz [Observability](/framework/infrastructure/observability).
+  - Testy: `app/domain/shared/log_test.go`, `app/application/bus/middleware/logging_test.go`, `cmd/logger_test.go`.
 
 - [ ] **Sentry**
   - `APP_SENTRY_DSN` env. Když je prázdné, Sentry se neinicializuje.

@@ -13,6 +13,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"gokick/app/domain/shared"
 )
 
 type JobFunc func(ctx context.Context) error
@@ -104,8 +106,15 @@ func (s *Scheduler) tick(ctx context.Context, j Job) {
 	err := j.Fn(ctx)
 	duration := time.Since(start)
 	if err != nil {
-		s.logger.Error("scheduler: job failed", "name", j.Name, "duration", duration, "error", err)
+		s.logger.Error(
+			"scheduler: job failed",
+			"name",
+			j.Name,
+			shared.DurationMsAttr(duration),
+			"error",
+			err,
+		)
 		return
 	}
-	s.logger.Info("scheduler: job completed", "name", j.Name, "duration", duration)
+	s.logger.Info("scheduler: job completed", "name", j.Name, shared.DurationMsAttr(duration))
 }
