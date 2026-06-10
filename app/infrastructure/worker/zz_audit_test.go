@@ -204,7 +204,7 @@ func TestWorker_HandlerCanEnqueueChildJob(t *testing.T) {
 		t.Fatalf("registry: %v", err)
 	}
 	dispatcher := jobapp.NewDispatcher(fx.Jobs, registry)
-	w := NewWorker(silentLogger(), fx.Jobs, registry, fx.DB, dispatcher, 1)
+	w := NewWorker(silentLogger(), shared.NopReporter{}, fx.Jobs, registry, fx.DB, dispatcher, 1)
 
 	parent := enqueue(t, fx, "parent", 2)
 

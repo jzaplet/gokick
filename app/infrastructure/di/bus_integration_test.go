@@ -40,9 +40,17 @@ func newProductionCommandBus(
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	checker := security.NewPermissionChecker()
-	eventBus := provideEventBus(logger, provideEventHandlers())
+	eventBus := provideEventBus(logger, provideEventHandlers(), shared.NopReporter{})
 	audit := sqliteaudit.NewRepository(fx.DB)
-	return provideCommandBus(logger, fx.DB, checker, eventBus, dispatcher, audit)
+	return provideCommandBus(
+		logger,
+		fx.DB,
+		checker,
+		eventBus,
+		dispatcher,
+		audit,
+		shared.NopReporter{},
+	)
 }
 
 // audit.md guarantee #1: a security-relevant event recorded by a handler MUST

@@ -557,6 +557,83 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@sentry-internal/browser-utils@npm:10.57.0":
+  version: 10.57.0
+  resolution: "@sentry-internal/browser-utils@npm:10.57.0"
+  dependencies:
+    "@sentry/core": "npm:10.57.0"
+  checksum: 10c0/2594b1d73b8e4defdb1f74305fe2ebd5fcae99cdae10fd1a5a014ca940e8be7a117d3c47a65b9ac20dcf39fd5ef013dce886056e9a1c91b1828d4d5e3ad7ee4c
+  languageName: node
+  linkType: hard
+
+"@sentry-internal/feedback@npm:10.57.0":
+  version: 10.57.0
+  resolution: "@sentry-internal/feedback@npm:10.57.0"
+  dependencies:
+    "@sentry/core": "npm:10.57.0"
+  checksum: 10c0/5a0740cc77a44a30b883a68e3a8d763fdf65741f8cc454c3e0be4ac3321cdc9d3d9b61eb08d460253f3cdab510121474d2b1e5b9ce384691cb51eb1cb6e029b9
+  languageName: node
+  linkType: hard
+
+"@sentry-internal/replay-canvas@npm:10.57.0":
+  version: 10.57.0
+  resolution: "@sentry-internal/replay-canvas@npm:10.57.0"
+  dependencies:
+    "@sentry-internal/replay": "npm:10.57.0"
+    "@sentry/core": "npm:10.57.0"
+  checksum: 10c0/87e76c635434bb1ea3bf65efdd420026fc9f519ef1d67c4b1264ee872f85fcd99564cee67ae33f816867f628f543473952225f0f03ab6023c3af0b6e9358f1a1
+  languageName: node
+  linkType: hard
+
+"@sentry-internal/replay@npm:10.57.0":
+  version: 10.57.0
+  resolution: "@sentry-internal/replay@npm:10.57.0"
+  dependencies:
+    "@sentry-internal/browser-utils": "npm:10.57.0"
+    "@sentry/core": "npm:10.57.0"
+  checksum: 10c0/b1961c1bc0b643439d94dfdf64a6e1aa4ba0b3b50aaafb07ce0579bc2033801894ac7d6602e493012a2266dd9ee1c279cdd3a7a240b0f04eb4254ffe6e535896
+  languageName: node
+  linkType: hard
+
+"@sentry/browser@npm:10.57.0":
+  version: 10.57.0
+  resolution: "@sentry/browser@npm:10.57.0"
+  dependencies:
+    "@sentry-internal/browser-utils": "npm:10.57.0"
+    "@sentry-internal/feedback": "npm:10.57.0"
+    "@sentry-internal/replay": "npm:10.57.0"
+    "@sentry-internal/replay-canvas": "npm:10.57.0"
+    "@sentry/core": "npm:10.57.0"
+  checksum: 10c0/963a7a96a5067868a5868549869d69179f642d75efb9f0f15897b55c4f16e32fc10b9e525992552706ec7bb3382e0323d6ebb7cdbcb8d90ae81d7e52ebb3bd72
+  languageName: node
+  linkType: hard
+
+"@sentry/core@npm:10.57.0":
+  version: 10.57.0
+  resolution: "@sentry/core@npm:10.57.0"
+  checksum: 10c0/6ae4fc5a0881e3ca1ebf02441c796038fccef89e7bb7a3a38ca3f1e6c8f84153bd0d1d026dda4ff63a370461966e1ab37190ba1118b44cf19db15e030a37cf11
+  languageName: node
+  linkType: hard
+
+"@sentry/vue@npm:^10.57.0":
+  version: 10.57.0
+  resolution: "@sentry/vue@npm:10.57.0"
+  dependencies:
+    "@sentry/browser": "npm:10.57.0"
+    "@sentry/core": "npm:10.57.0"
+  peerDependencies:
+    "@tanstack/vue-router": ^1.64.0
+    pinia: 2.x || 3.x
+    vue: 2.x || 3.x
+  peerDependenciesMeta:
+    "@tanstack/vue-router":
+      optional: true
+    pinia:
+      optional: true
+  checksum: 10c0/a96e8af63316087c300a96a29cc315eca7d445d734bc4f6a0124d98e2bedd7243b3e65afe210f83c632b2fc51a6b28a676667f31e3cbf7d4b7d572db5359117f
+  languageName: node
+  linkType: hard
+
 "@standard-schema/spec@npm:^1.1.0":
   version: 1.1.0
   resolution: "@standard-schema/spec@npm:1.1.0"
@@ -2000,6 +2077,7 @@ __metadata:
   resolution: "gokick@workspace:."
   dependencies:
     "@eslint/js": "npm:^10.0.1"
+    "@sentry/vue": "npm:^10.57.0"
     "@stylistic/eslint-plugin": "npm:^5.10.0"
     "@tailwindcss/vite": "npm:^4.2.2"
     "@tsconfig/node24": "npm:^24.0.4"

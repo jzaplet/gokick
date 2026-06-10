@@ -37,7 +37,7 @@ func TestQueryBus_AuthorizeDeniesUnpermittedQuery(t *testing.T) {
 	checker := &stubChecker{err: denied}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	queryBus := bus.NewQueryBus(BaseChain(logger, checker)...)
+	queryBus := bus.NewQueryBus(BaseChain(logger, checker, shared.NopReporter{})...)
 
 	var ran bool
 	_, err := bus.Exec(
@@ -77,7 +77,7 @@ func TestQueryBus_RejectsQueryWithoutDeclaration(t *testing.T) {
 
 	checker := &stubChecker{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	queryBus := bus.NewQueryBus(BaseChain(logger, checker)...)
+	queryBus := bus.NewQueryBus(BaseChain(logger, checker, shared.NopReporter{})...)
 
 	var ran bool
 	_, err := bus.Exec(
@@ -121,7 +121,10 @@ func TestDispatchEventsMiddleware_EventHandlerErrorDoesNotFailCommand(t *testing
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	eventBus := bus.NewEventBus(RecoveryMiddleware(logger), LoggingMiddleware(logger))
+	eventBus := bus.NewEventBus(
+		RecoveryMiddleware(logger, shared.NopReporter{}),
+		LoggingMiddleware(logger),
+	)
 
 	var handlerRan bool
 	eventBus.Register("test.event", func(_ context.Context, _ shared.DomainEvent) error {

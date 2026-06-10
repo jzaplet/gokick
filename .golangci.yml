@@ -17,14 +17,16 @@ linters:
       rules:
         # Allow-list, not deny-list: every import not listed is rejected. This
         # closes the ENTIRE third-party-logger class (charmbracelet/log, glog,
-        # hclog, apex/log, go-kit/log, log15, sentry-go, the OTel logs SDK, a
-        # vendored fork, …) in one move — adding any of them fails the lint by
-        # import alone. Trade-off: a new dependency needs an entry here, matching
-        # the explicit-list discipline already used in .go-arch-lint.yml.
+        # hclog, apex/log, go-kit/log, log15, the OTel logs SDK, a vendored fork,
+        # …) in one move — adding any of them fails the lint by import alone.
+        # Trade-off: a new dependency needs an entry here, matching the
+        # explicit-list discipline already used in .go-arch-lint.yml.
         main:
           allow:
             - $gostd
             - gokick
+            # The one sanctioned non-slog sink: error tracking, not a logger.
+            - github.com/getsentry/sentry-go
             - github.com/golang-jwt/jwt/v5
             - github.com/google/uuid
             - github.com/google/wire

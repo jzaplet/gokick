@@ -60,8 +60,9 @@ func provideCommandBus(
 	eventBus *bus.EventBus,
 	dispatcher shared.JobDispatcher,
 	audit shared.AuditLogger,
+	reporter shared.ErrorReporter,
 ) *bus.CommandBus {
-	chain := append(busmw.BaseChain(logger, checker),
+	chain := append(busmw.BaseChain(logger, checker, reporter),
 		busmw.AuditMiddleware(logger, audit),
 		busmw.JobDispatcherMiddleware(dispatcher),
 		busmw.DispatchEventsMiddleware(logger, eventBus),
@@ -70,8 +71,12 @@ func provideCommandBus(
 	return bus.NewCommandBus(chain...)
 }
 
-func provideQueryBus(logger *slog.Logger, checker shared.PermissionChecker) *bus.QueryBus {
-	return bus.NewQueryBus(busmw.BaseChain(logger, checker)...)
+func provideQueryBus(
+	logger *slog.Logger,
+	checker shared.PermissionChecker,
+	reporter shared.ErrorReporter,
+) *bus.QueryBus {
+	return bus.NewQueryBus(busmw.BaseChain(logger, checker, reporter)...)
 }
 
 func providePublicFS() fs.FS {
@@ -87,9 +92,13 @@ func provideEventHandlers() []bus.EventHandlerEntry {
 	}
 }
 
-func provideEventBus(logger *slog.Logger, handlers []bus.EventHandlerEntry) *bus.EventBus {
+func provideEventBus(
+	logger *slog.Logger,
+	handlers []bus.EventHandlerEntry,
+	reporter shared.ErrorReporter,
+) *bus.EventBus {
 	eb := bus.NewEventBus(
-		busmw.RecoveryMiddleware(logger),
+		busmw.RecoveryMiddleware(logger, reporter),
 		busmw.LoggingMiddleware(logger),
 	)
 	for _, h := range handlers {
@@ -177,12 +186,13 @@ func provideJobDispatcher(
 // more goroutines don't increase throughput for DB-bound handlers.
 func provideWorker(
 	logger *slog.Logger,
+	reporter shared.ErrorReporter,
 	repo job.Repository,
 	registry *jobapp.HandlerRegistry,
 	db *database.SqliteManager,
 	dispatcher shared.JobDispatcher,
 ) *worker.Worker {
-	return worker.NewWorker(logger, repo, registry, db, dispatcher, 1)
+	return worker.NewWorker(logger, reporter, repo, registry, db, dispatcher, 1)
 }
 
 func providePermissionsRegistry() *shared.PermissionsRegistry {
@@ -199,7 +209,10 @@ func providePermissionsRegistry() *shared.PermissionsRegistry {
 	})
 }
 
-func CreateApplication(logger *slog.Logger) (*app.Application, error) {
+func CreateApplication(
+	logger *slog.Logger,
+	reporter shared.ErrorReporter,
+) (*app.Application, error) {
 	wire.Build(
 		config.LoadConfig,
 		database.NewSqliteManager,

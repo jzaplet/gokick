@@ -13,6 +13,7 @@ import (
 	"gokick/app/application/bus"
 	busmw "gokick/app/application/bus/middleware"
 	"gokick/app/domain/job"
+	"gokick/app/domain/shared"
 	"gokick/app/domain/token"
 	"gokick/app/domain/user"
 	"gokick/app/infrastructure/config"
@@ -85,19 +86,20 @@ func (*Fixture) HashToken(raw string) string {
 func (f *Fixture) NewBuses() (*bus.CommandBus, *bus.QueryBus, *bus.EventBus) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	checker := security.NewPermissionChecker()
+	reporter := shared.NopReporter{}
 
 	eventBus := bus.NewEventBus(
-		busmw.RecoveryMiddleware(logger),
+		busmw.RecoveryMiddleware(logger, reporter),
 		busmw.LoggingMiddleware(logger),
 	)
 
-	commandChain := append(busmw.BaseChain(logger, checker),
+	commandChain := append(busmw.BaseChain(logger, checker, reporter),
 		busmw.DispatchEventsMiddleware(logger, eventBus),
 		busmw.TransactionMiddleware(f.DB),
 	)
 
 	return bus.NewCommandBus(commandChain...),
-		bus.NewQueryBus(busmw.BaseChain(logger, checker)...),
+		bus.NewQueryBus(busmw.BaseChain(logger, checker, reporter)...),
 		eventBus
 }
 

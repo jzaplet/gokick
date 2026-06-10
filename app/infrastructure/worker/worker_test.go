@@ -32,7 +32,15 @@ func newWorker(t *testing.T, fx *testfx.Fixture, kind string, fn jobapp.HandlerF
 	if err != nil {
 		t.Fatalf("registry: %v", err)
 	}
-	return NewWorker(silentLogger(), fx.Jobs, registry, fx.DB, noopDispatcher(), 1)
+	return NewWorker(
+		silentLogger(),
+		shared.NopReporter{},
+		fx.Jobs,
+		registry,
+		fx.DB,
+		noopDispatcher(),
+		1,
+	)
 }
 
 func enqueue(t *testing.T, fx *testfx.Fixture, kind string, maxRetries int) *job.Job {
@@ -57,6 +65,58 @@ func runOnce(t *testing.T, w *Worker) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("worker did not drain")
 	}
+}
+
+type recordingReporter struct{ count atomic.Int32 }
+
+func (r *recordingReporter) Capture(context.Context, error, ...slog.Attr) { r.count.Add(1) }
+func (*recordingReporter) Flush(time.Duration) bool                       { return true }
+
+func newWorkerWithReporter(
+	t *testing.T,
+	fx *testfx.Fixture,
+	rep shared.ErrorReporter,
+	kind string,
+	fn jobapp.HandlerFunc,
+) *Worker {
+	t.Helper()
+	registry, err := jobapp.NewHandlerRegistry(map[string]jobapp.HandlerFunc{kind: fn})
+	if err != nil {
+		t.Fatalf("registry: %v", err)
+	}
+	return NewWorker(silentLogger(), rep, fx.Jobs, registry, fx.DB, noopDispatcher(), 1)
+}
+
+// A terminal job failure (retries exhausted) is reported to the error tracker
+// exactly once; a failure that will still be retried is NOT reported. This pins
+// the noise-control invariant — the tracker must not see every transient
+// failure, only the ones that give up for good.
+func TestWorker_ReportsOnExhaustedRetriesOnly(t *testing.T) {
+	t.Run("exhausted reports once", func(t *testing.T) {
+		fx := testfx.New(t, filepath.Join(t.TempDir(), "worker_report_exhausted.db"))
+		rep := &recordingReporter{}
+		w := newWorkerWithReporter(t, fx, rep, "boom", func(context.Context, []byte) error {
+			return errors.New("always fails")
+		})
+		enqueue(t, fx, "boom", 0) // maxRetries=0 → first failure is terminal
+		runOnce(t, w)
+		if got := rep.count.Load(); got != 1 {
+			t.Fatalf("terminal failure must report exactly once, got %d", got)
+		}
+	})
+
+	t.Run("retryable does not report", func(t *testing.T) {
+		fx := testfx.New(t, filepath.Join(t.TempDir(), "worker_report_retry.db"))
+		rep := &recordingReporter{}
+		w := newWorkerWithReporter(t, fx, rep, "boom", func(context.Context, []byte) error {
+			return errors.New("transient")
+		})
+		enqueue(t, fx, "boom", 2) // maxRetries=2 → first failure reschedules, not terminal
+		runOnce(t, w)
+		if got := rep.count.Load(); got != 0 {
+			t.Fatalf("a retryable failure must NOT report, got %d", got)
+		}
+	})
 }
 
 func TestWorker_HandlerSuccess_MarksComplete(t *testing.T) {

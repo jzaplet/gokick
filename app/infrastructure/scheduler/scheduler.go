@@ -106,6 +106,10 @@ func (s *Scheduler) runJob(ctx context.Context, j Job) {
 func (s *Scheduler) tick(ctx context.Context, j Job) {
 	defer func() {
 		if r := recover(); r != nil {
+			// Log-only on purpose — NOT reported to the error tracker. Unlike a
+			// terminal job failure, a scheduler job re-ticks every interval
+			// forever, so a deterministic panic would emit an unbounded stream
+			// of identical events. The Error-level log is the operator signal.
 			s.logger.Error("scheduler: job panicked", logKeyName, j.Name, logKeyPanic, r)
 		}
 	}()
