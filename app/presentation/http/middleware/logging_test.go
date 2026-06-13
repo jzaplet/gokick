@@ -11,9 +11,9 @@ import (
 	"gokick/app/domain/shared"
 )
 
-// The HTTP access log carries trace_id, method, path and a numeric duration_ms.
-// This is a behavior change (was: trace_id + a stringly time.Duration), so the
-// emitted shape is locked here.
+// The HTTP access log carries trace_id, method, path, ip and a numeric
+// duration_ms. This is a behavior change (was: trace_id + a stringly
+// time.Duration), so the emitted shape is locked here.
 func TestLoggingMiddleware_LogsRequestShape(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
@@ -76,6 +76,28 @@ func TestLoggingMiddleware_OmitsUserIDEvenWhenClaimsInjectedDownstream(t *testin
 	}
 	if entry[shared.LogKeyTraceID] != "trace-1" {
 		t.Fatalf("trace_id must be present: %v", entry)
+	}
+}
+
+// The access log carries the resolved client IP (the same value IPMiddleware
+// stamps onto audit records), so request origin appears in the logs too — not
+// only in the audit trail.
+func TestLoggingMiddleware_LogsClientIP(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+
+	h := LoggingMiddleware(logger)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	req = req.WithContext(shared.ContextWithActorIP(req.Context(), "203.0.113.7"))
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	entry := decodeSingleLog(t, buf.Bytes())
+	if entry["ip"] != "203.0.113.7" {
+		t.Fatalf("ip: got %v", entry["ip"])
 	}
 }
 

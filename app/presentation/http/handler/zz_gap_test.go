@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"testing/fstest"
 )
@@ -45,7 +46,7 @@ func TestSPAHandler_Serve(t *testing.T) {
 		"index.html": {Data: []byte("<!doctype html><title>spa-root</title>")},
 		"app.js":     {Data: []byte("console.log('hello')")},
 	}
-	h := NewSPAHandler(fsys)
+	h := NewSPAHandler(fsys, SPAConfig{})
 
 	t.Run("existing dotted asset is served from the FS", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/app.js", nil)
@@ -89,4 +90,48 @@ func TestSPAHandler_Serve(t *testing.T) {
 			t.Fatalf("spa fallback Content-Type: got %q want text/html; charset=utf-8", ct)
 		}
 	})
+}
+
+// The runtime frontend config (Sentry DSN, environment, debug flag) is injected
+// into the served index.html as <meta> tags so one built image serves every
+// environment. The debug tag is emitted only when enabled.
+func TestSPAHandler_InjectsRuntimeConfig(t *testing.T) {
+	fsys := fstest.MapFS{
+		"index.html": {Data: []byte(
+			"<!doctype html><html><head><title>x</title></head><body></body></html>",
+		)},
+	}
+	h := NewSPAHandler(fsys, SPAConfig{
+		SentryDSN:         "https://k@o1.ingest.sentry.io/2",
+		SentryEnvironment: "production",
+		SentryDebug:       true,
+	})
+
+	rec := httptest.NewRecorder()
+	h.Serve(rec, httptest.NewRequest(http.MethodGet, "/dashboard", nil))
+
+	body := rec.Body.String()
+	for _, want := range []string{
+		`<meta name="gokick:sentry-dsn" content="https://k@o1.ingest.sentry.io/2">`,
+		`<meta name="gokick:sentry-environment" content="production">`,
+		`<meta name="gokick:sentry-debug" content="true">`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("served index missing %q in:\n%s", want, body)
+		}
+	}
+}
+
+func TestSPAHandler_OmitsDebugMetaWhenDisabled(t *testing.T) {
+	fsys := fstest.MapFS{
+		"index.html": {Data: []byte("<head></head>")},
+	}
+	h := NewSPAHandler(fsys, SPAConfig{SentryDebug: false})
+
+	rec := httptest.NewRecorder()
+	h.Serve(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	if strings.Contains(rec.Body.String(), "sentry-debug") {
+		t.Fatalf("debug meta must be omitted when disabled: %s", rec.Body.String())
+	}
 }

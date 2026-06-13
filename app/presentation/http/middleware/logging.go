@@ -12,6 +12,7 @@ import (
 const (
 	logKeyMethod = "method"
 	logKeyPath   = "path"
+	logKeyIP     = "ip"
 )
 
 func LoggingMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
@@ -25,6 +26,7 @@ func LoggingMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
 				append(shared.LogAttrs(r.Context()),
 					slog.String(logKeyMethod, r.Method),
 					slog.String(logKeyPath, r.URL.Path),
+					slog.String(logKeyIP, shared.ActorIPFromContext(r.Context())),
 					shared.DurationMsAttr(time.Since(start)),
 				)...)
 		})

@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -15,17 +16,26 @@ import (
 // clients but signals misconfiguration).
 //
 // CSP allows 'self' for scripts/connects and 'self' + inline for styles
-// (Vue's scoped style injection requires inline styles). Adjust the
-// directives in this file when adding external script hosts, CDNs or
-// embedded media — security headers are intentionally local, not env-driven.
-func SecurityHeadersMiddleware(hstsEnabled bool) func(http.Handler) http.Handler {
+// (Vue's scoped style injection requires inline styles). When a frontend
+// Sentry DSN is configured, its ingest origin is added to connect-src so the
+// browser can deliver error events to it — otherwise the CSP would block them.
+// Adjust the directives in this file when adding external script hosts, CDNs or
+// embedded media — security headers are otherwise intentionally local.
+func SecurityHeadersMiddleware(hstsEnabled bool, sentryDSN string) func(http.Handler) http.Handler {
+	// FE Sentry posts events to its ingest host (cross-origin), so connect-src
+	// must allow that exact origin when a DSN is set. Empty DSN keeps it tight.
+	connectSrc := "connect-src 'self'"
+	if origin := sentryIngestOrigin(sentryDSN); origin != "" {
+		connectSrc += " " + origin
+	}
+
 	csp := strings.Join([]string{
 		"default-src 'self'",
 		"script-src 'self'",
 		"style-src 'self' 'unsafe-inline'",
 		"img-src 'self' data:",
 		"font-src 'self' data:",
-		"connect-src 'self'",
+		connectSrc,
 		"object-src 'none'",
 		"base-uri 'self'",
 		"form-action 'self'",
@@ -71,4 +81,18 @@ func SecurityHeadersMiddleware(hstsEnabled bool) func(http.Handler) http.Handler
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// sentryIngestOrigin returns the scheme://host origin of a Sentry DSN so the CSP
+// connect-src can allow event delivery to it. Returns "" for an empty or
+// unparseable DSN, leaving connect-src restricted to 'self'.
+func sentryIngestOrigin(dsn string) string {
+	if dsn == "" {
+		return ""
+	}
+	u, err := url.Parse(dsn)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }
