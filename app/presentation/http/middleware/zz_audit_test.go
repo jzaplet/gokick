@@ -20,7 +20,7 @@ func TestSecurityHeadersMiddleware_EmitsUnconditionalHeaders(t *testing.T) {
 		next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		})
-		handler := SecurityHeadersMiddleware(hsts)(next)
+		handler := SecurityHeadersMiddleware(hsts, "")(next)
 
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		rec := httptest.NewRecorder()
@@ -54,11 +54,37 @@ func TestSecurityHeadersMiddleware_EmitsUnconditionalHeaders(t *testing.T) {
 	}
 }
 
+// FE Sentry posts events cross-origin, so connect-src must allow the DSN's
+// ingest origin when configured — and stay tight ('self' only) when it isn't.
+func TestSecurityHeadersMiddleware_ConnectSrcAllowsSentryIngest(t *testing.T) {
+	t.Parallel()
+
+	cspFor := func(dsn string) string {
+		handler := SecurityHeadersMiddleware(false, dsn)(
+			http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}),
+		)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+		return rec.Header().Get("Content-Security-Policy")
+	}
+
+	if csp := cspFor(""); !strings.Contains(csp, "connect-src 'self'") ||
+		strings.Contains(csp, "sentry.io") {
+		t.Fatalf("empty DSN must keep connect-src tight: %q", csp)
+	}
+
+	if csp := cspFor("https://abc123@o42.ingest.de.sentry.io/7"); !strings.Contains(
+		csp, "connect-src 'self' https://o42.ingest.de.sentry.io",
+	) {
+		t.Fatalf("DSN ingest origin must be in connect-src: %q", csp)
+	}
+}
+
 func TestSecurityHeadersMiddleware_HSTSGatedOnFlag(t *testing.T) {
 	t.Parallel()
 
 	serve := func(hstsEnabled bool) *httptest.ResponseRecorder {
-		handler := SecurityHeadersMiddleware(hstsEnabled)(
+		handler := SecurityHeadersMiddleware(hstsEnabled, "")(
 			http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}),
 		)
 		req := httptest.NewRequest(http.MethodGet, "/", nil)

@@ -2,6 +2,7 @@
 import { useRoute } from 'vue-router';
 import AppLayout from '@/app/Layout/AppLayout.vue';
 import ToastContainer from '@/app-ui/Toast/ToastContainer.vue';
+import SentryDebugTrigger from '@/app-ui/Sentry/SentryDebugTrigger.vue';
 
 const route = useRoute();
 </script>
@@ -12,4 +13,5 @@ const route = useRoute();
     </AppLayout>
     <RouterView v-else />
     <ToastContainer />
+    <SentryDebugTrigger />
 </template>

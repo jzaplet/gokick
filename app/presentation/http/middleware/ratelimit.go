@@ -58,12 +58,28 @@ func parseDuration(s string) (time.Duration, error) {
 }
 
 // IPExtractor returns the client IP. NewIPExtractor wires it to either
-// RemoteAddr (safe default) or to X-Real-IP (opt-in for trusted proxies).
+// RemoteAddr (safe default) or, for trusted proxies, to the forwarded client
+// IP — preferring Cloudflare's CF-Connecting-IP, then X-Real-IP.
 type IPExtractor func(*http.Request) string
 
 func NewIPExtractor(trustProxy bool) IPExtractor {
 	if trustProxy {
+		// Trust the proxy-supplied client IP. Order: Cloudflare's
+		// CF-Connecting-IP (the real visitor when behind Cloudflare — which
+		// otherwise hides it, since X-Real-IP would then be the Cloudflare
+		// edge), then X-Real-IP (direct reverse proxy like Traefik/nginx),
+		// then RemoteAddr.
+		//
+		// SECURITY: these headers are only as trustworthy as the network path.
+		// If the origin is reachable directly (not solely via the proxy), a
+		// client can forge CF-Connecting-IP / X-Real-IP and spoof the
+		// rate-limit / audit IP. The real mitigation is to firewall the origin
+		// to the proxy's address ranges (e.g. allow only Cloudflare IPs) — only
+		// enable this behind such a trusted path.
 		return func(r *http.Request) string {
+			if ip := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); ip != "" {
+				return ip
+			}
 			if ip := strings.TrimSpace(r.Header.Get("X-Real-IP")); ip != "" {
 				return ip
 			}

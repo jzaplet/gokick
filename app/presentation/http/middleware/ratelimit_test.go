@@ -193,3 +193,28 @@ func TestNewIPExtractor_TrustProxyFallsBackToRemoteAddr(t *testing.T) {
 		t.Fatalf("missing X-Real-IP should fall back to RemoteAddr, got %q", got)
 	}
 }
+
+func TestNewIPExtractor_TrustProxyPrefersCFConnectingIP(t *testing.T) {
+	t.Parallel()
+	extract := NewIPExtractor(true)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "10.0.0.1:443"
+	// Behind Cloudflare, X-Real-IP is the Cloudflare edge; CF-Connecting-IP is
+	// the real visitor and must win.
+	req.Header.Set("X-Real-IP", "172.71.0.1")
+	req.Header.Set("CF-Connecting-IP", "1.2.3.4")
+	if got := extract(req); got != "1.2.3.4" {
+		t.Fatalf("trust-proxy extractor must prefer CF-Connecting-IP, got %q", got)
+	}
+}
+
+func TestNewIPExtractor_DefaultIgnoresCFConnectingIP(t *testing.T) {
+	t.Parallel()
+	extract := NewIPExtractor(false)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "10.0.0.1:443"
+	req.Header.Set("CF-Connecting-IP", "1.2.3.4")
+	if got := extract(req); got != "10.0.0.1" {
+		t.Fatalf("default extractor must ignore CF-Connecting-IP, got %q", got)
+	}
+}

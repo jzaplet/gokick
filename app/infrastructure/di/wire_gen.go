@@ -59,7 +59,8 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	}
 	healthHandler := handler.NewHealthHandler()
 	fs := providePublicFS()
-	spaHandler := handler.NewSPAHandler(fs)
+	spaConfig := provideSPAConfig(configConfig)
+	spaHandler := handler.NewSPAHandler(fs, spaConfig)
 	cookieSecure := provideCookieSecure(configConfig)
 	sqliteManager, err := database.NewSqliteManager(configConfig)
 	if err != nil {
@@ -153,6 +154,17 @@ func provideQueryBus(
 
 func providePublicFS() fs.FS {
 	return public.FS
+}
+
+// provideSPAConfig narrows *config.Config down to the deployment-specific
+// frontend values the SPA handler injects into index.html, keeping the handler
+// layer free of an infrastructure/config import.
+func provideSPAConfig(cfg *config.Config) handler.SPAConfig {
+	return handler.SPAConfig{
+		SentryDSN:         cfg.FrontendSentryDSN,
+		SentryEnvironment: cfg.SentryEnvironment,
+		SentryDebug:       cfg.SentryDebug,
+	}
 }
 
 // provideEventHandlers is the single source of truth for event subscriptions

@@ -83,6 +83,17 @@ func providePublicFS() fs.FS {
 	return public.FS
 }
 
+// provideSPAConfig narrows *config.Config down to the deployment-specific
+// frontend values the SPA handler injects into index.html, keeping the handler
+// layer free of an infrastructure/config import.
+func provideSPAConfig(cfg *config.Config) handler.SPAConfig {
+	return handler.SPAConfig{
+		SentryDSN:         cfg.FrontendSentryDSN,
+		SentryEnvironment: cfg.SentryEnvironment,
+		SentryDebug:       cfg.SentryDebug,
+	}
+}
+
 // provideEventHandlers is the single source of truth for event subscriptions
 // — mirrors providePermissionsRegistry / provideSchedulerJobs. Add a new
 // entry here; provideEventBus wires them up during construction.
@@ -257,6 +268,7 @@ func CreateApplication(
 		dashboardqry.NewGetUserDashboardHandler,
 		dashboardqry.NewGetAdminDashboardHandler,
 		providePublicFS,
+		provideSPAConfig,
 		handler.NewSPAHandler,
 		handler.NewHealthHandler,
 		handler.NewAuthHandler,
