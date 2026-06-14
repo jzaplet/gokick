@@ -96,13 +96,13 @@ Pořadí chain podle typu routy:
 ```
 Request
   /health, /api/v1/auth/{login,refresh}
-      -> Trace -> IP -> Security headers -> CORS -> CSRF -> Logging -> Handler
+      -> Trace -> IP -> Recovery -> Security headers -> CORS -> CSRF -> Logging -> Handler
 
   /api/v1/... (chráněné)
-      -> Trace -> IP -> Security headers -> CORS -> CSRF -> Logging -> JWT Auth -> Handler
+      -> Trace -> IP -> Recovery -> Security headers -> CORS -> CSRF -> Logging -> JWT Auth -> Handler
 
   /{path...} (SPA)
-      -> Trace -> IP -> Security headers -> CORS -> CSRF -> Logging -> SPA Fallback
+      -> Trace -> IP -> Recovery -> Security headers -> CORS -> CSRF -> Logging -> SPA Fallback
 ```
 
 SPA catch-all (`GET /{path...}`) je registrovaný do **téhož** muxu, který obaluje globální chain -- **neobchází** middleware (žádný static-file bypass). Jen běží jako poslední route, takže explicitní cesty vyhrávají.
