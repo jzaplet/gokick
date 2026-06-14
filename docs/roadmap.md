@@ -251,7 +251,7 @@ Před přidáním nových funkcí proběhl důkladný bezpečnostní audit, kter
 
 ## Fáze 5 — Observability
 
-**Stav:** Probíhá — strukturované slog atributy + Sentry (BE i FE) hotové (2026-06-10); zbývá už jen OpenTelemetry (volitelně).
+**Stav:** Probíhá — strukturované slog atributy + Sentry (BE i FE) hotové (2026-06-10), produkční hardening + obohacení eventu (2026-06-14); zbývá už jen OpenTelemetry (volitelně).
 
 Až aplikace začne jezdit v produkci. Bez F1–F3 by observabilita měřila nestabilní systém.
 
@@ -267,9 +267,16 @@ Až aplikace začne jezdit v produkci. Bez F1–F3 by observabilita měřila nes
 
 - [x] **Sentry (BE + FE)** — Hotovo (2026-06-10). Rozsah A: jen chyby & paniky.
   - Port `shared.ErrorReporter` (`Capture`/`Flush`) + `NopReporter`; staven v `cmd/sentry.go`, gated na `APP_SENTRY_DSN` (prázdné = no-op). `defer Flush` v `main` (+ před `os.Exit`), protože `CaptureException` je async.
-  - **Přidán HTTP `RecoveryMiddleware`** (dosud chyběl) — panika mimo bus → log + report + 500. Bus recovery + worker (exhausted retries) hlásí taky. Tagy `trace_id`/`user_id` z ctx + `command`/`job_kind`/`method`/`path`.
-  - **FE:** `@sentry/vue` v `assets/app.ts`, gated na `VITE_SENTRY_DSN`; Vue chyby + unhandled rejections. Follow-up: source-map upload (`@sentry/vite-plugin`) pro čitelné traces.
+  - **Přidán HTTP `RecoveryMiddleware`** (dosud chyběl) — panika mimo bus → log + report + 500. Bus recovery + worker (exhausted retries) hlásí taky.
+  - **FE:** `@sentry/vue` v `assets/app.ts`; Vue chyby + unhandled rejections. Follow-up: source-map upload (`@sentry/vite-plugin`) pro čitelné traces.
   - sentry-go vědomě přidán do depguard allowlistu (jinak ho enforcement blokuje). Viz [Observability](/framework/infrastructure/observability).
+
+- [x] **Sentry — produkční hardening + obohacení** — Hotovo (2026-06-14, E2E test šablony přes reálnou prod pipeline; [gokick PR #11](https://github.com/jzaplet/gokick/pull/11)). Ověřeno na živém deploy.
+  - **FE Sentry v prod** — `VITE_SENTRY_DSN` je build-time, takže prod image (buildnutý jednou) ho neměl → FE Sentry byl tmavý. Nově server injektuje FE config (`APP_SENTRY_DSN_FRONTEND`, environment, debug) do `index.html` jako `<meta>` tagy, SPA čte runtime (`runtimeConfig.ts`); CSP `connect-src` se otevře na ingest origin.
+  - **Reálná klientská IP** — `IPExtractor` čte `CF-Connecting-IP` (→ `X-Real-IP` → `RemoteAddr`); IP v access logu i na panic logu. Dokumentován **Cloudflare origin-lock** ([Config](/framework/infrastructure/config#app_trust_proxy_headers--cloudflare-origin-lock)).
+  - **Obohacení eventu** — User (id/nickname/role + IP, `user.ip_address`) + Request (method/url/User-Agent z whitelistu, nikdy syrové hlavičky); `SendDefaultPII:true`. Access log + `status`/`bytes`. Klíče `method`/`path`/`url`/`user_agent` povýšeny do `shared.LogKey*`.
+  - **Oprava pořadí middleware** — `Trace → IP → Recovery` (IP před Recovery), aby HTTP-recovery capture nesl klientskou IP. Regresní test proti `buildMiddlewareChain`.
+  - **`APP_SENTRY_DEBUG`** — gated BE `/debug/sentry` panika + FE tlačítko pro smoke-test. Návod: [Sentry guide](/guides/sentry).
 
 - [ ] **OpenTelemetry (volitelně, později)**
   - Až bude nasazená alespoň jedna další služba (database proxy, search backend, atd.). Pro standalone monolit přidává komplexitu bez návratnosti.

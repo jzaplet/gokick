@@ -72,6 +72,8 @@ logger.LogAttrs(ctx, slog.LevelInfo, "bus: completed",
 
 ## Sentry — chyby & paniky
 
+Tahle sekce popisuje, jak error reporting funguje **uvnitř**. Provozní nastavení (založení projektů, DSN, dev vs prod delivery, deploy za Cloudflare, ověření) je v [Sentry guide](/guides/sentry).
+
 Neočekávaná selhání se hlásí do Sentry. **Není to logovací cesta** — běžné návratové chyby (validace, auth, 4xx) se sem nehlásí, jen recovery/terminal cesty, jinak tracker utone v šumu.
 
 - **Port `shared.ErrorReporter`** (`Capture(ctx, err, attrs...)`, `Flush`). Bez DSN → `NopReporter` (no-op), takže appka běží beze změny i bez Sentry účtu. Staven v `cmd/sentry.go` (jako logger) a injektovaný, takže sentry-go import zůstává mimo vrstvený `app/` strom.

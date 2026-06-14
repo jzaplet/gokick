@@ -51,7 +51,7 @@ go test ./app/infrastructure/security/ -run TestHash  # Single Go test
 
 ### Environment
 
-Copy `.env.example` to `.env`. Key vars: `APP_HTTP_PORT`, `APP_DB_PATH`, `APP_JWT_SECRET` (≥ 32 chars), `APP_CORS_ORIGIN`, `APP_JWT_ACCESS_EXPIRATION`, `APP_JWT_REFRESH_EXPIRATION`, `APP_COOKIE_SECURE`, `APP_SEED_ADMIN_PASSWORD` (required by `./bin/app seed`), `APP_TRUST_PROXY_HEADERS` (flip to `true` only behind a trusted reverse proxy — flips IP source for rate limit + audit), `APP_RATE_LIMIT_LOGIN`, `APP_RATE_LIMIT_REFRESH`. Full reference: [Config](docs/framework/infrastructure/config.md).
+Copy `.env.example` to `.env`. Key vars: `APP_HTTP_PORT`, `APP_DB_PATH`, `APP_JWT_SECRET` (≥ 32 chars), `APP_CORS_ORIGIN`, `APP_JWT_ACCESS_EXPIRATION`, `APP_JWT_REFRESH_EXPIRATION`, `APP_COOKIE_SECURE`, `APP_SEED_ADMIN_PASSWORD` (required by `./bin/app seed`), `APP_TRUST_PROXY_HEADERS` (flip to `true` only behind a trusted reverse proxy — flips IP source for rate limit + audit), `APP_RATE_LIMIT_LOGIN`, `APP_RATE_LIMIT_REFRESH`, `APP_SENTRY_DSN` / `APP_SENTRY_DSN_FRONTEND` (error tracking, empty = off). Full reference: [Config](docs/framework/infrastructure/config.md); Sentry setup: [Sentry guide](docs/guides/sentry.md).
 
 ## Architecture
 
