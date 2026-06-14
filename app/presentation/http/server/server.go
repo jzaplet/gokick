@@ -217,21 +217,23 @@ func (s *Server) registerRoutes() *http.ServeMux {
 func (s *Server) buildMiddlewareChain(handler http.Handler) http.Handler {
 	csrf := &http.CrossOriginProtection{}
 
-	// Order: Trace → IP → Recovery → Security headers → CORS → CSRF →
-	// Logging (→ handler). HSTS is only emitted in production (gated on the
-	// CookieSecure flag, which already distinguishes HTTPS traffic).
+	// Order: Trace → IP → ReportScope → Recovery → Security headers → CORS →
+	// CSRF → Logging (→ handler). HSTS is only emitted in production (gated on
+	// the CookieSecure flag, which already distinguishes HTTPS traffic).
 	//
-	// Trace and IP are pure context-setters — they only stamp ctx (trace_id,
-	// actor IP) and never write a response or fail — so they run BEFORE
-	// Recovery on purpose: every panic report then carries both trace_id and
-	// the resolved client IP (Recovery's Sentry capture reads the IP from ctx).
+	// Trace, IP and ReportScope are pure context-setters — they only stamp ctx
+	// (trace_id, actor IP, the per-request Sentry hub) and never write a
+	// response or fail — so they run BEFORE Recovery on purpose: every panic
+	// report then carries trace_id, the client IP (capture reads it from ctx)
+	// and the breadcrumb trail (log lines accumulate on the request hub).
 	// Recovery still wraps everything that can actually panic — Security, CORS,
 	// CSRF, Logging, the handler and the bus; the http.Server's own recovery
-	// backstops the two context-setters. IP also stays upstream of every
-	// consumer (audit, logging, Recovery's capture) so all see the same IP.
+	// backstops the context-setters. IP also stays upstream of every consumer
+	// (audit, logging, capture) so all see the same IP.
 	middlewares := []func(http.Handler) http.Handler{
 		middleware.TraceMiddleware(),
 		middleware.IPMiddleware(s.ipExtract),
+		middleware.ReportScopeMiddleware(s.reporter),
 		middleware.RecoveryMiddleware(s.logger, s.reporter),
 		middleware.SecurityHeadersMiddleware(s.config.CookieSecure, s.config.FrontendSentryDSN),
 		middleware.CORSMiddleware(s.config.CORSOrigin),

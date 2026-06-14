@@ -77,6 +77,8 @@ func (c *captureReporter) Capture(_ context.Context, err error, _ ...slog.Attr) 
 }
 func (*captureReporter) Flush(time.Duration) bool { return true }
 
+func (*captureReporter) WithRequestScope(ctx context.Context) context.Context { return ctx }
+
 // A recovered panic is reported to the error tracker exactly once, in addition
 // to being logged. The no-report-on-returned-error half is pinned by
 // TestRecoveryMiddleware_DoesNotReportReturnedError below.

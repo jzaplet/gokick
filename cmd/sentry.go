@@ -53,6 +53,14 @@ func newErrorReporter(dsn, environment, release string) (shared.ErrorReporter, e
 
 type sentryReporter struct{}
 
+// WithRequestScope binds a fresh per-request hub to ctx so breadcrumbs (the
+// log lines emitted while handling the request/job, via the breadcrumb slog
+// handler) accumulate on it and ride along on a later Capture from the same
+// ctx. A clone keeps each request's trail isolated from concurrent requests.
+func (sentryReporter) WithRequestScope(ctx context.Context) context.Context {
+	return sentry.SetHubOnContext(ctx, sentry.CurrentHub().Clone())
+}
+
 // Capture reports err to Sentry. Beyond the ctx correlation attrs (trace_id,
 // user_id) and any caller-supplied attrs — all attached as searchable tags — it
 // enriches the event with:
@@ -73,8 +81,16 @@ func (sentryReporter) Capture(ctx context.Context, err error, attrs ...slog.Attr
 	var panicErr *shared.PanicError
 	isPanic := errors.As(err, &panicErr)
 
-	hub := sentry.CurrentHub().Clone()
-	hub.ConfigureScope(func(scope *sentry.Scope) {
+	// Prefer the per-request hub (it carries the breadcrumb trail set by
+	// WithRequestScope); fall back to a fresh clone outside any request scope.
+	hub := sentry.GetHubFromContext(ctx)
+	if hub == nil {
+		hub = sentry.CurrentHub().Clone()
+	}
+	// WithScope finalizes on a temporary scope cloned from the hub's — so the
+	// accumulated breadcrumbs are included — without leaking this request's
+	// tags/processor onto the shared hub across captures.
+	hub.WithScope(func(scope *sentry.Scope) {
 		for _, a := range all {
 			scope.SetTag(a.Key, a.Value.String())
 		}
@@ -85,10 +101,10 @@ func (sentryReporter) Capture(ctx context.Context, err error, attrs ...slog.Attr
 			scope.SetUser(user)
 		}
 		req := sentryRequest(all)
-		// One processor finalizes the event on the captured hub: the
-		// reconstructed request (no direct scope setter for a pre-built
-		// *sentry.Request), the in-app demotion of our own reporting frames so
-		// the culprit is the real origin, and the "panic" exception type.
+		// One processor finalizes the event: the reconstructed request (no
+		// direct scope setter for a pre-built *sentry.Request), the in-app
+		// demotion of our own reporting frames so the culprit is the real
+		// origin, and the "panic" exception type.
 		scope.AddEventProcessor(func(event *sentry.Event, _ *sentry.EventHint) *sentry.Event {
 			if req != nil {
 				event.Request = req
@@ -99,8 +115,8 @@ func (sentryReporter) Capture(ctx context.Context, err error, attrs ...slog.Attr
 			}
 			return event
 		})
+		hub.CaptureException(err)
 	})
-	hub.CaptureException(err)
 }
 
 // demoteReportingFrames marks gokick's own error-reporting frames (this Capture

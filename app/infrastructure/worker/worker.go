@@ -114,6 +114,11 @@ func (w *Worker) processOne(ctx context.Context, slot int) {
 		return
 	}
 
+	// Per-job reporting scope: ctx-form log lines emitted while running the job
+	// (the handler's, and the recover-time panic log) accumulate as breadcrumbs
+	// that ride along on a terminal-failure capture. No-op without Sentry.
+	ctx = w.reporter.WithRequestScope(ctx)
+
 	log := w.logger.With(
 		logKeySlot,
 		slot,

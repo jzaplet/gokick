@@ -72,6 +72,8 @@ type recordingReporter struct{ count atomic.Int32 }
 func (r *recordingReporter) Capture(context.Context, error, ...slog.Attr) { r.count.Add(1) }
 func (*recordingReporter) Flush(time.Duration) bool                       { return true }
 
+func (*recordingReporter) WithRequestScope(ctx context.Context) context.Context { return ctx }
+
 func newWorkerWithReporter(
 	t *testing.T,
 	fx *testfx.Fixture,
