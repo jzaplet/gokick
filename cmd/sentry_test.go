@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -87,6 +88,83 @@ func TestCapture_EnrichesEventWithUserAndRequest(t *testing.T) {
 	}
 	if captured.Request.Headers["User-Agent"] != "agent/1.0" {
 		t.Fatalf("event request User-Agent header: %+v", captured.Request.Headers)
+	}
+}
+
+// fakeRecoveryMiddleware exists so the capture below has a frame whose function
+// name contains "RecoveryMiddleware" — exercising demoteReportingFrames the same
+// way the real bus/HTTP recovery middlewares do.
+func fakeRecoveryMiddleware(r sentryReporter, ctx context.Context, err error) {
+	r.Capture(ctx, err)
+}
+
+// A recovered panic must surface as exception type "panic" (not the generic
+// *errors.errorString), carry a panic.type tag with the value's Go type, and
+// have gokick's own reporting frames demoted to not-in-app so Sentry's culprit
+// resolves to the real origin. Verified on the serialized event via BeforeSend.
+//
+// NOT parallel: sentry.Init binds the global hub.
+func TestCapture_PanicErrorTypeAndInAppDemotion(t *testing.T) {
+	var captured *sentry.Event
+	if err := sentry.Init(sentry.ClientOptions{
+		Dsn: "https://public@example.com/1",
+		BeforeSend: func(event *sentry.Event, _ *sentry.EventHint) *sentry.Event {
+			captured = event
+			return nil
+		},
+	}); err != nil {
+		t.Fatalf("sentry.Init: %v", err)
+	}
+
+	fakeRecoveryMiddleware(sentryReporter{}, context.Background(), &shared.PanicError{
+		Value:   "boom",
+		Message: "http: panic in GET /x: boom",
+	})
+	sentry.Flush(2 * time.Second)
+
+	if captured == nil {
+		t.Fatal("BeforeSend never ran")
+	}
+	if len(captured.Exception) == 0 {
+		t.Fatal("event has no exception")
+	}
+	if got := captured.Exception[len(captured.Exception)-1].Type; got != "panic" {
+		t.Fatalf("exception type: got %q want %q", got, "panic")
+	}
+	if got := captured.Tags[tagPanicType]; got != "string" {
+		t.Fatalf("panic.type tag: got %q want %q", got, "string")
+	}
+
+	// Walk every frame: our reporting frames demoted, a real frame still in-app.
+	var sawCaptureDemoted, sawRecoveryDemoted, sawInAppTrue bool
+	for ei := range captured.Exception {
+		st := captured.Exception[ei].Stacktrace
+		if st == nil {
+			continue
+		}
+		for _, f := range st.Frames {
+			switch {
+			case strings.Contains(f.Function, "sentryReporter.Capture"):
+				if !f.InApp {
+					sawCaptureDemoted = true
+				}
+			case strings.Contains(f.Function, "RecoveryMiddleware"):
+				if !f.InApp {
+					sawRecoveryDemoted = true
+				}
+			case f.InApp:
+				sawInAppTrue = true
+			}
+		}
+	}
+	if !sawCaptureDemoted {
+		t.Error("sentryReporter.Capture frame must be demoted to not-in-app")
+	}
+	if !sawRecoveryDemoted {
+		t.Error("RecoveryMiddleware frame must be demoted to not-in-app")
+	}
+	if !sawInAppTrue {
+		t.Error("a real (non-reporting) frame must remain in-app as the culprit")
 	}
 }
 

@@ -22,7 +22,13 @@ func RecoveryMiddleware(logger *slog.Logger, reporter shared.ErrorReporter) bus.
 						slog.Any(logKeyPanic, r),
 						slog.String(logKeyStack, string(debug.Stack())),
 					)...)
-				err = fmt.Errorf("bus: panic in %s: %v", name, r)
+				// Wrap as a PanicError so the tracker labels it "panic" rather
+				// than the generic *errors.errorString from fmt.Errorf. The
+				// returned err maps to a 500 either way (default error mapping).
+				err = &shared.PanicError{
+					Value:   r,
+					Message: fmt.Sprintf("bus: panic in %s: %v", name, r),
+				}
 				// Report the recovered panic to the error tracker (no-op without
 				// a DSN). Only panics reach here — ordinary command errors do not.
 				reporter.Capture(ctx, err, slog.String(shared.LogKeyCommand, name))
