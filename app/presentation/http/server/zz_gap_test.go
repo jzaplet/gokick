@@ -169,6 +169,7 @@ func boundServer(t *testing.T) (*Server, *testfx.Fixture) {
 	s := &Server{
 		config:    &config.Config{CookieSecure: false, CORSOrigin: "*"},
 		logger:    logger,
+		reporter:  shared.NopReporter{},
 		jwt:       fx.Jwt,
 		ipExtract: extract,
 		limiters: &RateLimiters{

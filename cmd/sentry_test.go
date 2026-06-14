@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"strings"
 	"testing"
@@ -88,6 +89,57 @@ func TestCapture_EnrichesEventWithUserAndRequest(t *testing.T) {
 	}
 	if captured.Request.Headers["User-Agent"] != "agent/1.0" {
 		t.Fatalf("event request User-Agent header: %+v", captured.Request.Headers)
+	}
+}
+
+// A capture on a request-scoped ctx carries the breadcrumb trail — log lines
+// emitted on that ctx (through the breadcrumb slog handler) ride along on the
+// event, the way Symfony attaches the Monolog/Doctrine trail. Verified
+// end-to-end with the real wrapped handler, and the SAME event also carries the
+// panic shape (A + B land together).
+//
+// NOT parallel: sentry.Init binds the global hub.
+func TestCapture_RequestScopeCarriesBreadcrumbs(t *testing.T) {
+	var captured *sentry.Event
+	if err := sentry.Init(sentry.ClientOptions{
+		Dsn: "https://public@example.com/1",
+		BeforeSend: func(event *sentry.Event, _ *sentry.EventHint) *sentry.Event {
+			captured = event
+			return nil
+		},
+	}); err != nil {
+		t.Fatalf("sentry.Init: %v", err)
+	}
+
+	r := sentryReporter{}
+	ctx := r.WithRequestScope(context.Background())
+
+	// A log on the request-scoped ctx becomes a breadcrumb (real wrapped handler).
+	logger := slog.New(
+		breadcrumbHandler{Handler: newLogHandler(io.Discard, "json", slog.LevelInfo)},
+	)
+	logger.LogAttrs(ctx, slog.LevelInfo, "bus: completed", slog.String("command", "DoThing"))
+
+	// Then a panic is captured on the same ctx.
+	r.Capture(ctx, &shared.PanicError{Value: "boom", Message: "bus: panic in DoThing: boom"})
+	sentry.Flush(2 * time.Second)
+
+	if captured == nil {
+		t.Fatal("BeforeSend never ran")
+	}
+	var sawBreadcrumb bool
+	for _, b := range captured.Breadcrumbs {
+		if b.Message == "bus: completed" {
+			sawBreadcrumb = true
+		}
+	}
+	if !sawBreadcrumb {
+		t.Error("the request-scoped log must appear as a breadcrumb on the captured event")
+	}
+	// Same event still carries the panic shape — A and B land on one event.
+	if len(captured.Exception) == 0 ||
+		captured.Exception[len(captured.Exception)-1].Type != "panic" {
+		t.Errorf("event must also carry panic exception type, got %+v", captured.Exception)
 	}
 }
 

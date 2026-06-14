@@ -17,6 +17,12 @@ type ErrorReporter interface {
 	// Capture reports err, tagged with the ctx correlation attributes plus the
 	// given attrs. Best-effort and non-blocking — it must never fail a request.
 	Capture(ctx context.Context, err error, attrs ...slog.Attr)
+	// WithRequestScope returns a context carrying a fresh per-request reporting
+	// scope. Breadcrumbs (the structured-log lines emitted while handling the
+	// request or job) then accumulate on that scope, so a later Capture on the
+	// same context includes the trail leading up to the failure. Call it once at
+	// the start of each request/job. The no-op reporter returns ctx unchanged.
+	WithRequestScope(ctx context.Context) context.Context
 	// Flush blocks up to timeout for buffered events to be delivered. Call it
 	// before process exit (incl. panic unwinding) so reports aren't lost.
 	Flush(timeout time.Duration) bool
@@ -27,6 +33,8 @@ type ErrorReporter interface {
 type NopReporter struct{}
 
 func (NopReporter) Capture(context.Context, error, ...slog.Attr) {}
+
+func (NopReporter) WithRequestScope(ctx context.Context) context.Context { return ctx }
 
 func (NopReporter) Flush(time.Duration) bool { return true }
 

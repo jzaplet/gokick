@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"os"
 	"strings"
+
+	"github.com/getsentry/sentry-go"
 )
 
 // newLogger builds the process-wide structured logger written to stderr.
@@ -17,7 +20,65 @@ import (
 // both prints locally and exports via OTLP) wraps the handler built here —
 // no other code path creates a *slog.Logger.
 func newLogger(format string, level slog.Level) *slog.Logger {
-	return slog.New(newLogHandler(os.Stderr, format, level))
+	return slog.New(breadcrumbHandler{Handler: newLogHandler(os.Stderr, format, level)})
+}
+
+// breadcrumbHandler wraps a slog.Handler so every INFO+ record also becomes a
+// Sentry breadcrumb on the per-request hub carried in ctx (set by
+// ErrorReporter.WithRequestScope). With no such hub — Sentry disabled, or a log
+// outside any request scope — it is a pure pass-through. This is the seam that
+// turns the structured-log stream into the trail that rides along on a captured
+// error, the way Symfony attaches Monolog/Doctrine breadcrumbs.
+//
+// It lives in cmd/ (the sole place allowed to import the Sentry sink) and wraps
+// the handler from newLogHandler, so no app/ logging call site changes — only
+// logs emitted with the ctx form (LogAttrs(ctx, …)) carry the hub and breadcrumb.
+type breadcrumbHandler struct {
+	slog.Handler
+}
+
+func (h breadcrumbHandler) Handle(ctx context.Context, r slog.Record) error {
+	if r.Level >= slog.LevelInfo {
+		if hub := sentry.GetHubFromContext(ctx); hub != nil {
+			hub.AddBreadcrumb(recordToBreadcrumb(r), nil)
+		}
+	}
+	return h.Handler.Handle(ctx, r)
+}
+
+// WithAttrs / WithGroup re-wrap so the breadcrumb behaviour survives logger.With.
+func (h breadcrumbHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return breadcrumbHandler{Handler: h.Handler.WithAttrs(attrs)}
+}
+
+func (h breadcrumbHandler) WithGroup(name string) slog.Handler {
+	return breadcrumbHandler{Handler: h.Handler.WithGroup(name)}
+}
+
+func recordToBreadcrumb(r slog.Record) *sentry.Breadcrumb {
+	data := make(map[string]any, r.NumAttrs())
+	r.Attrs(func(a slog.Attr) bool {
+		data[a.Key] = a.Value.Any()
+		return true
+	})
+	return &sentry.Breadcrumb{
+		Category:  "log",
+		Message:   r.Message,
+		Level:     slogToSentryLevel(r.Level),
+		Data:      data,
+		Timestamp: r.Time,
+	}
+}
+
+func slogToSentryLevel(l slog.Level) sentry.Level {
+	switch {
+	case l >= slog.LevelError:
+		return sentry.LevelError
+	case l >= slog.LevelWarn:
+		return sentry.LevelWarning
+	default:
+		return sentry.LevelInfo
+	}
 }
 
 // newLogHandler isolates handler construction so it can be tested against an

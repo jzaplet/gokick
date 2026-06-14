@@ -32,6 +32,7 @@ func chainOnlyServer(cookieSecure bool) *Server {
 			CORSOrigin:   "https://app.example.com",
 		},
 		logger:    silentLogger(),
+		reporter:  shared.NopReporter{},
 		ipExtract: middleware.NewIPExtractor(false),
 	}
 }
@@ -149,6 +150,7 @@ func routingServer(t *testing.T) *Server {
 	return &Server{
 		config:    &config.Config{CookieSecure: false, CORSOrigin: "*"},
 		logger:    logger,
+		reporter:  shared.NopReporter{},
 		jwt:       jwt,
 		ipExtract: extract,
 		limiters: &RateLimiters{

@@ -22,6 +22,8 @@ func (r *ctxRecordingReporter) Capture(ctx context.Context, _ error, _ ...slog.A
 }
 func (*ctxRecordingReporter) Flush(time.Duration) bool { return true }
 
+func (*ctxRecordingReporter) WithRequestScope(ctx context.Context) context.Context { return ctx }
+
 // TestBuildMiddlewareChain_RecoveryCaptureSeesClientIP pins the ordering
 // invariant that IPMiddleware runs BEFORE RecoveryMiddleware: when a handler
 // panics, the ctx the error reporter receives must already carry the resolved
