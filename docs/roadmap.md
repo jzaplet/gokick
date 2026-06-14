@@ -277,6 +277,7 @@ Až aplikace začne jezdit v produkci. Bez F1–F3 by observabilita měřila nes
   - **Obohacení eventu** — User (id/nickname/role + IP, `user.ip_address`) + Request (method/url/User-Agent z whitelistu, nikdy syrové hlavičky); `SendDefaultPII:true`. Access log + `status`/`bytes`. Klíče `method`/`path`/`url`/`user_agent` povýšeny do `shared.LogKey*`.
   - **Oprava pořadí middleware** — `Trace → IP → Recovery` (IP před Recovery), aby HTTP-recovery capture nesl klientskou IP. Regresní test proti `buildMiddlewareChain`.
   - **`APP_SENTRY_DEBUG`** — gated BE `/debug/sentry` panika + FE tlačítko pro smoke-test. Návod: [Sentry guide](/guides/sentry).
+  - **Kvalita eventu (2. kolo)** — paniky mají typ `panic` (místo `*errors.errorString`) + culprit na reálném místě (`in_app` degradace reporting framů) přes `shared.PanicError`; BE eventy nesou **breadcrumbs** (per-request hub + `breadcrumbHandler` nad slog → trail `INFO+` logů, jako Symfony); FE **source maps** přes `@sentry/vite-plugin` (upload + smazání z dist, debug-ID, opt-in `SENTRY_AUTH_TOKEN`). Vše ověřeno BeforeSend integračními testy.
 
 - [ ] **OpenTelemetry (volitelně, později)**
   - Až bude nasazená alespoň jedna další služba (database proxy, search backend, atd.). Pro standalone monolit přidává komplexitu bez návratnosti.

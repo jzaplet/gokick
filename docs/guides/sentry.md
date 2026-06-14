@@ -75,7 +75,7 @@ Sentry **není logovací cesta** — chodí sem jen neočekávaná selhání:
 
 Běžné návratové chyby — validace, auth, 4xx — se **nehlásí nikdy** (jinak tracker utone v šumu). Detail pravidla + jak je to staticky vynucené viz [Observability → Sentry](/framework/infrastructure/observability#sentry--chyby--paniky).
 
-Každý BE event navíc nese **uživatele** (id / nickname / role + klientská IP) a **request** (method / URL / User-Agent — pevný whitelist, nikdy syrové hlavičky). FE drží `Sentry.setUser` v zámku se session. Mechanika je v [Observability](/framework/infrastructure/observability#sentry--chyby--paniky).
+Každý BE event navíc nese **uživatele** (id / nickname / role + klientská IP), **request** (method / URL / User-Agent — pevný whitelist, nikdy syrové hlavičky), **breadcrumbs** (stopu `INFO+` log řádků vedoucích k chybě — jako Symfony Monolog/Doctrine trail) a u panik smysluplný typ `panic` (+ tag `panic.type`) s culpritem na reálném místě paniky, ne na našem reporteru. FE event nese breadcrumbs automaticky (browser SDK — kliky, navigace) a `Sentry.setUser` v zámku se session. Mechanika je v [Observability](/framework/infrastructure/observability#sentry--chyby--paniky).
 
 ## Release verzování
 
@@ -92,4 +92,11 @@ Po nasazení ověř, že eventy skutečně dorazí:
 
 ## Source maps
 
-Bez nahraných source map jsou FE stack traces minifikované (nečitelné). Až budeš chtít čitelné traces, přidej do buildu `@sentry/vite-plugin` + tajný `SENTRY_AUTH_TOKEN` (upload source map). Do té doby FE Sentry funguje, jen traces nejsou rozbalené. Sleduje to [Roadmap](/roadmap), Fáze 5.
+Bez source map jsou FE stack traces minifikované (`index-*.js:5:2746`). gokick je nahrává do Sentry při buildu přes `@sentry/vite-plugin` (stejný mechanismus jako SvelteKit), takže Sentry trace de-minifikuje na původní `.vue` / `.ts` soubory. Je to **opt-in** — zapneš třemi build-time hodnotami v CI / Docker buildu:
+
+- `SENTRY_AUTH_TOKEN` — **tajný** token s právem na upload (GitHub repo *secret*). Na rozdíl od DSN je tajný.
+- `SENTRY_ORG`, `SENTRY_PROJECT` — org slug + **frontend** projekt (GitHub repo *vars*).
+
+Bez tokenu plugin nic nedělá a build žádné mapy nevytvoří. S tokenem plugin mapy nahraje a pak je **smaže z dist** (`filesToDeleteAfterUpload`) — `public/` se embeduje do Go binárky, která ho servíruje, takže žádná `.map` nesmí zůstat (Dockerfile to navíc hlídá guardem, který build shodí, kdyby `.map` zbyl). Symbolizace jede na debug-ID (default pluginu), ne na shodě release jména.
+
+> Token vytvoříš v Sentry: **Settings → Auth Tokens**, scope `project:releases`. V GitHub Actions přidej repo secret `SENTRY_AUTH_TOKEN` + repo vars `SENTRY_ORG` / `SENTRY_PROJECT`.
