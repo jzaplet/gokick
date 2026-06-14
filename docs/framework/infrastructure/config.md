@@ -44,9 +44,17 @@ type Config struct {
     CORSOrigin           string
     CookieSecure         bool
     SeedAdminPassword    string
-    TrustProxyHeaders    bool
-    RateLimitLogin       string
-    RateLimitRefresh     string
+
+    // Sentry frontend config — injektováno do index.html při serve, SPA čte
+    // za běhu. Backend Sentry (APP_SENTRY_DSN/RELEASE) se čte v cmd/ mimo
+    // tuto strukturu. Viz podsekce Sentry níže + guide.
+    FrontendSentryDSN string
+    SentryEnvironment string
+    SentryDebug       bool
+
+    TrustProxyHeaders bool
+    RateLimitLogin    string
+    RateLimitRefresh  string
 }
 
 func LoadConfig() (*Config, error)
@@ -68,8 +76,13 @@ func LoadConfig() (*Config, error)
 | `APP_TRUST_PROXY_HEADERS` | `false` | Číst klientskou IP z proxy hlaviček (`CF-Connecting-IP` → `X-Real-IP`) — zapnout **jen** za důvěryhodnou proxy, viz [níže](#app_trust_proxy_headers--cloudflare-origin-lock) |
 | `APP_RATE_LIMIT_LOGIN` | `10/min` | Per-IP limit na `/auth/login` (prázdné = vypnuto) |
 | `APP_RATE_LIMIT_REFRESH` | `60/min` | Per-IP limit na `/auth/refresh` (prázdné = vypnuto) |
+| `APP_SENTRY_DSN` | -- | Backend Sentry DSN (prázdné = vypnuto). Čteno v `cmd/`, **ne** v Config struct |
+| `APP_SENTRY_DSN_FRONTEND` | -- | Frontend Sentry DSN — server ho injektuje do `index.html` jako `<meta>` tag |
+| `APP_SENTRY_ENVIRONMENT` | `development` | Sentry environment, sdílené BE i FE |
+| `APP_SENTRY_RELEASE` | (git tag) | Override release verze pro Sentry (jinak z git tagu při buildu). Čteno v `cmd/` |
+| `APP_SENTRY_DEBUG` | `false` | Záměrné error triggery pro smoke-test Sentry. **Nikdy v produkci** |
 
-> Config struct má **12 polí** (výše). `.env` snippet nahoře je jen ukázkový výřez; úplný seznam proměnných je v této tabulce a v `.env.example`.
+> Config struct má **15 polí** (výše). `.env` snippet nahoře je jen ukázkový výřez; úplný seznam proměnných je v této tabulce a v `.env.example`. Kompletní nastavení Sentry (BE + FE projekty, DSN, deploy) je v [Sentry guide](/guides/sentry); jak observability funguje uvnitř viz [Observability](/framework/infrastructure/observability).
 
 - `APP_JWT_SECRET` je povinný a musí mít **min. 32 znaků** (HS256 floor). Validace ho odmítne při startu — provádí ji `NewJwtService` (security), ne `LoadConfig` (ta jen parsuje durations); chybějící/krátký secret tak shodí konstrukci aplikace přes Wire.
 - Duration proměnné se parsují přes `time.ParseDuration` (jediné, co může `LoadConfig` selhat).
@@ -101,6 +114,16 @@ Pořadí rozlišení:
 > - **Za vlastní reverse proxy** (Traefik/nginx na stejném hostu/síti): origin nevystavuj veřejně (bind na loopback/privátní síť), proxy nech přepisovat `X-Real-IP`.
 >
 > Bez origin-locku nech `APP_TRUST_PROXY_HEADERS=false` — radši ztratíš skutečnou IP (uvidíš edge/proxy IP), než abys důvěřoval podvrhnutelné hodnotě.
+
+### Sentry
+
+Sentry config je rozdělené na dvě cesty, protože backend a frontend ho potřebují v jiný okamžik:
+
+- **Backend** — `APP_SENTRY_DSN`, `APP_SENTRY_ENVIRONMENT`, `APP_SENTRY_RELEASE` čte přímo `cmd/` (v `cmd/main.go` / `cmd/sentry.go`) **ještě před** `LoadConfig`, protože reporter se staví spolu s loggerem na začátku startu. Proto **nejsou** v `Config` struct — najdeš je jen v tabulce výše.
+- **Frontend** — `APP_SENTRY_DSN_FRONTEND` + sdílené `APP_SENTRY_ENVIRONMENT` + `APP_SENTRY_DEBUG` jsou v `Config` struct, protože je server za běhu **injektuje do `index.html`** jako `<meta name="gokick:…">` tagy (jeden buildnutý image tak slouží všem prostředím). SPA je čte přes `runtimeConfig.ts`. Release verze je u FE výjimka — zůstává zapečená při buildu (`VITE_SENTRY_RELEASE`), protože image je per-verze.
+- **`APP_SENTRY_DEBUG=true`** odemkne záměrné error triggery (BE `GET /debug/sentry` panika + FE tlačítko) pro ověření Sentry end-to-end na deploy. Appka při startu varuje; **nikdy nezapínej v produkci**.
+
+Kompletní postup nastavení (založení projektů, DSN, CSP, deploy za Cloudflare) je v [Sentry guide](/guides/sentry). Jak error reporting funguje uvnitř (port `ErrorReporter`, obohacení eventu, whitelist) viz [Observability](/framework/infrastructure/observability).
 
 ### Documan
 

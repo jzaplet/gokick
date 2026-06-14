@@ -116,7 +116,8 @@ project/
 ├── migrations/                       # Goose SQL migrace (embed)
 ├── docs/                             # Documan dokumentace (markdown)
 ├── docker/                           # Docker konfigurace
-│   └── release/                      # Produkční Dockerfile
+│   ├── production/                    # Produkční Dockerfile (multi-stage)
+│   └── documan/                       # Documan dev service
 │
 ├── Makefile                          # Build, lint, format, migrate, serve
 ├── go.mod / go.sum                   # Go dependencies
