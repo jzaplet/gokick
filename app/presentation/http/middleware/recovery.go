@@ -46,6 +46,7 @@ func RecoveryMiddleware(
 					append(shared.LogAttrs(ctx),
 						slog.String(shared.LogKeyMethod, r.Method),
 						slog.String(shared.LogKeyPath, r.URL.Path),
+						slog.String(logKeyIP, shared.ActorIPFromContext(ctx)),
 						slog.Any(logKeyPanic, rec),
 						slog.String(logKeyStack, string(debug.Stack())),
 					)...)

@@ -217,16 +217,22 @@ func (s *Server) registerRoutes() *http.ServeMux {
 func (s *Server) buildMiddlewareChain(handler http.Handler) http.Handler {
 	csrf := &http.CrossOriginProtection{}
 
-	// Order: Trace → Recovery → IP → Security headers → CORS → CSRF →
+	// Order: Trace → IP → Recovery → Security headers → CORS → CSRF →
 	// Logging (→ handler). HSTS is only emitted in production (gated on the
 	// CookieSecure flag, which already distinguishes HTTPS traffic).
-	// Recovery sits just inside Trace so trace_id is in ctx while it still
-	// wraps every other middleware. IPMiddleware runs early so every
-	// downstream consumer (audit, logging) sees the same resolved IP.
+	//
+	// Trace and IP are pure context-setters — they only stamp ctx (trace_id,
+	// actor IP) and never write a response or fail — so they run BEFORE
+	// Recovery on purpose: every panic report then carries both trace_id and
+	// the resolved client IP (Recovery's Sentry capture reads the IP from ctx).
+	// Recovery still wraps everything that can actually panic — Security, CORS,
+	// CSRF, Logging, the handler and the bus; the http.Server's own recovery
+	// backstops the two context-setters. IP also stays upstream of every
+	// consumer (audit, logging, Recovery's capture) so all see the same IP.
 	middlewares := []func(http.Handler) http.Handler{
 		middleware.TraceMiddleware(),
-		middleware.RecoveryMiddleware(s.logger, s.reporter),
 		middleware.IPMiddleware(s.ipExtract),
+		middleware.RecoveryMiddleware(s.logger, s.reporter),
 		middleware.SecurityHeadersMiddleware(s.config.CookieSecure, s.config.FrontendSentryDSN),
 		middleware.CORSMiddleware(s.config.CORSOrigin),
 		csrf.Handler,
