@@ -1,6 +1,7 @@
 import type { App } from 'vue';
 import * as Sentry from '@sentry/vue';
 import { sentryDsn, sentryEnvironment, sentryRelease } from '@/app-ui/Sentry/runtimeConfig';
+import { syncSentryUser } from '@/app-ui/Sentry/syncUser';
 
 // Error & panic capture only (scope A) — no performance tracing or session
 // replay. Gated on the resolved DSN (a runtime <meta> tag injected by the Go
@@ -23,4 +24,7 @@ export const initSentry = (app: App): void => {
         environment: sentryEnvironment(),
         release: sentryRelease(),
     });
+
+    // Attribute every event to the current user, kept in sync with the session.
+    syncSentryUser();
 };

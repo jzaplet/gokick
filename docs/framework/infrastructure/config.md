@@ -65,7 +65,7 @@ func LoadConfig() (*Config, error)
 | `APP_CORS_ORIGIN` | `http://localhost:5173` | Povolený CORS origin |
 | `APP_COOKIE_SECURE` | `true` | Posílat refresh cookie jen přes HTTPS (viz níže) |
 | `APP_SEED_ADMIN_PASSWORD` | -- | Heslo admina pro `./bin/app seed` (povinné jen pro seed, 8--128 znaků) |
-| `APP_TRUST_PROXY_HEADERS` | `false` | Číst IP z `X-Real-IP` (zapnout jen za důvěryhodnou reverse proxy) |
+| `APP_TRUST_PROXY_HEADERS` | `false` | Číst klientskou IP z proxy hlaviček (`CF-Connecting-IP` → `X-Real-IP`) — zapnout **jen** za důvěryhodnou proxy, viz [níže](#app_trust_proxy_headers--cloudflare-origin-lock) |
 | `APP_RATE_LIMIT_LOGIN` | `10/min` | Per-IP limit na `/auth/login` (prázdné = vypnuto) |
 | `APP_RATE_LIMIT_REFRESH` | `60/min` | Per-IP limit na `/auth/refresh` (prázdné = vypnuto) |
 
@@ -85,6 +85,22 @@ func LoadConfig() (*Config, error)
 V `.env.example` je `false` kvůli dev workflow. V produkci **vždy** `true` + nasazení za TLS terminátor.
 
 Ostatní flagy cookie jsou hardcoded, protože nemá smysl je měnit: `HttpOnly=true` (nepřístupné z JS, obrana proti XSS), `SameSite=Strict` (nepošle se při cross-site requestu, obrana proti CSRF), `Path=/api/v1/auth` (posílá se jen na auth endpointy).
+
+### APP_TRUST_PROXY_HEADERS & Cloudflare origin-lock
+
+Řídí, jak `IPExtractor` (v `presentation/http/middleware/ratelimit.go`) zjistí klientskou IP. Ta jedna hodnota teče do **tří míst**: per-IP rate-limitu (`/auth/login`, `/auth/refresh`), audit logu (`audit_log.actor_ip`) **i** strukturovaných logů a Sentry (`ip` v access logu, `user.ip_address` na zachycené chybě).
+
+Pořadí rozlišení:
+
+- `false` (default) — IP je **vždy** `RemoteAddr` (skutečná IP TCP spojení). Správné pro přímé vystavení bez proxy. Případné `CF-Connecting-IP` / `X-Real-IP` se ignorují, takže je klient nemůže podvrhnout.
+- `true` — zkusí se v pořadí `CF-Connecting-IP` → `X-Real-IP` → `RemoteAddr`. `CF-Connecting-IP` je první schválně: za Cloudflare je `RemoteAddr` (a `X-Real-IP`) jen **edge IP Cloudflare**, kdežto `CF-Connecting-IP` nese skutečného návštěvníka. `X-Real-IP` zůstává jako fallback pro přímou reverse proxy (Traefik/nginx).
+
+> ⚠️ **Origin-lock je povinný, ne volitelný.** HTTP hlavičky jsou důvěryhodné jen tak, jak je důvěryhodná síťová cesta. Pokud je origin (srv s aplikací) dosažitelný **přímo** — ne výhradně přes proxy — může kdokoliv poslat request s vymyšleným `CF-Connecting-IP: 1.2.3.4` a podvrhnout tím IP pro rate-limit (obejití zámku účtu), audit (falešná stopa) i logy. `APP_TRUST_PROXY_HEADERS=true` zapínej **jen** tehdy, když je origin firewallem omezen na adresní rozsahy proxy:
+>
+> - **Za Cloudflare:** povol na portech 80/443 příchozí spojení **jen z [rozsahů Cloudflare](https://www.cloudflare.com/ips/)** (IPv4 + IPv6) — na úrovni cloud firewallu (Hetzner/AWS), host firewallu (`ufw`/`iptables`/`nftables`) nebo proxy. Vše ostatní zahoď. Tím je `CF-Connecting-IP` nepodvrhnutelný, protože každý request fyzicky prošel přes Cloudflare.
+> - **Za vlastní reverse proxy** (Traefik/nginx na stejném hostu/síti): origin nevystavuj veřejně (bind na loopback/privátní síť), proxy nech přepisovat `X-Real-IP`.
+>
+> Bez origin-locku nech `APP_TRUST_PROXY_HEADERS=false` — radši ztratíš skutečnou IP (uvidíš edge/proxy IP), než abys důvěřoval podvrhnutelné hodnotě.
 
 ### Documan
 
