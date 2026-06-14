@@ -67,3 +67,11 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ github.ref_name }}
+            SENTRY_ORG=${{ vars.SENTRY_ORG }}
+            SENTRY_PROJECT=${{ vars.SENTRY_PROJECT }}
+          # Frontend source-map upload to Sentry. Optional: with the secret unset
+          # (template default) the Vite plugin no-ops and the build produces no
+          # maps. Set repo secret SENTRY_AUTH_TOKEN + repo vars SENTRY_ORG /
+          # SENTRY_PROJECT (the frontend project) to enable de-minified traces.
+          secrets: |
+            sentry_auth_token=${{ secrets.SENTRY_AUTH_TOKEN }}

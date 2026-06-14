@@ -30,7 +30,27 @@ COPY public/embed.go public/favicon.ico ./public/
 # no release. (ARG must be re-declared per stage — a pre-FROM ARG doesn't reach here.)
 ARG VERSION=""
 ENV VITE_SENTRY_RELEASE=${VERSION}
-RUN yarn build
+
+# Sentry source-map upload (optional). Org/project are plain build-args; the
+# auth token is a build SECRET — never an ARG/ENV, which would leak into image
+# history — mounted only for this step. Without the token the Vite plugin is a
+# no-op and produces no maps.
+ARG SENTRY_ORG=""
+ARG SENTRY_PROJECT=""
+RUN --mount=type=secret,id=sentry_auth_token,required=false \
+    SENTRY_AUTH_TOKEN="$(cat /run/secrets/sentry_auth_token 2>/dev/null || true)" \
+    SENTRY_ORG="${SENTRY_ORG}" \
+    SENTRY_PROJECT="${SENTRY_PROJECT}" \
+    yarn build
+
+# Guard: no source maps may remain in public/. Stage 2 embeds public/ into the
+# Go binary, which serves it — a stray .map would expose source. The Vite plugin
+# deletes maps after upload and a no-token build makes none, so this never fires
+# unless that contract regresses.
+RUN if find public -name '*.map' | grep -q .; then \
+        echo "ERROR: source maps left in public/ — they would be embedded and served" >&2; \
+        exit 1; \
+    fi
 
 
 ###############################################################################
