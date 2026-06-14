@@ -55,6 +55,8 @@ Server používá stdlib `net/http.ServeMux` s Go 1.22+ pattern routingem. Routy
 
 Catch-all `GET /{path...}` vrací soubory z embedovaného `public.FS`. Neexistující cesty vrátí `index.html` -- o routing rozhoduje Vue Router na klientu.
 
+Při servírování `index.html` do něj `SPAHandler` **injektuje runtime config** jako `<meta name="gokick:…">` tagy (Sentry DSN, environment, debug flag) -- jeden buildnutý image tak může běžet ve více prostředích bez rebuildu. SPA je čte přes `runtimeConfig.ts`. Detail viz [Sentry guide](/guides/sentry) + [Config → Sentry](/framework/infrastructure/config#sentry).
+
 ### Vite dev proxy
 
 Při vývoji frontend běží na Vite dev serveru (`yarn dev`). Proxy směruje API cesty, health check a favicon na Go backend:
