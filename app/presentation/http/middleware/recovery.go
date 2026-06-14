@@ -55,7 +55,10 @@ func RecoveryMiddleware(
 				// header set — it carries Authorization and Cookie, which must not
 				// reach the error tracker. The Sentry adapter turns these into
 				// event.Request; the resolved client IP rides on ctx (SetUser).
-				err := fmt.Errorf("http: panic in %s %s: %v", r.Method, r.URL.Path, rec)
+				err := &shared.PanicError{
+					Value:   rec,
+					Message: fmt.Sprintf("http: panic in %s %s: %v", r.Method, r.URL.Path, rec),
+				}
 				reporter.Capture(ctx, err,
 					slog.String(shared.LogKeyMethod, r.Method),
 					slog.String(shared.LogKeyURL, r.URL.String()),

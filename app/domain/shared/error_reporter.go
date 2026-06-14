@@ -29,3 +29,17 @@ type NopReporter struct{}
 func (NopReporter) Capture(context.Context, error, ...slog.Attr) {}
 
 func (NopReporter) Flush(time.Duration) bool { return true }
+
+// PanicError wraps a recovered panic value so the error reporter can label it
+// distinctly. A plain fmt.Errorf would type every panic as *errors.errorString
+// in the tracker; carrying the original value lets the Sentry adapter set a
+// meaningful exception type ("panic") and tag the concrete Go type of the panic
+// (string vs runtime.Error, …). The two recovery middlewares (bus, HTTP) wrap
+// recovered panics in this; ordinary returned errors and terminal job failures
+// do NOT — they are not panics. This is a plain domain type, no Sentry import.
+type PanicError struct {
+	Value   any    // the recovered panic value (preserves the concrete type)
+	Message string // formatted context, e.g. "http: panic in GET /x: <value>"
+}
+
+func (e *PanicError) Error() string { return e.Message }
