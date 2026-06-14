@@ -112,6 +112,10 @@ func TestLogKeyConstants_WireValues(t *testing.T) {
 		{LogKeyError, "error"},
 		{LogKeyEvent, "event"},
 		{LogKeyJobKind, "job_kind"},
+		{LogKeyMethod, "method"},
+		{LogKeyPath, "path"},
+		{LogKeyURL, "url"},
+		{LogKeyUserAgent, "user_agent"},
 	}
 	for _, c := range cases {
 		if c.got != c.want {

@@ -11,16 +11,18 @@ import (
 	"gokick/app/domain/shared"
 )
 
-// The HTTP access log carries trace_id, method, path, ip and a numeric
-// duration_ms. This is a behavior change (was: trace_id + a stringly
-// time.Duration), so the emitted shape is locked here.
+// The HTTP access log carries trace_id, method, path, ip, the response status
+// and byte count, and a numeric duration_ms. This is a behavior change (was:
+// trace_id + a stringly time.Duration), so the emitted shape is locked here.
 func TestLoggingMiddleware_LogsRequestShape(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buf, nil))
 
+	body := []byte("hello")
 	h := LoggingMiddleware(logger)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write(body)
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
@@ -34,12 +36,43 @@ func TestLoggingMiddleware_LogsRequestShape(t *testing.T) {
 	if entry[shared.LogKeyTraceID] != "trace-77" {
 		t.Fatalf("trace_id: got %v", entry[shared.LogKeyTraceID])
 	}
-	if entry["method"] != "GET" || entry["path"] != "/dashboard" {
-		t.Fatalf("method/path: got %v %v", entry["method"], entry["path"])
+	if entry[shared.LogKeyMethod] != "GET" || entry[shared.LogKeyPath] != "/dashboard" {
+		t.Fatalf("method/path: got %v %v", entry[shared.LogKeyMethod], entry[shared.LogKeyPath])
+	}
+	if got, _ := entry[logKeyStatus].(float64); got != float64(http.StatusCreated) {
+		t.Fatalf(
+			"status: got %v (%T) want %d",
+			entry[logKeyStatus],
+			entry[logKeyStatus],
+			http.StatusCreated,
+		)
+	}
+	if got, _ := entry[logKeyBytes].(float64); got != float64(len(body)) {
+		t.Fatalf("bytes: got %v (%T) want %d", entry[logKeyBytes], entry[logKeyBytes], len(body))
 	}
 	if _, ok := entry[shared.LogKeyDurationMs].(float64); !ok {
 		t.Fatalf("duration_ms must be a JSON number, got %T (%v)",
 			entry[shared.LogKeyDurationMs], entry[shared.LogKeyDurationMs])
+	}
+}
+
+// A handler that writes a body without an explicit WriteHeader still logs status
+// 200 — net/http sends 200 in that case, and statusRecorder mirrors it so the
+// access log never shows a misleading 0.
+func TestLoggingMiddleware_DefaultsStatusToOK(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+
+	h := LoggingMiddleware(logger)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	}))
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+
+	entry := decodeSingleLog(t, buf.Bytes())
+	if got, _ := entry[logKeyStatus].(float64); got != float64(http.StatusOK) {
+		t.Fatalf("status: got %v want %d", entry[logKeyStatus], http.StatusOK)
 	}
 }
 

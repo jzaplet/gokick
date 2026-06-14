@@ -9,7 +9,8 @@ import (
 	"gokick/app/domain/shared"
 )
 
-// HTTP-recovery-local log keys (method/path live in logging.go, same package).
+// HTTP-recovery-local log keys (method/path/url/user_agent live in
+// shared.LogKey*, shared with the Sentry adapter).
 const (
 	logKeyPanic = "panic"
 	logKeyStack = "stack"
@@ -43,16 +44,21 @@ func RecoveryMiddleware(
 				ctx := r.Context()
 				logger.LogAttrs(ctx, slog.LevelError, "http: panic recovered",
 					append(shared.LogAttrs(ctx),
-						slog.String(logKeyMethod, r.Method),
-						slog.String(logKeyPath, r.URL.Path),
+						slog.String(shared.LogKeyMethod, r.Method),
+						slog.String(shared.LogKeyPath, r.URL.Path),
 						slog.Any(logKeyPanic, rec),
 						slog.String(logKeyStack, string(debug.Stack())),
 					)...)
 
+				// Whitelist only: method, full URL and User-Agent. NEVER the raw
+				// header set — it carries Authorization and Cookie, which must not
+				// reach the error tracker. The Sentry adapter turns these into
+				// event.Request; the resolved client IP rides on ctx (SetUser).
 				err := fmt.Errorf("http: panic in %s %s: %v", r.Method, r.URL.Path, rec)
 				reporter.Capture(ctx, err,
-					slog.String(logKeyMethod, r.Method),
-					slog.String(logKeyPath, r.URL.Path),
+					slog.String(shared.LogKeyMethod, r.Method),
+					slog.String(shared.LogKeyURL, r.URL.String()),
+					slog.String(shared.LogKeyUserAgent, r.UserAgent()),
 				)
 
 				w.Header().Set("Content-Type", "application/json")

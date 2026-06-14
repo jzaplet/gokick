@@ -6,14 +6,23 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+
+	"gokick/app/domain/shared"
 )
 
-type recordingReporter struct{ count int }
+type recordingReporter struct {
+	count int
+	attrs []slog.Attr
+}
 
-func (r *recordingReporter) Capture(context.Context, error, ...slog.Attr) { r.count++ }
-func (*recordingReporter) Flush(time.Duration) bool                       { return true }
+func (r *recordingReporter) Capture(_ context.Context, _ error, attrs ...slog.Attr) {
+	r.count++
+	r.attrs = attrs
+}
+func (*recordingReporter) Flush(time.Duration) bool { return true }
 
 // A panic escaping the handler becomes a 500, is logged, and is reported once —
 // never leaking a stack to the client or silently dropping the connection.
@@ -36,6 +45,45 @@ func TestRecoveryMiddleware_PanicYields500AndReports(t *testing.T) {
 	}
 	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
 		t.Fatalf("500 body should be JSON, got Content-Type %q", ct)
+	}
+}
+
+// The reporter receives a fixed whitelist — method, full URL, User-Agent — and
+// nothing else from the request. Authorization and Cookie must never leak into
+// the error tracker; the Sentry adapter turns exactly these attrs into
+// event.Request.
+func TestRecoveryMiddleware_ReportsWhitelistedRequestAttrs(t *testing.T) {
+	t.Parallel()
+	rep := &recordingReporter{}
+	h := RecoveryMiddleware(slog.New(slog.NewTextHandler(io.Discard, nil)), rep)(
+		http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			panic("boom")
+		}))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/x?q=1", nil)
+	req.Header.Set("User-Agent", "test-agent/1.0")
+	req.Header.Set("Authorization", "Bearer super-secret-token")
+	req.Header.Set("Cookie", "session=super-secret-cookie")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	got := map[string]string{}
+	for _, a := range rep.attrs {
+		got[a.Key] = a.Value.String()
+	}
+	if got[shared.LogKeyMethod] != http.MethodPost {
+		t.Fatalf("method attr: got %q want %q", got[shared.LogKeyMethod], http.MethodPost)
+	}
+	if got[shared.LogKeyURL] != "/api/v1/x?q=1" {
+		t.Fatalf("url attr: got %q want %q", got[shared.LogKeyURL], "/api/v1/x?q=1")
+	}
+	if got[shared.LogKeyUserAgent] != "test-agent/1.0" {
+		t.Fatalf("user_agent attr: got %q want %q", got[shared.LogKeyUserAgent], "test-agent/1.0")
+	}
+	// Defensive: no attr value may carry a secret header, under any key.
+	for k, v := range got {
+		if strings.Contains(v, "super-secret") {
+			t.Fatalf("secret leaked into the error tracker via attr %q = %q", k, v)
+		}
 	}
 }
 

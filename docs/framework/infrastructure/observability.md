@@ -33,8 +33,11 @@ Aplikace loguje strukturovaně přes Go `log/slog` do stderr. Tato stránka popi
 | `duration_ms` | doba trvání ve zlomku ms (µs přesnost, číselné) |
 | `retry_in_ms` | odklad dalšího pokusu jobu |
 | `error` / `event` / `job_kind` | chyba / jméno domain eventu / druh jobu |
+| `method` / `path` / `url` / `user_agent` | HTTP request — putují z presentation vrstvy i do error reporteru (Sentry `event.Request`) |
 
-Pravidlo: **každý klíč je Go konstanta** (vynuceno staticky, viz níže) — nikdy holý string literál. Cross-cutting klíče jsou v `shared.LogKey*` (`trace_id`, `user_id`, `command`, `duration_ms`, `error`, `event`, `job_kind`, `retry_in_ms`); komponentně-specifické klíče jako package-local `logKey*` konstanty v dané komponentě (`addr`/`timeout` v serveru, `slot`/`job_id`/`attempts` ve workeru, `from`/`to`/`version` v migracích…). `domain/shared` tak nezná infra klíče. Korelaci produkuje `shared.LogAttrs`, dobu `shared.DurationMsAttr`.
+Pravidlo: **každý klíč je Go konstanta** (vynuceno staticky, viz níže) — nikdy holý string literál. Cross-cutting klíče jsou v `shared.LogKey*` (`trace_id`, `user_id`, `command`, `duration_ms`, `error`, `event`, `job_kind`, `retry_in_ms`, `method`, `path`, `url`, `user_agent`); komponentně-specifické klíče jako package-local `logKey*` konstanty v dané komponentě (`addr`/`timeout` v serveru, `ip`/`status`/`bytes` v access logu, `slot`/`job_id`/`attempts` ve workeru, `from`/`to`/`version` v migracích…). `domain/shared` tak nezná infra klíče. Korelaci produkuje `shared.LogAttrs`, dobu `shared.DurationMsAttr`.
+
+`method`/`path`/`url`/`user_agent` jsou cross-cutting schválně: `RecoveryMiddleware` je předá do `ErrorReporter.Capture` a Sentry adaptér z nich (a jen z nich — pevný whitelist) složí `event.Request`. Producent (HTTP middleware) i konzument (`cmd/sentry.go`) tak sdílí slovník, aniž by jeden importoval druhého.
 
 
 ## Statické vynucení
@@ -63,7 +66,7 @@ logger.LogAttrs(ctx, slog.LevelInfo, "bus: completed",
 ```
 
 - `user_id` je dostupné na **bus vrstvě** — claims injektuje HTTP `AuthMiddleware` ještě před voláním busu. Pro login/refresh (neautentizované, `SkipPermission`) se `user_id` vynechá.
-- Globální HTTP `LoggingMiddleware` běží **před** auth → nese `trace_id`, ne `user_id`. To je v pořádku — spolehlivá vrstva pro `user_id` je bus.
+- Globální HTTP `LoggingMiddleware` běží **před** auth → nese `trace_id`, ne `user_id`. To je v pořádku — spolehlivá vrstva pro `user_id` je bus. Access log line (`http: request`) navíc nese `method`, `path`, `ip` (rozlišená klientská IP, viz [Config](/framework/infrastructure/config#app_trust_proxy_headers--cloudflare-origin-lock)), `status` a `bytes` (z `statusRecorder`, který obalí `ResponseWriter`) a `duration_ms` — request origin a výsledek jsou tedy v logu, ne jen v audit trailu.
 - Dobu vždy loguj přes `shared.DurationMsAttr(d)` — číselné `duration_ms`, ne `time.Duration` (které se v JSON serializuje jako nanosekundy).
 
 
@@ -72,10 +75,13 @@ logger.LogAttrs(ctx, slog.LevelInfo, "bus: completed",
 Neočekávaná selhání se hlásí do Sentry. **Není to logovací cesta** — běžné návratové chyby (validace, auth, 4xx) se sem nehlásí, jen recovery/terminal cesty, jinak tracker utone v šumu.
 
 - **Port `shared.ErrorReporter`** (`Capture(ctx, err, attrs...)`, `Flush`). Bez DSN → `NopReporter` (no-op), takže appka běží beze změny i bez Sentry účtu. Staven v `cmd/sentry.go` (jako logger) a injektovaný, takže sentry-go import zůstává mimo vrstvený `app/` strom.
-- **BE hooky:** bus `RecoveryMiddleware`, **HTTP `RecoveryMiddleware`** (panika → log + report + 500), worker (exhausted retries). Reporter přidá `trace_id`/`user_id` z ctx + předané tagy (`command` / `job_kind` / `method` / `path`).
+- **BE hooky:** bus `RecoveryMiddleware`, **HTTP `RecoveryMiddleware`** (panika → log + report + 500), worker (exhausted retries). Reporter přidá `trace_id`/`user_id` z ctx + předané tagy (`command` / `job_kind` / `method` / `url` / `user_agent`).
+- **Obohacení eventu** (`cmd/sentry.go`):
+  - **User** — `id` / `nickname` (username) / `role` z `AuthClaims` v ctx + rozlišená klientská IP (`user.ip_address`). Sentry tak chyby atribuuje a grupuje podle toho, kdo na ně narazil; i pre-auth paniky nesou aspoň IP. Vyžaduje `SendDefaultPII: true` v `Init` — bez něj sentry-go ručně nastavenou IP zahodí. Nic se tím neauto-sbírá: žádná HTTP integrace není nainstalovaná a `event.Request` se skládá z whitelistu níže.
+  - **Request** — `method` / `url` / `User-Agent` z předaných attrs, **nikdy** ze syrové hlavičkové sady (ta nese `Authorization`/`Cookie`). Skládá se jen z tohoto pevného whitelistu; bez `method` (non-HTTP caller, např. worker) se `event.Request` nenastaví.
 - **Lifecycle:** `Init` při startu, `defer Flush` v `main` (a explicitně před `os.Exit`) — `CaptureException` je async, panika / `os.Exit` by jinak event ztratily.
-- **FE:** `@sentry/vue` v `assets/app.ts`, gated na `VITE_SENTRY_DSN`. Zachytává Vue chyby + unhandled promise rejections; handled API 4xx z `authFetch`/`apiFetch` se nehlásí.
-- **Config:** `APP_SENTRY_DSN` + `APP_SENTRY_ENVIRONMENT` (BE), `VITE_SENTRY_DSN` + `VITE_SENTRY_ENVIRONMENT` (FE). FE a BE jsou dva Sentry projekty → dva DSN.
+- **FE:** `@sentry/vue` (`assets/app-ui/Sentry/`), init v `app.ts` před prvním `await`. Zachytává Vue chyby + unhandled promise rejections; handled API 4xx z `authFetch`/`apiFetch` se nehlásí. `syncSentryUser` drží `Sentry.setUser` v zámku se session — `watch` nad jediným `user` ref, takže login / refresh / logout / `clearAuth` ho aktualizují a žádná auth cesta nemůže zapomenout.
+- **Config:** `APP_SENTRY_DSN` + `APP_SENTRY_ENVIRONMENT` + `APP_SENTRY_RELEASE` (BE). FE a BE jsou dva Sentry projekty → dva DSN; FE DSN se předává jako `APP_SENTRY_DSN_FRONTEND`. Aby jediný build sloužil všem prostředím, Go server injektuje FE hodnoty (DSN, environment, debug flag) do `index.html` jako `<meta name="gokick:…">` tagy a SPA je čte za běhu (`runtimeConfig.ts`); `VITE_SENTRY_*` jsou jen build-time fallback pod Vite dev serverem. CSP `connect-src` se otevře na ingest origin DSN, jinak prohlížeč FE eventy zablokuje. `APP_SENTRY_DEBUG=true` zapne záměrné triggery chyb (BE `GET /debug/sentry` panika + FE tlačítko) pro smoke-test Sentry — **nikdy v produkci** (appka při startu varuje).
 - **Release verze (z git tagu):** stampuje se při buildu — do binárky přes `-ldflags "-X main.release=<tag>"` (`cmd/version.go`, fallback `APP_SENTRY_RELEASE`) a do SPA bundlu přes `VITE_SENTRY_RELEASE`. Lokálně `make build` bere `git describe --tags`; release workflow tag. Tím se Sentry issues grupují podle nasazené verze. Verze se loguje i na startu (`starting gokick version=…`).
 - **Release workflow** (`.github/workflows/release.yml`, na `v*` tag): postaví produkční image s verzí z tagu. **Push do GHCR je default vypnutý** (gokick je šablona) — povolíš repo proměnnou `RELEASE_PUSH=true` (Settings → Actions → Variables), žádný secret (GHCR jede přes `GITHUB_TOKEN`). Bez ní se image jen postaví (ověří release build), nepushne.
 
