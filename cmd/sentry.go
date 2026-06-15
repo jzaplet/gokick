@@ -38,12 +38,6 @@ func newErrorReporter(dsn, environment, release string) (shared.ErrorReporter, e
 		Environment:   environment,
 		Release:       release,
 		EnableTracing: false, // scope A: errors & panics only, no performance tracing
-		// Mark gokick frames as in-app. Under -trimpath sentry-go's path-based
-		// heuristic marks every frame not-in-app, leaving no in-app frame for the
-		// culprit — so it falls back to the topmost frame (this reporter). With
-		// the module prefix in-app, demoteReportingFrames can then strip our own
-		// reporting frames and the culprit resolves to the real origin.
-		InAppInclude: []string{"gokick"},
 		// We attach the user's IP explicitly (the resolved client IP from
 		// ctx, CF-Connecting-IP behind Cloudflare). sentry-go drops a
 		// user-supplied IPAddress unless PII sending is on, so this must be
@@ -115,7 +109,7 @@ func (sentryReporter) Capture(ctx context.Context, err error, attrs ...slog.Attr
 			if req != nil {
 				event.Request = req
 			}
-			demoteReportingFrames(event)
+			setFrameInApp(event)
 			if isPanic {
 				setExceptionType(event, panicExceptionType)
 			}
@@ -125,24 +119,30 @@ func (sentryReporter) Capture(ctx context.Context, err error, attrs ...slog.Attr
 	})
 }
 
-// demoteReportingFrames marks gokick's own error-reporting frames (this Capture
-// method and the recovery middlewares) as not-in-app, so Sentry's culprit and
-// title resolve to the first real frame — the actual panic origin — instead of
-// sentryReporter.Capture. The sentry-generated stack already reaches the origin;
-// this only fixes which frame counts as "the location". Function names survive
-// the -s -w strip (pclntab), so it works in the production image.
-func demoteReportingFrames(event *sentry.Event) {
+// setFrameInApp assigns the in-app flag for every stack frame, so Sentry's
+// culprit and title resolve to the real origin instead of this reporter. We set
+// it ourselves because sentry-go's own heuristic is unusable in the production
+// build: under -trimpath with a stripped binary runtime.GOROOT() is empty, so
+// its goRoot prefix check (strings.HasPrefix(path, goRoot)) matches every frame
+// and marks them ALL not-in-app — leaving no in-app frame, so the culprit falls
+// back to the topmost one (sentryReporter.Capture). A frame is in-app when it
+// belongs to the gokick module, EXCEPT our own reporting frames (this Capture
+// and the recovery middlewares), which must never be the culprit. Module names
+// survive the -s -w strip (pclntab), so this works in the production image.
+func setFrameInApp(event *sentry.Event) {
 	for ei := range event.Exception {
 		st := event.Exception[ei].Stacktrace
 		if st == nil {
 			continue
 		}
 		for fi := range st.Frames {
-			fn := st.Frames[fi].Function
-			if strings.Contains(fn, "sentryReporter.Capture") ||
-				strings.Contains(fn, "RecoveryMiddleware") {
-				st.Frames[fi].InApp = false
+			f := &st.Frames[fi]
+			inApp := strings.HasPrefix(f.Module, "gokick")
+			if strings.Contains(f.Function, "sentryReporter.Capture") ||
+				strings.Contains(f.Function, "RecoveryMiddleware") {
+				inApp = false
 			}
+			f.InApp = inApp
 		}
 	}
 }
