@@ -400,6 +400,7 @@ func TestScrubBreadcrumb(t *testing.T) {
 		"job_kind":      "email",
 		"authorization": "Bearer leak",
 		"access_token":  "raw-token",
+		"db_password":   12345, // non-string secret — must still be masked by key
 		"attempts":      3,
 	}}
 	scrubBreadcrumb(b)
@@ -412,8 +413,11 @@ func TestScrubBreadcrumb(t *testing.T) {
 	if b.Data["access_token"] != shared.MaskedValue {
 		t.Fatalf("access_token must be masked, got %v", b.Data["access_token"])
 	}
+	if b.Data["db_password"] != shared.MaskedValue {
+		t.Fatalf("a non-string secret must be masked by key, got %v", b.Data["db_password"])
+	}
 	if b.Data["attempts"] != 3 {
-		t.Fatalf("non-string value must be untouched, got %v", b.Data["attempts"])
+		t.Fatalf("benign non-string value must be untouched, got %v", b.Data["attempts"])
 	}
 }
 

@@ -31,7 +31,7 @@ describe('authFetch', () => {
         const refreshResponse = {
             access_token: 'new-access-token',
             access_expiration: 900,
-            user: { id: 'u-1', nickname: 'alice', role: 'user', permissions: [] },
+            user: { id: 'u-1', nickname: 'alice', email: 'alice@example.com', role: 'user', permissions: [] },
         };
         const responses: Response[] = [
             new Response(JSON.stringify({ message: 'expired' }), { status: 401 }),
@@ -92,7 +92,7 @@ describe('authFetch', () => {
         const refreshResponse = {
             access_token: 'fresh',
             access_expiration: 900,
-            user: { id: 'u-1', nickname: 'alice', role: 'user', permissions: [] },
+            user: { id: 'u-1', nickname: 'alice', email: 'alice@example.com', role: 'user', permissions: [] },
         };
         let refreshCalls = 0;
 

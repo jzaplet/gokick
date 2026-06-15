@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"bytes"
 	"html"
 	"io/fs"
 	"log/slog"
@@ -97,34 +96,77 @@ func injectRuntimeConfig(index []byte, cfg SPAConfig) ([]byte, bool) {
 	return out, true
 }
 
-// headInsertPos returns the byte offset just after the opening <head …> tag,
-// matched case-insensitively and tolerant of attributes (<head lang="cs">) and
-// casing (<HEAD>) — so a routine template edit can't silently drop the injected
-// config the way an exact "<head>" match would. A bare <header> is skipped (the
-// byte after "<head" must end the tag name). Returns -1 when no <head> element
-// is present (e.g. the not-built fallback).
+// headInsertPos returns the byte offset just after the opening <head …> tag, so
+// the runtime config can be injected as its first children. It tolerates the
+// realistic ways a Vite-built template writes the head — case (<HEAD>),
+// attributes (<head lang="cs">), surrounding whitespace, and a '>' inside a
+// quoted attribute value — and distinguishes <head> from <header>. It does NOT
+// parse HTML: a literal "<head" inside a leading comment would be matched, and
+// the <meta> tags would then be injected inside that comment and ignored by the
+// browser (degrading to the build-time config rather than crashing). A real Vite
+// index.html emits a clean <head> as an early element, so byte-scanning is
+// sufficient here; a full HTML parser would be over-engineering for this anchor.
+// Returns -1 when there is no <head> element (e.g. the not-built fallback),
+// which the caller surfaces as a warning rather than a silent no-op.
 func headInsertPos(index []byte) int {
-	lower := bytes.ToLower(index)
-	for from := 0; ; {
-		i := bytes.Index(lower[from:], []byte("<head"))
-		if i < 0 {
-			return -1
+	for i := 0; i < len(index); i++ {
+		if isHeadOpenTag(index[i:]) {
+			return tagClose(index, i+len("<head")) // just past the tag's '>'
 		}
-		i += from
-		after := i + len("<head")
-		if after >= len(index) {
-			return -1
-		}
-		switch index[after] {
-		case '>', ' ', '\t', '\n', '\r', '/':
-			if j := bytes.IndexByte(index[i:], '>'); j >= 0 {
-				return i + j + 1 // just past the tag's closing '>'
-			}
-
-			return -1
-		}
-		from = after // was <header> or similar — keep looking
 	}
+
+	return -1
+}
+
+// isHeadOpenTag reports whether s starts with an opening <head> tag: "<head"
+// (ASCII case-insensitive, compared WITHOUT lowercasing the document so byte
+// offsets never drift on a length-changing rune) followed by a tag-name
+// boundary, which distinguishes <head> / <head …> from <header>.
+func isHeadOpenTag(s []byte) bool {
+	const tag = "<head"
+	if len(s) <= len(tag) {
+		return false
+	}
+	for i := 0; i < len(tag); i++ {
+		if toLowerASCII(s[i]) != tag[i] {
+			return false
+		}
+	}
+	switch s[len(tag)] {
+	case '>', ' ', '\t', '\n', '\r', '/':
+		return true
+	}
+
+	return false
+}
+
+// tagClose returns the offset just past the '>' that closes a tag whose
+// attribute region starts at `from`, skipping any '>' inside single- or
+// double-quoted attribute values. Returns -1 if the tag is never closed.
+func tagClose(index []byte, from int) int {
+	var quote byte
+	for j := from; j < len(index); j++ {
+		switch c := index[j]; {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '\'':
+			quote = c
+		case c == '>':
+			return j + 1
+		}
+	}
+
+	return -1
+}
+
+func toLowerASCII(b byte) byte {
+	if 'A' <= b && b <= 'Z' {
+		return b + ('a' - 'A')
+	}
+
+	return b
 }
 
 func (h *SPAHandler) Serve(w http.ResponseWriter, r *http.Request) {

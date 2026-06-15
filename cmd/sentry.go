@@ -294,11 +294,13 @@ func maskRequestHeaders(event *sentry.Event) {
 // scrubBreadcrumb masks secret-looking values on a breadcrumb. The slog→
 // breadcrumb bridge forwards the whole structured-log stream, so unlike the
 // request reconstruction it has no whitelist — a stray secret-keyed log attr
-// would otherwise ride along verbatim.
+// would otherwise ride along verbatim. Redaction is by KEY and ignores the value
+// type: a secret logged as a non-string attr (slog.Any/slog.Int) is masked just
+// like a string, so the type can't be used to slip a credential past the scrub.
 func scrubBreadcrumb(b *sentry.Breadcrumb) {
-	for k, v := range b.Data {
-		if s, ok := v.(string); ok {
-			b.Data[k] = shared.MaskLogValue(k, s)
+	for k := range b.Data {
+		if shared.IsSensitiveLogKey(k) {
+			b.Data[k] = shared.MaskedValue
 		}
 	}
 }

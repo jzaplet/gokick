@@ -74,4 +74,57 @@ describe('refresh — session hint lifecycle', () => {
         await expect(refresh()).resolves.toBe(false);
         expect(hasSessionHint()).toBe(true);
     });
+
+    it('does not throw and keeps the hint on a malformed 200 body', async (): Promise<void> => {
+        setHint();
+        // 200 with an empty/non-JSON body → parseResponse yields { success:true,
+        // data:null }; the shape guard rejects it (data === null) so refresh()
+        // resolves false without ever touching the access token.
+        vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }));
+
+        await expect(refresh()).resolves.toBe(false);
+        expect(hasSessionHint()).toBe(true);
+        expect(isAuthenticated.value).toBe(false);
+    });
+
+    it('rejects a partial 200 body (missing expiration) without a hot loop', async (): Promise<void> => {
+        setHint();
+        // 200 whose body lacks access_expiration: the field access would be NaN
+        // and scheduleRefresh(NaN) would fire setTimeout immediately, spinning a
+        // hot retry loop. The shape guard rejects it before any state is set.
+        vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+            new Response(
+                JSON.stringify({ access_token: 'x', user: { id: 'u-1' } }),
+                { status: 200 },
+            ),
+        );
+
+        await expect(refresh()).resolves.toBe(false);
+        // No session was established and the hint is kept (transient miss).
+        expect(isAuthenticated.value).toBe(false);
+        expect(getAccessToken()).toBe(null);
+        expect(hasSessionHint()).toBe(true);
+    });
+
+    // The user principal must be validated too, not just present: an empty or
+    // array `user` (typeof [] === 'object') would otherwise flip isAuthenticated
+    // true and then crash the router guard at user.permissions.includes(...).
+    it.each([
+        ['empty user object', {}],
+        ['user is an array', []],
+        ['user missing permissions', { id: 'u-1', nickname: 'a', email: 'a@x.io', role: 'user' }],
+    ])('rejects a 200 whose user principal is malformed (%s)', async (_label, badUser): Promise<void> => {
+        setHint();
+        vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+            new Response(
+                JSON.stringify({ access_token: 'x', access_expiration: 900, user: badUser }),
+                { status: 200 },
+            ),
+        );
+
+        await expect(refresh()).resolves.toBe(false);
+        expect(isAuthenticated.value).toBe(false);
+        expect(getAccessToken()).toBe(null);
+        expect(hasSessionHint()).toBe(true);
+    });
 });

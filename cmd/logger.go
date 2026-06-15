@@ -94,10 +94,14 @@ func (h breadcrumbHandler) prefixKey(key string) string {
 func (h breadcrumbHandler) recordToBreadcrumb(r slog.Record) *sentry.Breadcrumb {
 	data := make(map[string]any, len(h.attrs)+r.NumAttrs())
 	for _, a := range h.attrs {
-		data[a.Key] = a.Value.Any()
+		addBreadcrumbAttr(data, "", a) // keys already group-prefixed at bind time
+	}
+	prefix := ""
+	if len(h.groups) > 0 {
+		prefix = strings.Join(h.groups, ".") + "."
 	}
 	r.Attrs(func(a slog.Attr) bool {
-		data[h.prefixKey(a.Key)] = a.Value.Any()
+		addBreadcrumbAttr(data, prefix, a)
 		return true
 	})
 	return &sentry.Breadcrumb{
@@ -106,6 +110,30 @@ func (h breadcrumbHandler) recordToBreadcrumb(r slog.Record) *sentry.Breadcrumb 
 		Level:     slogToSentryLevel(r.Level),
 		Data:      data,
 		Timestamp: r.Time,
+	}
+}
+
+// addBreadcrumbAttr writes a slog.Attr into the flat breadcrumb Data map under
+// prefix+key, expanding a group attr into dotted child keys (mirroring how the
+// text handler renders groups) instead of leaving an opaque []slog.Attr that
+// JSON-marshals to {} (slog.Attr has only unexported fields). An empty-key group
+// is inlined and an empty group is dropped, matching slog's own semantics.
+func addBreadcrumbAttr(data map[string]any, prefix string, a slog.Attr) {
+	a.Value = a.Value.Resolve()
+	if a.Value.Kind() != slog.KindGroup {
+		data[prefix+a.Key] = a.Value.Any()
+		return
+	}
+	group := a.Value.Group()
+	if len(group) == 0 {
+		return
+	}
+	childPrefix := prefix
+	if a.Key != "" {
+		childPrefix = prefix + a.Key + "."
+	}
+	for _, ga := range group {
+		addBreadcrumbAttr(data, childPrefix, ga)
 	}
 }
 

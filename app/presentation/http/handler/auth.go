@@ -155,11 +155,20 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
+		// Invariant: the client refresh cookie is cleared IFF the server actually
+		// revoked the tokens. On failure we keep the cookie and return the error
+		// (→ 4xx/5xx) rather than clearing it — clearing a cookie whose tokens are
+		// still live would falsely tell the client it is fully logged out while a
+		// usable credential persists server-side. The FE still drops its in-memory
+		// state and the session hint in a finally, so the UX is "logged out" either
+		// way; this only governs whether we lie about server-side revocation (and a
+		// 5xx lets the FE/next attempt re-try the revocation).
 		response.HandleError(w, err)
 
 		return
 	}
 
+	// Success: the tokens were revoked, so clear the session cookies in lock-step.
 	h.clearRefreshCookie(w)
 	w.WriteHeader(http.StatusNoContent)
 }

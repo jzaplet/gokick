@@ -20,6 +20,13 @@ const clearRefreshTimer = (): void => {
 // Callers pass their own refresh function to avoid a circular import.
 export const scheduleRefresh = (expiresInMs: number, fn: () => void): void => {
     clearRefreshTimer();
+    // Defense in depth: a non-finite delay (NaN/Infinity from a malformed
+    // expiration) makes setTimeout fire immediately and spins a hot refresh loop.
+    // refresh.ts already shape-guards the body before calling this; this is the
+    // backstop so no caller can arm a runaway timer.
+    if (Number.isFinite(expiresInMs) === false) {
+        return;
+    }
     const delay = Math.max(expiresInMs - 30_000, 1_000);
 
     refreshTimer = setTimeout(fn, delay);

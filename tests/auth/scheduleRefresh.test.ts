@@ -69,4 +69,16 @@ describe('scheduleRefresh', () => {
 
         expect(fn).not.toHaveBeenCalled();
     });
+
+    it('arms no timer for a non-finite delay (NaN backstop)', (): void => {
+        const fn = vi.fn();
+
+        // A malformed expiration would otherwise schedule setTimeout(fn, NaN),
+        // which fires immediately and hot-loops. The guard arms nothing instead.
+        scheduleRefresh(Number.NaN, fn);
+
+        vi.advanceTimersByTime(10_000_000);
+
+        expect(fn).not.toHaveBeenCalled();
+    });
 });

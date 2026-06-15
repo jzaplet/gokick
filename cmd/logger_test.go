@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNewLogHandler_JSONByDefault(t *testing.T) {
@@ -89,6 +91,28 @@ func TestBreadcrumbHandler_SurvivesWith(t *testing.T) {
 	logger.Info("msg")
 	if !strings.Contains(buf.String(), `"bound":"yes"`) {
 		t.Fatalf("bound attr missing after With: %q", buf.String())
+	}
+}
+
+// recordToBreadcrumb must flatten an inline slog.Group into dotted child keys
+// (mirroring the text handler) rather than storing an opaque []slog.Attr that
+// JSON-marshals to {} — so the breadcrumb trail keeps the nested fields.
+func TestRecordToBreadcrumb_FlattensInlineGroup(t *testing.T) {
+	t.Parallel()
+	h := breadcrumbHandler{Handler: newLogHandler(io.Discard, "json", slog.LevelInfo)}
+	r := slog.NewRecord(time.Time{}, slog.LevelInfo, "msg", 0)
+	r.Add("flat", "v", slog.Group("g", slog.String("k1", "v1"), slog.Int("k2", 2)))
+
+	data := h.recordToBreadcrumb(r).Data
+
+	if data["flat"] != "v" {
+		t.Fatalf("flat attr: got %v", data["flat"])
+	}
+	if data["g.k1"] != "v1" {
+		t.Fatalf("group child g.k1 must be flattened, got %v (data=%v)", data["g.k1"], data)
+	}
+	if data["g.k2"] != int64(2) {
+		t.Fatalf("group child g.k2: got %v (%T)", data["g.k2"], data["g.k2"])
 	}
 }
 

@@ -54,10 +54,11 @@ func TestRecoveryMiddleware_PanicYields500AndReports(t *testing.T) {
 	}
 }
 
-// The reporter receives a fixed whitelist — method, full URL, User-Agent — and
-// nothing else from the request. Authorization and Cookie must never leak into
-// the error tracker; the Sentry adapter turns exactly these attrs into
-// event.Request.
+// The reporter receives a fixed whitelist — method, request PATH (no query),
+// User-Agent — and nothing else from the request. The query string is dropped
+// outright (a ?token=… param would otherwise leak), and Authorization and Cookie
+// must never reach the error tracker; the Sentry adapter turns exactly these
+// attrs into event.Request.
 func TestRecoveryMiddleware_ReportsWhitelistedRequestAttrs(t *testing.T) {
 	t.Parallel()
 	rep := &recordingReporter{}
@@ -66,7 +67,8 @@ func TestRecoveryMiddleware_ReportsWhitelistedRequestAttrs(t *testing.T) {
 			panic("boom")
 		}))
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/x?q=1", nil)
+	// A credential smuggled into the query string must not survive into the report.
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/x?token=super-secret-query", nil)
 	req.Header.Set("User-Agent", "test-agent/1.0")
 	req.Header.Set("Authorization", "Bearer super-secret-token")
 	req.Header.Set("Cookie", "session=super-secret-cookie")
@@ -79,13 +81,14 @@ func TestRecoveryMiddleware_ReportsWhitelistedRequestAttrs(t *testing.T) {
 	if got[shared.LogKeyMethod] != http.MethodPost {
 		t.Fatalf("method attr: got %q want %q", got[shared.LogKeyMethod], http.MethodPost)
 	}
-	if got[shared.LogKeyURL] != "/api/v1/x?q=1" {
-		t.Fatalf("url attr: got %q want %q", got[shared.LogKeyURL], "/api/v1/x?q=1")
+	// Path only — the query (and any credential in it) is dropped.
+	if got[shared.LogKeyURL] != "/api/v1/x" {
+		t.Fatalf("url attr: got %q want %q", got[shared.LogKeyURL], "/api/v1/x")
 	}
 	if got[shared.LogKeyUserAgent] != "test-agent/1.0" {
 		t.Fatalf("user_agent attr: got %q want %q", got[shared.LogKeyUserAgent], "test-agent/1.0")
 	}
-	// Defensive: no attr value may carry a secret header, under any key.
+	// Defensive: no attr value may carry a secret header or query param, under any key.
 	for k, v := range got {
 		if strings.Contains(v, "super-secret") {
 			t.Fatalf("secret leaked into the error tracker via attr %q = %q", k, v)
