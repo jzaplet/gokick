@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"strings"
 	"testing"
 	"time"
 
@@ -143,20 +142,15 @@ func TestCapture_RequestScopeCarriesBreadcrumbs(t *testing.T) {
 	}
 }
 
-// fakeRecoveryMiddleware exists so the capture below has a frame whose function
-// name contains "RecoveryMiddleware" — exercising demoteReportingFrames the same
-// way the real bus/HTTP recovery middlewares do.
-func fakeRecoveryMiddleware(r sentryReporter, ctx context.Context, err error) {
-	r.Capture(ctx, err)
-}
-
-// A recovered panic must surface as exception type "panic" (not the generic
-// *errors.errorString), carry a panic.type tag with the value's Go type, and
-// have gokick's own reporting frames demoted to not-in-app so Sentry's culprit
-// resolves to the real origin. Verified on the serialized event via BeforeSend.
+// A recovered panic must surface as Sentry exception type "panic" (not the
+// generic *errors.errorString) and carry a panic.type tag with the value's Go
+// type. Verified on the serialized event via BeforeSend. (The in-app marking
+// that fixes the culprit is unit-tested in TestSetFrameInApp — a non-trimpath
+// test binary can't reproduce the production in-app behaviour from its runtime
+// stack, so it's pinned as a pure transform instead.)
 //
 // NOT parallel: sentry.Init binds the global hub.
-func TestCapture_PanicErrorTypeAndInAppDemotion(t *testing.T) {
+func TestCapture_PanicExceptionType(t *testing.T) {
 	var captured *sentry.Event
 	if err := sentry.Init(sentry.ClientOptions{
 		Dsn: "https://public@example.com/1",
@@ -168,7 +162,7 @@ func TestCapture_PanicErrorTypeAndInAppDemotion(t *testing.T) {
 		t.Fatalf("sentry.Init: %v", err)
 	}
 
-	fakeRecoveryMiddleware(sentryReporter{}, context.Background(), &shared.PanicError{
+	sentryReporter{}.Capture(context.Background(), &shared.PanicError{
 		Value:   "boom",
 		Message: "http: panic in GET /x: boom",
 	})
@@ -186,37 +180,51 @@ func TestCapture_PanicErrorTypeAndInAppDemotion(t *testing.T) {
 	if got := captured.Tags[tagPanicType]; got != "string" {
 		t.Fatalf("panic.type tag: got %q want %q", got, "string")
 	}
+}
 
-	// Walk every frame: our reporting frames demoted, a real frame still in-app.
-	var sawCaptureDemoted, sawRecoveryDemoted, sawInAppTrue bool
-	for ei := range captured.Exception {
-		st := captured.Exception[ei].Stacktrace
-		if st == nil {
-			continue
+// setFrameInApp must mark gokick frames in-app and everything else (stdlib, the
+// main/reporter package) not-in-app — EXCEPT our own reporting frames (Capture,
+// the recovery middlewares), which stay not-in-app so the culprit resolves to
+// the real origin. This is the production behaviour sentry-go's heuristic can't
+// deliver under -trimpath (empty GOROOT), so it's pinned here as a pure
+// transform on a synthetic event.
+func TestSetFrameInApp(t *testing.T) {
+	t.Parallel()
+	event := sentry.NewEvent()
+	event.Exception = []sentry.Exception{{
+		Stacktrace: &sentry.Stacktrace{Frames: []sentry.Frame{
+			{Module: "net/http", Function: "HandlerFunc.ServeHTTP"},
+			{
+				Module:   "gokick/app/presentation/http/server",
+				Function: "(*Server).registerRoutes.func1",
+			},
+			{
+				Module:   "gokick/app/application/user/command",
+				Function: "(*CreateUserHandler).Handle",
+			},
+			{
+				Module:   "gokick/app/presentation/http/middleware",
+				Function: "RecoveryMiddleware.func1.1",
+			},
+			{Module: "main", Function: "sentryReporter.Capture"},
+			{Module: "main", Function: "sentryReporter.Capture.func1"},
+		}},
+	}}
+
+	setFrameInApp(event)
+
+	want := map[string]bool{
+		"HandlerFunc.ServeHTTP":          false, // stdlib
+		"(*Server).registerRoutes.func1": true,  // gokick app — the real origin
+		"(*CreateUserHandler).Handle":    true,  // gokick app — a bus handler
+		"RecoveryMiddleware.func1.1":     false, // our reporting frame
+		"sentryReporter.Capture":         false, // our reporting frame
+		"sentryReporter.Capture.func1":   false, // our reporting closure
+	}
+	for _, f := range event.Exception[0].Stacktrace.Frames {
+		if got := f.InApp; got != want[f.Function] {
+			t.Errorf("frame %q: in_app=%v want %v", f.Function, got, want[f.Function])
 		}
-		for _, f := range st.Frames {
-			switch {
-			case strings.Contains(f.Function, "sentryReporter.Capture"):
-				if !f.InApp {
-					sawCaptureDemoted = true
-				}
-			case strings.Contains(f.Function, "RecoveryMiddleware"):
-				if !f.InApp {
-					sawRecoveryDemoted = true
-				}
-			case f.InApp:
-				sawInAppTrue = true
-			}
-		}
-	}
-	if !sawCaptureDemoted {
-		t.Error("sentryReporter.Capture frame must be demoted to not-in-app")
-	}
-	if !sawRecoveryDemoted {
-		t.Error("RecoveryMiddleware frame must be demoted to not-in-app")
-	}
-	if !sawInAppTrue {
-		t.Error("a real (non-reporting) frame must remain in-app as the culprit")
 	}
 }
 
