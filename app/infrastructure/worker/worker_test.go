@@ -82,6 +82,10 @@ func (*recordingReporter) Flush(time.Duration) bool { return true }
 
 func (*recordingReporter) WithRequestScope(ctx context.Context) context.Context { return ctx }
 
+func (*recordingReporter) ContinueTrace(ctx context.Context, _, _ string) context.Context {
+	return ctx
+}
+
 func (r *recordingReporter) LastError() error {
 	h, _ := r.lastErr.Load().(errHolder)
 	return h.err

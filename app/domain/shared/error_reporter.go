@@ -23,6 +23,15 @@ type ErrorReporter interface {
 	// same context includes the trail leading up to the failure. Call it once at
 	// the start of each request/job. The no-op reporter returns ctx unchanged.
 	WithRequestScope(ctx context.Context) context.Context
+	// ContinueTrace adopts a distributed-trace id propagated from the frontend
+	// (the sentry-trace + baggage request headers the browser SDK sets) onto the
+	// per-request scope, so an error captured downstream carries the SAME trace id
+	// the frontend used — linking the frontend and backend events under one trace
+	// in the tracker. It does NOT enable performance tracing: no spans/transactions
+	// are sent. Empty headers (a non-browser caller) leave ctx unchanged; the
+	// no-op reporter ignores it. Call it right after WithRequestScope on the HTTP
+	// path.
+	ContinueTrace(ctx context.Context, sentryTrace, baggage string) context.Context
 	// Flush blocks up to timeout for buffered events to be delivered. Call it
 	// before process exit (incl. panic unwinding) so reports aren't lost.
 	Flush(timeout time.Duration) bool
@@ -35,6 +44,8 @@ type NopReporter struct{}
 func (NopReporter) Capture(context.Context, error, ...slog.Attr) {}
 
 func (NopReporter) WithRequestScope(ctx context.Context) context.Context { return ctx }
+
+func (NopReporter) ContinueTrace(ctx context.Context, _, _ string) context.Context { return ctx }
 
 func (NopReporter) Flush(time.Duration) bool { return true }
 
