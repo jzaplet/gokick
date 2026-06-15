@@ -25,16 +25,20 @@ const (
 
 // HTTP request keys. Cross-cutting because they travel from the presentation
 // layer (access log + panic log) into the error reporter: RecoveryMiddleware
-// passes method/url/user_agent to ErrorReporter.Capture, and the Sentry adapter
-// reconstructs event.Request from exactly these keys (a fixed whitelist — never
-// the raw header set, which carries Authorization/Cookie). Keeping them here is
-// what lets producer and consumer agree on the vocabulary without one importing
-// the other.
+// passes these to ErrorReporter.Capture, and the Sentry adapter reconstructs
+// event.Request from exactly this set. The credential-bearing headers
+// (Authorization, Cookie) ARE forwarded — so an operator can see the header
+// arrived — but their value is masked at the edge via MaskHeaderValue, so the
+// secret itself never reaches the error tracker (e.g. "Bearer ==MASKED=="). The
+// adapter masks again defensively. Keeping the keys here lets producer and
+// consumer agree on the vocabulary without one importing the other.
 const (
-	LogKeyMethod    = "method"
-	LogKeyPath      = "path"
-	LogKeyURL       = "url"
-	LogKeyUserAgent = "user_agent"
+	LogKeyMethod        = "method"
+	LogKeyPath          = "path"
+	LogKeyURL           = "url"
+	LogKeyUserAgent     = "user_agent"
+	LogKeyAuthorization = "authorization"
+	LogKeyCookie        = "cookie"
 )
 
 // LogAttrs returns the request-scoped correlation attributes carried in ctx:

@@ -22,8 +22,15 @@ export const bootstrap = async (): Promise<void> => {
 
     // Only attempt the cookie-based restore when the readable hint says a
     // session plausibly exists — a guest skips it (and its guaranteed 401).
-    if (hasSessionHint() === true) {
-        await refresh();
+    // Defensive try/catch: refresh() is written to never throw, but bootstrap
+    // MUST mount the app no matter what — a future regression (or any unexpected
+    // throw) degrades to the guest path instead of leaving a blank page.
+    try {
+        if (hasSessionHint() === true) {
+            await refresh();
+        }
+    } catch {
+        // Ignore — fall through to mount as a guest.
     }
 
     app.use(router).mount('#app');

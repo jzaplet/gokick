@@ -51,19 +51,35 @@ func RecoveryMiddleware(
 						slog.String(logKeyStack, string(debug.Stack())),
 					)...)
 
-				// Whitelist only: method, full URL and User-Agent. NEVER the raw
-				// header set — it carries Authorization and Cookie, which must not
-				// reach the error tracker. The Sentry adapter turns these into
-				// event.Request; the resolved client IP rides on ctx (SetUser).
 				err := &shared.PanicError{
 					Value:   rec,
 					Message: fmt.Sprintf("http: panic in %s %s: %v", r.Method, r.URL.Path, rec),
 				}
-				reporter.Capture(ctx, err,
+				// Method, full URL and User-Agent always; the credential headers
+				// (Authorization, Cookie) when present but MASKED here at the edge
+				// — so an operator can see the header arrived without the secret
+				// ever reaching the error tracker. Never the raw header set. The
+				// Sentry adapter turns these into event.Request; the resolved
+				// client IP rides on ctx (SetUser).
+				attrs := []slog.Attr{
 					slog.String(shared.LogKeyMethod, r.Method),
 					slog.String(shared.LogKeyURL, r.URL.String()),
 					slog.String(shared.LogKeyUserAgent, r.UserAgent()),
-				)
+				}
+				if v := r.Header.Get("Authorization"); v != "" {
+					attrs = append(
+						attrs,
+						slog.String(
+							shared.LogKeyAuthorization,
+							shared.MaskHeaderValue("Authorization", v),
+						),
+					)
+				}
+				if v := r.Header.Get("Cookie"); v != "" {
+					attrs = append(attrs,
+						slog.String(shared.LogKeyCookie, shared.MaskHeaderValue("Cookie", v)))
+				}
+				reporter.Capture(ctx, err, attrs...)
 
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusInternalServerError)

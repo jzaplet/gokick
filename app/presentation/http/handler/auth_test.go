@@ -212,6 +212,40 @@ func TestAuthHandler_Refresh_WithValidCookie(t *testing.T) {
 	}
 }
 
+// Refresh (token rotation) re-sets the session-hint cookie with the SAME
+// no-drift invariant as login: readable, Path=/, and matching the rotated
+// refresh cookie's expiry. Only the login path was pinned before, so this guards
+// the rotation path against a future divergence that would let the hint outlive
+// (or predecease) the refresh cookie and log a real session out.
+func TestAuthHandler_Refresh_SetsSessionHintCookie(t *testing.T) {
+	h, fx := newAuthHandler(t)
+	u := fx.SeedUser(t, "alice", "pwd", "user")
+	raw := fx.SeedRefreshToken(t, u.ID, time.Now().Add(24*time.Hour))
+
+	rec := doJSON(t, h.Refresh, http.MethodPost, "/api/v1/auth/refresh", nil,
+		&http.Cookie{Name: refreshCookieName, Value: raw},
+	)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d want 200; body=%s", rec.Code, rec.Body.String())
+	}
+
+	hint := findCookie(t, rec, sessionHintCookieName)
+	if hint.Value != "1" {
+		t.Fatalf("hint value: got %q want %q", hint.Value, "1")
+	}
+	if hint.HttpOnly {
+		t.Fatal("hint cookie must be readable by JS (not HttpOnly)")
+	}
+	if hint.Path != "/" {
+		t.Fatalf("hint Path: got %q want /", hint.Path)
+	}
+	// No-drift invariant: same expiry as the rotated refresh cookie.
+	refresh := findCookie(t, rec, refreshCookieName)
+	if !hint.Expires.Equal(refresh.Expires) {
+		t.Fatalf("hint Expires %v must equal refresh Expires %v", hint.Expires, refresh.Expires)
+	}
+}
+
 func TestAuthHandler_Refresh_MissingCookie(t *testing.T) {
 	h, _ := newAuthHandler(t)
 

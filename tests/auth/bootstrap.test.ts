@@ -95,4 +95,18 @@ describe('app bootstrap', () => {
         expect(useMock).toHaveBeenCalledTimes(1);
         expect(mountMock).toHaveBeenCalledWith('#app');
     });
+
+    // code-review finding #2: bootstrap must mount no matter what — even if
+    // refresh() throws (offline / DNS / a future regression) it degrades to the
+    // guest path instead of leaving a blank page.
+    it('still mounts when the session restore throws', async (): Promise<void> => {
+        document.cookie = 'gk_session=1; Path=/';
+        refreshMock.mockRejectedValueOnce(new Error('offline'));
+
+        await bootstrap();
+
+        expect(refreshMock).toHaveBeenCalledTimes(1);
+        expect(mountMock).toHaveBeenCalledTimes(1);
+        expect(mountMock).toHaveBeenCalledWith('#app');
+    });
 });

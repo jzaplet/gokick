@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,7 +61,7 @@ func TestCapture_EnrichesEventWithUserAndRequest(t *testing.T) {
 	}
 
 	ctx := shared.ContextWithClaims(context.Background(), &shared.AuthClaims{
-		UserID: "u-7", Nickname: "alice", Role: "admin",
+		UserID: "u-7", Nickname: "alice", Role: "admin", Email: "alice@example.com",
 	})
 	ctx = shared.ContextWithActorIP(ctx, "203.0.113.9")
 
@@ -76,6 +77,9 @@ func TestCapture_EnrichesEventWithUserAndRequest(t *testing.T) {
 	}
 	if captured.User.ID != "u-7" || captured.User.Username != "alice" {
 		t.Fatalf("event user id/name: %+v", captured.User)
+	}
+	if captured.User.Email != "alice@example.com" {
+		t.Fatalf("event user email: got %q want alice@example.com", captured.User.Email)
 	}
 	if captured.User.IPAddress != "203.0.113.9" {
 		t.Fatalf("SendDefaultPII must keep the explicit IP, got %q", captured.User.IPAddress)
@@ -233,7 +237,7 @@ func TestSetFrameInApp(t *testing.T) {
 func TestSentryUser_FromClaimsAndIP(t *testing.T) {
 	t.Parallel()
 	ctx := shared.ContextWithClaims(context.Background(), &shared.AuthClaims{
-		UserID: "u-7", Nickname: "alice", Role: "admin",
+		UserID: "u-7", Nickname: "alice", Role: "admin", Email: "alice@example.com",
 	})
 	user, ok := sentryUser(ctx, "203.0.113.9")
 	if !ok {
@@ -241,6 +245,9 @@ func TestSentryUser_FromClaimsAndIP(t *testing.T) {
 	}
 	if user.ID != "u-7" || user.Username != "alice" || user.IPAddress != "203.0.113.9" {
 		t.Fatalf("user: %+v", user)
+	}
+	if user.Email != "alice@example.com" {
+		t.Fatalf("email should ride along, got %q", user.Email)
 	}
 	if user.Data["role"] != "admin" {
 		t.Fatalf("role should ride along in user data: %+v", user.Data)
@@ -299,19 +306,188 @@ func TestSentryRequest_NilWithoutMethod(t *testing.T) {
 	}
 }
 
-// Only method/url/user_agent are read; any other attr — even one that happens to
-// carry a secret — is never copied into the Request. With no User-Agent the
-// Headers map stays nil.
+// An attr outside the recognized request set — even one carrying a secret — is
+// never copied into the Request. With no recognized header attr the Headers map
+// stays nil.
 func TestSentryRequest_IgnoresNonWhitelistedAttrs(t *testing.T) {
 	t.Parallel()
 	req := sentryRequest([]slog.Attr{
 		slog.String(shared.LogKeyMethod, "GET"),
-		slog.String("authorization", "Bearer super-secret"),
+		slog.String("x-internal-trace", "some-private-value"),
 	})
 	if req == nil {
 		t.Fatal("expected a request")
 	}
 	if req.Headers != nil {
-		t.Fatalf("no User-Agent → Headers must stay nil, got %+v", req.Headers)
+		t.Fatalf("no recognized header attr → Headers must stay nil, got %+v", req.Headers)
+	}
+}
+
+// The credential headers ARE reconstructed onto the Request so an operator can
+// see they arrived — but masked, and masked AGAIN here regardless of what the
+// caller passed, so even a raw value can never reach the serialized event.
+func TestSentryRequest_MasksCredentialHeaders(t *testing.T) {
+	t.Parallel()
+	req := sentryRequest([]slog.Attr{
+		slog.String(shared.LogKeyMethod, "POST"),
+		slog.String(shared.LogKeyUserAgent, "agent/1.0"),
+		slog.String(shared.LogKeyAuthorization, "Bearer super-secret"), // raw on purpose
+		slog.String(shared.LogKeyCookie, "gk_session=1; refresh=xyz"),
+	})
+	if req == nil {
+		t.Fatal("expected a request")
+	}
+	if req.Headers["User-Agent"] != "agent/1.0" {
+		t.Fatalf("User-Agent must pass through, got %q", req.Headers["User-Agent"])
+	}
+	if req.Headers["Authorization"] != "Bearer "+shared.MaskedValue {
+		t.Fatalf(
+			"Authorization must be masked keeping the scheme, got %q",
+			req.Headers["Authorization"],
+		)
+	}
+	if req.Headers["Cookie"] != shared.MaskedValue {
+		t.Fatalf("Cookie must be fully masked, got %q", req.Headers["Cookie"])
+	}
+	for k, v := range req.Headers {
+		if strings.Contains(v, "super-secret") || strings.Contains(v, "refresh=xyz") {
+			t.Fatalf("raw secret leaked in header %q = %q", k, v)
+		}
+	}
+}
+
+// maskRequestHeaders is the BeforeSend guard: any sensitive header that reaches a
+// serialized event is masked and the raw Cookies string is dropped — covering
+// even a header a future SDK integration might attach. A non-sensitive header
+// survives so the request stays useful.
+func TestMaskRequestHeaders(t *testing.T) {
+	t.Parallel()
+	event := sentry.NewEvent()
+	event.Request = &sentry.Request{
+		Headers: map[string]string{
+			"User-Agent":    "agent/1.0",
+			"Authorization": "Bearer super-secret",
+			"Cookie":        "gk_session=1",
+		},
+		Cookies: "gk_session=1; refresh=raw",
+	}
+	maskRequestHeaders(event)
+	if event.Request.Headers["User-Agent"] != "agent/1.0" {
+		t.Fatalf("User-Agent must survive, got %q", event.Request.Headers["User-Agent"])
+	}
+	if event.Request.Headers["Authorization"] != "Bearer "+shared.MaskedValue {
+		t.Fatalf("Authorization must be masked, got %q", event.Request.Headers["Authorization"])
+	}
+	if event.Request.Headers["Cookie"] != shared.MaskedValue {
+		t.Fatalf("Cookie must be masked, got %q", event.Request.Headers["Cookie"])
+	}
+	if event.Request.Cookies != shared.MaskedValue {
+		t.Fatalf("raw Cookies string must be masked, got %q", event.Request.Cookies)
+	}
+}
+
+// maskRequestHeaders must be a no-op (not a nil-deref) when there is no request.
+func TestMaskRequestHeaders_NoRequest(t *testing.T) {
+	t.Parallel()
+	maskRequestHeaders(sentry.NewEvent()) // must not panic
+}
+
+// scrubBreadcrumb masks secret-keyed values on a breadcrumb (the slog→breadcrumb
+// bridge has no whitelist), while leaving benign and non-string fields intact.
+func TestScrubBreadcrumb(t *testing.T) {
+	t.Parallel()
+	b := &sentry.Breadcrumb{Data: map[string]any{
+		"job_kind":      "email",
+		"authorization": "Bearer leak",
+		"access_token":  "raw-token",
+		"attempts":      3,
+	}}
+	scrubBreadcrumb(b)
+	if b.Data["job_kind"] != "email" {
+		t.Fatalf("benign field must survive, got %v", b.Data["job_kind"])
+	}
+	if b.Data["authorization"] != shared.MaskedValue {
+		t.Fatalf("authorization must be masked, got %v", b.Data["authorization"])
+	}
+	if b.Data["access_token"] != shared.MaskedValue {
+		t.Fatalf("access_token must be masked, got %v", b.Data["access_token"])
+	}
+	if b.Data["attempts"] != 3 {
+		t.Fatalf("non-string value must be untouched, got %v", b.Data["attempts"])
+	}
+}
+
+// A worker capture (job_kind present) gets a per-kind fingerprint, so each
+// failing handler is its own Sentry issue rather than merging under the shared
+// worker-plumbing stack. NOT parallel: sentry.Init binds the global hub.
+func TestCapture_WorkerFingerprintByKind(t *testing.T) {
+	var captured *sentry.Event
+	if err := sentry.Init(sentry.ClientOptions{
+		Dsn: "https://public@example.com/1",
+		BeforeSend: func(event *sentry.Event, _ *sentry.EventHint) *sentry.Event {
+			captured = event
+			return nil
+		},
+	}); err != nil {
+		t.Fatalf("sentry.Init: %v", err)
+	}
+
+	sentryReporter{}.Capture(context.Background(),
+		errors.New(`job "email" exhausted retries: boom`),
+		slog.String(shared.LogKeyJobKind, "email"),
+	)
+	sentry.Flush(2 * time.Second)
+
+	if captured == nil {
+		t.Fatal("BeforeSend never ran")
+	}
+	want := []string{"{{ default }}", "job:email"}
+	if len(captured.Fingerprint) != 2 ||
+		captured.Fingerprint[0] != want[0] || captured.Fingerprint[1] != want[1] {
+		t.Fatalf("fingerprint: got %v want %v", captured.Fingerprint, want)
+	}
+}
+
+// logger.With-bound attrs (the worker binds job_id/attempts) must appear in the
+// breadcrumb Data, not only the text log — the breadcrumb is built from the
+// record, so the wrapper has to mirror WithAttrs. NOT parallel: sentry.Init binds
+// the global hub.
+func TestCapture_BreadcrumbCarriesBoundAttrs(t *testing.T) {
+	var captured *sentry.Event
+	if err := sentry.Init(sentry.ClientOptions{
+		Dsn: "https://public@example.com/1",
+		BeforeSend: func(event *sentry.Event, _ *sentry.EventHint) *sentry.Event {
+			captured = event
+			return nil
+		},
+	}); err != nil {
+		t.Fatalf("sentry.Init: %v", err)
+	}
+
+	r := sentryReporter{}
+	ctx := r.WithRequestScope(context.Background())
+
+	// A derived logger with bound attrs, like the worker's per-job logger.
+	logger := slog.New(breadcrumbHandler{Handler: newLogHandler(io.Discard, "json", slog.LevelInfo)}).
+		With("job_id", "j-1", "attempts", 2)
+	logger.InfoContext(ctx, "worker: step")
+
+	r.Capture(ctx, errors.New("boom"))
+	sentry.Flush(2 * time.Second)
+
+	if captured == nil {
+		t.Fatal("BeforeSend never ran")
+	}
+	var crumb *sentry.Breadcrumb
+	for _, b := range captured.Breadcrumbs {
+		if b.Message == "worker: step" {
+			crumb = b
+		}
+	}
+	if crumb == nil {
+		t.Fatal("expected the bound-attr log as a breadcrumb")
+	}
+	if crumb.Data["job_id"] != "j-1" {
+		t.Fatalf("bound attr job_id missing from breadcrumb data: %+v", crumb.Data)
 	}
 }

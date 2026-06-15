@@ -46,7 +46,7 @@ func TestSPAHandler_Serve(t *testing.T) {
 		"index.html": {Data: []byte("<!doctype html><title>spa-root</title>")},
 		"app.js":     {Data: []byte("console.log('hello')")},
 	}
-	h := NewSPAHandler(fsys, SPAConfig{})
+	h := NewSPAHandler(discardLogger(), fsys, SPAConfig{})
 
 	t.Run("existing dotted asset is served from the FS", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/app.js", nil)
@@ -101,7 +101,7 @@ func TestSPAHandler_InjectsRuntimeConfig(t *testing.T) {
 			"<!doctype html><html><head><title>x</title></head><body></body></html>",
 		)},
 	}
-	h := NewSPAHandler(fsys, SPAConfig{
+	h := NewSPAHandler(discardLogger(), fsys, SPAConfig{
 		SentryDSN:         "https://k@o1.ingest.sentry.io/2",
 		SentryEnvironment: "production",
 		SentryDebug:       true,
@@ -126,7 +126,7 @@ func TestSPAHandler_OmitsDebugMetaWhenDisabled(t *testing.T) {
 	fsys := fstest.MapFS{
 		"index.html": {Data: []byte("<head></head>")},
 	}
-	h := NewSPAHandler(fsys, SPAConfig{SentryDebug: false})
+	h := NewSPAHandler(discardLogger(), fsys, SPAConfig{SentryDebug: false})
 
 	rec := httptest.NewRecorder()
 	h.Serve(rec, httptest.NewRequest(http.MethodGet, "/", nil))

@@ -19,8 +19,14 @@ import (
 // OpenTelemetry is introduced, an otelslog bridge (or a fan-out handler that
 // both prints locally and exports via OTLP) wraps the handler built here —
 // no other code path creates a *slog.Logger.
-func newLogger(format string, level slog.Level) *slog.Logger {
-	return slog.New(breadcrumbHandler{Handler: newLogHandler(os.Stderr, format, level)})
+func newLogger(format string, level slog.Level, sentryEnabled bool) *slog.Logger {
+	h := newLogHandler(os.Stderr, format, level)
+	if !sentryEnabled {
+		// No DSN → breadcrumbs go nowhere, so skip the wrapper entirely rather
+		// than probe ctx for a hub that can never be present on every log line.
+		return slog.New(h)
+	}
+	return slog.New(breadcrumbHandler{Handler: h})
 }
 
 // breadcrumbHandler wraps a slog.Handler so every INFO+ record also becomes a
@@ -33,32 +39,65 @@ func newLogger(format string, level slog.Level) *slog.Logger {
 // It lives in cmd/ (the sole place allowed to import the Sentry sink) and wraps
 // the handler from newLogHandler, so no app/ logging call site changes — only
 // logs emitted with the ctx form (LogAttrs(ctx, …)) carry the hub and breadcrumb.
+//
+// groups/attrs mirror what logger.With / WithGroup bind: the wrapped handler
+// applies them to the text log, but the breadcrumb is built here from the
+// record, so without mirroring them a derived logger's bound fields (e.g. the
+// worker's job_id / kind / attempts) would be absent from the breadcrumb trail.
 type breadcrumbHandler struct {
 	slog.Handler
+	groups []string    // open groups, for namespacing keys in the flat Data map
+	attrs  []slog.Attr // WithAttrs-bound attrs, keys already group-prefixed
 }
 
 func (h breadcrumbHandler) Handle(ctx context.Context, r slog.Record) error {
 	if r.Level >= slog.LevelInfo {
 		if hub := sentry.GetHubFromContext(ctx); hub != nil {
-			hub.AddBreadcrumb(recordToBreadcrumb(r), nil)
+			hub.AddBreadcrumb(h.recordToBreadcrumb(r), nil)
 		}
 	}
 	return h.Handler.Handle(ctx, r)
 }
 
-// WithAttrs / WithGroup re-wrap so the breadcrumb behaviour survives logger.With.
+// WithAttrs / WithGroup re-wrap so the breadcrumb behaviour survives logger.With,
+// AND accumulate the bound attrs/groups so they reach the breadcrumb too.
 func (h breadcrumbHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return breadcrumbHandler{Handler: h.Handler.WithAttrs(attrs)}
+	prefixed := make([]slog.Attr, 0, len(attrs))
+	for _, a := range attrs {
+		prefixed = append(prefixed, slog.Attr{Key: h.prefixKey(a.Key), Value: a.Value})
+	}
+	return breadcrumbHandler{
+		Handler: h.Handler.WithAttrs(attrs),
+		groups:  h.groups,
+		attrs:   append(append([]slog.Attr{}, h.attrs...), prefixed...),
+	}
 }
 
 func (h breadcrumbHandler) WithGroup(name string) slog.Handler {
-	return breadcrumbHandler{Handler: h.Handler.WithGroup(name)}
+	return breadcrumbHandler{
+		Handler: h.Handler.WithGroup(name),
+		groups:  append(append([]string{}, h.groups...), name),
+		attrs:   h.attrs,
+	}
 }
 
-func recordToBreadcrumb(r slog.Record) *sentry.Breadcrumb {
-	data := make(map[string]any, r.NumAttrs())
-	r.Attrs(func(a slog.Attr) bool {
+// prefixKey namespaces a key by the currently-open groups (slog nests every
+// later attr under a WithGroup). Flattened with dots, since a breadcrumb's Data
+// is a flat map. No groups → key unchanged, the common case here.
+func (h breadcrumbHandler) prefixKey(key string) string {
+	if len(h.groups) == 0 {
+		return key
+	}
+	return strings.Join(h.groups, ".") + "." + key
+}
+
+func (h breadcrumbHandler) recordToBreadcrumb(r slog.Record) *sentry.Breadcrumb {
+	data := make(map[string]any, len(h.attrs)+r.NumAttrs())
+	for _, a := range h.attrs {
 		data[a.Key] = a.Value.Any()
+	}
+	r.Attrs(func(a slog.Attr) bool {
+		data[h.prefixKey(a.Key)] = a.Value.Any()
 		return true
 	})
 	return &sentry.Breadcrumb{

@@ -8,10 +8,10 @@ const cookieName = 'gk_session';
 export const hasSessionHint = (): boolean =>
     document.cookie.split('; ').some((c) => c === `${cookieName}=1`);
 
-// Drop the hint locally after any auth teardown (logout, refresh failure, 401
-// give-up), so a server-revoked-but-not-yet-expired session doesn't keep
-// re-triggering the bootstrap refresh. Safe — clearAuth only runs when the
-// session is already gone, so there is never a real session to preserve.
+// Drop the hint locally at the definitive end of a session — an explicit logout,
+// or a 401 from refresh (the token is invalid/revoked). NOT on a transient
+// 5xx/offline refresh: that keeps the hint so the next load can self-heal rather
+// than stay stuck logged out. See logout.ts / refresh.ts.
 export const clearSessionHint = (): void => {
     document.cookie = `${cookieName}=; Path=/; Max-Age=0; SameSite=Strict`;
 };

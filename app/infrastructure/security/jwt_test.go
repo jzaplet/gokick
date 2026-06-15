@@ -51,7 +51,12 @@ func TestNewJwtService_AcceptsSecretAtFloor(t *testing.T) {
 func TestGenerateAndValidateAccessToken(t *testing.T) {
 	svc := newTestJwtService("test-secret-32-chars-long-enough", 15*time.Minute, 24*time.Hour)
 
-	claims := &shared.AuthClaims{UserID: "user-1", Role: "admin", Nickname: "john"}
+	claims := &shared.AuthClaims{
+		UserID:   "user-1",
+		Role:     "admin",
+		Nickname: "john",
+		Email:    "john@example.com",
+	}
 	token, exp, err := svc.GenerateAccessToken(claims)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -66,6 +71,9 @@ func TestGenerateAndValidateAccessToken(t *testing.T) {
 	}
 	if parsed.UserID != "user-1" || parsed.Role != "admin" || parsed.Nickname != "john" {
 		t.Fatalf("claims mismatch: %+v", parsed)
+	}
+	if parsed.Email != "john@example.com" {
+		t.Fatalf("email must round-trip through the JWT, got %q", parsed.Email)
 	}
 }
 

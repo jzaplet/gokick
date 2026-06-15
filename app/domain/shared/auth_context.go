@@ -6,6 +6,7 @@ type AuthClaims struct {
 	UserID   string
 	Role     string
 	Nickname string
+	Email    string
 }
 
 type authClaimsKeyType struct{}

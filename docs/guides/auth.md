@@ -29,7 +29,9 @@ Dvoutokenový systém s konfigurovatelnou expirací.
 - Přenos: `httpOnly` + `Secure` + `SameSite=Strict` cookie
 - Uložení: SHA256 hash v DB se sloupcem `used_at`
 
-**Session hint cookie.** Vedle refresh cookie server nastavuje **čitelnou** (ne-`HttpOnly`) flag cookie `gk_session=1` na `Path=/` se **stejnou expirací**. SPA podle ní pozná, jestli má při bootstrapu vůbec zkoušet refresh — `HttpOnly` refresh cookie totiž z JS nevidí, takže by jinak host (nepřihlášený) na každém načtení vystřelil zbytečný `POST /auth/refresh` → garantovaný **401 v konzoli**. Stejná expirace = žádný drift (hint nikdy nepřežije ani nezmizí dřív než refresh cookie, takže nikdy „neodhlásí" platnou session). Maže se v zámku při logoutu i na FE v `clearAuth`.
+**Session hint cookie.** Vedle refresh cookie server nastavuje **čitelnou** (ne-`HttpOnly`) flag cookie `gk_session=1` na `Path=/` se **stejnou expirací**. SPA podle ní pozná, jestli má při bootstrapu vůbec zkoušet refresh — `HttpOnly` refresh cookie totiž z JS nevidí, takže by jinak host (nepřihlášený) na každém načtení vystřelil zbytečný `POST /auth/refresh` → garantovaný **401 v konzoli**. Stejná expirace = žádný drift (hint nikdy nepřežije ani nezmizí dřív než refresh cookie, takže nikdy „neodhlásí" platnou session).
+
+Hint se maže **jen na definitivním konci session**: (a) explicitní logout (server ho zruší `Set-Cookie`, FE i v `finally` pro případ network-failed logoutu) a (b) **401** z refresh (token neplatný/revokovaný — server cookie zruší, FE `clearSessionHint`). **Transientní 5xx ani network chyba hint nemažou** — jinak by momentální výpadek backendu smazal hint, příští bootstrap by refresh přeskočil a platná session by zůstala durably odhlášená. Stejnou logiku drží i server: refresh handler `clearRefreshCookie` volá jen na `*shared.AuthError` (401), ne na 5xx. `clearAuth` (in-memory teardown) se hintu **nedotýká** — běží i na transientní selhání.
 
 
 ## Rotace a theft detection
