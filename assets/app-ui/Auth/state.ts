@@ -1,6 +1,7 @@
 import { ref } from 'vue';
 import type { AuthUser } from '@/app-ui/Auth/types/AuthUser';
 import { setAccessToken } from '@/app-ui/Fetch/accessToken';
+import { clearSessionHint } from '@/app-ui/Auth/sessionHint';
 
 // Reactive session state — single source of truth for views.
 export const user = ref<AuthUser | null>(null);
@@ -32,4 +33,7 @@ export const clearAuth = (): void => {
     user.value = null;
     isAuthenticated.value = false;
     clearRefreshTimer();
+    // Drop the readable hint too, so a revoked-but-unexpired session doesn't
+    // keep re-triggering the bootstrap refresh on the next load.
+    clearSessionHint();
 };

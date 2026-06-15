@@ -57,9 +57,12 @@ describe('app bootstrap', () => {
         // Wipe the calls recorded by the import-time `void bootstrap()` so each
         // test asserts against a clean explicit invocation.
         vi.clearAllMocks();
+        // Start each test with no session hint, then opt in where needed.
+        document.cookie = 'gk_session=; Path=/; Max-Age=0';
     });
 
-    it('calls refresh() before mounting the app', async (): Promise<void> => {
+    it('restores the session before mounting when a session hint is present', async (): Promise<void> => {
+        document.cookie = 'gk_session=1; Path=/';
         await bootstrap();
 
         expect(refreshMock).toHaveBeenCalledTimes(1);
@@ -73,6 +76,15 @@ describe('app bootstrap', () => {
         expect(refreshOrder).toBeDefined();
         expect(mountOrder).toBeDefined();
         expect(Number(refreshOrder)).toBeLessThan(Number(mountOrder));
+    });
+
+    it('skips the restore for a guest (no session hint) but still mounts', async (): Promise<void> => {
+        // No gk_session cookie (cleared in beforeEach) — a brand-new visitor.
+        await bootstrap();
+
+        expect(refreshMock).not.toHaveBeenCalled();
+        expect(mountMock).toHaveBeenCalledTimes(1);
+        expect(mountMock).toHaveBeenCalledWith('#app');
     });
 
     it('mounts the created app onto #app', async (): Promise<void> => {
