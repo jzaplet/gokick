@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"html"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"strings"
 )
@@ -33,26 +34,42 @@ type SPAHandler struct {
 	index []byte
 }
 
-func NewSPAHandler(publicFS fs.FS, cfg SPAConfig) *SPAHandler {
+func NewSPAHandler(logger *slog.Logger, publicFS fs.FS, cfg SPAConfig) *SPAHandler {
 	index, err := fs.ReadFile(publicFS, "index.html")
 	if err != nil {
-		index = []byte(
-			"<!doctype html><html><body>Frontend not built. Run: yarn build</body></html>",
-		)
+		// Not-built fallback: no <head>, no runtime config to inject.
+		return &SPAHandler{
+			fs: http.FileServerFS(publicFS),
+			index: []byte(
+				"<!doctype html><html><body>Frontend not built. Run: yarn build</body></html>",
+			),
+		}
+	}
+
+	injected, ok := injectRuntimeConfig(index, cfg)
+	if !ok {
+		// A real index.html exists but exposes no <head> anchor, so the runtime
+		// config (incl. the frontend Sentry DSN) would never reach the SPA. Warn
+		// loudly instead of dropping telemetry silently — but still serve the
+		// page (the SPA falls back to its build-time env), so a template edit in
+		// a fork can't take the whole app down.
+		logger.Warn("spa: index.html has no <head> to inject runtime config into; " +
+			"frontend Sentry/runtime config will be unavailable")
+		injected = index
 	}
 
 	return &SPAHandler{
 		fs:    http.FileServerFS(publicFS),
-		index: injectRuntimeConfig(index, cfg),
+		index: injected,
 	}
 }
 
 // injectRuntimeConfig writes the frontend config into index.html as <meta> tags
-// right after <head>, so one built image serves every environment (the SPA
-// reads DSN + environment + the debug flag at runtime). If there is no <head>
-// the document is returned unchanged and the SPA falls back to its build-time
-// import.meta.env values (e.g. under the Vite dev server).
-func injectRuntimeConfig(index []byte, cfg SPAConfig) []byte {
+// right after the opening <head> tag, so one built image serves every
+// environment (the SPA reads DSN + environment + the debug flag at runtime).
+// Returns ok=false when the document has no <head> element, so the caller can
+// surface it rather than dropping the config silently.
+func injectRuntimeConfig(index []byte, cfg SPAConfig) ([]byte, bool) {
 	var meta strings.Builder
 	writeMeta := func(name, content string) {
 		meta.WriteString(`<meta name="`)
@@ -68,7 +85,46 @@ func injectRuntimeConfig(index []byte, cfg SPAConfig) []byte {
 		writeMeta(metaSentryDebug, "true")
 	}
 
-	return bytes.Replace(index, []byte("<head>"), []byte("<head>"+meta.String()), 1)
+	at := headInsertPos(index)
+	if at < 0 {
+		return index, false
+	}
+	out := make([]byte, 0, len(index)+meta.Len())
+	out = append(out, index[:at]...)
+	out = append(out, meta.String()...)
+	out = append(out, index[at:]...)
+
+	return out, true
+}
+
+// headInsertPos returns the byte offset just after the opening <head …> tag,
+// matched case-insensitively and tolerant of attributes (<head lang="cs">) and
+// casing (<HEAD>) — so a routine template edit can't silently drop the injected
+// config the way an exact "<head>" match would. A bare <header> is skipped (the
+// byte after "<head" must end the tag name). Returns -1 when no <head> element
+// is present (e.g. the not-built fallback).
+func headInsertPos(index []byte) int {
+	lower := bytes.ToLower(index)
+	for from := 0; ; {
+		i := bytes.Index(lower[from:], []byte("<head"))
+		if i < 0 {
+			return -1
+		}
+		i += from
+		after := i + len("<head")
+		if after >= len(index) {
+			return -1
+		}
+		switch index[after] {
+		case '>', ' ', '\t', '\n', '\r', '/':
+			if j := bytes.IndexByte(index[i:], '>'); j >= 0 {
+				return i + j + 1 // just past the tag's closing '>'
+			}
+
+			return -1
+		}
+		from = after // was <header> or similar — keep looking
+	}
 }
 
 func (h *SPAHandler) Serve(w http.ResponseWriter, r *http.Request) {

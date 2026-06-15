@@ -20,18 +20,30 @@ func main() {
 	// never overrides already-set vars, so the double call is harmless.
 	_ = godotenv.Load()
 
-	logger := newLogger(os.Getenv("APP_LOG_FORMAT"), parseLogLevel(os.Getenv("APP_LOG_LEVEL")))
+	dsn := os.Getenv("APP_SENTRY_DSN")
+	environment := os.Getenv("APP_SENTRY_ENVIRONMENT")
+	sentryEnabled := dsn != ""
+
+	logger := newLogger(
+		os.Getenv("APP_LOG_FORMAT"),
+		parseLogLevel(os.Getenv("APP_LOG_LEVEL")),
+		sentryEnabled,
+	)
 	slog.SetDefault(logger)
 	logger.Info("starting gokick", "version", releaseVersion())
 
-	reporter, err := newErrorReporter(
-		os.Getenv("APP_SENTRY_DSN"),
-		os.Getenv("APP_SENTRY_ENVIRONMENT"),
-		releaseVersion(),
-	)
+	reporter, err := newErrorReporter(dsn, environment, releaseVersion())
 	if err != nil {
 		logger.Error("failed to initialize error reporter", "error", err)
 		os.Exit(1)
+	}
+	// Surface a common footgun: with a DSN but no environment, both backend
+	// (default) and frontend (meta-tag fallback) tag events "development" — so
+	// production errors would hide under the dev environment unless flagged.
+	if sentryEnabled && environment == "" {
+		logger.Warn(
+			"APP_SENTRY_ENVIRONMENT is empty — Sentry events will be tagged 'development'; set it explicitly in production",
+		)
 	}
 	// Flush on normal return and during panic unwinding. os.Exit skips defers,
 	// so the error paths below flush explicitly before exiting.

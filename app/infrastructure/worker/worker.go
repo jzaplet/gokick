@@ -178,7 +178,13 @@ func (w *Worker) runWithinTx(
 				slog.Any(logKeyPanic, r),
 				slog.String(logKeyStack, string(debug.Stack())),
 			)
-			err = fmt.Errorf("handler panic: %v", r)
+			// Wrap as PanicError so the terminal-failure Capture (handleFailure)
+			// labels it "panic" with a panic.type tag, like the bus/HTTP recovery
+			// — errors.As unwraps it through the %w chain there.
+			err = &shared.PanicError{
+				Value:   r,
+				Message: fmt.Sprintf("handler panic: %v", r),
+			}
 		}
 	}()
 

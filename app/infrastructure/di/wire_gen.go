@@ -60,7 +60,7 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	healthHandler := handler.NewHealthHandler()
 	fs := providePublicFS()
 	spaConfig := provideSPAConfig(configConfig)
-	spaHandler := handler.NewSPAHandler(fs, spaConfig)
+	spaHandler := handler.NewSPAHandler(logger, fs, spaConfig)
 	cookieSecure := provideCookieSecure(configConfig)
 	sqliteManager, err := database.NewSqliteManager(configConfig)
 	if err != nil {

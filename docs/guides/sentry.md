@@ -75,7 +75,7 @@ Sentry **není logovací cesta** — chodí sem jen neočekávaná selhání:
 
 Běžné návratové chyby — validace, auth, 4xx — se **nehlásí nikdy** (jinak tracker utone v šumu). Detail pravidla + jak je to staticky vynucené viz [Observability → Sentry](/framework/infrastructure/observability#sentry--chyby--paniky).
 
-Každý BE event navíc nese **uživatele** (id / nickname / role + klientská IP), **request** (method / URL / User-Agent — pevný whitelist, nikdy syrové hlavičky), **breadcrumbs** (stopu `INFO+` log řádků vedoucích k chybě — jako Symfony Monolog/Doctrine trail) a u panik smysluplný typ `panic` (+ tag `panic.type`) s culpritem na reálném místě paniky, ne na našem reporteru. FE event nese breadcrumbs automaticky (browser SDK — kliky, navigace) a `Sentry.setUser` v zámku se session. Mechanika je v [Observability](/framework/infrastructure/observability#sentry--chyby--paniky).
+Každý BE event navíc nese **uživatele** (id / nickname / role / email + klientská IP), **request** (method / URL / User-Agent, plus `Authorization` / `Cookie` když dorazily — **maskované**, `Bearer ==MASKED==`, takže je vidět že hlavička přišla bez úniku tajemství), **breadcrumbs** (stopu `INFO+` log řádků vedoucích k chybě — jako Symfony Monolog/Doctrine trail, secret-keyed hodnoty scrubnuté) a u panik smysluplný typ `panic` (+ tag `panic.type`) s culpritem na reálném místě paniky, ne na našem reporteru. FE event nese breadcrumbs automaticky (browser SDK — kliky, navigace) a `Sentry.setUser` (vč. emailu) v zámku se session. Mechanika je v [Observability](/framework/infrastructure/observability#sentry--chyby--paniky).
 
 ## Release verzování
 

@@ -3,9 +3,11 @@ package middleware
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -131,6 +133,39 @@ func TestLoggingMiddleware_LogsClientIP(t *testing.T) {
 	entry := decodeSingleLog(t, buf.Bytes())
 	if entry["ip"] != "203.0.113.7" {
 		t.Fatalf("ip: got %v", entry["ip"])
+	}
+}
+
+// statusRecorder must forward io.ReaderFrom so the static file server keeps its
+// pooled-buffer fast path (net/http's *response implements ReaderFrom), and must
+// still count the bytes copied that way for the access log.
+func TestLoggingMiddleware_ReadFromExposedAndCounted(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+
+	body := "streamed-via-readfrom"
+	h := LoggingMiddleware(logger)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		rf, ok := w.(io.ReaderFrom)
+		if !ok {
+			t.Fatal(
+				"statusRecorder must implement io.ReaderFrom so static serving keeps its fast path",
+			)
+		}
+		if _, err := rf.ReadFrom(strings.NewReader(body)); err != nil {
+			t.Fatalf("ReadFrom: %v", err)
+		}
+	}))
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/asset.js", nil))
+
+	if rec.Body.String() != body {
+		t.Fatalf("body via ReadFrom: got %q want %q", rec.Body.String(), body)
+	}
+	entry := decodeSingleLog(t, buf.Bytes())
+	if got, _ := entry[logKeyBytes].(float64); got != float64(len(body)) {
+		t.Fatalf("bytes via ReadFrom: got %v want %d", entry[logKeyBytes], len(body))
 	}
 }
 

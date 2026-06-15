@@ -38,13 +38,27 @@ func newErrorReporter(dsn, environment, release string) (shared.ErrorReporter, e
 		Environment:   environment,
 		Release:       release,
 		EnableTracing: false, // scope A: errors & panics only, no performance tracing
-		// We attach the user's IP explicitly (the resolved client IP from
-		// ctx, CF-Connecting-IP behind Cloudflare). sentry-go drops a
-		// user-supplied IPAddress unless PII sending is on, so this must be
-		// true for the IP to reach Sentry. It does NOT auto-collect anything:
-		// no HTTP integration is installed, and event.Request is built from a
-		// fixed whitelist below — there is no path that scrapes raw headers.
+		// We attach the user's IP and email explicitly (the resolved client IP
+		// from ctx, CF-Connecting-IP behind Cloudflare; the email from the auth
+		// claims). sentry-go drops a user-supplied IPAddress / Email unless PII
+		// sending is on, so this must be true for them to reach Sentry. It does
+		// NOT auto-collect request data: no HTTP integration is installed, and
+		// event.Request is built from a fixed set of attrs (sentryRequest) with
+		// credential headers masked at the edge. BeforeSend masks once more.
 		SendDefaultPII: true,
+		// Last-line guard: mask any credential header that reaches a serialized
+		// event — even one a future SDK integration might attach — so no raw
+		// Authorization/Cookie can ever leave the process.
+		BeforeSend: func(event *sentry.Event, _ *sentry.EventHint) *sentry.Event {
+			maskRequestHeaders(event)
+			return event
+		},
+		// The slog→breadcrumb bridge forwards the whole structured-log stream
+		// (no whitelist), so scrub secret-keyed values off every breadcrumb.
+		BeforeBreadcrumb: func(breadcrumb *sentry.Breadcrumb, _ *sentry.BreadcrumbHint) *sentry.Breadcrumb {
+			scrubBreadcrumb(breadcrumb)
+			return breadcrumb
+		},
 	}); err != nil {
 		return nil, err
 	}
@@ -62,14 +76,16 @@ func (sentryReporter) WithRequestScope(ctx context.Context) context.Context {
 }
 
 // Capture reports err to Sentry. Beyond the ctx correlation attrs (trace_id,
-// user_id) and any caller-supplied attrs — all attached as searchable tags — it
-// enriches the event with:
-//   - User: id / nickname / role from the auth claims in ctx, plus the resolved
-//     client IP, so Sentry can attribute and group by who hit the error.
-//   - Request: method / URL / User-Agent, reconstructed from the whitelisted
-//     attrs the caller passed (never the raw header set — that carries
-//     Authorization and Cookie). Only present for HTTP-originated captures; a
+// user_id) and any caller-supplied attrs — attached as searchable tags, with
+// secret-keyed values masked — it enriches the event with:
+//   - User: id / nickname / role / email from the auth claims in ctx, plus the
+//     resolved client IP, so Sentry can attribute and group by who hit the error.
+//   - Request: method / URL / User-Agent plus the credential headers
+//     (Authorization, Cookie) when present — masked, so an operator sees they
+//     arrived without the secret leaking. Only for HTTP-originated captures; a
 //     job-worker capture has no method and gets no Request.
+//   - Fingerprint: for a job-worker capture, split by job kind so each failing
+//     handler is its own Sentry issue (its unwound stack is otherwise identical).
 //
 // A cloned hub per call keeps scopes isolated across concurrent requests.
 func (sentryReporter) Capture(ctx context.Context, err error, attrs ...slog.Attr) {
@@ -91,8 +107,19 @@ func (sentryReporter) Capture(ctx context.Context, err error, attrs ...slog.Attr
 	// accumulated breadcrumbs are included — without leaking this request's
 	// tags/processor onto the shared hub across captures.
 	hub.WithScope(func(scope *sentry.Scope) {
+		var jobKind string
 		for _, a := range all {
-			scope.SetTag(a.Key, a.Value.String())
+			// Authorization/Cookie are represented (masked) in event.Request
+			// below, not as a tag. Every other attr becomes a searchable tag —
+			// masked when the key looks secret, so the open attr seam can't
+			// egress a credential.
+			if a.Key == shared.LogKeyAuthorization || a.Key == shared.LogKeyCookie {
+				continue
+			}
+			if a.Key == shared.LogKeyJobKind {
+				jobKind = a.Value.String()
+			}
+			scope.SetTag(a.Key, shared.MaskLogValue(a.Key, a.Value.String()))
 		}
 		if isPanic {
 			scope.SetTag(tagPanicType, fmt.Sprintf("%T", panicErr.Value))
@@ -102,12 +129,16 @@ func (sentryReporter) Capture(ctx context.Context, err error, attrs ...slog.Attr
 		}
 		req := sentryRequest(all)
 		// One processor finalizes the event: the reconstructed request (no
-		// direct scope setter for a pre-built *sentry.Request), the in-app
-		// demotion of our own reporting frames so the culprit is the real
-		// origin, and the "panic" exception type.
+		// direct scope setter for a pre-built *sentry.Request), the per-kind
+		// fingerprint for worker captures, the in-app demotion of our own
+		// reporting frames so the culprit is the real origin, and the "panic"
+		// exception type.
 		scope.AddEventProcessor(func(event *sentry.Event, _ *sentry.EventHint) *sentry.Event {
 			if req != nil {
 				event.Request = req
+			}
+			if jobKind != "" {
+				event.Fingerprint = []string{"{{ default }}", "job:" + jobKind}
 			}
 			setFrameInApp(event)
 			if isPanic {
@@ -170,6 +201,7 @@ func sentryUser(ctx context.Context, ip string) (sentry.User, bool) {
 	user := sentry.User{
 		ID:        claims.UserID,
 		Username:  claims.Nickname,
+		Email:     claims.Email,
 		IPAddress: ip,
 	}
 	if claims.Role != "" {
@@ -178,13 +210,21 @@ func sentryUser(ctx context.Context, ip string) (sentry.User, bool) {
 	return user, true
 }
 
-// sentryRequest reconstructs the Sentry request from the whitelisted attrs the
-// caller passed (method / url / user_agent). It is built from this fixed set on
-// purpose — never the live *http.Request header map, which carries Authorization
-// and Cookie. Returns nil when no method is present (a non-HTTP caller), so
-// event.Request stays unset rather than half-populated.
+// sentryRequest reconstructs the Sentry request from the fixed set of attrs the
+// caller passed (method / url / user_agent / authorization / cookie) — never the
+// live *http.Request header map. The credential headers are masked here a second
+// time (MaskHeaderValue) regardless of what the caller passed, so even a caller
+// that forwarded a raw value cannot leak it. Returns nil when no method is
+// present (a non-HTTP caller), so event.Request stays unset rather than
+// half-populated.
 func sentryRequest(attrs []slog.Attr) *sentry.Request {
-	var method, url, userAgent string
+	var method, url string
+	headers := map[string]string{}
+	add := func(name, value string) {
+		if value != "" {
+			headers[name] = shared.MaskHeaderValue(name, value)
+		}
+	}
 	for _, a := range attrs {
 		switch a.Key {
 		case shared.LogKeyMethod:
@@ -192,17 +232,48 @@ func sentryRequest(attrs []slog.Attr) *sentry.Request {
 		case shared.LogKeyURL:
 			url = a.Value.String()
 		case shared.LogKeyUserAgent:
-			userAgent = a.Value.String()
+			add("User-Agent", a.Value.String())
+		case shared.LogKeyAuthorization:
+			add("Authorization", a.Value.String())
+		case shared.LogKeyCookie:
+			add("Cookie", a.Value.String())
 		}
 	}
 	if method == "" {
 		return nil
 	}
 	req := &sentry.Request{Method: method, URL: url}
-	if userAgent != "" {
-		req.Headers = map[string]string{"User-Agent": userAgent}
+	if len(headers) > 0 {
+		req.Headers = headers
 	}
 	return req
+}
+
+// maskRequestHeaders is the last-line guard on a serialized event: it masks
+// every sensitive header value on event.Request and drops the raw Cookies
+// string. event.Request is built from our own attrs today (already masked), but
+// this also covers anything a future SDK integration might attach — there is no
+// path by which a raw Authorization/Cookie leaves the process.
+func maskRequestHeaders(event *sentry.Event) {
+	if event.Request == nil {
+		return
+	}
+	event.Request.Headers = shared.MaskSensitiveHeaders(event.Request.Headers)
+	if event.Request.Cookies != "" {
+		event.Request.Cookies = shared.MaskedValue
+	}
+}
+
+// scrubBreadcrumb masks secret-looking values on a breadcrumb. The slog→
+// breadcrumb bridge forwards the whole structured-log stream, so unlike the
+// request reconstruction it has no whitelist — a stray secret-keyed log attr
+// would otherwise ride along verbatim.
+func scrubBreadcrumb(b *sentry.Breadcrumb) {
+	for k, v := range b.Data {
+		if s, ok := v.(string); ok {
+			b.Data[k] = shared.MaskLogValue(k, s)
+		}
+	}
 }
 
 func (sentryReporter) Flush(timeout time.Duration) bool {

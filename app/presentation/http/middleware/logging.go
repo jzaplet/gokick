@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"gokick/app/domain/shared"
+	"io"
 	"log/slog"
 	"net/http"
 	"time"
@@ -37,6 +38,26 @@ func (r *statusRecorder) Write(b []byte) (int, error) {
 }
 
 func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
+
+// writerOnly hides a possible ReaderFrom on the wrapped writer so the io.Copy
+// fallback below cannot recurse back into statusRecorder.ReadFrom.
+type writerOnly struct{ io.Writer }
+
+// ReadFrom keeps the static file server's pooled-buffer fast path: net/http's
+// *response implements io.ReaderFrom, and wrapping it would otherwise mask that
+// — forcing a fresh 32 KiB buffer per static response. Delegate to the
+// underlying ReaderFrom (counting bytes) and fall back to io.Copy only if it has
+// none. Status stays at the default 200 the same way a bare Write would.
+func (r *statusRecorder) ReadFrom(src io.Reader) (int64, error) {
+	if rf, ok := r.ResponseWriter.(io.ReaderFrom); ok {
+		n, err := rf.ReadFrom(src)
+		r.bytes += int(n)
+		return n, err
+	}
+	n, err := io.Copy(writerOnly{r.ResponseWriter}, src)
+	r.bytes += int(n)
+	return n, err
+}
 
 func LoggingMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {

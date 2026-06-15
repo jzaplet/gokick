@@ -78,7 +78,7 @@ func LoadConfig() (*Config, error)
 | `APP_RATE_LIMIT_REFRESH` | `60/min` | Per-IP limit na `/auth/refresh` (prázdné = vypnuto) |
 | `APP_SENTRY_DSN` | -- | Backend Sentry DSN (prázdné = vypnuto). Čteno v `cmd/`, **ne** v Config struct |
 | `APP_SENTRY_DSN_FRONTEND` | -- | Frontend Sentry DSN — server ho injektuje do `index.html` jako `<meta>` tag |
-| `APP_SENTRY_ENVIRONMENT` | `development` | Sentry environment, sdílené BE i FE |
+| `APP_SENTRY_ENVIRONMENT` | `development` | Sentry environment, sdílené BE i FE. Když je DSN nastavený a tahle prázdná, appka při startu **varuje** (eventy by jinak tiše spadly pod `development`) |
 | `APP_SENTRY_RELEASE` | (git tag) | Override release verze pro Sentry (jinak z git tagu při buildu). Čteno v `cmd/` |
 | `APP_SENTRY_DEBUG` | `false` | Záměrné error triggery pro smoke-test Sentry. **Nikdy v produkci** |
 

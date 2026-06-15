@@ -160,7 +160,7 @@ func routingServer(t *testing.T) *Server {
 		health: handler.NewHealthHandler(),
 		// fstest.MapFS has no index.html; NewSPAHandler falls back to a
 		// built-in default index, so the catch-all never panics.
-		spa: handler.NewSPAHandler(fstest.MapFS{}, handler.SPAConfig{}),
+		spa: handler.NewSPAHandler(logger, fstest.MapFS{}, handler.SPAConfig{}),
 	}
 }
 

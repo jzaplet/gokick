@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -124,7 +125,15 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		h.clearRefreshCookie(w)
+		// Only drop the session cookies when the refresh token itself is
+		// invalid/revoked/expired (an auth-class failure → 401). A transient
+		// error (DB blip → 5xx) must NOT log the user out: keep the cookie so
+		// the next attempt can still succeed instead of forcing a re-login from
+		// a momentary backend hiccup.
+		var authErr *shared.AuthError
+		if errors.As(err, &authErr) {
+			h.clearRefreshCookie(w)
+		}
 		response.HandleError(w, err)
 
 		return

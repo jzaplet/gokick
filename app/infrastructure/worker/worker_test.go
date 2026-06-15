@@ -67,12 +67,25 @@ func runOnce(t *testing.T, w *Worker) {
 	}
 }
 
-type recordingReporter struct{ count atomic.Int32 }
+type recordingReporter struct {
+	count   atomic.Int32
+	lastErr atomic.Value // errHolder — the most recent captured error
+}
 
-func (r *recordingReporter) Capture(context.Context, error, ...slog.Attr) { r.count.Add(1) }
-func (*recordingReporter) Flush(time.Duration) bool                       { return true }
+type errHolder struct{ err error }
+
+func (r *recordingReporter) Capture(_ context.Context, err error, _ ...slog.Attr) {
+	r.count.Add(1)
+	r.lastErr.Store(errHolder{err})
+}
+func (*recordingReporter) Flush(time.Duration) bool { return true }
 
 func (*recordingReporter) WithRequestScope(ctx context.Context) context.Context { return ctx }
+
+func (r *recordingReporter) LastError() error {
+	h, _ := r.lastErr.Load().(errHolder)
+	return h.err
+}
 
 func newWorkerWithReporter(
 	t *testing.T,
@@ -238,6 +251,35 @@ func TestWorker_HandlerPanics_Recovers_AndReschedules(t *testing.T) {
 	}
 	if got.LastError == nil || !strings.Contains(*got.LastError, "panic") {
 		t.Fatalf("LastError must mention panic, got %v", got.LastError)
+	}
+}
+
+// A panicking handler whose retries are exhausted must report a *shared.PanicError
+// to the tracker (wrapped through the exhausted-retries error), so the Sentry
+// adapter labels it "panic" with a panic.type tag — exactly like the bus/HTTP
+// recovery paths — instead of a generic error it can't distinguish.
+func TestWorker_PanicReportsPanicError(t *testing.T) {
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "worker_panic_type.db"))
+	rep := &recordingReporter{}
+	w := newWorkerWithReporter(t, fx, rep, "boom", func(context.Context, []byte) error {
+		panic("disaster")
+	})
+	enqueue(t, fx, "boom", 0) // maxRetries=0 → the first panic is terminal
+	runOnce(t, w)
+
+	if got := rep.count.Load(); got != 1 {
+		t.Fatalf("terminal panic must report exactly once, got %d", got)
+	}
+	var panicErr *shared.PanicError
+	if err := rep.LastError(); !errors.As(err, &panicErr) {
+		t.Fatalf(
+			"captured error must unwrap to *shared.PanicError, got %T: %v",
+			rep.LastError(),
+			rep.LastError(),
+		)
+	}
+	if panicErr.Value != "disaster" {
+		t.Fatalf("panic value: got %v want %q", panicErr.Value, "disaster")
 	}
 }
 

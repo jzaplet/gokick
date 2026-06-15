@@ -1,27 +1,33 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { logout } from '@/app-ui/Auth/logout';
 import { clearAuth, isAuthenticated, user } from '@/app-ui/Auth/state';
+import { hasSessionHint } from '@/app-ui/Auth/sessionHint';
 import { getAccessToken, setAccessToken } from '@/app-ui/Fetch/accessToken';
 
 // guide-auth-perm-43: Logout deletes the token from the DB, the cookie, and
 // memory. The DB delete + cookie clear are the SERVER's job (covered in Go);
 // on the FE we assert the "memory" half: logout() POSTs /api/v1/auth/logout
-// and then clearAuth() wipes accessToken, user, and isAuthenticated.
+// and then clearAuth() wipes accessToken, user, and isAuthenticated — plus the
+// gk_session hint, so a network-failed logout can't leave the hint behind and
+// silently restore the session on the next load.
 const seedSession = (): void => {
     setAccessToken('live-access-token');
     user.value = { id: 'u-1', nickname: 'alice', email: '', role: 'user', permissions: [] };
     isAuthenticated.value = true;
+    document.cookie = 'gk_session=1; Path=/';
 };
 
 const expectSessionCleared = (): void => {
     expect(getAccessToken()).toBeNull();
     expect(user.value).toBeNull();
     expect(isAuthenticated.value).toBe(false);
+    expect(hasSessionHint()).toBe(false);
 };
 
 describe('logout', () => {
     beforeEach((): void => {
         clearAuth();
+        document.cookie = 'gk_session=; Path=/; Max-Age=0';
         vi.restoreAllMocks();
     });
 

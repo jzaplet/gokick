@@ -107,6 +107,7 @@ func (h *RefreshTokenHandler) Handle(
 		UserID:   u.ID,
 		Role:     u.Role,
 		Nickname: u.Nickname,
+		Email:    u.Email,
 	})
 	if err != nil {
 		return LoginResult{}, err
