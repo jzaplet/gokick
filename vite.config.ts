@@ -34,6 +34,13 @@ export default defineConfig(({ mode }) => {
                         project: sentryProject,
                         authToken: sentryAuthToken,
                         telemetry: false,
+                        // Fail the build if upload fails. You opted into source
+                        // maps by setting the token, so a bad token / outage must
+                        // not silently ship minified traces — it should be a loud,
+                        // red build instead.
+                        errorHandler: (err) => {
+                            throw err;
+                        },
                         sourcemaps: {
                             filesToDeleteAfterUpload: ['./public/**/*.map'],
                         },
