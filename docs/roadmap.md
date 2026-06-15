@@ -285,6 +285,7 @@ Až aplikace začne jezdit v produkci. Bez F1–F3 by observabilita měřila nes
   - OTel HTTP middleware + propagace přes bus middleware. `traceID` v contextu může přejít na `trace.SpanContext`.
   - Pro tracing job workeru: span per job s `kind` a `attempts` jako atributy.
   - **SQL viditelnost sem patří** (rozhodnuto 2026-06-15): `otelsql` obalí DB driver → span per dotaz (text + trvání), surfacováno v traces i na Sentry erroru. Proto se **nestaví bespoke „SQL → breadcrumb" most** — byla by to throwaway práce, kterou OTel nahradí.
+  - **FE↔BE distributed tracing — full (rozsah B)** (rozhodnuto 2026-06-15): **light verze už hotová** (PR #11) — FE i BE sdílí Sentry trace id přes `sentry-trace`/`baggage`, takže FE *chyba* ↔ BE *chyba* se linknou pod jedním trace; `tracesSampleRate:0` → žádná performance data. Full přidá `tracesSampleRate > 0` na obou stranách → **spany + waterfall** (FE klik → API span → BE handler → DB) a anotaci BE chyby původním FE pageloadem **i bez FE chyby**. Patří k OTel/performance scope; light stačí na „odkud přišla tahle BE chyba".
 
 - [ ] **BE source context u Sentry framu (volitelné, mimo OTel)** — Go trace je už čitelný (`file:func:line`), chybí jen inline snippet zdrojáku. Řeší **Sentry GitHub integrace** (code mapping → „Open in GitHub" + source z repa, **nic na prod**), ne OTel a ne shipování zdrojáku do image. Low priority — `file:line` k navigaci stačí. (Rozhodnuto 2026-06-15.)
 

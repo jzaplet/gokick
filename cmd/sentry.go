@@ -75,6 +75,33 @@ func (sentryReporter) WithRequestScope(ctx context.Context) context.Context {
 	return sentry.SetHubOnContext(ctx, sentry.CurrentHub().Clone())
 }
 
+// ContinueTrace adopts the frontend's distributed-trace id (from the sentry-trace
+// + baggage headers the browser SDK sets) onto the per-request hub's scope, so a
+// downstream Capture emits the SAME trace id the frontend used and Sentry links
+// the two events under one trace. We build the span via ContinueFromHeaders
+// (which parses the trace id) and attach it to the scope ourselves: StartSpan
+// only auto-sets the scope span when EnableTracing is on, and we keep that OFF
+// (scope A — no span/transaction is ever sent, this is purely error linking).
+// sentry-go's shouldContinueTrace adopts the id for a same-org frontend (our
+// case); a cross-org or missing header just leaves a fresh local trace, so it
+// degrades safely. Empty header → unchanged ctx (a non-browser caller).
+func (sentryReporter) ContinueTrace(
+	ctx context.Context,
+	sentryTrace, baggage string,
+) context.Context {
+	if sentryTrace == "" {
+		return ctx
+	}
+	hub := sentry.GetHubFromContext(ctx)
+	if hub == nil {
+		return ctx
+	}
+	span := sentry.StartSpan(ctx, "http.server", sentry.ContinueFromHeaders(sentryTrace, baggage))
+	hub.Scope().SetSpan(span)
+
+	return ctx
+}
+
 // Capture reports err to Sentry. Beyond the ctx correlation attrs (trace_id,
 // user_id) and any caller-supplied attrs — attached as searchable tags, with
 // secret-keyed values masked — it enriches the event with:

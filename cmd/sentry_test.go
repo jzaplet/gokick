@@ -491,3 +491,59 @@ func TestCapture_BreadcrumbCarriesBoundAttrs(t *testing.T) {
 		t.Fatalf("bound attr job_id missing from breadcrumb data: %+v", crumb.Data)
 	}
 }
+
+// ContinueTrace must adopt the FRONTEND's trace id (from the sentry-trace header)
+// so the captured backend event carries the SAME trace id — that exact equality
+// is what links the two events in Sentry. Asserting mere presence of a trace
+// context would pass even if the header were rejected and a fresh local id
+// generated, so this pins equality. NOT parallel: sentry.Init binds the global hub.
+func TestCapture_ContinuesFrontendTrace(t *testing.T) {
+	var captured *sentry.Event
+	if err := sentry.Init(sentry.ClientOptions{
+		Dsn: "https://public@example.com/1",
+		BeforeSend: func(event *sentry.Event, _ *sentry.EventHint) *sentry.Event {
+			captured = event
+			return nil
+		},
+	}); err != nil {
+		t.Fatalf("sentry.Init: %v", err)
+	}
+
+	const feTraceID = "d49d9bf66f13450b81f65bc51cf49c03"
+	r := sentryReporter{}
+	ctx := r.WithRequestScope(context.Background())
+	ctx = r.ContinueTrace(ctx, feTraceID+"-a1b2c3d4e5f60718-1", "")
+
+	r.Capture(ctx, errors.New("boom"))
+	sentry.Flush(2 * time.Second)
+
+	if captured == nil {
+		t.Fatal("BeforeSend never ran")
+	}
+	traceID, ok := captured.Contexts["trace"]["trace_id"].(sentry.TraceID)
+	if !ok {
+		t.Fatalf(
+			"event must carry a continued trace context, got %T",
+			captured.Contexts["trace"]["trace_id"],
+		)
+	}
+	if traceID.String() != feTraceID {
+		t.Fatalf(
+			"trace_id: got %q want %q — the FE trace must be adopted, not a fresh id",
+			traceID.String(),
+			feTraceID,
+		)
+	}
+}
+
+// ContinueTrace with no sentry-trace header is a safe no-op: it returns the
+// context unchanged, so a non-browser caller never adopts a spurious trace. (An
+// event still gets sentry-go's own auto-generated trace id — that's the SDK's
+// default, not ours; we only override it when the frontend propagates one.)
+func TestContinueTrace_NoopWithoutHeader(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	if got := (sentryReporter{}).ContinueTrace(ctx, "", "irrelevant-baggage"); got != ctx {
+		t.Fatal("empty sentry-trace must return the context unchanged")
+	}
+}

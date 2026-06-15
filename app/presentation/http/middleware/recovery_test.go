@@ -26,6 +26,10 @@ func (*recordingReporter) Flush(time.Duration) bool { return true }
 
 func (*recordingReporter) WithRequestScope(ctx context.Context) context.Context { return ctx }
 
+func (*recordingReporter) ContinueTrace(ctx context.Context, _, _ string) context.Context {
+	return ctx
+}
+
 // A panic escaping the handler becomes a 500, is logged, and is reported once —
 // never leaking a stack to the client or silently dropping the connection.
 func TestRecoveryMiddleware_PanicYields500AndReports(t *testing.T) {
