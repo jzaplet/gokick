@@ -38,6 +38,12 @@ func newErrorReporter(dsn, environment, release string) (shared.ErrorReporter, e
 		Environment:   environment,
 		Release:       release,
 		EnableTracing: false, // scope A: errors & panics only, no performance tracing
+		// Mark gokick frames as in-app. Under -trimpath sentry-go's path-based
+		// heuristic marks every frame not-in-app, leaving no in-app frame for the
+		// culprit — so it falls back to the topmost frame (this reporter). With
+		// the module prefix in-app, demoteReportingFrames can then strip our own
+		// reporting frames and the culprit resolves to the real origin.
+		InAppInclude: []string{"gokick"},
 		// We attach the user's IP explicitly (the resolved client IP from
 		// ctx, CF-Connecting-IP behind Cloudflare). sentry-go drops a
 		// user-supplied IPAddress unless PII sending is on, so this must be
