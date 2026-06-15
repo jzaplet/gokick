@@ -97,7 +97,7 @@ func LoadConfig() (*Config, error)
 
 V `.env.example` je `false` kvůli dev workflow. V produkci **vždy** `true` + nasazení za TLS terminátor.
 
-Ostatní flagy cookie jsou hardcoded, protože nemá smysl je měnit: `HttpOnly=true` (nepřístupné z JS, obrana proti XSS), `SameSite=Strict` (nepošle se při cross-site requestu, obrana proti CSRF), `Path=/api/v1/auth` (posílá se jen na auth endpointy).
+Ostatní flagy **refresh** cookie jsou hardcoded, protože nemá smysl je měnit: `HttpOnly=true` (nepřístupné z JS, obrana proti XSS), `SameSite=Strict` (nepošle se při cross-site requestu, obrana proti CSRF), `Path=/api/v1/auth` (posílá se jen na auth endpointy). `APP_COOKIE_SECURE` gate-uje `Secure` flag u refresh cookie i u čitelné session-hint cookie `gk_session` (ta je záměrně **ne-`HttpOnly`** a na `Path=/`, nese jen flag `1` — viz [Auth guide](/guides/auth)).
 
 ### APP_TRUST_PROXY_HEADERS & Cloudflare origin-lock
 

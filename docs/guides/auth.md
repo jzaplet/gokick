@@ -29,6 +29,8 @@ Dvoutokenový systém s konfigurovatelnou expirací.
 - Přenos: `httpOnly` + `Secure` + `SameSite=Strict` cookie
 - Uložení: SHA256 hash v DB se sloupcem `used_at`
 
+**Session hint cookie.** Vedle refresh cookie server nastavuje **čitelnou** (ne-`HttpOnly`) flag cookie `gk_session=1` na `Path=/` se **stejnou expirací**. SPA podle ní pozná, jestli má při bootstrapu vůbec zkoušet refresh — `HttpOnly` refresh cookie totiž z JS nevidí, takže by jinak host (nepřihlášený) na každém načtení vystřelil zbytečný `POST /auth/refresh` → garantovaný **401 v konzoli**. Stejná expirace = žádný drift (hint nikdy nepřežije ani nezmizí dřív než refresh cookie, takže nikdy „neodhlásí" platnou session). Maže se v zámku při logoutu i na FE v `clearAuth`.
+
 
 ## Rotace a theft detection
 
@@ -114,7 +116,7 @@ Každý security-relevantní krok (úspěšný/neúspěšný login, lock, theft,
 
 ## Session lifecycle
 
-1. **Otevření / hard refresh stránky** → `assets/app.ts:bootstrap()` zavolá `refresh()` ještě před mountem routeru. Pokud je refresh cookie platná, session se obnoví seamless (nový access token + populace `user` state). Když cookie chybí nebo je neplatná, `refresh()` tiše selže a route guard pošle chráněné routy na `/login`.
+1. **Otevření / hard refresh stránky** → `assets/app.ts:bootstrap()` zkusí obnovit session ještě před mountem routeru — ale **jen když existuje session hint** (`gk_session` cookie, viz výše). Host bez hintu refresh **přeskočí** (žádný zbytečný 401 v konzoli). Když hint je a refresh cookie platná, session se obnoví seamless (nový access token + populace `user` state); když je neplatná, `refresh()` tiše selže a route guard pošle chráněné routy na `/login`.
 2. **Přihlášení** → access token + refresh cookie + `scheduleRefresh()` (timer na auto-refresh).
 3. **Auto-refresh** → 30s před expirací → nový access token + rotace refresh tokenu.
 4. **401 response** → `authFetch` zavolá single-flight `refresh()` → retry s novým tokenem, jinak vrátí 401 a vyčistí stav.
