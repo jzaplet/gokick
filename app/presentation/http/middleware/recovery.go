@@ -55,15 +55,19 @@ func RecoveryMiddleware(
 					Value:   rec,
 					Message: fmt.Sprintf("http: panic in %s %s: %v", r.Method, r.URL.Path, rec),
 				}
-				// Method, full URL and User-Agent always; the credential headers
-				// (Authorization, Cookie) when present but MASKED here at the edge
-				// — so an operator can see the header arrived without the secret
-				// ever reaching the error tracker. Never the raw header set. The
-				// Sentry adapter turns these into event.Request; the resolved
-				// client IP rides on ctx (SetUser).
+				// Method, request PATH (query string dropped) and User-Agent
+				// always; the credential headers (Authorization, Cookie) when
+				// present but MASKED here at the edge — so an operator can see the
+				// header arrived without the secret ever reaching the error tracker.
+				// Never the raw header set. The path is sent without its query
+				// because a query parameter can carry a credential (?token=…) and
+				// dropping it outright is the only leak-proof option — masking by
+				// key name is best-effort and misses odd encodings. The Sentry
+				// adapter turns these into event.Request; the resolved client IP
+				// rides on ctx (SetUser).
 				attrs := []slog.Attr{
 					slog.String(shared.LogKeyMethod, r.Method),
-					slog.String(shared.LogKeyURL, r.URL.String()),
+					slog.String(shared.LogKeyURL, r.URL.EscapedPath()),
 					slog.String(shared.LogKeyUserAgent, r.UserAgent()),
 				}
 				if v := r.Header.Get("Authorization"); v != "" {

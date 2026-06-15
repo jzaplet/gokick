@@ -65,6 +65,29 @@ func TestInjectRuntimeConfig(t *testing.T) {
 	}
 }
 
+// Beyond casing/attributes, the head matcher must find the real tag end past a
+// '>' inside a quoted attribute value rather than splicing the config mid-tag.
+// (The matcher does not parse HTML comments — a "<head" inside a leading comment
+// would be matched; see headInsertPos. That is an accepted limitation for a
+// Vite-built index.html, so it is deliberately not asserted here.)
+func TestInjectRuntimeConfig_RobustEdges(t *testing.T) {
+	t.Parallel()
+	cfg := SPAConfig{SentryDSN: "https://k@example.com/1"}
+
+	t.Run("'>' inside a quoted attribute is not the tag end", func(t *testing.T) {
+		t.Parallel()
+		out, ok := injectRuntimeConfig(
+			[]byte(`<html><head data-x="a>b"><title>x</title></head></html>`), cfg)
+		s := string(out)
+		if !ok {
+			t.Fatalf("must inject: %s", s)
+		}
+		if !strings.Contains(s, `data-x="a>b"><meta`) {
+			t.Fatalf("meta must go after the real tag end, past the quoted '>': %s", s)
+		}
+	})
+}
+
 // A real index.html with no <head> anchor must WARN (so the missing telemetry is
 // visible) yet still SERVE the page — a template edit in a fork degrades the FE
 // runtime config to its build-time fallback, it does not crash the app.

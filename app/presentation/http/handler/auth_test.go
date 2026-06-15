@@ -281,6 +281,15 @@ func TestAuthHandler_Logout_RequiresAuth(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status: got %d want 401; body=%s", rec.Code, rec.Body.String())
 	}
+	// Invariant: the cookie is cleared IFF the tokens were actually revoked. This
+	// logout FAILED (401, no claims), so the refresh cookie must NOT be cleared —
+	// clearing it would tell the client it is logged out while the tokens (if any)
+	// remain live server-side.
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == refreshCookieName {
+			t.Fatalf("a failed logout must NOT touch the refresh cookie, got %+v", c)
+		}
+	}
 }
 
 func TestAuthHandler_Logout_WithClaims(t *testing.T) {
