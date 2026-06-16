@@ -76,12 +76,12 @@ func LoadConfig() (*Config, error)
 | `APP_TRUST_PROXY_HEADERS` | `false` | Číst klientskou IP z proxy hlaviček (`CF-Connecting-IP` → `X-Real-IP`) — zapnout **jen** za důvěryhodnou proxy, viz [níže](#app_trust_proxy_headers--cloudflare-origin-lock) |
 | `APP_RATE_LIMIT_LOGIN` | `10/min` | Per-IP limit na `/auth/login` (prázdné = vypnuto) |
 | `APP_RATE_LIMIT_REFRESH` | `60/min` | Per-IP limit na `/auth/refresh` (prázdné = vypnuto) |
-| `APP_LOG_FORMAT` | `json` | Formát logu — `json` (produkce) nebo `text` (čitelný lokálně); cokoli ≠ `text` → `json`. Čteno v `cmd/`, **ne** v Config struct |
-| `APP_LOG_LEVEL` | `info` | Minimální log level — `debug`\|`info`\|`warn`\|`error` (neznámá hodnota → `info`). Čteno v `cmd/`, **ne** v Config struct |
-| `APP_SENTRY_DSN` | -- | Backend Sentry DSN (prázdné = vypnuto). Čteno v `cmd/`, **ne** v Config struct |
+| `APP_LOG_FORMAT` | `json` | Formát logu — `json` (produkce) nebo `text` (čitelný lokálně); cokoli ≠ `text` → `json`. Čteno přes `StartupConfig` (**ne** v hlavním Config struct) |
+| `APP_LOG_LEVEL` | `info` | Minimální log level — `debug`\|`info`\|`warn`\|`error` (neznámá hodnota → `info`). Čteno přes `StartupConfig` (**ne** v hlavním Config struct) |
+| `APP_SENTRY_DSN` | -- | Backend Sentry DSN (prázdné = vypnuto). Čteno přes `StartupConfig` (**ne** v hlavním Config struct) |
 | `APP_SENTRY_DSN_FRONTEND` | -- | Frontend Sentry DSN — server ho injektuje do `index.html` jako `<meta>` tag |
 | `APP_SENTRY_ENVIRONMENT` | `development` | Sentry environment, sdílené BE i FE. Když je DSN nastavený a tahle prázdná, appka při startu **varuje** (eventy by jinak tiše spadly pod `development`) |
-| `APP_SENTRY_RELEASE` | (git tag) | Override release verze pro Sentry (jinak z git tagu při buildu). Čteno v `cmd/` |
+| `APP_SENTRY_RELEASE` | (git tag) | Override release verze pro Sentry (jinak z git tagu při buildu). Čteno přes `StartupConfig` (linker-injected verze má přednost) |
 | `APP_SENTRY_DEBUG` | `false` | Záměrné error triggery pro smoke-test Sentry. **Nikdy v produkci** |
 
 > Config struct má **15 polí** (výše). `.env` snippet nahoře je jen ukázkový výřez; úplný seznam proměnných je v této tabulce a v `.env.example`. Kompletní nastavení Sentry (BE + FE projekty, DSN, deploy) je v [Sentry guide](/guides/sentry); jak observability funguje uvnitř viz [Observability](/framework/infrastructure/observability).
@@ -119,7 +119,7 @@ Pořadí rozlišení:
 
 ### Logování
 
-`APP_LOG_FORMAT` a `APP_LOG_LEVEL` čte `cmd/` přímo (stejně jako backend Sentry proměnné), protože logger se staví na úplném začátku startu — ještě před `LoadConfig`. Proto **nejsou** v `Config` struct, jen v tabulce výše.
+`APP_LOG_FORMAT` a `APP_LOG_LEVEL` (stejně jako backend Sentry proměnné) čte `config.LoadStartup()` — volané z `cmd/` na úplném začátku startu, ještě před `LoadConfig` — protože logger a reporter se staví jako první. Proto **nejsou** v hlavním `Config` struct, ale v `StartupConfig`. Obojí jde přes stejný `getEnv` helper, takže `os.Getenv` žije v jediném místě (žádné raw čtení roztroušené po `cmd/`).
 
 - **`APP_LOG_FORMAT`** — `json` (default, pro produkci a log agregaci) nebo `text` (čitelný handler pro lokální vývoj). Cokoli jiného než `text` spadne na `json`.
 - **`APP_LOG_LEVEL`** — `debug` \| `info` (default) \| `warn` \| `error`. Neznámá nebo prázdná hodnota → `info`.
@@ -130,7 +130,7 @@ Veškeré logování jde **jedinou cestou** přes injektovaný `*slog.Logger` (s
 
 Sentry config je rozdělené na dvě cesty, protože backend a frontend ho potřebují v jiný okamžik:
 
-- **Backend** — `APP_SENTRY_DSN`, `APP_SENTRY_ENVIRONMENT`, `APP_SENTRY_RELEASE` čte přímo `cmd/` (v `cmd/main.go` / `cmd/sentry.go`) **ještě před** `LoadConfig`, protože reporter se staví spolu s loggerem na začátku startu. Proto **nejsou** v `Config` struct — najdeš je jen v tabulce výše.
+- **Backend** — `APP_SENTRY_DSN`, `APP_SENTRY_ENVIRONMENT`, `APP_SENTRY_RELEASE` čte `config.LoadStartup()` (volané z `cmd/main.go`) **ještě před** `LoadConfig`, protože reporter se staví spolu s loggerem na začátku startu. Proto **nejsou** v hlavním `Config` struct, ale v `StartupConfig`.
 - **Frontend** — `APP_SENTRY_DSN_FRONTEND` + sdílené `APP_SENTRY_ENVIRONMENT` + `APP_SENTRY_DEBUG` jsou v `Config` struct, protože je server za běhu **injektuje do `index.html`** jako `<meta name="gokick:…">` tagy (jeden buildnutý image tak slouží všem prostředím). SPA je čte přes `runtimeConfig.ts`. Release verze je u FE výjimka — zůstává zapečená při buildu (`VITE_SENTRY_RELEASE`), protože image je per-verze.
 - **`APP_SENTRY_DEBUG=true`** odemkne záměrné error triggery (BE `GET /debug/sentry` panika + FE tlačítko) pro ověření Sentry end-to-end na deploy. Appka při startu varuje; **nikdy nezapínej v produkci**.
 

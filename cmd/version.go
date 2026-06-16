@@ -1,7 +1,5 @@
 package main
 
-import "os"
-
 // release is the build version, injected at link time via
 //
 //	-ldflags "-X main.release=<version>"
@@ -12,12 +10,12 @@ import "os"
 var release string
 
 // releaseVersion resolves the build version: the linker-injected value wins,
-// falling back to APP_SENTRY_RELEASE so a deploy can still set it via env when
-// the binary wasn't stamped. Empty when neither is set (Sentry leaves the
-// release unset, which it handles fine).
-func releaseVersion() string {
+// falling back to envRelease (APP_SENTRY_RELEASE, read via config.LoadStartup)
+// so a deploy can still set it via env when the binary wasn't stamped. Empty
+// when neither is set (Sentry leaves the release unset, which it handles fine).
+func releaseVersion(envRelease string) string {
 	if release != "" {
 		return release
 	}
-	return os.Getenv("APP_SENTRY_RELEASE")
+	return envRelease
 }

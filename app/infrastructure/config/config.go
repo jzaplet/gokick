@@ -23,7 +23,8 @@ type Config struct {
 	// SPA reads DSN + environment at runtime (one built image works across
 	// environments; the DSN is public, safe to embed). The release stays baked
 	// at build (VITE_SENTRY_RELEASE) since the image is per-version. Backend
-	// Sentry config is read separately in cmd/ (before config loads).
+	// Sentry + logger config is read separately via StartupConfig (below),
+	// before this Config loads.
 	//
 	// SentryDebug gates the BE + FE error-trigger affordances used to verify
 	// Sentry end-to-end. Keep it OFF in production — the app logs a warning at
@@ -51,15 +52,15 @@ func LoadConfig() (*Config, error) {
 		HTTPPort:          getEnv("APP_HTTP_PORT", "3000"),
 		DBPath:            getEnv("APP_DB_PATH", "./data/app.db"),
 		DBJournalMode:     getEnv("APP_DB_JOURNAL_MODE", "WAL"),
-		JWTSecret:         os.Getenv("APP_JWT_SECRET"),
+		JWTSecret:         getEnv("APP_JWT_SECRET", ""),
 		CORSOrigin:        getEnv("APP_CORS_ORIGIN", "http://localhost:5173"),
 		CookieSecure:      getEnv("APP_COOKIE_SECURE", "true") == "true",
-		SeedAdminPassword: os.Getenv("APP_SEED_ADMIN_PASSWORD"),
+		SeedAdminPassword: getEnv("APP_SEED_ADMIN_PASSWORD", ""),
 		TrustProxyHeaders: getEnv("APP_TRUST_PROXY_HEADERS", "false") == "true",
 		RateLimitLogin:    getEnv("APP_RATE_LIMIT_LOGIN", "10/min"),
 		RateLimitRefresh:  getEnv("APP_RATE_LIMIT_REFRESH", "60/min"),
-		FrontendSentryDSN: os.Getenv("APP_SENTRY_DSN_FRONTEND"),
-		SentryEnvironment: os.Getenv("APP_SENTRY_ENVIRONMENT"),
+		FrontendSentryDSN: getEnv("APP_SENTRY_DSN_FRONTEND", ""),
+		SentryEnvironment: getEnv("APP_SENTRY_ENVIRONMENT", ""),
 		SentryDebug:       getEnv("APP_SENTRY_DEBUG", "false") == "true",
 	}
 
@@ -78,6 +79,34 @@ func LoadConfig() (*Config, error) {
 	}
 
 	return config, nil
+}
+
+// StartupConfig is the slice of configuration read at the very start of main —
+// before the full Config — because the logger and error reporter are built
+// first, so that a failure inside LoadConfig itself can still be logged and
+// reported. It is read through the same getEnv path as Config, keeping os.Getenv
+// in exactly one place (getEnv) instead of scattered raw across cmd/.
+type StartupConfig struct {
+	LogFormat         string
+	LogLevel          string
+	SentryDSN         string
+	SentryEnvironment string
+	SentryRelease     string
+}
+
+// LoadStartup loads .env (best-effort) and reads the bootstrap configuration.
+// LoadConfig loads .env again later; godotenv.Load never overrides already-set
+// vars, so the repeat is harmless.
+func LoadStartup() StartupConfig {
+	_ = godotenv.Load()
+
+	return StartupConfig{
+		LogFormat:         getEnv("APP_LOG_FORMAT", ""),
+		LogLevel:          getEnv("APP_LOG_LEVEL", ""),
+		SentryDSN:         getEnv("APP_SENTRY_DSN", ""),
+		SentryEnvironment: getEnv("APP_SENTRY_ENVIRONMENT", ""),
+		SentryRelease:     getEnv("APP_SENTRY_RELEASE", ""),
+	}
 }
 
 func getEnv(key, fallback string) string {
