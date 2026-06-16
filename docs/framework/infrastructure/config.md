@@ -76,6 +76,8 @@ func LoadConfig() (*Config, error)
 | `APP_TRUST_PROXY_HEADERS` | `false` | Číst klientskou IP z proxy hlaviček (`CF-Connecting-IP` → `X-Real-IP`) — zapnout **jen** za důvěryhodnou proxy, viz [níže](#app_trust_proxy_headers--cloudflare-origin-lock) |
 | `APP_RATE_LIMIT_LOGIN` | `10/min` | Per-IP limit na `/auth/login` (prázdné = vypnuto) |
 | `APP_RATE_LIMIT_REFRESH` | `60/min` | Per-IP limit na `/auth/refresh` (prázdné = vypnuto) |
+| `APP_LOG_FORMAT` | `json` | Formát logu — `json` (produkce) nebo `text` (čitelný lokálně); cokoli ≠ `text` → `json`. Čteno v `cmd/`, **ne** v Config struct |
+| `APP_LOG_LEVEL` | `info` | Minimální log level — `debug`\|`info`\|`warn`\|`error` (neznámá hodnota → `info`). Čteno v `cmd/`, **ne** v Config struct |
 | `APP_SENTRY_DSN` | -- | Backend Sentry DSN (prázdné = vypnuto). Čteno v `cmd/`, **ne** v Config struct |
 | `APP_SENTRY_DSN_FRONTEND` | -- | Frontend Sentry DSN — server ho injektuje do `index.html` jako `<meta>` tag |
 | `APP_SENTRY_ENVIRONMENT` | `development` | Sentry environment, sdílené BE i FE. Když je DSN nastavený a tahle prázdná, appka při startu **varuje** (eventy by jinak tiše spadly pod `development`) |
@@ -114,6 +116,15 @@ Pořadí rozlišení:
 > - **Za vlastní reverse proxy** (Traefik/nginx na stejném hostu/síti): origin nevystavuj veřejně (bind na loopback/privátní síť), proxy nech přepisovat `X-Real-IP`.
 >
 > Bez origin-locku nech `APP_TRUST_PROXY_HEADERS=false` — radši ztratíš skutečnou IP (uvidíš edge/proxy IP), než abys důvěřoval podvrhnutelné hodnotě.
+
+### Logování
+
+`APP_LOG_FORMAT` a `APP_LOG_LEVEL` čte `cmd/` přímo (stejně jako backend Sentry proměnné), protože logger se staví na úplném začátku startu — ještě před `LoadConfig`. Proto **nejsou** v `Config` struct, jen v tabulce výše.
+
+- **`APP_LOG_FORMAT`** — `json` (default, pro produkci a log agregaci) nebo `text` (čitelný handler pro lokální vývoj). Cokoli jiného než `text` spadne na `json`.
+- **`APP_LOG_LEVEL`** — `debug` \| `info` (default) \| `warn` \| `error`. Neznámá nebo prázdná hodnota → `info`.
+
+Veškeré logování jde **jedinou cestou** přes injektovaný `*slog.Logger` (staticky vynuceno lintem — `depguard`/`forbidigo`/`sloglint`). Logy úrovně `INFO+` se zároveň propisují do Sentry breadcrumbs. Detaily viz [Observability](/framework/infrastructure/observability).
 
 ### Sentry
 
