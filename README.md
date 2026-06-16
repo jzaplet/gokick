@@ -27,6 +27,9 @@ Golang **DDD** skeleton s **CQRS** (Command Query Responsibility Segregation), V
 - **JWT** access + refresh token autentizace
 - **Wire** compile-time dependency injection
 - **go-arch-lint** vynucení závislostí mezi vrstvami
+- **Sentry** – error tracking BE i FE (paniky, terminální selhání jobů, Vue chyby), gated na DSN; maskování credential hlaviček + FE↔BE trace linking
+- **Strukturované logování** – `slog` s konstantními klíči a korelací přes `trace_id`/`user_id`, jediná logovací cesta staticky vynucená lintem (depguard/forbidigo/sloglint)
+- **Audit log** – append-only záznam security-relevantních akcí (login failed, account locked, theft detected, role changed); persistuje i při rollbacku business transakce
 
 
 ## Rychlý start
