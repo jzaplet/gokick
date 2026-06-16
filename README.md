@@ -30,6 +30,12 @@ Golang **DDD** skeleton s **CQRS** (Command Query Responsibility Segregation), V
 - **Sentry** – error tracking BE i FE (paniky, terminální selhání jobů, Vue chyby), gated na DSN; maskování credential hlaviček + FE↔BE trace linking
 - **Strukturované logování** – `slog` s konstantními klíči a korelací přes `trace_id`/`user_id`, jediná logovací cesta staticky vynucená lintem (depguard/forbidigo/sloglint)
 - **Audit log** – append-only záznam security-relevantních akcí (login failed, account locked, theft detected, role changed); persistuje i při rollbacku business transakce
+- **Rate limiting** – per-IP token bucket na `/auth/login` (default 10/min) a `/auth/refresh` (60/min), konfigurovatelné přes `.env`
+- **Brute-force ochrana** – zámek účtu po 5 selháních / 10 min na 15 min; přihlášení běží v konstantním čase (neprozradí existenci uživatele ani stav zámku)
+- **CSRF** – `http.CrossOriginProtection` (Go 1.25 stdlib) přes `Sec-Fetch-Site`, plus `SameSite=Strict` na refresh cookie
+- **Security headers** – CSP, HSTS (gated na HTTPS), `X-Frame-Options: DENY`, Permissions-Policy, COOP/CORP — cíl A+ na securityheaders.com
+- **In-process scheduler** – cron-like periodické úlohy (goroutiny + ticker, run-once-then-tick, panic recovery per-tick); první uživatel: cleanup expirovaných refresh tokenů
+- **Perzistentní job queue** – SQLite-backed background work s workerem (at-least-once, atomický claim, exponenciální backoff); přežije restart i crash procesu
 
 
 ## Rychlý start
