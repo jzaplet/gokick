@@ -10,7 +10,7 @@ export const logout = async (): Promise<void> => {
     // local session — otherwise the comment above would be a lie and the user
     // would stay "logged in" in the SPA after a failed logout POST.
     try {
-        await apiFetch<unknown>('POST', '/api/v1/auth/logout');
+        await apiFetch<null>('POST', '/api/v1/auth/logout');
     } finally {
         clearAuth();
         // Logout is explicit intent to end the session, so drop the gk_session
