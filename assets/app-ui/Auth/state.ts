@@ -16,20 +16,31 @@ const clearRefreshTimer = (): void => {
     }
 };
 
+// Arms the single auto-refresh/retry timer to fire fn after delayMs (floored at
+// 1 s). Replaces any pending timer, so there is never more than one in flight.
+// A non-finite delay (NaN/Infinity from a malformed expiration) arms nothing —
+// otherwise setTimeout would fire immediately and spin a hot loop. refresh.ts
+// shape-guards the body before scheduling; this is the backstop.
+const armRefreshTimer = (delayMs: number, fn: () => void): void => {
+    clearRefreshTimer();
+    if (Number.isFinite(delayMs) === false) {
+        return;
+    }
+    refreshTimer = setTimeout(fn, Math.max(delayMs, 1_000));
+};
+
 // Schedules the refresh call 30 s before the access token expires.
 // Callers pass their own refresh function to avoid a circular import.
 export const scheduleRefresh = (expiresInMs: number, fn: () => void): void => {
-    clearRefreshTimer();
-    // Defense in depth: a non-finite delay (NaN/Infinity from a malformed
-    // expiration) makes setTimeout fire immediately and spins a hot refresh loop.
-    // refresh.ts already shape-guards the body before calling this; this is the
-    // backstop so no caller can arm a runaway timer.
-    if (Number.isFinite(expiresInMs) === false) {
-        return;
-    }
-    const delay = Math.max(expiresInMs - 30_000, 1_000);
+    armRefreshTimer(expiresInMs - 30_000, fn);
+};
 
-    refreshTimer = setTimeout(fn, delay);
+// Schedules a retry after a transient refresh failure (the caller computes the
+// backoff). Shares the single timer with scheduleRefresh, so clearAuth/logout
+// cancels a pending retry and a later success re-arms the normal rotation in its
+// place — there is never a refresh AND a retry timer alive at once.
+export const scheduleRetry = (delayMs: number, fn: () => void): void => {
+    armRefreshTimer(delayMs, fn);
 };
 
 // Wipes every trace of a session — called on logout, refresh failure, and when
