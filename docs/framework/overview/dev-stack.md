@@ -28,6 +28,7 @@ Single-binary Go server s embedovaným Vue 3 SPA. Po buildu vznikne jedna spusti
 | Hesla | `golang.org/x/crypto` | bcrypt (s SHA-256 prehash) |
 | JWT | `github.com/golang-jwt/jwt/v5` | Generování a validace tokenů |
 | Arch linting | `github.com/fe3dback/go-arch-lint` | Kontrola závislostí mezi vrstvami |
+| Error tracking | `github.com/getsentry/sentry-go` | Sentry — paniky + terminální selhání jobů (gated na DSN) |
 
 ## Frontend (Vue 3 + Vite)
 
@@ -41,6 +42,8 @@ Single-binary Go server s embedovaným Vue 3 SPA. Po buildu vznikne jedna spusti
 | Linting | `eslint@^10` + `typescript-eslint` + `eslint-plugin-vue` | Statická analýza (strictTypeChecked) |
 | Formatting | `@stylistic/eslint-plugin` | Formátování kódu (nahrazuje Prettier) |
 | Testování | `vitest@^4` + `@vue/test-utils` + `jsdom` | Unit testy komponent |
+| Error tracking | `@sentry/vue@^10` | Sentry — Vue chyby + unhandled rejections (gated na DSN) |
+| Source maps | `@sentry/vite-plugin@^5` | Upload source-map do Sentry (čitelné stack traces, dev-dependency) |
 | Package manager | `yarn@4` (Berry, nodeLinker: node-modules) | Správa závislostí |
 
 
@@ -140,3 +143,4 @@ project/
 - `sqlx` používá `db:"..."` tagy na entity structech pro automatický struct scanning.
 - `go-arch-lint` se spouští přes `make arch-check` a hlídá pravidla závislostí mezi vrstvami (viz [Architecture](/framework/overview/architecture)).
 - Frontend se builduje do `public/` a embeduje se do Go binárky přes `embed.FS`.
+- Error tracking přes **Sentry** (BE `sentry-go` i FE `@sentry/vue`) je gated na DSN — bez `APP_SENTRY_DSN` / `APP_SENTRY_DSN_FRONTEND` běží jako no-op. Hlásí se jen neočekávané chyby (recovered paniky, terminální selhání jobů, Vue chyby + rejections), ne běžné 4xx. Detaily: [Observability](/framework/infrastructure/observability), nastavení: [Sentry guide](/guides/sentry).
