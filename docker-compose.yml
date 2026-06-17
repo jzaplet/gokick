@@ -30,3 +30,7 @@ services:
     volumes:
       - ./docs:/documan/data/docs
       - ./README.md:/documan/data/README.md
+      # AI skills (.claude/skills) are browsable in the docs too — mounted so
+      # documan sees every project skill. _TEMPLATE.md is excluded via the
+      # Dockerfile's DOCUMAN_EXCLUDED_FILES.
+      - ./.claude/skills:/documan/data/skills

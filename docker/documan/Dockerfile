@@ -4,13 +4,16 @@ FROM jzaplet/documan:2.15.0
 
 COPY ./docs /documan/data/docs
 COPY ./README.md /documan/data/README.md
+COPY ./.claude/skills /documan/data/skills
 
 WORKDIR /documan/data
 
 # Configure your project
 ENV DOCUMAN_PROJECT_NAME='GO Kick'
 ENV DOCUMAN_DOCS_FILES='**/*.md'
-ENV DOCUMAN_EXCLUDED_FILES=''
+# Skill family lives under skills/ (mounted from .claude/skills). The shared
+# template is not a page — exclude it; everything else (SKILL.md + .list.md) is.
+ENV DOCUMAN_EXCLUDED_FILES='skills/gk/_TEMPLATE.md'
 ENV DOCUMAN_HTTP_PORT=3000
 ENV DOCUMAN_OPENAI_EMBEDDING_MODEL='text-embedding-3-small'
 ENV DOCUMAN_CHUNK_MAX_LEN=250
