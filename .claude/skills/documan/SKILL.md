@@ -1,135 +1,151 @@
 ---
 name: documan
-description: Documentation helper for creating and editing Documan markdown files in docs/. Use when working with project documentation, creating new pages/sections, or editing existing docs.
+description: Pomocník pro tvorbu a úpravu Documan markdown souborů v docs/. Use when pracuješ s dokumentací projektu, zakládáš nové stránky/sekce nebo upravuješ existující docs.
+layout: 'page'
+uri: '/skills/documan'
+position: 10
+slug: 'skills-documan'
+parent: 'skills'
+navTitle: 'documan'
+title: 'Documan — pomocník pro dokumentaci'
 ---
 
-# Documan Documentation Helper
+# Documan — pomocník pro dokumentaci
 
-You help create and edit project documentation in Documan format. Write clearly and concisely. **Always write documentation content in Czech**, regardless of the language the user communicates in.
+Pomáháš vytvářet a upravovat dokumentaci projektu ve formátu Documan. Piš jasně a stručně. **Obsah dokumentace piš vždy česky**, bez ohledu na to, jakým jazykem mluví uživatel.
 
 ## Workflow
 
-### Before any edit
-1. Check Documan container is running: `docker compose ps documan`
-2. If not running: `make documan` (builds and starts the service)
+### Před každou úpravou
+1. Ověř, že běží Documan container: `docker compose ps documan`
+2. Když neběží: `make documan` (sestaví a nastartuje službu)
 
-### After every MD file change
-1. `make documan-import` — syncs changes to Documan DB (runs lint internally)
-2. After import, ask the user if they want to run `make documan-fix` (auto-formatting)
-3. `make documan-fix` should always be run before committing
+### Po každé změně MD souboru
+1. `make documan-import` — promítne změny do Documan DB (uvnitř spustí lint)
+2. Po importu se zeptej uživatele, jestli chce spustit `make documan-fix` (auto-formátování)
+3. `make documan-fix` se má vždy spustit před commitem
 
-### Moving/renaming a page
-1. Update the file's frontmatter: `uri`, `slug`, and `parent` to match the new location
-2. If child pages exist, update their `parent` slug too
-3. Search all `docs/**/*.md` for links to the old URI and update them
-4. Run the standard post-edit workflow (import, then ask about fix).
+### Přesun / přejmenování stránky
+1. Uprav frontmatter souboru: `uri`, `slug` a `parent` podle nového umístění
+2. Pokud má stránka potomky, uprav i jejich `parent` slug
+3. Prohledej všechny `docs/**/*.md` na odkazy na staré URI a uprav je
+4. Spusť standardní postup po úpravě (import, pak nabídni fix).
 
-### Deleting a page
-1. Delete the `.md` file
-2. If it's a `.list.md`, move or delete all child pages first
-3. Search all `docs/**/*.md` for links to the deleted URI and remove/update them
-4. Run the standard post-edit workflow (import, then ask about fix).
+### Smazání stránky
+1. Smaž `.md` soubor
+2. Pokud je to `.list.md`, nejdřív přesuň nebo smaž všechny potomky
+3. Prohledej všechny `docs/**/*.md` na odkazy na smazané URI a odeber/uprav je
+4. Spusť standardní postup po úpravě (import, pak nabídni fix).
 
-### Troubleshooting: duplicate URI error
-If lint/import reports a duplicate URI but only one `.md` file with that URI actually exists, the Docker volume has stale data. Fix: `make documan` (full rebuild from scratch).
+### Troubleshooting: duplicitní URI
+Když lint/import hlásí duplicitní URI, ale na disku existuje jen jeden `.md` soubor s tím URI, má Docker volume zastaralá data. Řešení: `make documan` (kompletní rebuild od nuly).
 
-### Searching existing docs
-Use Documan MCP tools (load via ToolSearch if needed):
-1. `list_documentation_structure` — browse topic tree
-2. `search_in_documentation` — semantic search
-3. `read_documentation_section` — read specific section (preferred over full file)
+### Hledání v existujících docs
+Použij Documan MCP nástroje (v případě potřeby je načti přes ToolSearch):
+1. `list_documentation_structure` — procházení stromu témat
+2. `search_in_documentation` — sémantické hledání
+3. `read_documentation_section` — přečtení konkrétní sekce (lepší než celý soubor)
 
-## Frontmatter Rules
+## Pravidla frontmatteru
 
-### Field order (mandatory)
+### Pořadí polí (povinné)
 ```yaml
 ---
-layout: 'page'              # 'page' for content, 'list' for .list.md index files
-uri: '/section/page-name'   # absolute path, matches file path without docs/ prefix
-position: 1                 # numeric ordering among siblings
-slug: 'section-page-name'   # uri with hyphens instead of slashes (no leading slash)
-parent: 'section'           # slug of parent .list.md (omit for root-level pages)
-navTitle: 'Short Name'      # sidebar navigation label
-title: 'Full Page Title'    # MUST match the # H1 heading exactly
-description: 'Optional.'    # page description
+layout: 'page'              # 'page' pro obsah, 'list' pro .list.md indexové soubory
+uri: '/section/page-name'   # absolutní cesta, odpovídá cestě souboru bez prefixu docs/
+position: 1                 # číselné řazení mezi sourozenci
+slug: 'section-page-name'   # uri s pomlčkami místo lomítek (bez úvodní pomlčky)
+parent: 'section'           # slug nadřazeného .list.md (u root stránek vynech)
+navTitle: 'Krátký název'    # popisek v navigaci (sidebar)
+title: 'Celý název stránky' # MUSÍ přesně odpovídat nadpisu # H1
+description: 'Volitelné.'   # popis stránky
 ---
 ```
 
-### Rules
-- `uri` = file path without `docs/` prefix, with leading `/`
-- `slug` = uri with `-` instead of `/` (no leading hyphen)
-- `parent` = slug of the parent category's `.list.md`
-- `title` and `# H1` heading MUST be identical
-- `.list.md` files use `layout: 'list'`, regular pages use `layout: 'page'`
-- Position: use sequential integers (1, 2, 3) with gaps for future insertions
-- Use **two blank lines** between major sections (Documan renders inline otherwise)
-- **Links between docs:** Always use Documan URIs from frontmatter (`uri` field), never direct paths to `.md` files. Example: `[Page Title](/section/page-name)`, not `[Page Title](../section/page-name.md)`
-- **Public URL:** All docs are available at `https://docs.yourdomain.dev/`. Any frontmatter `uri` maps to `https://docs.yourdomain.dev{uri}`. Use this when referencing docs outside of markdown (e.g. in chat, Jira, Slack). Only content merged to `develop` branch is published — local changes and open MRs are not visible.
-- All files must be UTF-8
+### Pravidla
+- `uri` = cesta souboru bez prefixu `docs/`, s úvodním `/`
+- `slug` = uri s `-` místo `/` (bez úvodní pomlčky)
+- `parent` = slug nadřazené kategorie (`.list.md`)
+- `title` a nadpis `# H1` MUSÍ být identické
+- `.list.md` soubory mají `layout: 'list'`, běžné stránky `layout: 'page'`
+- Position: postupná celá čísla (1, 2, 3) s mezerami pro budoucí vkládání
+- Mezi hlavními sekcemi nech **dva prázdné řádky** (jinak je Documan vyrenderuje inline)
+- **Odkazy mezi docs:** vždy přes Documan URI z frontmatteru (pole `uri`), nikdy přímou cestou na `.md` soubor. Příklad: `[Page Title](/section/page-name)`, ne `[Page Title](../section/page-name.md)`
+- **Veřejná URL:** všechny docs jsou na `https://docs.yourdomain.dev/`. Každé `uri` z frontmatteru se mapuje na `https://docs.yourdomain.dev{uri}`. Použij to, když na docs odkazuješ mimo markdown (např. v chatu, Jira, Slacku). Publikuje se jen obsah mergnutý do větve `develop` — lokální změny a otevřené MR vidět nejsou.
+- Všechny soubory musí být v UTF-8
 
-## Templates
+## Šablony
 
-### New section (folder + index)
-File: `docs/my-section/.list.md`
+### Nová sekce (složka + index)
+Soubor: `docs/moje-sekce/.list.md`
 ```yaml
 ---
 layout: 'list'
-uri: '/my-section'
+uri: '/moje-sekce'
 position: 5
-slug: 'my-section'
-navTitle: 'My Section'
-title: 'My Section'
+slug: 'moje-sekce'
+navTitle: 'Moje sekce'
+title: 'Moje sekce'
 ---
 
-# My Section
+# Moje sekce
 ```
 
-### New page in section
-File: `docs/my-section/my-page.md`
+### Nová stránka v sekci
+Soubor: `docs/moje-sekce/moje-stranka.md`
 ```yaml
 ---
 layout: 'page'
-uri: '/my-section/my-page'
+uri: '/moje-sekce/moje-stranka'
 position: 1
-slug: 'my-section-my-page'
-parent: 'my-section'
-navTitle: 'My Page'
-title: 'My Page Title'
-description: 'What this page covers.'
+slug: 'moje-sekce-moje-stranka'
+parent: 'moje-sekce'
+navTitle: 'Moje stránka'
+title: 'Název mé stránky'
+description: 'Co stránka pokrývá.'
 ---
 
-# My Page Title
+# Název mé stránky
 
-Content here...
+Obsah stránky…
 ```
 
-### Nested subsection
-File: `docs/my-section/sub-section/.list.md`
+### Vnořená podsekce
+Soubor: `docs/moje-sekce/podsekce/.list.md`
 ```yaml
 ---
 layout: 'list'
-uri: '/my-section/sub-section'
+uri: '/moje-sekce/podsekce'
 position: 1
-slug: 'my-section-sub-section'
-parent: 'my-section'
-navTitle: 'Sub Section'
-title: 'Sub Section'
+slug: 'moje-sekce-podsekce'
+parent: 'moje-sekce'
+navTitle: 'Podsekce'
+title: 'Podsekce'
 ---
 
-# Sub Section
+# Podsekce
 ```
 
-## Page Length
-- If a page has more than ~5 major sections or becomes hard to scan, suggest splitting into a subsection (folder + `.list.md`) with separate pages per topic.
-- Prefer many short, focused pages over one long monolithic page.
+## Délka stránky
+- Pokud má stránka víc než ~5 hlavních sekcí nebo se v ní špatně orientuje, navrhni rozdělení do podsekce (složka + `.list.md`) se samostatnými stránkami po tématech.
+- Radši hodně krátkých, zaměřených stránek než jednu dlouhou monolitickou.
 
-## When to Document (project guidelines)
-- Complex business logic needing deeper context
-- Integration knowledge not obvious from code
-- Business domain complexity beyond simple code comments
-- Processes useful for AI tools
+## Narativní vzor stránky (motivace ke čtení)
+Každá obsahová stránka začíná **hookem** — 1–3 věty hned pod `# H1`, **bez nadpisu** — které řeknou *co to je a co čtenáři dá, když bude číst dál*. „Proč" patří **sem**, do hooku.
+- **Nikdy bare `## Proč`** (čtenář se ptá „proč co?"). Když sekce opravdu vysvětluje důvod, pojmenuj konkrétní věc: `## Proč audit mimo transakci`, `## Proč WAL` — nikdy jen `## Proč`.
+- Nadpisy jsou samovysvětlující a pojmenovávají svůj obsah, ne nějaký abstraktní meta-popisek.
+- Dva tvary stránek:
+  - **Reference** (installation, configuration): hook → tématické sekce (tabulky proměnných, příkazy).
+  - **Koncept / flow** (architecture, `*-flow`): hook → `## K čemu to je` (proč/kdy po tom sáhneš) → `## Jak to teče` / tělo → `## Příklad` → `## Související`.
+- Každou stránku zakonči `## Související` — kam dál (další stránky + relevantní `/gk-*` skilly).
 
-## When NOT to Document
-- Quality third-party docs exist (link instead)
-- Content would be identical to AI-generated output
-- Simple/obvious code patterns
+## Kdy dokumentovat (zásady projektu)
+- Složitá business logika, která potřebuje hlubší kontext
+- Integrační znalosti, které z kódu nejsou zřejmé
+- Složitost business domény nad rámec prostých komentářů v kódu
+- Postupy užitečné pro AI nástroje
+
+## Kdy NEdokumentovat
+- Existuje kvalitní dokumentace třetí strany (radši na ni odkaž)
+- Obsah by byl identický s tím, co vygeneruje AI
+- Jednoduché/zřejmé vzory v kódu

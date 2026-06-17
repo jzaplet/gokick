@@ -2,16 +2,29 @@
 layout: 'page'
 uri: '/'
 slug: 'home'
-navTitle: 'Getting Started'
+navTitle: '🚀 Getting Started'
 title: 'GO Kick'
-description: 'GO CQRS DDD skeleton s Vue 3 SPA, SQLite databází a JWT autentizací – vše v jedné binárce.'
+description: 'Go Kick je produkční základ, na kterém postavíš vlastní aplikaci — ne hotový uzavřený produkt, ale promyšlený startovací bod. Stojí na Go backendu s DDD a CQRS (Command Query Responsibility Segregation), Vue 3 SPA, SQLite databází a JWT autentizací.'
 ---
 
 # GO Kick
 
 ![GO Kick](./docs/go-vue-cqrs-ddd.png "GO Kick")
 
-Golang **DDD** skeleton s **CQRS** (Command Query Responsibility Segregation), Vue 3 SPA, SQLite databází a JWT autentizací – vše v jedné binárce.
+
+## 📊 Hodnocení stacku — 8,5 / 10, prakticky best-in-class
+
+> **[⬇ Stáhnout PDF report](./docs/gokick-hodnoceni.pdf)** — nezávislý audit reálného kódu (ne dokumentace) napříč **8 dimenzemi** (bezpečnost, architektura, výkon, škálovatelnost, frontend, tooling, dokumentace & AI skills, testy), se srovnáním s Rails / Laravel / Spring / NestJS a konkrétní cestou k 10/10.
+
+
+## Proč Go Kick
+
+Bezpečnost i architektura jsou **nad úrovní defaultů velkých frameworků** (Rails, Laravel, NestJS): rotace refresh tokenů s detekcí krádeže, atomický account lockout, timing-safe login, kompletní CSP/HSTS, audit přežívající rollback, reálné DDD + CQRS staticky vynucené `go-arch-lint` a jediná logovací cesta hlídaná lintem.
+
+Běží bez Redisu, brokeru či jiné externí infrastruktury a nasazuje se jako jedna samostatná binárka (s embedovaným frontendem i migracemi). Jediný vědomý strop — single-node SQLite bez horizontálního škálování — z něj dělá ideální volbu pro malá až střední nasazení s důrazem na bezpečnost, čistotu a jednoduchý provoz.
+
+
+## Vyzkoušej a prozkoumej
 
 - Aplikace: <https://gokick-app.strategio.dev> (user: `admin`, heslo: `admin`)
 - Dokumentace: <https://gokick.strategio.dev/>
@@ -40,14 +53,10 @@ Golang **DDD** skeleton s **CQRS** (Command Query Responsibility Segregation), V
 
 ## Rychlý start
 
-```bash
-corepack enable
-cp .env.example .env
-make install
-make build && make serve
-```
+1. **Naklonuj repo** (nebo si založ vlastní repo z template přes „Use this template").
+2. V Claude Code napiš **`/gk-init`** — provede tě od nuly k běžícímu serveru (install, build, seed admina, dev loop).
 
-Server běží na `http://localhost:3000`. Podrobnosti v [Installation](/framework/overview/commands).
+Na vše ostatní stačí **`/gk`** — rozcestník, který sám rozhodne, jaké další `gk-*` skills na tvůj úkol použít. Manuální kroky najdeš v [Installation](/framework/installation).
 
 
 ## Hlavní příkazy
@@ -65,7 +74,11 @@ Server běží na `http://localhost:3000`. Podrobnosti v [Installation](/framewo
 
 | Sekce | Popis                                                |
 |-------|------------------------------------------------------|
-| [Framework](/framework) | Architektura, vrstvy, infrastruktura                 |
-| [Guides](/guides) | Praktické návody — autentizace, frontend utility     |
-| [Business](/business) | Business pravidla projektu                           |
-| [Codebase](/codebase) | Algoritmy a znovupoužitelné balíčky v rámci projektu |
+| [Skills](/skills) | **gk-* skills** — přesné koncepty + how-to pro AI i vývojáře (napiš `/gk`) |
+| [Framework](/framework) | Architektura, instalace, konfigurace, request/command/job flow |
+| [ADRs](/adrs) | Architecture Decision Records — zafixovaná rozhodnutí **(template pro tvůj projekt)** |
+| [Roadmap](/roadmap) | Fázovaný plán **(template pro tvůj projekt)** |
+| [Issues](/issues) | Features / Bugs / Chores **(template pro tvůj projekt)** |
+| [Briefs](/briefs) | Rozvahy za rozhodnutími **(template pro tvůj projekt)** |
+
+Detailní „jak se co dělá" žije v **`gk-*` skillech** (`.claude/skills/`) — po naklonování napiš `/gk`. Dokumentace je tenký rozcestník + core stránky.
