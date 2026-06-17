@@ -2,7 +2,7 @@
 .env
 .yarn
 bin/
-data/
+/data/
 node_modules/
 *.tsbuildinfo
 
