@@ -6,7 +6,7 @@ slug: 'framework-gokick-roadmap'
 parent: 'framework'
 navTitle: 'Roadmap (GoKick)'
 title: 'Roadmap (GoKick)'
-description: 'Aktuální priorita (OpenTelemetry) + bodová cesta k 10/10 v každé disciplíně. Plné hodnocení stacku v PDF reportu.'
+description: 'Aktuální priorita F6 — zapínatelný row-level multitenancy + OpenTelemetry observabilita; bodová cesta k 10/10 v každé disciplíně. Plné hodnocení stacku v PDF reportu.'
 ---
 
 # Roadmap (GoKick)
@@ -23,15 +23,72 @@ Boilerplate je **production-ready end-to-end**: DDD/CQRS backend, Vue 3 SPA, JWT
 Tenhle dokument je **forward-looking**: co zbývá jako aktuální priorita a co konkrétně chybí do plné desítky v každé disciplíně.
 
 
-## Aktuální priorita — OpenTelemetry
+## 🚀 Aktuální priorita — Multitenancy + observabilita (F6)
 
-Jediná otevřená položka původního fázového plánu. Má smysl až aplikace poběží v produkci vedle alespoň jedné další služby — pro standalone monolit přidává složitost bez návratnosti, proto **volitelně, později**.
+gokick dostává **zapínatelný row-level multitenancy** (jedním přepínačem; vypnuto = dnešní chování) a **OpenTelemetry**. Obojí je široce přenositelné do dalších projektů — chceme to mít připravené v jádře, ne dodělávat per-projekt a pak portovat zpět. Pořadí je **závazné**: kroky 1–4 jsou multitenant páteř (odladitelná na jednom default tenantu), krok 5 běží paralelně, krok 6 (OTEL) až na finálním tvaru stroje, krok 7 (Postgres) je odložený.
 
-- [ ] **OTel HTTP middleware + propagace přes bus middleware** — `traceID` v contextu může přejít na `trace.SpanContext`.
+**Proč tenant a ne `user_id`.** `user_id` je „kdo jsi", `tenant_id` je „čí jsou data" — dnes splývají 1:1, ale scopovat podle `user_id` natvrdo říká „navždy 1 user = 1 dataset". Tenant je hranice vlastnictví: unese týmy, převod vlastnictví, per-workspace billing/kvóty i service accounts. Hlavně: `tenant_id ≈ user_id` teď je no-op, kdežto `user_id → tenant_id` potom je backfill + přepis všech dotazů pod zátěží. Výchozí cesta přepínače: **auto 1 tenant per user** při signupu (owner = user), nula UX rozdílu dnes.
+
+**Izolační model — row-level (rozhodnuto), ne DB-per-tenant.** Bez ORM neexistuje global scope zadarmo: `Conn(ctx)` vykonává hotové SQL stringy, takže **nedokáže transparentně vstříknout `WHERE tenant_id`**. Resolver tenant jen **dodá**, repo ho **aplikuje**. Záruka „nerozbijeme to při vývoji" stojí na dvou vrstvách, které se kryjí:
+
+- **`tenant_id NOT NULL` + FK** — chybějící stamp na INSERTu spadne hlasitě za běhu.
+- **`zz_tenant_test.go` conformance gate** — projde repo SQL, spadne v CI, když dotaz nad tenant-owned tabulkou nemá `tenant_id` (styl stávajících `zz_audit`/`zz_gap` testů).
+
+⚠️ **Hlavní riziko SQLite fáze, pojmenované poctivě:** záruka je **asymetrická** — chybějící WHERE na *čtení* leakuje **tiše** a chytí ho **jen CI**. Slepé místo scanneru (dynamicky stavěné SQL, dotazy mimo skenované adresáře, JOIN) = cross-tenant read se vyveze. **Transparentní vynucení dá až Postgres RLS (krok 7)**; do té doby resolver predikát jen dodává, nevynucuje.
+
+### Krok 1 — Tenant páteř (nula změn chování)
+
+- [ ] **`AuthClaims.TenantID`** — jedno pole, jede v JWT claimu i ctx (jako dnes `UserID`).
+- [ ] **`TenantMiddleware`** hned za `AuthorizeMiddleware` — přečte tenant z claims do ctx.
+- [ ] **`TenantResolver` interface** + default **single-tenant no-op** resolver.
+- [ ] Mergovatelné samostatně: žádná tabulka zatím sloupec nenese → chování = dnešek.
+
+### Krok 2 — `domain/tenant` + bootstrap + backfill
+
+- [ ] **`domain/tenant/`** — entita + `Repository` + arch-lint **`domain_tenant`** komponenta + `mayDependOn` granty od konzumentů.
+- [ ] **Migrace `tenants`** (control-plane) + `users.tenant_id`.
+- [ ] **Bootstrap tenant row + backfill** existujících `users.tenant_id` **dříve**, než lze zapnout NOT NULL FK (krok 3).
+- [ ] **Seeder + `console/create_user.go`** musí tenant resolvovat/zakládat — jinak po NOT NULL FK selžou.
+- [ ] **Auto 1 tenant per user** v `CreateUserHandler` — výchozí cesta přepínače (boilerplate, ne produkt).
+- [ ] No-op resolver z kroku 1 vrací **id bootstrap tenanta**, ne prázdno (po kroku 3 každý zápis potřebuje reálné id).
+
+### Krok 3 — Row-level enforcement + worker propagace
+
+- [ ] **`tenant_id NOT NULL` + FK** na owned tabulkách, composite indexy `(tenant_id, …)`.
+- [ ] **`BaseRepository.Tenant(ctx)`** helper — v multitenant režimu panika, když tenant chybí (nedovolí nescopovaný dotaz).
+- [ ] **`zz_tenant_test.go`** conformance scan SQL.
+- [ ] **Worker tenant propagace (nejvyšší hodnota celé fáze):** worker obchází bus → `TenantMiddleware` se na job handlery **nikdy nespustí**. Stampuj `jobs.tenant_id` **při enqueue** (in-bus přes JobDispatcher ctx) a worker v `runWithinTx` **obnoví `tenant_id` do ctx z claimnutého `jobs` řádku** před voláním handleru. `ClaimDue` zůstává **globální drain** (bez tenant filtru — jeden worker obsluhuje všechny tenanty) → documented conformance exempce. **Musí přijít s páteří, ne se objevit potom** — jinak první tenant-owned zápis z jobu = tvrdý NOT NULL break a tiché leaky na čtení.
+
+### Krok 4 — JWT nese tenant
+
+- [ ] `tenant_id` do JWT claimu (mint + verify) a kopie do `AuthClaims`.
+
+### Krok 5 — Konfigurovatelný job lease + heartbeat (paralelní)
+
+- [ ] Nahradit zadrátovaný `defaultLockFor = 5min` **per-kind konfigurovatelným lease** + **heartbeat/renewal**, ať dlouhé joby (agentická práce) neztratí lock uprostřed běhu.
+- [ ] **Renewal přes raw pool (`r.DB.DB()`), mimo job tx** — obnova uvnitř `runWithinTx` je pro ostatní workery neviditelná až do commitu, což maří účel. Legitimní documented raw-pool případ (jako audit / failed-login).
+
+### Krok 6 — OpenTelemetry (až na finálním tvaru)
+
+- [ ] **OTel HTTP middleware + propagace přes bus** — `trace_id` v ctx přejde na `trace.SpanContext`; **sladit s `shared.LogKeyTraceID`**, ať traces a logy korelují.
 - [ ] **Tracing job workeru** — span per job s `kind` a `attempts` jako atributy.
-- [ ] **SQL viditelnost přes `otelsql`** (rozhodnuto 2026-06-15) — obalí DB driver → span per dotaz (text + trvání), zviditelněno v traces i na Sentry erroru. Proto se vědomě **nestaví** vlastní SQL → breadcrumb most — OTel ho nahradí.
-- [ ] **FE↔BE distributed tracing — full (rozsah B)** — light verze hotová ([PR #11](https://github.com/jzaplet/gokick/pull/11)): FE i BE sdílí Sentry trace id přes `sentry-trace`/`baggage`. Full přidá `tracesSampleRate > 0` → spany + waterfall (FE klik → API span → BE handler → DB).
-- [ ] **BE source context u Sentry framu** (volitelné, mimo OTel) — Sentry GitHub integrace (code mapping), ne posílání zdrojáku do image. Nízká priorita.
+- [ ] **SQL viditelnost přes `otelsql`** (rozhodnuto 2026-06-15) — obalí DB driver → span per dotaz (text + trvání). Proto se vědomě **nestaví** vlastní SQL → breadcrumb most.
+- [ ] **FE↔BE distributed tracing — full (rozsah B)** — light verze hotová ([PR #11](https://github.com/jzaplet/gokick/pull/11)): FE i BE sdílí trace id přes `sentry-trace`/`baggage`. Full přidá `tracesSampleRate > 0` → spany + waterfall (FE klik → API span → BE handler → DB).
+- [ ] **Závislosti & hardening:** `otelsql` + OTEL SDK do **depguard allow-listu v `.golangci.yml`** (jinak lint padne); collector endpoint do **CSP `connect-src`** + `traceparent` přes CORS (seam, kde už žije Sentry ingest).
+- [ ] **(volitelné, mimo OTel)** BE source context u Sentry framu přes Sentry GitHub integraci (code mapping), ne posílání zdrojáku do image. Nízká priorita.
+
+### Krok 7 — Postgres adapter (odložené)
+
+- [ ] Až podle kalkulace **~1000 klientů**; do té doby jen držet `Conn`/`Transactor`/`TenantResolver` seam čistý (gokick je z 90 % ready návrhem). Navazuje na disciplínu **Škálovatelnost** níže. **Postgres RLS je ten transparentní-enforcement endgame**, který zavře tichý leak na čtení z SQLite fáze.
+
+### Legitimně nescopované — conformance-test exempce
+
+Ne všechno smí nést povinný tenant filtr; tyhle jsou vědomě na allowlistu (jako stávající raw-pool výjimky):
+
+- **`audit_log`** — control-plane, raw pool, zaznamenává **pre-auth** eventy (`auth.login.failed`, `auth.account.locked`), kde tenant neexistuje.
+- **`users`** (login/refresh path) — identity-root tabulka, hledá se podle `nickname`/`id` **před** resolucí auth.
+- **`refresh_tokens`** — `FindByHash` podle tajemství (refresh běží právě když access token chybí).
+- **`ClaimDue`** — globální drain workeru (viz krok 3).
 
 
 ## Cesta k 10/10
@@ -93,4 +150,4 @@ Rekapitulace — detailní záznam (Definition of Done, regresní testy, klíčo
 - **F2 — In-process scheduler** (2026-05-17) — cron-like goroutiny s tickerem, run-once-then-tick, panic recovery per-tick; první job: cleanup expirovaných refresh tokenů.
 - **F3 — Perzistentní job queue (SQLite)** (2026-05-17) — atomický claim přes `UPDATE … RETURNING`, exponenciální backoff, at-least-once, mark-complete v handler tx, worker pool.
 - **F4 — Hardening** (2026-05-17) — 3 kritické fixy z auditu + rate limiting, brute-force lock, audit log mimo transakci, HTTP boundary hardening, SQLite concurrency fix (`_txlock=immediate`).
-- **F5 — Observability** — strukturované slog atributy se statickým lint-enforcementem + Sentry BE/FE s obohacením eventu a maskováním tajemství (2026-06-10 / 06-14). Zbývá už jen OTel (viz **Aktuální priorita** výše).
+- **F5 — Observability** — strukturované slog atributy se statickým lint-enforcementem + Sentry BE/FE s obohacením eventu a maskováním tajemství (2026-06-10 / 06-14). OTel je teď součástí fáze **F6** (viz **Aktuální priorita** výše).
