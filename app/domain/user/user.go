@@ -34,6 +34,12 @@ type User struct {
 	FailedLoginAttempts int          `db:"failed_login_attempts"`
 	LastFailedLoginAt   sql.NullTime `db:"last_failed_login_at"`
 	LockedUntil         sql.NullTime `db:"locked_until"`
+
+	// LastLoginAt is stamped on each successful login via Repository.RecordLogin
+	// (raw pool, best-effort, like the brute-force counters above). NULL until
+	// the user has logged in at least once. Powers the superadmin platform
+	// overview (Krok 4c).
+	LastLoginAt sql.NullTime `db:"last_login_at"`
 }
 
 func NewUser(nickname Nickname, passwordHash string, email Email, role Role) *User {

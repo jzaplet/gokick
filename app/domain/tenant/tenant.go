@@ -10,9 +10,17 @@ import (
 // exactly one. In single-tenant mode there is just the bootstrap "Default"
 // tenant (shared.DefaultTenantID); a multitenant deployment creates one per
 // workspace and scopes its data to the tenant id.
+// PlanFree is the default billing tier. gokick ships only the column + this
+// default; the product wires the paid tiers, Stripe, and the tenant_usage ledger.
+const PlanFree = "free"
+
 type Tenant struct {
-	ID        string    `db:"id"`
-	Name      string    `db:"name"`
+	ID   string `db:"id"`
+	Name string `db:"name"`
+	// Plan is the billing tier (free/paid…). The DB column is NOT NULL DEFAULT
+	// 'free'; NewTenant sets it in-memory so a freshly built Tenant matches what
+	// the DB stores. Surfaced in the superadmin platform overview (Krok 4c).
+	Plan      string    `db:"plan"`
 	CreatedAt time.Time `db:"created_at"`
 	UpdatedAt time.Time `db:"updated_at"`
 }
@@ -24,6 +32,7 @@ func NewTenant(name string) *Tenant {
 	return &Tenant{
 		ID:        uuid.NewString(),
 		Name:      name,
+		Plan:      PlanFree,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}

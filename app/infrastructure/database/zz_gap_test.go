@@ -216,3 +216,100 @@ func TestMigration_UsersTenantFK_PreservesRefreshTokensAndEnforcesFK(t *testing.
 		t.Fatal("FK must reject a user whose tenant_id has no matching tenants row")
 	}
 }
+
+// Krok 4c — the role-CHECK rebuild must WIDEN the CHECK to admit 'superadmin'
+// while keeping every other guarantee of the post-4b users table: the CHECK must
+// still BITE (reject an unknown role), refresh_tokens must survive the rebuild
+// (no cascade-delete), the tenant FK must stay enforced, and pre-existing rows
+// + columns must be intact. A happy-path-only test would miss a silently dropped
+// constraint or column, so each is asserted explicitly. Rows are seeded BEFORE
+// the rebuild so a cascade or data loss would actually show.
+func TestMigration_UsersRoleSuperadmin_WidensCheckPreservesData(t *testing.T) {
+	mgr := newTestManager(t)
+	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	const defaultTenant = "00000000-0000-0000-0000-000000000000"
+
+	// Migrate up to just before the role-CHECK rebuild (the tenant_id FK migration).
+	goose.SetLogger(goose.NopLogger())
+	goose.SetBaseFS(migrations.FS)
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		t.Fatalf("dialect: %v", err)
+	}
+	if err := goose.UpToContext(ctx, mgr.DB().DB, ".", 20260622000002); err != nil {
+		t.Fatalf("migrate up-to pre-4c: %v", err)
+	}
+
+	// Seed an admin user (default tenant) + a refresh_token referencing it.
+	if _, err := mgr.DB().ExecContext(ctx,
+		`INSERT INTO users (id, nickname, password_hash, email, role, tenant_id) VALUES (?,?,?,?,?,?)`,
+		"u1", "alice", "h", "a@x", "admin", defaultTenant); err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	if _, err := mgr.DB().ExecContext(ctx,
+		`INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at) VALUES (?,?,?,?)`,
+		"rt1", "u1", "tok", "2999-01-01"); err != nil {
+		t.Fatalf("insert refresh_token: %v", err)
+	}
+
+	// Apply the rebuild (+ the platform-overview columns) via the production runner.
+	if err := database.NewMigrationManager(mgr, logger).RunUp(); err != nil {
+		t.Fatalf("apply role-CHECK rebuild: %v", err)
+	}
+
+	// (a) The pre-existing admin row + its data survived the rebuild.
+	var role string
+	if err := mgr.DB().GetContext(ctx, &role,
+		`SELECT role FROM users WHERE id='u1'`); err != nil {
+		t.Fatalf("read survived user: %v", err)
+	}
+	if role != "admin" {
+		t.Fatalf("admin row must survive intact, got role=%q", role)
+	}
+
+	// (b) refresh_tokens survived (the rebuild dropped+recreated users).
+	var rt int
+	if err := mgr.DB().GetContext(ctx, &rt,
+		`SELECT COUNT(*) FROM refresh_tokens WHERE id='rt1'`); err != nil {
+		t.Fatalf("count tokens: %v", err)
+	}
+	if rt != 1 {
+		t.Fatalf("refresh_token must survive the rebuild (no cascade-delete), got %d", rt)
+	}
+
+	// (c) The widened CHECK now ADMITS 'superadmin'.
+	if _, err := mgr.DB().ExecContext(ctx,
+		`INSERT INTO users (id, nickname, password_hash, email, role, tenant_id) VALUES (?,?,?,?,?,?)`,
+		"s1", "root", "h", "r@x", "superadmin", defaultTenant); err != nil {
+		t.Fatalf("CHECK must admit 'superadmin' after the rebuild: %v", err)
+	}
+
+	// (d) The CHECK still BITES — an unknown role is rejected.
+	if _, err := mgr.DB().ExecContext(ctx,
+		`INSERT INTO users (id, nickname, password_hash, email, role, tenant_id) VALUES (?,?,?,?,?,?)`,
+		"w1", "wiz", "h", "w@x", "wizard", defaultTenant); err == nil {
+		t.Fatal("CHECK must still reject an unknown role after the rebuild")
+	}
+
+	// (e) The tenant FK is still enforced.
+	if _, err := mgr.DB().ExecContext(ctx,
+		`INSERT INTO users (id, nickname, password_hash, email, role, tenant_id) VALUES (?,?,?,?,?,?)`,
+		"u3", "carol", "h", "c@x", "user", "no-such-tenant"); err == nil {
+		t.Fatal("FK must still reject a user whose tenant_id has no matching tenants row")
+	}
+
+	// (f) The platform-overview columns landed: users.last_login_at exists and
+	// tenants.plan defaults to 'free'.
+	if _, err := mgr.DB().ExecContext(ctx,
+		`UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id='u1'`); err != nil {
+		t.Fatalf("users.last_login_at column must exist: %v", err)
+	}
+	var plan string
+	if err := mgr.DB().GetContext(ctx, &plan,
+		`SELECT plan FROM tenants WHERE id=?`, defaultTenant); err != nil {
+		t.Fatalf("tenants.plan column must exist: %v", err)
+	}
+	if plan != "free" {
+		t.Fatalf("tenants.plan must default to 'free', got %q", plan)
+	}
+}

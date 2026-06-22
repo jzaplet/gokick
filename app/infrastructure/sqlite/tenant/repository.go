@@ -19,8 +19,8 @@ func NewRepository(db *database.SqliteManager) *Repository {
 }
 
 func (r *Repository) Save(ctx context.Context, t *tenant.Tenant) error {
-	const q = `INSERT INTO tenants (id, name, created_at, updated_at)
-		VALUES (:id, :name, :created_at, :updated_at)`
+	const q = `INSERT INTO tenants (id, name, plan, created_at, updated_at)
+		VALUES (:id, :name, :plan, :created_at, :updated_at)`
 	_, err := r.Conn(ctx).NamedExecContext(ctx, q, t)
 	return err
 }
