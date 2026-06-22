@@ -293,6 +293,7 @@ func CreateApplication(
 		wire.Bind(new(token.TokenRepository), new(*sqlitetoken.Repository)),
 		wire.Bind(new(job.Repository), new(*sqlitejob.Repository)),
 		wire.Bind(new(tenant.Repository), new(*sqlitetenant.Repository)),
+		wire.Bind(new(shared.Transactor), new(*database.SqliteManager)),
 		wire.Bind(new(shared.Seeder), new(*sqliteseeder.Seeder)),
 		wire.Bind(new(shared.AuditLogger), new(*sqliteaudit.Repository)),
 		sqliteuser.NewRepository,

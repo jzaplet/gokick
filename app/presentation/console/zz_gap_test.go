@@ -282,7 +282,7 @@ func newCreateUserCmd(fx *testfx.Fixture, multitenant bool) *cobra.Command {
 	createTenant := tenantcmd.NewCreateTenantHandler(fx.Tenants)
 	getTenant := tenantqry.NewGetTenantHandler(fx.Tenants)
 	cmd := NewCreateUserCommand(
-		createUser, createTenant, getTenant, &config.Config{Multitenancy: multitenant},
+		createUser, createTenant, getTenant, &config.Config{Multitenancy: multitenant}, fx.DB,
 	).Command()
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true
@@ -397,5 +397,27 @@ func TestCreateTenantCommand_CreatesTenant(t *testing.T) {
 	tn, _ := fx.Tenants.FindByName(ctx, "Acme")
 	if tn == nil {
 		t.Fatal("create-tenant must persist the tenant")
+	}
+}
+
+// Rollback: --tenant-name creates a tenant before the user; if user creation
+// fails (here: duplicate nickname), the just-created tenant must be rolled back —
+// no orphan. The CLI bypasses the bus, so create-user wraps both in its own tx.
+func TestCreateUserCommand_TenantNameRolledBackWhenUserFails(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "cu_rollback.db"))
+
+	// A user named "alice" already exists → create-user with the same nickname fails.
+	fx.SeedUserInTenant(t, "alice", "user", shared.DefaultTenantID)
+
+	cmd := newCreateUserCmd(fx, true)
+	cmd.SetArgs([]string{"-n", "alice", "-p", "secret12", "-r", "user", "--tenant-name", "Beta"})
+	if err := cmd.ExecuteContext(ctx); err == nil {
+		t.Fatal("create-user with a duplicate nickname must fail")
+	}
+
+	// The tenant 'Beta' must NOT exist — the failed user creation rolled it back.
+	if tn, _ := fx.Tenants.FindByName(ctx, "Beta"); tn != nil {
+		t.Fatalf("orphan tenant: 'Beta' must be rolled back when user creation fails, got %+v", tn)
 	}
 }

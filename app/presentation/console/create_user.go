@@ -25,6 +25,7 @@ type CreateUserCommand struct {
 	createTenant *tenantcmd.CreateTenantHandler
 	getTenant    *tenantqry.GetTenantHandler
 	config       *config.Config
+	tx           shared.Transactor
 }
 
 func NewCreateUserCommand(
@@ -32,12 +33,14 @@ func NewCreateUserCommand(
 	createTenant *tenantcmd.CreateTenantHandler,
 	getTenant *tenantqry.GetTenantHandler,
 	cfg *config.Config,
+	tx shared.Transactor,
 ) *CreateUserCommand {
 	return &CreateUserCommand{
 		createUser:   createUser,
 		createTenant: createTenant,
 		getTenant:    getTenant,
 		config:       cfg,
+		tx:           tx,
 	}
 }
 
@@ -85,13 +88,37 @@ func (c *CreateUserCommand) run(ctx context.Context, a createUserArgs) error {
 		return err
 	}
 
-	// Validate the user inputs BEFORE creating a tenant, so a bad input (or the
-	// superadmin role, which create-user refuses) can't leave an orphan tenant
-	// behind when --tenant-name would create one.
+	// Fail fast on bad input (and the superadmin role create-user refuses) before
+	// opening a transaction — cheaper than creating a tenant and rolling it back.
+	// The transaction below is the actual orphan-tenant safety net.
 	if err := validateUserInput(a.nickname, a.password, a.email, a.role); err != nil {
 		return err
 	}
 
+	// --tenant-name creates a tenant before the user; the CLI bypasses the bus
+	// (no TransactionMiddleware), so wrap tenant resolution + user creation in one
+	// transaction here — otherwise a failed user creation (e.g. duplicate nickname)
+	// leaves the just-created tenant orphaned. The repos are tx-aware via
+	// r.Conn(ctx), so a rollback undoes the tenant too.
+	txCtx, err := c.tx.BeginTx(ctx)
+	if err != nil {
+		return err
+	}
+	if err := c.create(txCtx, a); err != nil {
+		_ = c.tx.Rollback(txCtx)
+
+		return err
+	}
+	if err := c.tx.Commit(txCtx); err != nil {
+		return err
+	}
+
+	fmt.Printf("user %q (%s) created\n", a.nickname, a.role)
+
+	return nil
+}
+
+func (c *CreateUserCommand) create(ctx context.Context, a createUserArgs) error {
 	tenantID, err := c.resolveTenant(ctx, a.tenantID, a.tenantName)
 	if err != nil {
 		return err
@@ -100,18 +127,12 @@ func (c *CreateUserCommand) run(ctx context.Context, a createUserArgs) error {
 		ctx = shared.ContextWithTenantID(ctx, tenantID)
 	}
 
-	if err := c.createUser.Handle(ctx, usercmd.CreateUserCommand{
+	return c.createUser.Handle(ctx, usercmd.CreateUserCommand{
 		Nickname: a.nickname,
 		Password: a.password,
 		Email:    a.email,
 		Role:     a.role,
-	}); err != nil {
-		return err
-	}
-
-	fmt.Printf("user %q (%s) created\n", a.nickname, a.role)
-
-	return nil
+	})
 }
 
 // checkTenantFlags enforces the multitenancy matrix: on → a tenant flag is

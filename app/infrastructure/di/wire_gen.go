@@ -126,7 +126,7 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	seedCommand := console.NewSeedCommand(seederSeeder)
 	createTenantHandler := command5.NewCreateTenantHandler(tenantRepository)
 	getTenantHandler := query5.NewGetTenantHandler(tenantRepository)
-	createUserCommand := console.NewCreateUserCommand(createUserHandler, createTenantHandler, getTenantHandler, configConfig)
+	createUserCommand := console.NewCreateUserCommand(createUserHandler, createTenantHandler, getTenantHandler, configConfig, sqliteManager)
 	createSuperAdminHandler := command4.NewCreateSuperAdminHandler(userRepository, passwordHasher)
 	createSuperAdminCommand := console.NewCreateSuperAdminCommand(createSuperAdminHandler)
 	createTenantCommand := console.NewCreateTenantCommand(createTenantHandler)
