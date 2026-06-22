@@ -152,6 +152,7 @@ deps:
       - domain_user
       - domain_token
       - domain_job
+      - domain_tenant
     anyVendorDeps: true
 
   # Test fixtures — may wire real infrastructure for integration tests.
@@ -216,6 +217,7 @@ deps:
       - response
       - testfx
       - domain_user
+      - domain_tenant
   request:
     anyVendorDeps: true
   http_middleware:

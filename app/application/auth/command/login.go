@@ -130,6 +130,10 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (LoginResul
 	// block an otherwise-valid login.
 	_ = h.users.ResetFailedLogin(ctx, u.ID)
 
+	// Stamp last_login_at for the superadmin platform overview. Best-effort,
+	// raw pool (outside the bus tx) — analytics, never a reason to fail login.
+	_ = h.users.RecordLogin(ctx, u.ID)
+
 	accessToken, accessExpiresIn, err := h.jwt.GenerateAccessToken(&shared.AuthClaims{
 		UserID:   u.ID,
 		Role:     u.Role,

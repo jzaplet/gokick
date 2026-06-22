@@ -14,6 +14,7 @@ import (
 	"gokick/app/application/bus/middleware"
 	query3 "gokick/app/application/dashboard/query"
 	job2 "gokick/app/application/job"
+	query4 "gokick/app/application/platform/query"
 	command2 "gokick/app/application/profile/command"
 	"gokick/app/application/profile/query"
 	command3 "gokick/app/application/user/command"
@@ -28,6 +29,7 @@ import (
 	"gokick/app/infrastructure/sqlite/audit"
 	"gokick/app/infrastructure/sqlite/job"
 	"gokick/app/infrastructure/sqlite/seeder"
+	"gokick/app/infrastructure/sqlite/tenant"
 	"gokick/app/infrastructure/sqlite/token"
 	"gokick/app/infrastructure/sqlite/user"
 	"gokick/app/infrastructure/worker"
@@ -98,7 +100,11 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	getUserDashboardHandler := query3.NewGetUserDashboardHandler()
 	getAdminDashboardHandler := query3.NewGetAdminDashboardHandler()
 	dashboardHandler := handler.NewDashboardHandler(queryBus, getUserDashboardHandler, getAdminDashboardHandler)
-	serverServer := server.NewServer(configConfig, logger, reporter, jwtService, rateLimiters, ipExtractor, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler)
+	listAllUsersHandler := query4.NewListAllUsersHandler(userRepository)
+	tenantRepository := tenant.NewRepository(sqliteManager)
+	listTenantsHandler := query4.NewListTenantsHandler(tenantRepository)
+	platformHandler := handler.NewPlatformHandler(queryBus, listAllUsersHandler, listTenantsHandler)
+	serverServer := server.NewServer(configConfig, logger, reporter, jwtService, rateLimiters, ipExtractor, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler, platformHandler)
 	v2 := provideSchedulerJobs(tokenRepository)
 	scheduler, err := provideScheduler(logger, v2)
 	if err != nil {
@@ -285,5 +291,5 @@ func provideWorker(
 }
 
 func providePermissionsRegistry() *shared.PermissionsRegistry {
-	return shared.NewPermissionsRegistry([]shared.Permissioned{command.LogoutCommand{}, command2.ChangePasswordCommand{}, query.GetProfileQuery{}, command3.CreateUserCommand{}, command3.UpdateUserCommand{}, command3.DeleteUserCommand{}, query2.ListUsersQuery{}, query3.GetUserDashboardQuery{}, query3.GetAdminDashboardQuery{}})
+	return shared.NewPermissionsRegistry([]shared.Permissioned{command.LogoutCommand{}, command2.ChangePasswordCommand{}, query.GetProfileQuery{}, command3.CreateUserCommand{}, command3.UpdateUserCommand{}, command3.DeleteUserCommand{}, query2.ListUsersQuery{}, query3.GetUserDashboardQuery{}, query3.GetAdminDashboardQuery{}, query4.ListAllUsersQuery{}, query4.ListTenantsQuery{}})
 }

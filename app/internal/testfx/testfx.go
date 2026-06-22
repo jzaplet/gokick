@@ -136,6 +136,20 @@ func ExecCommand[R any](
 	return bus.Exec(ctx, cmdBus.Bus, name, cmd, handlerFn)
 }
 
+// ExecQuery is ExecCommand's read-side twin: it dispatches q through queryBus so
+// a query handler test runs the full read chain (recovery, logging, authorize,
+// tenant). Same arch-lint rationale — application packages can't import `bus`
+// directly, so they go through this fixture helper.
+func ExecQuery[R any](
+	ctx context.Context,
+	queryBus *bus.QueryBus,
+	name string,
+	q any,
+	handlerFn func(ctx context.Context) (R, error),
+) (R, error) {
+	return bus.Exec(ctx, queryBus.Bus, name, q, handlerFn)
+}
+
 // NewJwt returns a JwtService configured with the given access expiration.
 // Use when a test needs only JWT (no DB) or a non-default access expiry
 // (e.g. negative duration for expired-token scenarios).

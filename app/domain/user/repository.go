@@ -14,6 +14,17 @@ type Repository interface {
 	FindAllActive(ctx context.Context) ([]User, error)
 	FindAll(ctx context.Context) ([]User, error)
 
+	// FindAllAcrossTenants returns every user regardless of tenant — the
+	// deliberate INVERSE of FindAll's tenant scoping. Reserved for the superadmin
+	// platform plane (platform:overview); the query carries a tenant-scope-exempt
+	// marker so the conformance gate admits it consciously.
+	FindAllAcrossTenants(ctx context.Context) ([]User, error)
+
+	// RecordLogin stamps last_login_at = now for the user on a successful login.
+	// Best-effort analytics; runs OUTSIDE the caller's tx (raw pool) like
+	// ResetFailedLogin, so it neither blocks login nor depends on the bus commit.
+	RecordLogin(ctx context.Context, userID string) error
+
 	// RecordFailedLogin atomically bumps the failed-login counter for the
 	// user. The implementation decides reset / lock inside a single SQL
 	// statement so two concurrent failed logins can't race past the

@@ -91,6 +91,28 @@ func (r *Repository) FindAll(ctx context.Context) ([]user.User, error) {
 	return users, err
 }
 
+// FindAllAcrossTenants is the platform-plane read: every user, all tenants, the
+// deliberate inverse of FindAll. It does NOT call r.Tenant(ctx) — the marker
+// makes the cross-tenant scope explicit to the conformance gate. Ordered by
+// tenant then nickname so the superadmin overview groups naturally.
+func (r *Repository) FindAllAcrossTenants(ctx context.Context) ([]user.User, error) {
+	var users []user.User
+	err := r.Conn(ctx).SelectContext(ctx, &users,
+		`SELECT * FROM users /* tenant-scope-exempt: platform superadmin */ ORDER BY tenant_id, nickname`)
+	return users, err
+}
+
+// RecordLogin stamps last_login_at on successful login. Raw pool (r.DB.DB()),
+// outside the bus tx — same rationale as ResetFailedLogin: a successful login
+// should record even if a later step in the handler rolls back. Best-effort.
+func (r *Repository) RecordLogin(ctx context.Context, userID string) error {
+	_, err := r.DB.DB().ExecContext(ctx,
+		`UPDATE users SET last_login_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?
+		 /* tenant-scope-exempt: stamp successful login by id */`,
+		userID)
+	return err
+}
+
 // RecordFailedLogin runs ENTIRELY in SQL so the counter decision (reset
 // after the window, increment otherwise, lock when threshold reached) is
 // atomic relative to other concurrent failed logins for the same row.

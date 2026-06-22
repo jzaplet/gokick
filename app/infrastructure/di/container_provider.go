@@ -10,12 +10,14 @@ import (
 	busmw "gokick/app/application/bus/middleware"
 	dashboardqry "gokick/app/application/dashboard/query"
 	jobapp "gokick/app/application/job"
+	platformqry "gokick/app/application/platform/query"
 	profilecmd "gokick/app/application/profile/command"
 	profileqry "gokick/app/application/profile/query"
 	usercmd "gokick/app/application/user/command"
 	userqry "gokick/app/application/user/query"
 	"gokick/app/domain/job"
 	"gokick/app/domain/shared"
+	"gokick/app/domain/tenant"
 	"gokick/app/domain/token"
 	"gokick/app/domain/user"
 	"gokick/app/infrastructure/config"
@@ -25,6 +27,7 @@ import (
 	sqliteaudit "gokick/app/infrastructure/sqlite/audit"
 	sqlitejob "gokick/app/infrastructure/sqlite/job"
 	sqliteseeder "gokick/app/infrastructure/sqlite/seeder"
+	sqlitetenant "gokick/app/infrastructure/sqlite/tenant"
 	sqlitetoken "gokick/app/infrastructure/sqlite/token"
 	sqliteuser "gokick/app/infrastructure/sqlite/user"
 	"gokick/app/infrastructure/worker"
@@ -226,6 +229,8 @@ func providePermissionsRegistry() *shared.PermissionsRegistry {
 		userqry.ListUsersQuery{},
 		dashboardqry.GetUserDashboardQuery{},
 		dashboardqry.GetAdminDashboardQuery{},
+		platformqry.ListAllUsersQuery{},
+		platformqry.ListTenantsQuery{},
 	})
 }
 
@@ -259,11 +264,13 @@ func CreateApplication(
 		wire.Bind(new(user.Repository), new(*sqliteuser.Repository)),
 		wire.Bind(new(token.TokenRepository), new(*sqlitetoken.Repository)),
 		wire.Bind(new(job.Repository), new(*sqlitejob.Repository)),
+		wire.Bind(new(tenant.Repository), new(*sqlitetenant.Repository)),
 		wire.Bind(new(shared.Seeder), new(*sqliteseeder.Seeder)),
 		wire.Bind(new(shared.AuditLogger), new(*sqliteaudit.Repository)),
 		sqliteuser.NewRepository,
 		sqlitetoken.NewRepository,
 		sqlitejob.NewRepository,
+		sqlitetenant.NewRepository,
 		sqliteseeder.NewSeeder,
 		sqliteaudit.NewRepository,
 		authcmd.NewLoginHandler,
@@ -275,6 +282,8 @@ func CreateApplication(
 		usercmd.NewUpdateUserHandler,
 		usercmd.NewDeleteUserHandler,
 		userqry.NewListUsersHandler,
+		platformqry.NewListAllUsersHandler,
+		platformqry.NewListTenantsHandler,
 		dashboardqry.NewGetUserDashboardHandler,
 		dashboardqry.NewGetAdminDashboardHandler,
 		providePublicFS,
@@ -285,6 +294,7 @@ func CreateApplication(
 		handler.NewProfileHandler,
 		handler.NewAdminUsersHandler,
 		handler.NewDashboardHandler,
+		handler.NewPlatformHandler,
 		server.NewServer,
 		console.NewServeCommand,
 		console.NewSeedCommand,

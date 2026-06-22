@@ -25,6 +25,17 @@ type Tenant struct {
 	UpdatedAt time.Time `db:"updated_at"`
 }
 
+// Overview is a read model for the superadmin platform plane: a tenant plus a
+// count of its users. The cross-tenant aggregate is a single GROUP BY tenant_id
+// — trivial under row-level multitenancy — and is the exact shape the product
+// reuses to SUM the tenant_usage ledger for per-tenant token spend.
+type Overview struct {
+	ID        string `db:"id"`
+	Name      string `db:"name"`
+	Plan      string `db:"plan"`
+	UserCount int    `db:"user_count"`
+}
+
 // NewTenant builds a tenant with a fresh UUIDv7 id. The bootstrap "Default"
 // tenant is created by migration, not this factory.
 func NewTenant(name string) *Tenant {

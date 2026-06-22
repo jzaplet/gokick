@@ -33,3 +33,18 @@ func (r *Repository) FindByID(ctx context.Context, id string) (*tenant.Tenant, e
 	}
 	return &t, err
 }
+
+// FindAllWithUserCount is the platform-plane aggregate: each tenant plus its
+// user count via a single GROUP BY tenant_id. The LEFT JOIN touches the
+// tenant-owned users table cross-tenant, so the query carries the platform
+// exempt marker (tenants itself is control-plane / exempt).
+func (r *Repository) FindAllWithUserCount(ctx context.Context) ([]tenant.Overview, error) {
+	var rows []tenant.Overview
+	err := r.Conn(ctx).SelectContext(ctx, &rows,
+		`SELECT t.id, t.name, t.plan, COUNT(u.id) AS user_count
+		   FROM tenants t
+		   LEFT JOIN users u ON u.tenant_id = t.id /* tenant-scope-exempt: platform superadmin */
+		  GROUP BY t.id, t.name, t.plan
+		  ORDER BY t.name`)
+	return rows, err
+}
