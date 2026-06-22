@@ -25,7 +25,7 @@ Tenhle dokument je **forward-looking**: co zbývá jako aktuální priorita a co
 
 ## 🚀 Aktuální priorita — Multitenancy + observabilita (F6)
 
-gokick dostává **zapínatelný row-level multitenancy** (jedním přepínačem; vypnuto = dnešní chování) a **OpenTelemetry**. Obojí je široce přenositelné do dalších projektů — chceme to mít připravené v jádře, ne dodělávat per-projekt a pak portovat zpět. Pořadí je **závazné**: kroky 1–4 jsou multitenant páteř (odladitelná na jednom default tenantu), krok 5 běží paralelně, krok 6 (OTEL) až na finálním tvaru stroje, krok 7 (Postgres) je odložený.
+gokick dostává **zapínatelný row-level multitenancy** (jedním přepínačem; vypnuto = dnešní chování) a **OpenTelemetry**. Obojí je široce přenositelné do dalších projektů — chceme to mít připravené v jádře, ne dodělávat per-projekt a pak portovat zpět. Pořadí je **závazné**: kroky 1–3 jsou single-tenant foundation (odladitelná na default tenantu, nula změn chování), krok 4 **zapíná multitenant** (JWT nese tenant + tenant per user), krok 5 běží paralelně, krok 6 (OTEL) až na finálním tvaru stroje, krok 7 (Postgres) je odložený. Implementace běží v [PR #15](https://github.com/jzaplet/gokick/pull/15) po fázích (Krok 1–2 hotové).
 
 **Proč tenant a ne `user_id`.** `user_id` je „kdo jsi", `tenant_id` je „čí jsou data" — dnes splývají 1:1, ale scopovat podle `user_id` natvrdo říká „navždy 1 user = 1 dataset". Tenant je hranice vlastnictví: unese týmy, převod vlastnictví, per-workspace billing/kvóty i service accounts. Hlavně: `tenant_id ≈ user_id` teď je no-op, kdežto `user_id → tenant_id` potom je backfill + přepis všech dotazů pod zátěží. Výchozí cesta přepínače: **auto 1 tenant per user** při signupu (owner = user), nula UX rozdílu dnes.
 
@@ -43,25 +43,25 @@ gokick dostává **zapínatelný row-level multitenancy** (jedním přepínačem
 - [ ] **`TenantResolver` interface** + default **single-tenant no-op** resolver.
 - [ ] Mergovatelné samostatně: žádná tabulka zatím sloupec nenese → chování = dnešek.
 
-### Krok 2 — `domain/tenant` + bootstrap + backfill
+### Krok 2 — Schema foundation (`tenants` tabulka + `users.tenant_id`)
 
-- [ ] **`domain/tenant/`** — entita + `Repository` + arch-lint **`domain_tenant`** komponenta + `mayDependOn` granty od konzumentů.
-- [ ] **Migrace `tenants`** (control-plane) + `users.tenant_id`.
-- [ ] **Bootstrap tenant row + backfill** existujících `users.tenant_id` **dříve**, než lze zapnout NOT NULL FK (krok 3).
-- [ ] **Seeder + `console/create_user.go`** musí tenant resolvovat/zakládat — jinak po NOT NULL FK selžou.
-- [ ] **Auto 1 tenant per user** v `CreateUserHandler` — výchozí cesta přepínače (boilerplate, ne produkt).
-- [ ] No-op resolver z kroku 1 vrací **id bootstrap tenanta**, ne prázdno (po kroku 3 každý zápis potřebuje reálné id).
+- [ ] **Migrace `tenants`** (control-plane) + bootstrap „Default" tenant (id = `shared.DefaultTenantID`, nil UUID — `DefaultTenantResolver` z Kroku 1 už ho vrací).
+- [ ] **`users.tenant_id TEXT NOT NULL DEFAULT '<nil UUID>'`** — `ADD COLUMN` s defaultem **sám backfillne** existující řádky i ostampuje nové; user repo `Save` sloupec **vynechává** → DB default vždy aplikuje, žádný creation path nezapíše prázdnou hodnotu (nemusím sahat na seeder/CLI/fixtures).
+- [ ] **`User.TenantID`** pole + `NewUser` stampuje default (in-memory konzistence; load-bearing je DB default).
 
 ### Krok 3 — Row-level enforcement + worker propagace
 
-- [ ] **`tenant_id NOT NULL` + FK** na owned tabulkách, composite indexy `(tenant_id, …)`.
+- [ ] **`tenant_id` FK** na owned tabulkách (SQLite neumí `ALTER ADD` FK → **table-rebuild** migrace: nový `users` s FK, copy, drop, rename) + composite indexy `(tenant_id, …)`. **Default z Kroku 2 zůstává** — dropne se až v Kroku 4 spolu s explicitním stampingem; dřív by NOT NULL bez defaultu + `Save` vynechávající sloupec shodil každý INSERT.
 - [ ] **`BaseRepository.Tenant(ctx)`** helper — v multitenant režimu panika, když tenant chybí (nedovolí nescopovaný dotaz).
 - [ ] **`zz_tenant_test.go`** conformance scan SQL.
 - [ ] **Worker tenant propagace (nejvyšší hodnota celé fáze):** worker obchází bus → `TenantMiddleware` se na job handlery **nikdy nespustí**. Stampuj `jobs.tenant_id` **při enqueue** (in-bus přes JobDispatcher ctx) a worker v `runWithinTx` **obnoví `tenant_id` do ctx z claimnutého `jobs` řádku** před voláním handleru. `ClaimDue` zůstává **globální drain** (bez tenant filtru — jeden worker obsluhuje všechny tenanty) → documented conformance exempce. **Musí přijít s páteří, ne se objevit potom** — jinak první tenant-owned zápis z jobu = tvrdý NOT NULL break a tiché leaky na čtení.
 
-### Krok 4 — JWT nese tenant
+### Krok 4 — Multitenant enable (JWT + `domain/tenant` + auto-tenant)
 
-- [ ] `tenant_id` do JWT claimu (mint + verify) a kopie do `AuthClaims`.
+- [ ] **`tenant_id` do JWT** (mint + verify) a kopie do `AuthClaims` → `DefaultTenantResolver` ho začne honorovat (připraveno z Kroku 1).
+- [ ] **`domain/tenant/`** — entita + `Repository` + arch-lint **`domain_tenant`** komponenta + `mayDependOn` granty + sqlite impl + DI. Vzniká **až tady** — první Go konzument je signup (v single-tenant nic tenant repo nekonzumuje, dřív by byl spekulativní unwired kód).
+- [ ] **Auto 1 tenant per user** při signupu — `CreateUserHandler` / seeder / `console/create_user.go` zakládají + stampují tenant.
+- [ ] **`Save` píše `tenant_id` explicitně** + **drop default** z `users.tenant_id`. Neoddělitelný celek s „auto-tenant per user" výše: od teď musí každý creation path stampovat resolvovaný tenant.
 
 ### Krok 5 — Konfigurovatelný job lease + heartbeat (paralelní)
 
