@@ -1,6 +1,7 @@
 package sqlite_test
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -14,89 +15,112 @@ import (
 	"testing"
 )
 
-// Krok 3 — tenant conformance gate.
+// Krok 3/4 — tenant conformance gate (per-query).
 //
-// Every table a SQLite repository touches must be CLASSIFIED: either
-// tenant-owned (its queries must scope by tenant_id — that half is enforced
-// once such a table exists, Krok 4) or exempt (control-plane / identity-root /
-// global). A table in NEITHER list fails this test, so the first product table
-// cannot ship without a conscious tenant decision.
+// Every SQL query in a SQLite repository is checked:
+//   - a query touching a TENANT-OWNED table must scope by tenant_id, OR carry an
+//     inline /* tenant-scope-exempt: reason */ marker (auth/identity queries that
+//     legitimately run before/without a tenant);
+//   - a query touching an EXEMPT table (control-plane / global) is fine;
+//   - a query touching an UNCLASSIFIED table fails — so a new product table can't
+//     ship without a conscious tenant decision ("born scoped").
 //
-// Today there are no tenant-owned tables (users is identity-root: login/refresh
-// look it up before any tenant is known), so everything is exempt. This gate is
-// the guardrail that bites the moment that changes.
+// users is tenant-owned: admin reads/writes scope by tenant_id; the login /
+// identity queries carry the exempt marker. Resolution is data-driven (the JWT
+// carries the tenant); this gate enforces that the queries actually use it.
 
-// tenantOwnedTables — queries MUST include tenant_id. Empty until the first real
-// tenant-owned table lands (Krok 4 / product).
-var tenantOwnedTables = map[string]bool{}
+const exemptMarker = "tenant-scope-exempt"
 
-// exemptTables — legitimately unscoped. Mirrors docs/framework/gokick-roadmap.md
-// ("Legitimně nescopované").
+// tenantOwnedTables — every query must scope by tenant_id or carry the marker.
+var tenantOwnedTables = map[string]bool{
+	"users": true,
+}
+
+// exemptTables — control-plane / global, never tenant-scoped.
 var exemptTables = map[string]bool{
-	"users":            true, // identity-root; login/refresh look it up pre-tenant. Krok 4 scopes admin queries.
 	"refresh_tokens":   true, // keyed by token hash (a secret); refresh runs without an access token.
 	"audit_log":        true, // control-plane, raw pool, records pre-auth events.
-	"jobs":             true, // ClaimDue is a global drain; the tenant rides on the row, not the claim query.
-	"tenants":          true, // the tenant registry itself (control-plane).
+	"jobs":             true, // ClaimDue is a global drain; the tenant rides on the row, not the claim.
+	"tenants":          true, // the tenant registry itself.
 	"sqlite_master":    true, // SQLite internals.
 	"sqlite_sequence":  true,
 	"goose_db_version": true,
 }
 
-func isClassified(table string) bool {
-	return tenantOwnedTables[table] || exemptTables[table]
-}
-
 var (
 	sqlVerbRe    = regexp.MustCompile(`(?i)\b(?:select|insert|update|delete)\b`)
-	sqlCommentRe = regexp.MustCompile(`--[^\n]*`)
+	sqlCommentRe = regexp.MustCompile(`(?s)/\*.*?\*/|--[^\n]*`)
 	tableRe      = regexp.MustCompile(`(?i)\b(?:from|into|update|join)\s+([a-zA-Z_][a-zA-Z0-9_]*)`)
 )
 
-// tablesInSQL returns the table names referenced in a SQL string (lowercased).
-// Strings without a SQL verb are ignored (prose/log lines don't match), and SQL
-// line comments are stripped first so "-- pre-update column" can't masquerade
-// as `UPDATE column`.
+func stripSQLComments(s string) string { return sqlCommentRe.ReplaceAllString(s, " ") }
+
+// tablesInSQL returns the table names a SQL string references (lowercased).
+// Comments are stripped first so neither prose nor the exempt marker can be
+// mistaken for a table.
 func tablesInSQL(s string) []string {
 	if !sqlVerbRe.MatchString(s) {
 		return nil
 	}
-	s = sqlCommentRe.ReplaceAllString(s, " ")
+	stripped := stripSQLComments(s)
 	var out []string
-	for _, m := range tableRe.FindAllStringSubmatch(s, -1) {
+	for _, m := range tableRe.FindAllStringSubmatch(stripped, -1) {
 		out = append(out, strings.ToLower(m[1]))
 	}
 	return out
 }
 
-// tablesInGoSource extracts table names from every string literal in Go source
-// (so SQL mentioned in // comments is ignored — only real query strings). src is
-// nil to read the file at name, or a string/[]byte to parse directly.
-func tablesInGoSource(t *testing.T, name string, src any) []string {
+// violationsInSQL classifies a single query string. tenant_id is checked on the
+// comment-stripped SQL (so a comment mentioning it doesn't count as scoping);
+// the exempt marker is checked on the raw string (it lives in a comment).
+func violationsInSQL(s string) []string {
+	tables := tablesInSQL(s)
+	if len(tables) == 0 {
+		return nil
+	}
+	scopedOrExempt := strings.Contains(stripSQLComments(s), "tenant_id") ||
+		strings.Contains(s, exemptMarker)
+
+	var v []string
+	for _, tbl := range tables {
+		switch {
+		case exemptTables[tbl]:
+		case tenantOwnedTables[tbl]:
+			if !scopedOrExempt {
+				v = append(v, fmt.Sprintf(
+					"unscoped query on tenant-owned table %q (add a tenant_id filter, "+
+						"or a /* %s: reason */ marker if it is a legitimate identity/auth query)",
+					tbl, exemptMarker))
+			}
+		default:
+			v = append(v, fmt.Sprintf(
+				"unclassified table %q (declare it in tenantOwnedTables or exemptTables)", tbl))
+		}
+	}
+	return v
+}
+
+// sqlStringsInGoSource returns every string literal in Go source (so SQL in //
+// comments is ignored — only real query strings). src is nil to read the file at
+// name, or a string/[]byte to parse directly.
+func sqlStringsInGoSource(t *testing.T, name string, src any) []string {
 	t.Helper()
 	f, err := parser.ParseFile(token.NewFileSet(), name, src, 0)
 	if err != nil {
 		t.Fatalf("parse %s: %v", name, err)
 	}
-	var tables []string
+	var lits []string
 	ast.Inspect(f, func(n ast.Node) bool {
 		lit, ok := n.(*ast.BasicLit)
 		if !ok || lit.Kind != token.STRING {
 			return true
 		}
-		val, err := strconv.Unquote(lit.Value)
-		if err != nil {
-			return true
+		if val, err := strconv.Unquote(lit.Value); err == nil {
+			lits = append(lits, val)
 		}
-		tables = append(tables, tablesInSQL(val)...)
 		return true
 	})
-	return tables
-}
-
-func tablesInFile(t *testing.T, path string) []string {
-	t.Helper()
-	return tablesInGoSource(t, path, nil)
+	return lits
 }
 
 // sqliteDir is this package's directory (app/infrastructure/sqlite), resolved
@@ -106,11 +130,10 @@ func sqliteDir() string {
 	return filepath.Dir(file)
 }
 
-// Every table touched by a repository must be classified. A new product repo
-// that touches an unclassified table fails here until it's declared tenant-owned
-// or exempt — the "born scoped" guarantee.
-func TestTenantConformance_AllRepoTablesClassified(t *testing.T) {
-	seen := map[string]bool{}
+// Every repo query scopes-or-exempts tenant-owned tables and touches no
+// unclassified table. An unscoped admin read or a new product table fails here.
+func TestTenantConformance_RepoQueriesScopedOrExempt(t *testing.T) {
+	var violations []string
 	err := filepath.WalkDir(sqliteDir(), func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -118,57 +141,55 @@ func TestTenantConformance_AllRepoTablesClassified(t *testing.T) {
 		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
-		for _, tbl := range tablesInFile(t, path) {
-			seen[tbl] = true
+		for _, s := range sqlStringsInGoSource(t, path, nil) {
+			for _, vio := range violationsInSQL(s) {
+				violations = append(violations, fmt.Sprintf("%s: %s", filepath.Base(path), vio))
+			}
 		}
 		return nil
 	})
 	if err != nil {
 		t.Fatalf("walk repos: %v", err)
 	}
-
-	var unclassified []string
-	for tbl := range seen {
-		if !isClassified(tbl) {
-			unclassified = append(unclassified, tbl)
-		}
-	}
-	if len(unclassified) > 0 {
-		sort.Strings(unclassified)
-		t.Fatalf("repo SQL touches unclassified table(s) %v — classify each in zz_tenant_test.go: "+
-			"tenantOwnedTables (queries must include tenant_id) or exemptTables (control-plane/identity-root)",
-			unclassified)
+	if len(violations) > 0 {
+		sort.Strings(violations)
+		t.Fatalf("tenant conformance violations:\n  %s", strings.Join(violations, "\n  "))
 	}
 }
 
-// The gate must actually bite: a table in neither list is a violation. Proves
-// TestTenantConformance_AllRepoTablesClassified would fail on a new unclassified
-// table rather than passing vacuously.
+// The gate bites an unclassified table.
 func TestTenantConformance_FlagsUnclassifiedTable(t *testing.T) {
-	tables := tablesInSQL("SELECT * FROM widgets WHERE id = ?")
-	if len(tables) == 0 {
-		t.Fatal("scanner failed to extract a table name from a SELECT")
-	}
-	for _, tbl := range tables {
-		if isClassified(tbl) {
-			t.Fatalf("fixture table %q must be unclassified to prove the gate bites", tbl)
-		}
+	if len(violationsInSQL("SELECT * FROM widgets WHERE id = ?")) == 0 {
+		t.Fatal("an unclassified table must be a violation; the gate does not bite")
 	}
 }
 
-// The file scan must actually extract tables from Go source — otherwise a broken
-// AST walk would make TestTenantConformance_AllRepoTablesClassified pass
-// vacuously (no tables found → nothing unclassified → green for the wrong reason).
-func TestTenantConformance_FileScanExtractsTables(t *testing.T) {
+// The gate bites an unscoped tenant-owned query and accepts a scoped or
+// exempt-marked one.
+func TestTenantConformance_TenantOwnedMustScopeOrMark(t *testing.T) {
+	if len(violationsInSQL("SELECT * FROM users WHERE nickname = ?")) == 0 {
+		t.Fatal("an unscoped tenant-owned query must be a violation")
+	}
+	if v := violationsInSQL("SELECT * FROM users WHERE tenant_id = ?"); len(v) != 0 {
+		t.Fatalf("a tenant_id-scoped query must pass, got %v", v)
+	}
+	if v := violationsInSQL(
+		"SELECT * FROM users WHERE id = ? /* tenant-scope-exempt: identity */"); len(v) != 0 {
+		t.Fatalf("an exempt-marked query must pass, got %v", v)
+	}
+}
+
+// The file scan actually extracts SQL from Go source — else the repo walk could
+// pass vacuously by finding nothing.
+func TestTenantConformance_FileScanExtractsSQL(t *testing.T) {
 	const fake = "package fake\n\nconst q = `SELECT * FROM widgets WHERE tenant_id = ?`\n"
-	tables := tablesInGoSource(t, "fake.go", fake)
 	found := false
-	for _, tbl := range tables {
-		if tbl == "widgets" {
+	for _, s := range sqlStringsInGoSource(t, "fake.go", fake) {
+		if strings.Contains(s, "widgets") {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("file scan must extract 'widgets' from Go source, got %v", tables)
+		t.Fatal("file scan must extract the SQL literal from Go source")
 	}
 }

@@ -68,6 +68,7 @@ func (s *Seeder) Seed(ctx context.Context) error {
 		PasswordHash: hash,
 		Email:        "admin@localhost",
 		Role:         string(user.RoleAdmin),
+		TenantID:     shared.DefaultTenantID,
 		Active:       true,
 	}
 

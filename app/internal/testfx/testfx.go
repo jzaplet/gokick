@@ -41,7 +41,17 @@ type Fixture struct {
 // New spins up an isolated SQLite database at dbPath, runs migrations and wires
 // real implementations of all auth dependencies. The DB is closed automatically
 // when the test completes.
-func New(t *testing.T, dbPath string) *Fixture {
+// New builds a single-tenant fixture (APP_MULTITENANCY off — the default).
+func New(t *testing.T, dbPath string) *Fixture { return newFixture(t, dbPath, false) }
+
+// NewMultitenant builds a fixture with multitenant enforcement ON (fail-closed):
+// a query whose context carries no tenant panics instead of falling back to the
+// default tenant. Use it to assert the fail-closed guard.
+func NewMultitenant(t *testing.T, dbPath string) *Fixture {
+	return newFixture(t, dbPath, true)
+}
+
+func newFixture(t *testing.T, dbPath string, multitenant bool) *Fixture {
 	t.Helper()
 
 	cfg := &config.Config{
@@ -49,6 +59,7 @@ func New(t *testing.T, dbPath string) *Fixture {
 		JWTSecret:            "test-secret-32-chars-long-enough",
 		JWTAccessExpiration:  15 * time.Minute,
 		JWTRefreshExpiration: 7 * 24 * time.Hour,
+		Multitenancy:         multitenant,
 	}
 
 	db, err := database.NewSqliteManager(cfg)
@@ -189,6 +200,34 @@ func (f *Fixture) SeedTenant(t *testing.T, name string) *tenant.Tenant {
 		t.Fatalf("save tenant: %v", err)
 	}
 	return tn
+}
+
+// SeedUserInTenant persists a user stamped with the given tenant id — used by
+// isolation tests to populate distinct tenants.
+func (f *Fixture) SeedUserInTenant(t *testing.T, nickname, role, tenantID string) *user.User {
+	t.Helper()
+	hash, err := f.Hasher.Hash("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	nn, err := user.NewNickname(nickname)
+	if err != nil {
+		t.Fatalf("nickname: %v", err)
+	}
+	r, err := user.NewRole(role)
+	if err != nil {
+		t.Fatalf("role: %v", err)
+	}
+	em, err := user.NewEmail(nickname + "@example.com")
+	if err != nil {
+		t.Fatalf("email: %v", err)
+	}
+	u := user.NewUser(nn, hash, em, r)
+	u.TenantID = tenantID
+	if err := f.Users.Save(context.Background(), u); err != nil {
+		t.Fatalf("save user: %v", err)
+	}
+	return u
 }
 
 // SeedRefreshToken persists a refresh token for the user and returns the raw (unhashed) value.

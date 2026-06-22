@@ -22,36 +22,55 @@ func NewRepository(db *database.SqliteManager) *Repository {
 }
 
 func (r *Repository) Save(ctx context.Context, u *user.User) error {
-	const q = `INSERT INTO users (id, nickname, password_hash, email, role, active, created_at, updated_at)
-		VALUES (:id, :nickname, :password_hash, :email, :role, :active, :created_at, :updated_at)`
+	const q = `INSERT INTO users (id, nickname, password_hash, email, role, tenant_id, active, created_at, updated_at)
+		VALUES (:id, :nickname, :password_hash, :email, :role, :tenant_id, :active, :created_at, :updated_at)`
 	_, err := r.Conn(ctx).NamedExecContext(ctx, q, u)
 	return err
 }
 
+// Update scopes the WHERE to the caller's tenant (r.Tenant) so an admin can
+// only modify users in their own tenant. Positional args (not the struct's
+// tenant_id) because the guard must be the CALLER's tenant, not the loaded
+// row's.
 func (r *Repository) Update(ctx context.Context, u *user.User) error {
-	const q = `UPDATE users SET nickname=:nickname, password_hash=:password_hash, email=:email,
-		role=:role, active=:active, updated_at=:updated_at WHERE id=:id`
-	_, err := r.Conn(ctx).NamedExecContext(ctx, q, u)
+	const q = `UPDATE users SET nickname=?, password_hash=?, email=?, role=?, active=?, updated_at=?
+		WHERE id=? AND tenant_id=?`
+	_, err := r.Conn(ctx).ExecContext(ctx, q,
+		u.Nickname, u.PasswordHash, u.Email, u.Role, u.Active, u.UpdatedAt, u.ID, r.Tenant(ctx))
 	return err
 }
 
 func (r *Repository) Delete(ctx context.Context, id string) error {
-	_, err := r.Conn(ctx).ExecContext(ctx, `DELETE FROM users WHERE id=?`, id)
+	_, err := r.Conn(ctx).
+		ExecContext(ctx, `DELETE FROM users WHERE id=? AND tenant_id=?`, id, r.Tenant(ctx))
 	return err
 }
 
+// FindByID loads the user named by an exact id — used by auth (the JWT subject)
+// and by self/admin lookups. It is an identity load, not a tenant-filtered list,
+// so it is exempt from tenant scoping (and runs before a tenant is known on the
+// refresh path). CHOSEN 4a boundary: an admin CAN read another tenant's user by
+// exact id. The enumerable list leak is closed (FindAll is tenant-scoped) and the
+// mutate paths are scoped (Update/Delete), so a targeted by-id read is a known,
+// smaller surface — not an oversight. Scope it too if that surface matters.
 func (r *Repository) FindByID(ctx context.Context, id string) (*user.User, error) {
 	var u user.User
-	err := r.Conn(ctx).GetContext(ctx, &u, `SELECT * FROM users WHERE id=?`, id)
+	err := r.Conn(ctx).GetContext(ctx, &u,
+		`SELECT * FROM users WHERE id=? /* tenant-scope-exempt: identity load by id */`, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, &shared.ValidationError{Field: "id", Message: "user not found"}
 	}
 	return &u, err
 }
 
+// FindByNickname is the login lookup — it runs before any tenant is resolved,
+// and nickname is globally unique, so it is a global identity lookup exempt
+// from tenant scoping.
 func (r *Repository) FindByNickname(ctx context.Context, nickname string) (*user.User, error) {
 	var u user.User
-	err := r.Conn(ctx).GetContext(ctx, &u, `SELECT * FROM users WHERE nickname=?`, nickname)
+	err := r.Conn(ctx).GetContext(ctx, &u,
+		`SELECT * FROM users WHERE nickname=? /* tenant-scope-exempt: global identity lookup (login) */`,
+		nickname)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -60,14 +79,15 @@ func (r *Repository) FindByNickname(ctx context.Context, nickname string) (*user
 
 func (r *Repository) FindAllActive(ctx context.Context) ([]user.User, error) {
 	var users []user.User
-	err := r.Conn(ctx).
-		SelectContext(ctx, &users, `SELECT * FROM users WHERE active=1 ORDER BY nickname`)
+	err := r.Conn(ctx).SelectContext(ctx, &users,
+		`SELECT * FROM users WHERE active=1 AND tenant_id=? ORDER BY nickname`, r.Tenant(ctx))
 	return users, err
 }
 
 func (r *Repository) FindAll(ctx context.Context) ([]user.User, error) {
 	var users []user.User
-	err := r.Conn(ctx).SelectContext(ctx, &users, `SELECT * FROM users ORDER BY nickname`)
+	err := r.Conn(ctx).SelectContext(ctx, &users,
+		`SELECT * FROM users WHERE tenant_id=? ORDER BY nickname`, r.Tenant(ctx))
 	return users, err
 }
 
@@ -94,6 +114,7 @@ func (r *Repository) RecordFailedLogin(
 	//   - if the resulting count hits the threshold → reset to 0 (so the
 	//     post-unlock cycle starts fresh) AND set locked_until
 	const q = `
+		/* tenant-scope-exempt: brute-force counter, runs pre/at-login by user id */
 		UPDATE users SET
 		    failed_login_attempts = CASE
 		        WHEN last_failed_login_at IS NULL
@@ -131,7 +152,8 @@ func (r *Repository) RecordFailedLogin(
 // if a later step in the same handler hits an error and rolls back.
 func (r *Repository) ResetFailedLogin(ctx context.Context, userID string) error {
 	_, err := r.DB.DB().ExecContext(ctx,
-		`UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?`,
+		`UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?
+		 /* tenant-scope-exempt: clear brute-force counter on successful login */`,
 		userID)
 	return err
 }
