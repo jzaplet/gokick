@@ -15,6 +15,8 @@ export const Permission = {
     PlatformOverview: 'platform:overview',
     PlatformUsersUpdate: 'platform:users:update',
     PlatformUsersDelete: 'platform:users:delete',
+    PlatformTenantsCreate: 'platform:tenants:create',
+    PlatformTenantsRead: 'platform:tenants:read',
 } as const;
 
 export type Permission = typeof Permission[keyof typeof Permission];

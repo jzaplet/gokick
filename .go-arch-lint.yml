@@ -242,3 +242,5 @@ deps:
       - database
       - application
       - bus
+      - domain_user
+      - domain_tenant

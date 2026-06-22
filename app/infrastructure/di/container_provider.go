@@ -14,6 +14,8 @@ import (
 	platformqry "gokick/app/application/platform/query"
 	profilecmd "gokick/app/application/profile/command"
 	profileqry "gokick/app/application/profile/query"
+	tenantcmd "gokick/app/application/tenant/command"
+	tenantqry "gokick/app/application/tenant/query"
 	usercmd "gokick/app/application/user/command"
 	userqry "gokick/app/application/user/query"
 	"gokick/app/domain/job"
@@ -252,6 +254,8 @@ func providePermissionsRegistry() *shared.PermissionsRegistry {
 		platformcmd.UpdatePlatformUserCommand{},
 		platformcmd.DeletePlatformUserCommand{},
 		platformcmd.CreateSuperAdminCommand{},
+		tenantcmd.CreateTenantCommand{},
+		tenantqry.GetTenantQuery{},
 	})
 }
 
@@ -312,6 +316,8 @@ func CreateApplication(
 		platformcmd.NewUpdatePlatformUserHandler,
 		platformcmd.NewDeletePlatformUserHandler,
 		platformcmd.NewCreateSuperAdminHandler,
+		tenantcmd.NewCreateTenantHandler,
+		tenantqry.NewGetTenantHandler,
 		dashboardqry.NewGetUserDashboardHandler,
 		dashboardqry.NewGetAdminDashboardHandler,
 		providePublicFS,
@@ -328,6 +334,7 @@ func CreateApplication(
 		console.NewSeedCommand,
 		console.NewCreateUserCommand,
 		console.NewCreateSuperAdminCommand,
+		console.NewCreateTenantCommand,
 		console.NewWorkerCommand,
 		console.NewRootCommand,
 		app.NewApplication,

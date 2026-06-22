@@ -18,6 +18,8 @@ import (
 	query4 "gokick/app/application/platform/query"
 	command2 "gokick/app/application/profile/command"
 	"gokick/app/application/profile/query"
+	command5 "gokick/app/application/tenant/command"
+	query5 "gokick/app/application/tenant/query"
 	command3 "gokick/app/application/user/command"
 	query2 "gokick/app/application/user/query"
 	job3 "gokick/app/domain/job"
@@ -122,11 +124,14 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	multitenant := provideMultitenant(configConfig)
 	seederSeeder := seeder.NewSeeder(userRepository, tenantRepository, passwordHasher, seedAdminPassword, seedSuperAdminPassword, seedAdminTenant, multitenant, logger)
 	seedCommand := console.NewSeedCommand(seederSeeder)
-	createUserCommand := console.NewCreateUserCommand(createUserHandler)
+	createTenantHandler := command5.NewCreateTenantHandler(tenantRepository)
+	getTenantHandler := query5.NewGetTenantHandler(tenantRepository)
+	createUserCommand := console.NewCreateUserCommand(createUserHandler, createTenantHandler, getTenantHandler, configConfig)
 	createSuperAdminHandler := command4.NewCreateSuperAdminHandler(userRepository, passwordHasher)
 	createSuperAdminCommand := console.NewCreateSuperAdminCommand(createSuperAdminHandler)
+	createTenantCommand := console.NewCreateTenantCommand(createTenantHandler)
 	workerCommand := console.NewWorkerCommand(worker)
-	rootCommand := console.NewRootCommand(serveCommand, seedCommand, createUserCommand, createSuperAdminCommand, workerCommand)
+	rootCommand := console.NewRootCommand(serveCommand, seedCommand, createUserCommand, createSuperAdminCommand, createTenantCommand, workerCommand)
 	migrationManager := database.NewMigrationManager(sqliteManager, logger)
 	application := app.NewApplication(rootCommand, migrationManager)
 	return application, nil
@@ -316,5 +321,5 @@ func provideWorker(
 }
 
 func providePermissionsRegistry() *shared.PermissionsRegistry {
-	return shared.NewPermissionsRegistry([]shared.Permissioned{command.LogoutCommand{}, command2.ChangePasswordCommand{}, query.GetProfileQuery{}, command3.CreateUserCommand{}, command3.UpdateUserCommand{}, command3.DeleteUserCommand{}, query2.ListUsersQuery{}, query3.GetUserDashboardQuery{}, query3.GetAdminDashboardQuery{}, query4.ListAllUsersQuery{}, query4.ListTenantsQuery{}, query4.GetStatsQuery{}, command4.UpdatePlatformUserCommand{}, command4.DeletePlatformUserCommand{}, command4.CreateSuperAdminCommand{}})
+	return shared.NewPermissionsRegistry([]shared.Permissioned{command.LogoutCommand{}, command2.ChangePasswordCommand{}, query.GetProfileQuery{}, command3.CreateUserCommand{}, command3.UpdateUserCommand{}, command3.DeleteUserCommand{}, query2.ListUsersQuery{}, query3.GetUserDashboardQuery{}, query3.GetAdminDashboardQuery{}, query4.ListAllUsersQuery{}, query4.ListTenantsQuery{}, query4.GetStatsQuery{}, command4.UpdatePlatformUserCommand{}, command4.DeletePlatformUserCommand{}, command4.CreateSuperAdminCommand{}, command5.CreateTenantCommand{}, query5.GetTenantQuery{}})
 }

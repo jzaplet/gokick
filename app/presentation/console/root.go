@@ -12,6 +12,7 @@ type RootCommand struct {
 	seedCmd             *SeedCommand
 	createUserCmd       *CreateUserCommand
 	createSuperAdminCmd *CreateSuperAdminCommand
+	createTenantCmd     *CreateTenantCommand
 	workerCmd           *WorkerCommand
 }
 
@@ -20,6 +21,7 @@ func NewRootCommand(
 	seedCmd *SeedCommand,
 	createUserCmd *CreateUserCommand,
 	createSuperAdminCmd *CreateSuperAdminCommand,
+	createTenantCmd *CreateTenantCommand,
 	workerCmd *WorkerCommand,
 ) *RootCommand {
 	root := &RootCommand{
@@ -27,6 +29,7 @@ func NewRootCommand(
 		seedCmd:             seedCmd,
 		createUserCmd:       createUserCmd,
 		createSuperAdminCmd: createSuperAdminCmd,
+		createTenantCmd:     createTenantCmd,
 		workerCmd:           workerCmd,
 	}
 
@@ -40,6 +43,7 @@ func NewRootCommand(
 	root.cmd.AddCommand(seedCmd.Command())
 	root.cmd.AddCommand(createUserCmd.Command())
 	root.cmd.AddCommand(createSuperAdminCmd.Command())
+	root.cmd.AddCommand(createTenantCmd.Command())
 	root.cmd.AddCommand(workerCmd.Command())
 
 	return root
