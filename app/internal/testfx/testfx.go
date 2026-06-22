@@ -86,6 +86,7 @@ func (*Fixture) HashToken(raw string) string {
 func (f *Fixture) NewBuses() (*bus.CommandBus, *bus.QueryBus, *bus.EventBus) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	checker := security.NewPermissionChecker()
+	resolver := security.NewDefaultTenantResolver()
 	reporter := shared.NopReporter{}
 
 	eventBus := bus.NewEventBus(
@@ -93,13 +94,13 @@ func (f *Fixture) NewBuses() (*bus.CommandBus, *bus.QueryBus, *bus.EventBus) {
 		busmw.LoggingMiddleware(logger),
 	)
 
-	commandChain := append(busmw.BaseChain(logger, checker, reporter),
+	commandChain := append(busmw.BaseChain(logger, checker, reporter, resolver),
 		busmw.DispatchEventsMiddleware(logger, eventBus),
 		busmw.TransactionMiddleware(f.DB),
 	)
 
 	return bus.NewCommandBus(commandChain...),
-		bus.NewQueryBus(busmw.BaseChain(logger, checker, reporter)...),
+		bus.NewQueryBus(busmw.BaseChain(logger, checker, reporter, resolver)...),
 		eventBus
 }
 

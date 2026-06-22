@@ -76,7 +76,8 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	}
 	jobDispatcher := provideJobDispatcher(repository, handlerRegistry)
 	auditRepository := audit.NewRepository(sqliteManager)
-	commandBus := provideCommandBus(logger, sqliteManager, permissionChecker, eventBus, jobDispatcher, auditRepository, reporter)
+	tenantResolver := provideTenantResolver()
+	commandBus := provideCommandBus(logger, sqliteManager, permissionChecker, eventBus, jobDispatcher, auditRepository, reporter, tenantResolver)
 	userRepository := user.NewRepository(sqliteManager)
 	tokenRepository := token.NewRepository(sqliteManager)
 	passwordHasher := providePasswordHasher()
@@ -85,7 +86,7 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	logoutHandler := command.NewLogoutHandler(tokenRepository)
 	permissionsRegistry := providePermissionsRegistry()
 	authHandler := handler.NewAuthHandler(cookieSecure, commandBus, loginHandler, refreshTokenHandler, logoutHandler, permissionsRegistry)
-	queryBus := provideQueryBus(logger, permissionChecker, reporter)
+	queryBus := provideQueryBus(logger, permissionChecker, reporter, tenantResolver)
 	getProfileHandler := query.NewGetProfileHandler(userRepository)
 	changePasswordHandler := command2.NewChangePasswordHandler(userRepository, passwordHasher)
 	profileHandler := handler.NewProfileHandler(commandBus, queryBus, getProfileHandler, changePasswordHandler, permissionsRegistry)
@@ -126,6 +127,13 @@ func providePermissionChecker() shared.PermissionChecker {
 	return security.NewPermissionChecker()
 }
 
+// provideTenantResolver wires the single-tenant default resolver (multitenancy
+// off). Swapping this binding is how a multi-tenant deployment turns isolation
+// on without touching handlers.
+func provideTenantResolver() shared.TenantResolver {
+	return security.NewDefaultTenantResolver()
+}
+
 // provideCommandBus wires the write-side bus. Audit wraps OUTSIDE both
 // DispatchEvents and Transaction so security-relevant events persist even
 // when business work rolls back. JobDispatcher sits outside Transaction so
@@ -139,8 +147,9 @@ func provideCommandBus(
 	dispatcher shared.JobDispatcher, audit2 shared.AuditLogger,
 
 	reporter shared.ErrorReporter,
+	tenantResolver shared.TenantResolver,
 ) *bus.CommandBus {
-	chain := append(middleware.BaseChain(logger, checker, reporter), middleware.AuditMiddleware(logger, audit2), middleware.JobDispatcherMiddleware(dispatcher), middleware.DispatchEventsMiddleware(logger, eventBus), middleware.TransactionMiddleware(db))
+	chain := append(middleware.BaseChain(logger, checker, reporter, tenantResolver), middleware.AuditMiddleware(logger, audit2), middleware.JobDispatcherMiddleware(dispatcher), middleware.DispatchEventsMiddleware(logger, eventBus), middleware.TransactionMiddleware(db))
 	return bus.NewCommandBus(chain...)
 }
 
@@ -148,8 +157,9 @@ func provideQueryBus(
 	logger *slog.Logger,
 	checker shared.PermissionChecker,
 	reporter shared.ErrorReporter,
+	tenantResolver shared.TenantResolver,
 ) *bus.QueryBus {
-	return bus.NewQueryBus(middleware.BaseChain(logger, checker, reporter)...)
+	return bus.NewQueryBus(middleware.BaseChain(logger, checker, reporter, tenantResolver)...)
 }
 
 func providePublicFS() fs.FS {

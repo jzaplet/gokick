@@ -37,7 +37,13 @@ func TestQueryBus_AuthorizeDeniesUnpermittedQuery(t *testing.T) {
 	checker := &stubChecker{err: denied}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	queryBus := bus.NewQueryBus(BaseChain(logger, checker, shared.NopReporter{})...)
+	queryBus := bus.NewQueryBus(
+		BaseChain(
+			logger,
+			checker,
+			shared.NopReporter{},
+			stubTenantResolver{id: shared.DefaultTenantID},
+		)...)
 
 	var ran bool
 	_, err := bus.Exec(
@@ -77,7 +83,13 @@ func TestQueryBus_RejectsQueryWithoutDeclaration(t *testing.T) {
 
 	checker := &stubChecker{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	queryBus := bus.NewQueryBus(BaseChain(logger, checker, shared.NopReporter{})...)
+	queryBus := bus.NewQueryBus(
+		BaseChain(
+			logger,
+			checker,
+			shared.NopReporter{},
+			stubTenantResolver{id: shared.DefaultTenantID},
+		)...)
 
 	var ran bool
 	_, err := bus.Exec(

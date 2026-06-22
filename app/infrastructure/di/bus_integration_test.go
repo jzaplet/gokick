@@ -50,6 +50,7 @@ func newProductionCommandBus(
 		dispatcher,
 		audit,
 		shared.NopReporter{},
+		security.NewDefaultTenantResolver(),
 	)
 }
 
@@ -164,5 +165,33 @@ func TestCommandBus_JobEnqueueJoinsBusinessTransaction(t *testing.T) {
 	}
 	if n := jobCount(); n != 1 {
 		t.Fatalf("job enqueue must commit with the business tx, got %d job rows", n)
+	}
+}
+
+// Krok 1 spine: TenantMiddleware (in BaseChain) must thread the resolved tenant
+// into the handler's ctx through the REAL production command chain — proving the
+// spine is wired, not just unit-correct. Single-tenant mode yields the default
+// tenant. Closes the gap a hand-assembled chain would miss.
+func TestCommandBus_InjectsTenantIntoHandlerContext(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_ctx.db"))
+	cmdBus := newProductionCommandBus(t, fx, noopDispatcher{})
+
+	var seen string
+	err := bus.ExecVoid(
+		ctx,
+		cmdBus.Bus,
+		"ReadTenant",
+		skipPermCmd{},
+		func(ctx context.Context) error {
+			seen = shared.TenantIDFromContext(ctx)
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if seen != shared.DefaultTenantID {
+		t.Fatalf("handler ctx tenant = %q, want default %q", seen, shared.DefaultTenantID)
 	}
 }

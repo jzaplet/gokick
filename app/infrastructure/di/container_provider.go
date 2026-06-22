@@ -48,6 +48,13 @@ func providePermissionChecker() shared.PermissionChecker {
 	return security.NewPermissionChecker()
 }
 
+// provideTenantResolver wires the single-tenant default resolver (multitenancy
+// off). Swapping this binding is how a multi-tenant deployment turns isolation
+// on without touching handlers.
+func provideTenantResolver() shared.TenantResolver {
+	return security.NewDefaultTenantResolver()
+}
+
 // provideCommandBus wires the write-side bus. Audit wraps OUTSIDE both
 // DispatchEvents and Transaction so security-relevant events persist even
 // when business work rolls back. JobDispatcher sits outside Transaction so
@@ -61,8 +68,9 @@ func provideCommandBus(
 	dispatcher shared.JobDispatcher,
 	audit shared.AuditLogger,
 	reporter shared.ErrorReporter,
+	tenantResolver shared.TenantResolver,
 ) *bus.CommandBus {
-	chain := append(busmw.BaseChain(logger, checker, reporter),
+	chain := append(busmw.BaseChain(logger, checker, reporter, tenantResolver),
 		busmw.AuditMiddleware(logger, audit),
 		busmw.JobDispatcherMiddleware(dispatcher),
 		busmw.DispatchEventsMiddleware(logger, eventBus),
@@ -75,8 +83,9 @@ func provideQueryBus(
 	logger *slog.Logger,
 	checker shared.PermissionChecker,
 	reporter shared.ErrorReporter,
+	tenantResolver shared.TenantResolver,
 ) *bus.QueryBus {
-	return bus.NewQueryBus(busmw.BaseChain(logger, checker, reporter)...)
+	return bus.NewQueryBus(busmw.BaseChain(logger, checker, reporter, tenantResolver)...)
 }
 
 func providePublicFS() fs.FS {
@@ -230,6 +239,7 @@ func CreateApplication(
 		database.NewMigrationManager,
 		providePasswordHasher,
 		providePermissionChecker,
+		provideTenantResolver,
 		provideCommandBus,
 		provideQueryBus,
 		provideEventHandlers,
