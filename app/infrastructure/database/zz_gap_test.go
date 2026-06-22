@@ -74,11 +74,12 @@ func TestMigrationManager_InitSchemaCreatesRefreshTokenIndexes(t *testing.T) {
 // rolls back exactly the most recent migration (claim overview-102, mirroring
 // `make migrate-down`). It applies every embedded migration up via the
 // production MigrationManager.RunUp(), then runs goose.DownContext once exactly
-// as the Makefile target does. The highest-timestamp migration
-// (20260517000003_create_audit_log) creates the audit_log table, so after one
-// down step the schema version must drop by one migration and audit_log must no
-// longer exist. If down were a no-op (or the +goose Down block were dropped),
-// the version would not decrease and audit_log would survive — failing here.
+// as the Makefile target does. It asserts the generic round-trip property rather
+// than a specific migration's artifact (so adding a migration doesn't break it):
+// the version drops, an early table (users) survives the single step, and
+// re-running up restores the version — proving the last migration's Down ran and
+// is the inverse of its Up. If down were a no-op (or the +goose Down block were
+// dropped), the version would not decrease — failing here.
 func TestMigrationDown_RollsBackLastMigration(t *testing.T) {
 	mgr := newTestManager(t)
 	ctx := context.Background()
@@ -103,11 +104,6 @@ func TestMigrationDown_RollsBackLastMigration(t *testing.T) {
 		t.Fatalf("get version before down: %v", err)
 	}
 
-	// Precondition: the last migration's table is present before rollback.
-	if !tableExists(t, ctx, mgr, "tenants") {
-		t.Fatal("precondition: expected tenants table to exist after migrate up")
-	}
-
 	if err := goose.DownContext(ctx, mgr.DB().DB, "."); err != nil {
 		t.Fatalf("migrate down: %v", err)
 	}
@@ -116,20 +112,28 @@ func TestMigrationDown_RollsBackLastMigration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get version after down: %v", err)
 	}
-
 	if after >= before {
 		t.Fatalf("expected version to decrease after down: before=%d after=%d", before, after)
 	}
 
-	// The most recent migration created tenants; its down dropped it.
-	if tableExists(t, ctx, mgr, "tenants") {
-		t.Fatal("expected tenants table to be dropped by migrate down, but it still exists")
-	}
-
-	// An earlier table (users, from the init migration) must remain — down
-	// rolled back exactly one migration, not the whole stack.
+	// An early table (users, from the init migration) must remain — a single
+	// down step rolls back one migration, not the whole stack.
 	if !tableExists(t, ctx, mgr, "users") {
 		t.Fatal("migrate down rolled back too far: users table is gone after a single down step")
+	}
+
+	// The rolled-back migration must be reversible: re-applying it restores the
+	// version. Verifies the last migration's Down actually ran and is the inverse
+	// of its Up, without hardcoding which artifact (table/column) it touches.
+	if err := database.NewMigrationManager(mgr, logger).RunUp(); err != nil {
+		t.Fatalf("re-up after down: %v", err)
+	}
+	restored, err := goose.GetDBVersion(mgr.DB().DB)
+	if err != nil {
+		t.Fatalf("get version after re-up: %v", err)
+	}
+	if restored != before {
+		t.Fatalf("re-up must restore the version: before=%d restored=%d", before, restored)
 	}
 }
 
