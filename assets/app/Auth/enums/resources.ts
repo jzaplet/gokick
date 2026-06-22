@@ -12,6 +12,7 @@ export const Permission = {
     AdminUsersCreate: 'admin:users:create',
     AdminUsersUpdate: 'admin:users:update',
     AdminUsersDelete: 'admin:users:delete',
+    PlatformOverview: 'platform:overview',
 } as const;
 
 export type Permission = typeof Permission[keyof typeof Permission];

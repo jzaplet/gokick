@@ -99,10 +99,11 @@ func TestNewNickname_AtLimitOK(t *testing.T) {
 	}
 }
 
-// TestNewRole_Invalid closes domain-11: any value other than "admin"/"user"
-// yields a *shared.ValidationError with Field "role" and Message "invalid role".
+// TestNewRole_Invalid closes domain-11: any value outside the allowed set
+// (superadmin/admin/user) yields a *shared.ValidationError with Field "role"
+// and Message "invalid role".
 func TestNewRole_Invalid(t *testing.T) {
-	_, err := NewRole("superadmin")
+	_, err := NewRole("wizard")
 
 	var ve *shared.ValidationError
 	if !errors.As(err, &ve) {
@@ -116,10 +117,10 @@ func TestNewRole_Invalid(t *testing.T) {
 	}
 }
 
-// TestNewRole_AcceptsAdminAndUser guards that the only two allowed values are
+// TestNewRole_AcceptsKnownRoles guards that exactly the three allowed values are
 // admitted, so the rejection above is genuinely the default branch.
-func TestNewRole_AcceptsAdminAndUser(t *testing.T) {
-	for _, want := range []string{"admin", "user"} {
+func TestNewRole_AcceptsKnownRoles(t *testing.T) {
+	for _, want := range []string{"superadmin", "admin", "user"} {
 		r, err := NewRole(want)
 		if err != nil {
 			t.Fatalf("role %q should be accepted, got: %v", want, err)

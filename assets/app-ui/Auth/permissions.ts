@@ -1,8 +1,9 @@
 import { user } from '@/app-ui/Auth/state';
 import type { Permission } from '@/app/Auth/enums/resources';
 
-// Mirrors the backend rule: admin has everything, others rely on the
-// server-supplied user.permissions list.
+// Mirrors backend IsPermissionAllowedForRole (app/domain/shared/permission.go)
+// byte-for-byte: superadmin → everything; admin → everything except platform:*;
+// everyone else relies on the server-supplied user.permissions list.
 
 export const hasRole = (role: string): boolean => {
     return user.value?.role === role;
@@ -14,6 +15,16 @@ export const isAdmin = (): boolean => {
 
 export const hasPermission = (permission: Permission): boolean => {
     if (user.value === null) {
+        return false;
+    }
+
+    if (user.value.role === 'superadmin') {
+        return true;
+    }
+
+    // platform:* is the platform plane — superadmin only. An admin's
+    // "everything below" must not swallow it (mirrors the backend gate order).
+    if (permission.startsWith('platform:') === true) {
         return false;
     }
 
