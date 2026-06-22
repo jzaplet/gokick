@@ -42,6 +42,12 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
 	if err != nil {
 		return err
 	}
+	if role.IsSuperAdmin() {
+		return &shared.ValidationError{
+			Field:   "role",
+			Message: "cannot assign the superadmin role",
+		}
+	}
 
 	password, err := user.NewPassword(cmd.Password)
 	if err != nil {

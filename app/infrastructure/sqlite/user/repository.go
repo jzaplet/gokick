@@ -32,17 +32,22 @@ func (r *Repository) Save(ctx context.Context, u *user.User) error {
 // only modify users in their own tenant. Positional args (not the struct's
 // tenant_id) because the guard must be the CALLER's tenant, not the loaded
 // row's.
+// Update scopes by tenant AND excludes superadmin rows: a tenant admin must
+// never modify (e.g. reset the password of) a platform superadmin, even one that
+// shares its tenant — that would be a back-door escalation. The platform account
+// is managed out-of-band, never through tenant-admin user management.
 func (r *Repository) Update(ctx context.Context, u *user.User) error {
 	const q = `UPDATE users SET nickname=?, password_hash=?, email=?, role=?, active=?, updated_at=?
-		WHERE id=? AND tenant_id=?`
+		WHERE id=? AND tenant_id=? AND role != 'superadmin'`
 	_, err := r.Conn(ctx).ExecContext(ctx, q,
 		u.Nickname, u.PasswordHash, u.Email, u.Role, u.Active, u.UpdatedAt, u.ID, r.Tenant(ctx))
 	return err
 }
 
+// Delete scopes by tenant AND excludes superadmin rows — same rationale as Update.
 func (r *Repository) Delete(ctx context.Context, id string) error {
-	_, err := r.Conn(ctx).
-		ExecContext(ctx, `DELETE FROM users WHERE id=? AND tenant_id=?`, id, r.Tenant(ctx))
+	_, err := r.Conn(ctx).ExecContext(ctx,
+		`DELETE FROM users WHERE id=? AND tenant_id=? AND role != 'superadmin'`, id, r.Tenant(ctx))
 	return err
 }
 
@@ -77,17 +82,21 @@ func (r *Repository) FindByNickname(ctx context.Context, nickname string) (*user
 	return &u, err
 }
 
+// FindAllActive (like FindAll) excludes superadmin rows: a platform account must
+// never surface in a tenant admin's user listing — it lives above the tenant.
 func (r *Repository) FindAllActive(ctx context.Context) ([]user.User, error) {
 	var users []user.User
 	err := r.Conn(ctx).SelectContext(ctx, &users,
-		`SELECT * FROM users WHERE active=1 AND tenant_id=? ORDER BY nickname`, r.Tenant(ctx))
+		`SELECT * FROM users WHERE active=1 AND tenant_id=? AND role != 'superadmin' ORDER BY nickname`,
+		r.Tenant(ctx))
 	return users, err
 }
 
 func (r *Repository) FindAll(ctx context.Context) ([]user.User, error) {
 	var users []user.User
 	err := r.Conn(ctx).SelectContext(ctx, &users,
-		`SELECT * FROM users WHERE tenant_id=? ORDER BY nickname`, r.Tenant(ctx))
+		`SELECT * FROM users WHERE tenant_id=? AND role != 'superadmin' ORDER BY nickname`,
+		r.Tenant(ctx))
 	return users, err
 }
 
