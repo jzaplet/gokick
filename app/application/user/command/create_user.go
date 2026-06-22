@@ -76,6 +76,15 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
 	}
 
 	u := user.NewUser(nickname, hash, email, role)
+	// Stamp the caller's resolved tenant so an admin creates users in their OWN
+	// tenant — NewUser only seeds DefaultTenantID. The bus's TenantMiddleware
+	// always puts a resolved tenant in ctx for HTTP callers; an empty value means
+	// the handler ran outside the bus (the CLI create-user), where keeping the
+	// default is correct. Mirrors the job dispatcher's tenant-stamp guard.
+	if tenantID := shared.TenantIDFromContext(ctx); tenantID != "" {
+		u.TenantID = tenantID
+	}
+
 	if err := h.users.Save(ctx, u); err != nil {
 		return err
 	}

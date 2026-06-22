@@ -15,10 +15,12 @@ type User struct {
 	PasswordHash string `db:"password_hash"`
 	Email        string `db:"email"`
 	Role         string `db:"role"`
-	// TenantID scopes the user to a tenant. In single-tenant mode it is
-	// shared.DefaultTenantID for everyone; the DB column NOT NULL DEFAULT
-	// supplies it on insert (the repo INSERT omits it), and NewUser sets it
-	// in-memory so a freshly built User matches what the DB stores.
+	// TenantID scopes the user to a tenant. The DB column is NOT NULL with a FK
+	// to tenants(id) and NO default (since Krok 4b), and the repo INSERT writes
+	// this field explicitly. NewUser seeds it to shared.DefaultTenantID;
+	// CreateUserHandler then overrides it with the caller's resolved tenant so an
+	// admin creates users in their OWN tenant. In single-tenant mode every caller
+	// resolves to DefaultTenantID, so the value is the same for everyone.
 	TenantID  string    `db:"tenant_id"`
 	Active    bool      `db:"active"`
 	CreatedAt time.Time `db:"created_at"`
