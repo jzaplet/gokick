@@ -44,7 +44,7 @@ const handleSubmit = async (): Promise<void> => {
 
     const redirectQuery = route.query['redirect'];
     const roleHome: Record<string, string> = {
-        superadmin: '/platform/overview',
+        superadmin: '/platform/dashboard',
         admin: '/admin/dashboard',
     };
     const defaultByRole = roleHome[result.data.user.role] ?? '/user/dashboard';

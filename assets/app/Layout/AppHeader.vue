@@ -9,12 +9,30 @@ import UserIcon from '@/app-ui/Icons/UserIcon.vue';
 
 const router = useRouter();
 const { success } = useToast();
-const { user, hasPermission, logout } = useAuth();
+const { user, isSuperAdmin, hasPermission, logout } = useAuth();
 
-const dashboardRoute = computed<string>(() => {
-    return hasPermission(Permission.AdminDashboardRead) === true
+// Nav is role-aware, not permission-aware: a superadmin holds every permission,
+// so gating admin links on hasPermission would still show them. A superadmin
+// sees only the platform plane; admins see admin tools; users see their dashboard.
+const navLinks = computed<{ name: string; label: string }[]>(() => {
+    if (isSuperAdmin() === true) {
+        return [
+            { name: 'platform-dashboard', label: 'Dashboard' },
+            { name: 'platform-tenants', label: 'Tenants' },
+            { name: 'platform-users', label: 'Users' },
+        ];
+    }
+
+    const dashboard = hasPermission(Permission.AdminDashboardRead) === true
         ? 'admin-dashboard'
         : 'user-dashboard';
+    const links = [{ name: dashboard, label: 'Dashboard' }];
+
+    if (hasPermission(Permission.AdminUsersRead) === true) {
+        links.push({ name: 'admin-users', label: 'Users' });
+    }
+
+    return links;
 });
 
 const goHome = (): void => {
@@ -47,36 +65,16 @@ const handleLogout = async (): Promise<void> => {
 
             <nav class="hidden sm:flex items-center gap-1">
                 <RouterLink
-                    :to="{ name: dashboardRoute }"
+                    v-for="link in navLinks"
+                    :key="link.name"
+                    :to="{ name: link.name }"
                     :class="[
                         'px-3 py-1.5 rounded-md text-sm font-medium',
                         'text-gray-700 hover:text-gray-900 hover:bg-gray-100',
                     ]"
                     active-class="!text-orange-700 !bg-orange-50"
                 >
-                    Dashboard
-                </RouterLink>
-                <RouterLink
-                    v-if="hasPermission(Permission.AdminUsersRead) === true"
-                    :to="{ name: 'admin-users' }"
-                    :class="[
-                        'px-3 py-1.5 rounded-md text-sm font-medium',
-                        'text-gray-700 hover:text-gray-900 hover:bg-gray-100',
-                    ]"
-                    active-class="!text-orange-700 !bg-orange-50"
-                >
-                    Users
-                </RouterLink>
-                <RouterLink
-                    v-if="hasPermission(Permission.PlatformOverview) === true"
-                    :to="{ name: 'platform-overview' }"
-                    :class="[
-                        'px-3 py-1.5 rounded-md text-sm font-medium',
-                        'text-gray-700 hover:text-gray-900 hover:bg-gray-100',
-                    ]"
-                    active-class="!text-orange-700 !bg-orange-50"
-                >
-                    Platform
+                    {{ link.label }}
                 </RouterLink>
             </nav>
 
@@ -137,36 +135,16 @@ const handleLogout = async (): Promise<void> => {
             ]"
         >
             <RouterLink
-                :to="{ name: dashboardRoute }"
+                v-for="link in navLinks"
+                :key="link.name"
+                :to="{ name: link.name }"
                 :class="[
                     'px-3 py-1.5 rounded-md text-sm font-medium',
                     'text-gray-700 hover:text-gray-900 hover:bg-gray-100',
                 ]"
                 active-class="!text-orange-700 !bg-orange-50"
             >
-                Dashboard
-            </RouterLink>
-            <RouterLink
-                v-if="hasPermission(Permission.AdminUsersRead) === true"
-                :to="{ name: 'admin-users' }"
-                :class="[
-                    'px-3 py-1.5 rounded-md text-sm font-medium',
-                    'text-gray-700 hover:text-gray-900 hover:bg-gray-100',
-                ]"
-                active-class="!text-orange-700 !bg-orange-50"
-            >
-                Users
-            </RouterLink>
-            <RouterLink
-                v-if="hasPermission(Permission.PlatformOverview) === true"
-                :to="{ name: 'platform-overview' }"
-                :class="[
-                    'px-3 py-1.5 rounded-md text-sm font-medium',
-                    'text-gray-700 hover:text-gray-900 hover:bg-gray-100',
-                ]"
-                active-class="!text-orange-700 !bg-orange-50"
-            >
-                Platform
+                {{ link.label }}
             </RouterLink>
         </nav>
     </header>

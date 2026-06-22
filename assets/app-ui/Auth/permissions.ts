@@ -13,6 +13,10 @@ export const isAdmin = (): boolean => {
     return hasRole('admin');
 };
 
+export const isSuperAdmin = (): boolean => {
+    return hasRole('superadmin');
+};
+
 export const hasPermission = (permission: Permission): boolean => {
     if (user.value === null) {
         return false;

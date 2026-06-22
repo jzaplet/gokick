@@ -7,5 +7,6 @@ export type PlatformUser = {
     role: string;
     active: boolean;
     tenant_id: string;
+    tenant_name: string;
     last_login_at: string | null;
 };

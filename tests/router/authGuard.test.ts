@@ -21,8 +21,8 @@ const makeTestRouter = (): Router => {
             },
         },
         {
-            path: '/platform/overview',
-            name: 'platform-overview',
+            path: '/platform/users',
+            name: 'platform-users',
             component: Blank,
             meta: {
                 requiresAuth: true,
@@ -105,16 +105,16 @@ describe('authGuard', () => {
         setLoggedIn('superadmin');
         const router = makeTestRouter();
 
-        await router.push('/platform/overview');
+        await router.push('/platform/users');
 
-        expect(router.currentRoute.value.name).toBe('platform-overview');
+        expect(router.currentRoute.value.name).toBe('platform-users');
     });
 
     it('denies admin the platform route (superadmin-only) → /home', async (): Promise<void> => {
         setLoggedIn('admin');
         const router = makeTestRouter();
 
-        await router.push('/platform/overview');
+        await router.push('/platform/users');
 
         expect(router.currentRoute.value.name).toBe('home');
     });

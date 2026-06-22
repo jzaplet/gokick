@@ -16,6 +16,7 @@ export {
     hasPermission,
     hasRole,
     isAdmin,
+    isSuperAdmin,
 } from '@/app-ui/Auth/permissions';
 
 export type { AuthUser } from '@/app-ui/Auth/types/AuthUser';
