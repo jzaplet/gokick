@@ -135,6 +135,7 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (LoginResul
 		Role:     u.Role,
 		Nickname: u.Nickname,
 		Email:    u.Email,
+		TenantID: u.TenantID,
 	})
 	if err != nil {
 		return LoginResult{}, err

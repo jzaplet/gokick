@@ -47,6 +47,7 @@ func (s *JwtService) GenerateAccessToken(claims *shared.AuthClaims) (string, tim
 		"role":     claims.Role,
 		"nickname": claims.Nickname,
 		"email":    claims.Email,
+		"tenant":   claims.TenantID,
 		"iat":      now.Unix(),
 		"exp":      now.Add(s.accessExpiration).Unix(),
 	})
@@ -79,6 +80,7 @@ func (s *JwtService) ValidateAccessToken(tokenString string) (*shared.AuthClaims
 		Role:     claimString(claims, "role"),
 		Nickname: claimString(claims, "nickname"),
 		Email:    claimString(claims, "email"),
+		TenantID: claimString(claims, "tenant"),
 	}, nil
 }
 

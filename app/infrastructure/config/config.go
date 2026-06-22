@@ -39,6 +39,16 @@ type Config struct {
 	// otherwise and bypass per-IP rate limiting in one curl.
 	TrustProxyHeaders bool
 
+	// Multitenancy picks the tenant-scoping ENFORCEMENT mode (resolution is
+	// always data-driven: the JWT carries the tenant, the resolver returns it).
+	// false (default): fail-OPEN — a request with no resolved tenant falls back
+	// to the default tenant, so a single-tenant deployment works unchanged.
+	// true: fail-CLOSED — a missing tenant panics rather than silently scoping
+	// to the default tenant (the cross-tenant leak this whole epic prevents).
+	// A buggy multitenant app is indistinguishable from a single-tenant one in
+	// the data, so this can't be inferred — it must be configured.
+	Multitenancy bool
+
 	// Rate-limit rules in "N/duration" form (e.g. "10/min", "5/30s").
 	// Empty disables that limit entirely.
 	RateLimitLogin   string
@@ -57,6 +67,7 @@ func LoadConfig() (*Config, error) {
 		CookieSecure:      getEnv("APP_COOKIE_SECURE", "true") == "true",
 		SeedAdminPassword: getEnv("APP_SEED_ADMIN_PASSWORD", ""),
 		TrustProxyHeaders: getEnv("APP_TRUST_PROXY_HEADERS", "false") == "true",
+		Multitenancy:      getEnv("APP_MULTITENANCY", "false") == "true",
 		RateLimitLogin:    getEnv("APP_RATE_LIMIT_LOGIN", "10/min"),
 		RateLimitRefresh:  getEnv("APP_RATE_LIMIT_REFRESH", "60/min"),
 		FrontendSentryDSN: getEnv("APP_SENTRY_DSN_FRONTEND", ""),
