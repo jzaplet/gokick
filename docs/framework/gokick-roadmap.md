@@ -25,7 +25,7 @@ Tenhle dokument je **forward-looking**: co zbývá jako aktuální priorita a co
 
 ## 🚀 Aktuální priorita — Multitenancy + observabilita (F6)
 
-gokick dostává **zapínatelný row-level multitenancy** (jedním přepínačem; vypnuto = dnešní chování) a **OpenTelemetry**. Obojí je široce přenositelné do dalších projektů — chceme to mít připravené v jádře, ne dodělávat per-projekt a pak portovat zpět. Pořadí je **závazné**: kroky 1–3 jsou single-tenant foundation (odladitelná na default tenantu, nula změn chování), krok 4 **zapíná multitenant** (JWT nese tenant + tenant per user), krok 5 běží paralelně, krok 6 (OTEL) až na finálním tvaru stroje, krok 7 (Postgres) je odložený. Implementace běží v [PR #15](https://github.com/jzaplet/gokick/pull/15) po fázích (Krok 1–2 hotové).
+gokick dostává **zapínatelný row-level multitenancy** (jedním přepínačem; vypnuto = dnešní chování) a **OpenTelemetry**. Obojí je široce přenositelné do dalších projektů — chceme to mít připravené v jádře, ne dodělávat per-projekt a pak portovat zpět. Pořadí je **závazné**: kroky 1–3 jsou single-tenant foundation (odladitelná na default tenantu, nula změn chování), krok 4 **zapíná multitenant** (JWT nese tenant + tenant per user), krok 5 běží paralelně, krok 6 (OTEL) až na finálním tvaru stroje, krok 7 (Postgres) je odložený. Implementace běží v [PR #15](https://github.com/jzaplet/gokick/pull/15) po fázích (Krok 1–4a hotové).
 
 **Proč tenant a ne `user_id`.** `user_id` je „kdo jsi", `tenant_id` je „čí jsou data" — dnes splývají 1:1, ale scopovat podle `user_id` natvrdo říká „navždy 1 user = 1 dataset". Tenant je hranice vlastnictví: unese týmy, převod vlastnictví, per-workspace billing/kvóty i service accounts. Hlavně: `tenant_id ≈ user_id` teď je no-op, kdežto `user_id → tenant_id` potom je backfill + přepis všech dotazů pod zátěží. Výchozí cesta přepínače: **auto 1 tenant per user** při signupu (owner = user), nula UX rozdílu dnes.
 
@@ -56,12 +56,29 @@ gokick dostává **zapínatelný row-level multitenancy** (jedním přepínačem
 - [ ] **`zz_tenant_test.go`** conformance scan SQL.
 - [ ] **Worker tenant propagace (nejvyšší hodnota celé fáze):** worker obchází bus → `TenantMiddleware` se na job handlery **nikdy nespustí**. Stampuj `jobs.tenant_id` **při enqueue** (in-bus přes JobDispatcher ctx) a worker v `runWithinTx` **obnoví `tenant_id` do ctx z claimnutého `jobs` řádku** před voláním handleru. `ClaimDue` zůstává **globální drain** (bez tenant filtru — jeden worker obsluhuje všechny tenanty) → documented conformance exempce. **Musí přijít s páteří, ne se objevit potom** — jinak první tenant-owned zápis z jobu = tvrdý NOT NULL break a tiché leaky na čtení.
 
-### Krok 4 — Multitenant enable (JWT + `domain/tenant` + auto-tenant)
+### Krok 4a — Multitenant enable (provable isolation) — HOTOVO ([PR #15](https://github.com/jzaplet/gokick/pull/15))
 
-- [ ] **`tenant_id` do JWT** (mint + verify) a kopie do `AuthClaims` → `DefaultTenantResolver` ho začne honorovat (připraveno z Kroku 1).
-- [ ] **`domain/tenant/`** — entita + `Repository` + arch-lint **`domain_tenant`** komponenta + `mayDependOn` granty + sqlite impl + DI. Vzniká **až tady** — první Go konzument je signup (v single-tenant nic tenant repo nekonzumuje, dřív by byl spekulativní unwired kód).
-- [ ] **Auto 1 tenant per user** při signupu — `CreateUserHandler` / seeder / `console/create_user.go` zakládají + stampují tenant.
-- [ ] **`Save` píše `tenant_id` explicitně** + **drop default** z `users.tenant_id`. Neoddělitelný celek s „auto-tenant per user" výše: od teď musí každý creation path stampovat resolvovaný tenant.
+- [x] **`tenant_id` do JWT** (login/refresh mint + verify) → `DefaultTenantResolver` (z Kroku 1) ho honoruje. Resoluce je data-driven.
+- [x] **`domain/tenant/`** kontext (entita + `Repository` + arch-lint `domain_tenant` + sqlite impl). Konzument zatím testfx; produkt ho zapojí do signupu.
+- [x] **`APP_MULTITENANCY` flag** (default `false`) — vybírá enforcement striktnost: fail-open (chybějící tenant → default) vs fail-closed (panika). Ne resoluci.
+- [x] **`r.Tenant(ctx)`** + scopování admin **čtení i zápisů** users (FindAll/FindAllActive/Update/Delete); identity/auth dotazy nesou inline `tenant-scope-exempt` marker.
+- [x] **Conformance gate v2** (per-dotaz: scope `tenant_id` NEBO marker; ověřeno mutací) + testy: 2-nájemníkový test izolace, write-isolation, fail-closed/open.
+
+### Krok 4b — Integrita
+
+- [ ] **`users.tenant_id` FK** (SQLite neumí `ALTER ADD` FK → table-rebuild migrace; testovat s `refresh_tokens` rows) + **drop DEFAULT**. Izolace už funguje bez FK; tohle je tvrdá integrita. Pozn.: gokick nemá veřejný signup → „auto 1 tenant per user" je produktová politika, tenant repo zapojí produkt.
+
+### Krok 4c — Superadmin / platform přehled
+
+Platformní rovina **nad** tenanty (pro autory aplikace) — vidí **napříč všemi** tenanty, opak tenant izolace. Vědomě obchází scopování: oddělené dotazy + permission, **ne** větvení uvnitř tenant-admin cesty.
+
+- [ ] **Role `superadmin`** (platformní, nad admin/user) + permission `platform:*`; seedovaný superadmin účet mimo běžné tenanty.
+- [ ] **`platform` query area** — cross-tenant agregace s inline `tenant-scope-exempt: platform superadmin` markerem (gate ji tak vynutí vědomě). Row-level volba to dělá triviální (`GROUP BY tenant_id`, žádný fan-out přes soubory).
+- [ ] **Přehled uživatelů** napříč tenanty + `users.last_login_at` (zapsat při loginu) + `last_prompt_at` (produktová aktivita).
+- [ ] **Přehled tenantů** + spálené tokeny z **`tenant_usage` ledgeru** (produkt zapisuje; `SUM`; stejná data pohánějí i per-tenant budget) + **`tenants.plan`** (free/paid; billing/Stripe = produkt).
+- [ ] **Superadmin UI** — oddělená sekce (`requiresPermission: platform:overview`).
+
+> **gokick dá:** role/permission `superadmin` + `platform:*` · `platform` query pattern · `users.last_login_at` · `tenants.plan` · kostra dashboardu. **Produkt naplní:** `tenant_usage` (tokeny), prompty/runy (aktivita), billing.
 
 ### Krok 5 — Konfigurovatelný job lease + heartbeat (paralelní)
 
