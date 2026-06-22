@@ -1,5 +1,5 @@
 -- +goose Up
--- Columns powering the superadmin platform overview (Krok 4c). Kept OUT of the
+-- Columns powering the superadmin platform overview. Kept OUT of the
 -- risky role-CHECK rebuild (20260622000003) — these are plain ALTER ADD COLUMN,
 -- safe inside a normal transaction.
 --

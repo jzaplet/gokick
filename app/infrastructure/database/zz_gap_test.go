@@ -152,7 +152,7 @@ func tableExists(t *testing.T, ctx context.Context, mgr *database.SqliteManager,
 	return count == 1
 }
 
-// Krok 4b — the users.tenant_id FK rebuild must PRESERVE refresh_tokens (which
+// The users.tenant_id FK rebuild must PRESERVE refresh_tokens (which
 // references users via ON DELETE CASCADE) and ENFORCE the FK afterward. The
 // rebuild drops+recreates users; with foreign_keys left on, the implicit DELETE
 // during DROP would cascade-delete refresh_tokens. The migration runs
@@ -165,7 +165,7 @@ func TestMigration_UsersTenantFK_PreservesRefreshTokensAndEnforcesFK(t *testing.
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	const defaultTenant = "00000000-0000-0000-0000-000000000000"
 
-	// Migrate up to just before the FK rebuild (Krok 3's jobs.tenant_id migration).
+	// Migrate up to just before the FK rebuild (the jobs.tenant_id migration).
 	goose.SetLogger(goose.NopLogger())
 	goose.SetBaseFS(migrations.FS)
 	if err := goose.SetDialect("sqlite3"); err != nil {
@@ -217,7 +217,7 @@ func TestMigration_UsersTenantFK_PreservesRefreshTokensAndEnforcesFK(t *testing.
 	}
 }
 
-// Krok 4c — the role-CHECK rebuild must WIDEN the CHECK to admit 'superadmin'
+// The role-CHECK rebuild must WIDEN the CHECK to admit 'superadmin'
 // while keeping every other guarantee of the post-4b users table: the CHECK must
 // still BITE (reject an unknown role), refresh_tokens must survive the rebuild
 // (no cascade-delete), the tenant FK must stay enforced, and pre-existing rows

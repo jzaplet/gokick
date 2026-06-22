@@ -168,7 +168,7 @@ func TestCommandBus_JobEnqueueJoinsBusinessTransaction(t *testing.T) {
 	}
 }
 
-// Krok 1 spine: TenantMiddleware (in BaseChain) must thread the resolved tenant
+// Tenant spine: TenantMiddleware (in BaseChain) must thread the resolved tenant
 // into the handler's ctx through the REAL production command chain — proving the
 // spine is wired, not just unit-correct. Single-tenant mode yields the default
 // tenant. Closes the gap a hand-assembled chain would miss.

@@ -10,7 +10,7 @@ import (
 	"gokick/app/internal/testfx"
 )
 
-// Krok 4c privilege-escalation guard. A tenant admin (admin:users:*) must never
+// Privilege-escalation guard. A tenant admin (admin:users:*) must never
 // be able to MINT a superadmin via CreateUser nor PROMOTE anyone to superadmin
 // via UpdateUser — otherwise the admin self-escalates to the cross-tenant
 // platform plane. NewRole stays permissive (the seeder needs it); the command

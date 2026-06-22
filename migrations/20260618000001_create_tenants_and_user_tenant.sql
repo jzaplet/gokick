@@ -8,19 +8,18 @@ CREATE TABLE IF NOT EXISTS tenants (
 
 -- Bootstrap "Default" tenant. In single-tenant mode every user belongs to it
 -- (shared.DefaultTenantID = nil UUID). It is created here, not by the seeder,
--- so it exists on EVERY startup before any user references it — required once
--- Krok 3 adds the users.tenant_id FK.
+-- so it exists on EVERY startup before any user references it — required by the
+-- users.tenant_id FK added in a later migration.
 INSERT INTO tenants (id, name)
     VALUES ('00000000-0000-0000-0000-000000000000', 'Default')
     ON CONFLICT(id) DO NOTHING;
 
 -- Every user carries a tenant. NOT NULL DEFAULT backfills existing rows and
--- stamps new single-tenant inserts automatically (the user repo INSERT omits
--- the column, so no creation path can write an empty value). Krok 3 adds the
--- composite indexes + FK and KEEPS this default. The default is dropped only in
--- Krok 4, together with Save writing tenant_id explicitly and every creation
--- path stamping the resolved tenant — dropping it sooner would make the column
--- NOT NULL with no default while Save still omits it, breaking every INSERT.
+-- stamps new inserts automatically while the user repo INSERT still omitted the
+-- column. A later migration adds the FK and drops this default, once Save writes
+-- tenant_id explicitly and every creation path stamps the resolved tenant —
+-- dropping it sooner would make the column NOT NULL with no default while Save
+-- still omitted it, breaking every INSERT.
 ALTER TABLE users
     ADD COLUMN tenant_id TEXT NOT NULL
     DEFAULT '00000000-0000-0000-0000-000000000000';

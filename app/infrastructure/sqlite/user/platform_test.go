@@ -9,7 +9,7 @@ import (
 	"gokick/app/internal/testfx"
 )
 
-// Krok 4c — FindAllAcrossTenants is the inverse of FindAll: it must return users
+// FindAllAcrossTenants is the inverse of FindAll: it must return users
 // from EVERY tenant, ignoring any tenant in context. The 4a isolation test proves
 // FindAll hides other tenants; this proves the platform read deliberately doesn't.
 func TestUserRepository_FindAllAcrossTenants_SeesAllTenants(t *testing.T) {
@@ -39,7 +39,7 @@ func TestUserRepository_FindAllAcrossTenants_SeesAllTenants(t *testing.T) {
 	}
 }
 
-// Krok 4c — RecordLogin stamps last_login_at (NULL until first login). Login.go
+// RecordLogin stamps last_login_at (NULL until first login). Login.go
 // relies on this for the platform overview, so prove the write lands.
 func TestUserRepository_RecordLogin_StampsLastLoginAt(t *testing.T) {
 	ctx := context.Background()

@@ -20,7 +20,7 @@ const logKeyNickname = "nickname"
 type SeedAdminPassword string
 
 // SeedSuperAdminPassword is the Wire-distinct alias for the OPTIONAL superadmin
-// seed password (Krok 4c). Empty = do not seed a superadmin.
+// seed password. Empty = do not seed a superadmin.
 type SeedSuperAdminPassword string
 
 type Seeder struct {

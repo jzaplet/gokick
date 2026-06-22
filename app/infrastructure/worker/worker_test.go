@@ -406,7 +406,7 @@ func TestWorker_UnknownKind_MarksFailed_NoRetry(t *testing.T) {
 	}
 }
 
-// Krok 3 — worker tenant propagation. The worker bypasses the bus, so it must
+// Worker tenant propagation. The worker bypasses the bus, so it must
 // restore the tenant the job was enqueued for into the handler's context from
 // the claimed row. Uses an arbitrary tenant (not DefaultTenantID) so it proves
 // propagation rather than a tautology.

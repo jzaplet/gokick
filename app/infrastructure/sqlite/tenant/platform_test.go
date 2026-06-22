@@ -8,7 +8,7 @@ import (
 	"gokick/app/internal/testfx"
 )
 
-// Krok 4c — FindAllWithUserCount is the cross-tenant GROUP BY aggregate behind
+// FindAllWithUserCount is the cross-tenant GROUP BY aggregate behind
 // the superadmin tenant overview. It must count each tenant's users correctly,
 // INCLUDING a tenant with zero users (the LEFT JOIN must yield 0, not drop it) —
 // the exact shape the product reuses to SUM the tenant_usage ledger.

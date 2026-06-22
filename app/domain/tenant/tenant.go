@@ -19,7 +19,7 @@ type Tenant struct {
 	Name string `db:"name"`
 	// Plan is the billing tier (free/paid…). The DB column is NOT NULL DEFAULT
 	// 'free'; NewTenant sets it in-memory so a freshly built Tenant matches what
-	// the DB stores. Surfaced in the superadmin platform overview (Krok 4c).
+	// the DB stores. Surfaced in the superadmin platform overview.
 	Plan      string    `db:"plan"`
 	CreatedAt time.Time `db:"created_at"`
 	UpdatedAt time.Time `db:"updated_at"`

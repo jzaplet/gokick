@@ -15,7 +15,7 @@ import (
 	"testing"
 )
 
-// Krok 3/4 — tenant conformance gate (per-query).
+// Tenant conformance gate (per-query).
 //
 // Every SQL query in a SQLite repository is checked:
 //   - a query touching a TENANT-OWNED table must scope by tenant_id, OR carry an

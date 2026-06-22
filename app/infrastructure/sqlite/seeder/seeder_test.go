@@ -19,7 +19,7 @@ func newSeeder(t *testing.T, fx *testfx.Fixture, pw seeder.SeedAdminPassword) *s
 }
 
 // newSeederSuper builds a seeder with both the admin and the (optional)
-// superadmin password set, for the Krok 4c superadmin-seed tests.
+// superadmin password set, for the superadmin-seed tests.
 func newSeederSuper(
 	t *testing.T,
 	fx *testfx.Fixture,
@@ -83,7 +83,7 @@ func TestSeeder_IdempotentWhenAdminExists(t *testing.T) {
 	}
 }
 
-// Krok 4c — an empty APP_SEED_SUPERADMIN_PASSWORD must NOT seed a superadmin
+// An empty APP_SEED_SUPERADMIN_PASSWORD must NOT seed a superadmin
 // (the platform plane is opt-in), and must NOT error — the admin still seeds.
 func TestSeeder_SkipsSuperAdminWhenPasswordEmpty(t *testing.T) {
 	ctx := context.Background()
@@ -101,7 +101,7 @@ func TestSeeder_SkipsSuperAdminWhenPasswordEmpty(t *testing.T) {
 	}
 }
 
-// Krok 4c — a set APP_SEED_SUPERADMIN_PASSWORD seeds a superadmin account, and
+// A set APP_SEED_SUPERADMIN_PASSWORD seeds a superadmin account, and
 // re-running the seed is idempotent.
 func TestSeeder_SeedsSuperAdminWhenPasswordSet(t *testing.T) {
 	ctx := context.Background()
@@ -125,7 +125,7 @@ func TestSeeder_SeedsSuperAdminWhenPasswordSet(t *testing.T) {
 	}
 }
 
-// Krok 4c — a set-but-invalid superadmin password is rejected, naming the env var.
+// A set-but-invalid superadmin password is rejected, naming the env var.
 func TestSeeder_RejectsInvalidSuperAdminPassword(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "seed_super_bad.db"))

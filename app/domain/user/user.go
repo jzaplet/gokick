@@ -16,11 +16,11 @@ type User struct {
 	Email        string `db:"email"`
 	Role         string `db:"role"`
 	// TenantID scopes the user to a tenant. The DB column is NOT NULL with a FK
-	// to tenants(id) and NO default (since Krok 4b), and the repo INSERT writes
-	// this field explicitly. NewUser seeds it to shared.DefaultTenantID;
-	// CreateUserHandler then overrides it with the caller's resolved tenant so an
-	// admin creates users in their OWN tenant. In single-tenant mode every caller
-	// resolves to DefaultTenantID, so the value is the same for everyone.
+	// to tenants(id) and no default, and the repo INSERT writes this field
+	// explicitly. NewUser seeds it to shared.DefaultTenantID; CreateUserHandler
+	// then overrides it with the caller's resolved tenant so an admin creates
+	// users in their OWN tenant. In single-tenant mode every caller resolves to
+	// DefaultTenantID, so the value is the same for everyone.
 	TenantID  string    `db:"tenant_id"`
 	Active    bool      `db:"active"`
 	CreatedAt time.Time `db:"created_at"`
@@ -40,7 +40,7 @@ type User struct {
 	// LastLoginAt is stamped on each successful login via Repository.RecordLogin
 	// (raw pool, best-effort, like the brute-force counters above). NULL until
 	// the user has logged in at least once. Powers the superadmin platform
-	// overview (Krok 4c).
+	// overview.
 	LastLoginAt sql.NullTime `db:"last_login_at"`
 }
 

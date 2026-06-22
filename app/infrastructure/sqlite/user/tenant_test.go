@@ -9,8 +9,8 @@ import (
 	"gokick/app/internal/testfx"
 )
 
-// Krok 2: the migration creates the bootstrap "Default" tenant so every user
-// has a real tenant to reference (and Krok 3's FK has a target).
+// The migration creates the bootstrap "Default" tenant so every user has a real
+// tenant to reference (and the FK has a target).
 func TestMigration_BootstrapDefaultTenantExists(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "bootstrap_tenant.db"))
@@ -26,7 +26,7 @@ func TestMigration_BootstrapDefaultTenantExists(t *testing.T) {
 	}
 }
 
-// Krok 2: a saved user is stamped with the default tenant — the NOT NULL
+// A saved user is stamped with the default tenant — the NOT NULL
 // DEFAULT column supplies it on insert and SELECT * reads it back. Proves
 // single-tenant users all belong to the bootstrap tenant.
 func TestUserSave_StampsDefaultTenant(t *testing.T) {

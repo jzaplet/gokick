@@ -10,9 +10,9 @@ import (
 // carried by the request's AuthClaims when present, otherwise DefaultTenantID.
 //
 // In single-tenant mode (multitenancy off) the JWT carries no tenant, so this
-// always returns DefaultTenantID — today's behavior. Krok 4 populates
-// AuthClaims.TenantID from the JWT, at which point this resolver starts
-// honoring it with no further wiring. Binding a different resolver (subdomain,
+// always returns DefaultTenantID. When the JWT does carry a tenant claim (a
+// multi-tenant deployment), this resolver honors it with no further wiring.
+// Binding a different resolver (subdomain,
 // header, …) is how a multi-tenant deployment overrides single-tenant mode.
 type DefaultTenantResolver struct{}
 

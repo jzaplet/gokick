@@ -19,9 +19,8 @@ func TestDefaultTenantResolver_NoClaims_ReturnsDefault(t *testing.T) {
 	}
 }
 
-// Authenticated today: claims present but TenantID empty (JWT carries none until
-// Krok 4) → still the default tenant. Proves Krok 1 changes nothing for logged-in
-// users.
+// Authenticated but TenantID empty (a single-tenant JWT carries no tenant) →
+// still the default tenant. Proves a logged-in user is unaffected.
 func TestDefaultTenantResolver_EmptyClaimsTenant_ReturnsDefault(t *testing.T) {
 	ctx := shared.ContextWithClaims(context.Background(), &shared.AuthClaims{UserID: "u-1"})
 
@@ -34,8 +33,8 @@ func TestDefaultTenantResolver_EmptyClaimsTenant_ReturnsDefault(t *testing.T) {
 	}
 }
 
-// Forward-compat for Krok 4: once the JWT populates AuthClaims.TenantID, the
-// resolver honors it with no further wiring.
+// Once the JWT populates AuthClaims.TenantID, the resolver honors it with no
+// further wiring.
 func TestDefaultTenantResolver_ClaimsTenant_IsHonored(t *testing.T) {
 	ctx := shared.ContextWithClaims(context.Background(),
 		&shared.AuthClaims{UserID: "u-1", TenantID: "tenant-7"})

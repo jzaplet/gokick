@@ -20,7 +20,7 @@ type Config struct {
 	SeedAdminPassword    string
 	// SeedSuperAdminPassword is OPTIONAL — empty means "do not seed a superadmin"
 	// (the platform plane is off by default). When set, the seeder mints a
-	// superadmin account (Krok 4c).
+	// superadmin account.
 	SeedSuperAdminPassword string
 
 	// Sentry frontend config — injected into index.html at serve time so the

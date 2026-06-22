@@ -149,7 +149,7 @@ func TestIsPermissionAllowedForRole(t *testing.T) {
 		{"empty role cannot do admin action", "admin:x", "", false},
 		{"empty role can do non-admin", "profile:read", "", true},
 
-		// Superadmin / platform ladder — the boundary Krok 4c introduces.
+		// Superadmin / platform ladder.
 		{"superadmin can do platform action", "platform:overview", "superadmin", true},
 		{"superadmin can do admin action", "admin:users:delete", "superadmin", true},
 		{"superadmin can do profile action", "profile:read", "superadmin", true},

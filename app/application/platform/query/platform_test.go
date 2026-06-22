@@ -11,10 +11,10 @@ import (
 	"gokick/app/internal/testfx"
 )
 
-// Krok 4c — the platform plane proven end-to-end through the query bus, both
+// The platform plane proven end-to-end through the query bus, both
 // directions of the boundary:
 //   - a SUPERADMIN identity dispatching the platform user listing sees users from
-//     EVERY tenant (the deliberate inverse of the Krok 4a isolation test);
+//     EVERY tenant (the deliberate inverse of the tenant isolation test);
 //   - an ADMIN identity is DENIED at the bus (PermissionError) — the handler
 //     never runs, so a tenant admin can never reach the cross-tenant view.
 func TestListAllUsers_SuperadminSeesAllTenants_AdminDenied(t *testing.T) {

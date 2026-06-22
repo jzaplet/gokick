@@ -3,10 +3,9 @@ package shared
 import "context"
 
 // DefaultTenantID is the well-known id of the single "default" tenant used when
-// multitenancy is off (single-tenant mode). Krok 2 creates a matching bootstrap
-// tenant row and backfills existing data to it; until then no table carries a
-// tenant_id, so this value is only threaded through context and never reaches a
-// query — which is what keeps Krok 1 a zero-behavior-change change.
+// multitenancy is off (single-tenant mode). A migration creates the matching
+// bootstrap tenant row and every user references it, so a single-tenant
+// deployment behaves exactly as if tenants did not exist.
 const DefaultTenantID = "00000000-0000-0000-0000-000000000000"
 
 // TenantResolver resolves the active tenant for the current request. It is a
@@ -30,8 +29,8 @@ func ContextWithTenantID(ctx context.Context, tenantID string) context.Context {
 
 // TenantIDFromContext returns the resolved tenant id, or "" when none was set
 // (e.g. work that never went through the bus). Callers that require a tenant
-// treat "" as a programming error — Krok 3's BaseRepository.Tenant helper will
-// panic on it rather than silently run an unscoped query.
+// treat "" as a programming error — the BaseRepository.Tenant helper panics on
+// it (in multitenant mode) rather than silently run an unscoped query.
 func TenantIDFromContext(ctx context.Context) string {
 	id, _ := ctx.Value(tenantIDKey).(string)
 	return id

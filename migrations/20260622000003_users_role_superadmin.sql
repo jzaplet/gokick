@@ -1,7 +1,7 @@
 -- +goose NO TRANSACTION
 -- +goose Up
--- Widen the users.role CHECK to admit 'superadmin' (the platform plane added in
--- Krok 4c). SQLite cannot ALTER a CHECK constraint, so this is the same 12-step
+-- Widen the users.role CHECK to admit 'superadmin' (the platform plane).
+-- SQLite cannot ALTER a CHECK constraint, so this is the same 12-step
 -- table rebuild as the tenant_id FK migration — schema authored from a live
 -- `.schema users`, changing ONLY the CHECK. The FK (-> tenants.id, no DEFAULT)
 -- and every other column are preserved verbatim. foreign_keys is OFF so DROP
@@ -39,7 +39,7 @@ PRAGMA foreign_keys=ON;
 
 -- +goose Down
 -- Reverse: narrow the CHECK back to ('admin','user'), keeping the FK / no-default
--- (the post-Krok-4b state). NOTE: this Down FAILS BY DESIGN if any 'superadmin'
+-- state. NOTE: this Down FAILS BY DESIGN if any 'superadmin'
 -- row still exists — the INSERT...SELECT copies it into a table whose CHECK
 -- rejects it. Delete the superadmin account(s) before down-migrating. The
 -- DROP IF EXISTS makes that retry clean after the expected first-attempt failure.

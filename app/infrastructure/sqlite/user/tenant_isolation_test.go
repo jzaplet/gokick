@@ -9,7 +9,7 @@ import (
 	"gokick/app/internal/testfx"
 )
 
-// Krok 4a — the isolation proof. With two tenants each holding users, a query
+// The isolation proof. With two tenants each holding users, a query
 // scoped to tenant A returns ONLY tenant A's users, never B's. Uses arbitrary
 // tenants (not the default) so it proves real isolation rather than a tautology.
 func TestUserRepository_FindAll_IsolatesByTenant(t *testing.T) {
@@ -45,7 +45,7 @@ func TestUserRepository_FindAll_IsolatesByTenant(t *testing.T) {
 	}
 }
 
-// Krok 4a — scoped writes. An admin acting in tenant A cannot update or delete a
+// Scoped writes. An admin acting in tenant A cannot update or delete a
 // user belonging to tenant B: the WHERE … AND tenant_id scope matches no row.
 // Without this, a regressed Update/Delete (WHERE id only) would leak silently.
 func TestUserRepository_UpdateDelete_IsolateByTenant(t *testing.T) {

@@ -17,7 +17,7 @@ import (
 // that cannot be resolved is never silently treated as "no tenant".
 //
 // The worker bypasses the bus, so this middleware never runs for job handlers —
-// Krok 3 restores the tenant from the claimed job row inside the worker.
+// the worker restores the tenant from the claimed job row instead.
 func TenantMiddleware(resolver shared.TenantResolver) bus.Middleware {
 	return func(ctx context.Context, name string, cmd any, next func(ctx context.Context) (any, error)) (any, error) {
 		tenantID, err := resolver.Resolve(ctx)

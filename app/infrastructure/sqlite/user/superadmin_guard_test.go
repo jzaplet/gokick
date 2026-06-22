@@ -9,7 +9,7 @@ import (
 	"gokick/app/internal/testfx"
 )
 
-// Krok 4c defense-in-depth: the seeded superadmin lives in the default tenant,
+// Defense-in-depth: the seeded superadmin lives in the default tenant,
 // where a regular admin also lives. Since admin Update/Delete scope by tenant_id
 // alone, without an extra guard a same-tenant admin could reset the superadmin's
 // password (then log in as it) or delete it — a back-door escalation. The admin

@@ -244,7 +244,7 @@ func provideSeedAdminPassword(cfg *config.Config) seeder.SeedAdminPassword {
 }
 
 // provideSeedSuperAdminPassword surfaces the OPTIONAL superadmin seed password
-// as its own Wire-bound type (Krok 4c). Empty = no superadmin seeded.
+// as its own Wire-bound type. Empty = no superadmin seeded.
 func provideSeedSuperAdminPassword(cfg *config.Config) seeder.SeedSuperAdminPassword {
 	return seeder.SeedSuperAdminPassword(cfg.SeedSuperAdminPassword)
 }
