@@ -18,7 +18,7 @@ description: 'Aktuální priorita F6 — zapínatelný row-level multitenancy (h
 
 <a href="../gokick-hodnoceni.pdf"><img src="../go-vue-cqrs-ddd.png" alt="Hodnocení stacku gokick — PDF report" width="200"></a>
 
-Boilerplate je **production-ready end-to-end**: DDD/CQRS backend, Vue 3 SPA, JWT auth s HttpOnly refresh cookie a detekcí krádeže, admin user CRUD, perzistentní job queue + scheduler, rate limiting, audit log, brute-force lock, security headers, Sentry (BE i FE), single-binary deploy. Fáze 1–5 jsou hotové; z F6 je **multitenancy hotová** (OTEL a job lease zbývají) — rekapitulace v sekci **Hotovo** níže.
+Boilerplate je **production-ready end-to-end**: DDD/CQRS backend, Vue 3 SPA, JWT auth s HttpOnly refresh cookie a detekcí krádeže, admin user CRUD, perzistentní job queue + scheduler, rate limiting, audit log, brute-force lock, security headers, Sentry (BE i FE), single-binary deploy. Fáze 1–5 jsou hotové; z F6 je **multitenancy hotová** (system bus pro CLI, OTEL a job lease zbývají) — rekapitulace v sekci **Hotovo** níže.
 
 Tenhle dokument je **forward-looking**: co zbývá jako aktuální priorita a co konkrétně chybí do plné desítky v každé disciplíně.
 
@@ -36,6 +36,23 @@ Zapínatelný **row-level** multitenancy jedním přepínačem (`APP_MULTITENANC
 - **Platformní rovina:** role `superadmin` + `platform:*` (nad admin/user) — cross-tenant dashboard (počty tenantů/uživatelů), přehled tenantů a uživatelů s cross-tenant správou. Superadmin admin sekci nevidí.
 - **Operator tooling:** seed s multitenancy on založí adminovi vlastní tenant; CLI `create-tenant`, `create-superadmin`, `create-user --tenant-id/--tenant-name` (s MT on je tenant povinný).
 - **Vědomý strop:** transparentní vynucení (tichý read-leak na slepém místě scanneru) dá až **Postgres RLS** — viz disciplína **Škálovatelnost** níže.
+
+### Krok — System command bus pro CLI (hned po multitenancy)
+
+Čtyři CLI commandy (`seed`, `create-user`, `create-superadmin`, `create-tenant`) dnes obcházejí bus a volají handlery napřímo → **žádný audit, žádná atomická transakce** (orphan-tenant třída chyb, jeden výskyt už opraven ručně v `create-user`), žádný strukturovaný log, žádné Sentry při neočekávaném pádu. `create-superadmin` na živém serveru navíc nezanechá **žádnou auditní stopu** — přitom je to nejcitlivější operátorská akce vůbec. Bus se obchází proto, že `Authorize` i `Tenant` jsou claims-driven (čtou principála/tenant z JWT), a CLI žádný JWT nemá.
+
+Řešení = **system bus levně**: druhý provider `provideSystemCommandBus` poskládá **podmnožinu** stávajících (už composable) middlewarů — žádná nová abstrakce, jen jiný subset:
+
+```
+Recovery(→Sentry) → Logging → Audit → DispatchEvents → Transaction      (vynechán Authorize i Tenant)
+```
+
+- [ ] **`provideSystemCommandBus`** — vynechá `Authorize` (operator trust, žádné claims; kontrakt `Permissioned`/`SkipPermission` žije *uvnitř* AuthorizeMiddleware, takže vynechání je čisté) i `Tenant` (resolver ctx tenant **přepisuje** → přemázl by tenant, který CLI injectuje přes `ContextWithTenantID`). Zachová pořadí: **Audit vně Transaction** (failure eventy přežijí rollback), **DispatchEvents obaluje Transaction** (eventy až po commitu). JobDispatcher vynechán — žádný z těch commandů dnes nic neenqueuuje.
+- [ ] **Přepojit 4 commandy** na dispatch přes `bus.ExecVoid`/`bus.Exec` skrz system bus místo přímého `handler.Handle`; tenant si commandy vkládají dál samy explicitně. Ruční transakce v `create-user` zmizí (nahradí ji `TransactionMiddleware`) → odpadne bespoke `shared.Transactor` wiring i jeho test call-sites.
+- [ ] **Audit záznamy** — handlery, které už dnes volají `AuditCollectorFromContext(ctx).Record(...)` (mimo bus no-op), se rozsvítí samy; kde chybí (`create-tenant`, příp. `create-superadmin`), dodat `Record` s akcí `*.created` a `cli`/`system` aktérem v metadatech (CLI nemá `ActorUserID`).
+- [ ] **Sentry = jen neočekávané** — paniky/infra selhání reportuje `RecoveryMiddleware` zadarmo; očekávané validační chyby (duplicitní nickname) do trackeru **nesmí** (invariant „error reporting is for the unexpected only"). Hlavní přínos je při **headless** běhu (cron/CI/seed při deployi) — interaktivně stack vidí operátor v terminálu.
+
+Rozpad na commity: provider + `create-user` (ověří orphan-tenant rollback nově přes middleware, ne ručně) → zbylé tři commandy → doplnění auditu. Dotkne se konstruktorů všech 4 commandů + jejich `zz_*_test.go` call-sites (mechanická úprava signatur).
 
 ### Krok — Konfigurovatelný job lease + heartbeat (paralelní)
 
@@ -109,4 +126,4 @@ Rekapitulace — detailní záznam (Definition of Done, regresní testy, klíčo
 - **F3 — Perzistentní job queue (SQLite)** (2026-05-17) — atomický claim přes `UPDATE … RETURNING`, exponenciální backoff, at-least-once, mark-complete v handler tx, worker pool.
 - **F4 — Hardening** (2026-05-17) — 3 kritické fixy z auditu + rate limiting, brute-force lock, audit log mimo transakci, HTTP boundary hardening, SQLite concurrency fix (`_txlock=immediate`).
 - **F5 — Observability** — strukturované slog atributy se statickým lint-enforcementem + Sentry BE/FE s obohacením eventu a maskováním tajemství (2026-06-10 / 06-14). OTel je teď součástí fáze **F6** (viz **Aktuální priorita** výše).
-- **F6 — Multitenancy (částečně)** — zapínatelný row-level multitenancy + platformní rovina (superadmin) v [PR #15](https://github.com/jzaplet/gokick/pull/15); OTEL a job lease/heartbeat zbývají (viz **Aktuální priorita**). Detail: `/gk-multitenancy`.
+- **F6 — Multitenancy (částečně)** — zapínatelný row-level multitenancy + platformní rovina (superadmin) v [PR #15](https://github.com/jzaplet/gokick/pull/15); system bus pro CLI, OTEL a job lease/heartbeat zbývají (viz **Aktuální priorita**). Detail: `/gk-multitenancy`.
