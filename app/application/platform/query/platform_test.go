@@ -28,12 +28,12 @@ func TestListAllUsers_SuperadminSeesAllTenants_AdminDenied(t *testing.T) {
 	_, queryBus, _ := fx.NewBuses()
 	h := NewListAllUsersHandler(fx.Users)
 	q := ListAllUsersQuery{}
-	dispatch := func(ctx context.Context) ([]user.User, error) {
+	dispatch := func(ctx context.Context) ([]user.PlatformRow, error) {
 		return testfx.ExecQuery(ctx, queryBus, "PlatformListUsers", q,
-			func(ctx context.Context) ([]user.User, error) { return h.Handle(ctx, q) })
+			func(ctx context.Context) ([]user.PlatformRow, error) { return h.Handle(ctx, q) })
 	}
 
-	// Superadmin → sees both tenants' users.
+	// Superadmin → sees both tenants' users, each carrying its tenant NAME.
 	superCtx := shared.ContextWithClaims(context.Background(), &shared.AuthClaims{
 		UserID: "s1", Role: "superadmin", Nickname: "root",
 	})
@@ -41,13 +41,13 @@ func TestListAllUsers_SuperadminSeesAllTenants_AdminDenied(t *testing.T) {
 	if err != nil {
 		t.Fatalf("superadmin platform query must succeed: %v", err)
 	}
-	seen := map[string]bool{}
+	names := map[string]string{}
 	for _, u := range users {
-		seen[u.TenantID] = true
+		names[u.TenantID] = u.TenantName
 	}
-	if len(users) != 2 || !seen[tenantA.ID] || !seen[tenantB.ID] {
-		t.Fatalf("superadmin view must span both tenants, got %d users across %v",
-			len(users), seen)
+	if len(users) != 2 || names[tenantA.ID] != "Acme" || names[tenantB.ID] != "Globex" {
+		t.Fatalf("superadmin view must span both tenants with names, got %d users: %v",
+			len(users), names)
 	}
 
 	// Admin → denied at the bus, handler never runs.
@@ -61,5 +61,29 @@ func TestListAllUsers_SuperadminSeesAllTenants_AdminDenied(t *testing.T) {
 		if !errors.As(err, &pe) {
 			t.Fatalf("expected *shared.PermissionError for admin, got %T: %v", err, err)
 		}
+	}
+}
+
+// The dashboard stats count tenants and users; the user count includes all
+// tenants (and matches what the platform user list shows).
+func TestGetStats_CountsTenantsAndUsers(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "platform_stats.db"))
+
+	// Bootstrap "Default" tenant exists from migration; add two more → 3 tenants.
+	fx.SeedTenant(t, "Acme")
+	fx.SeedTenant(t, "Globex")
+	fx.SeedUserInTenant(t, "alice", "admin", shared.DefaultTenantID)
+	fx.SeedUserInTenant(t, "bob", "user", shared.DefaultTenantID)
+
+	stats, err := NewGetStatsHandler(fx.Tenants, fx.Users).Handle(ctx, GetStatsQuery{})
+	if err != nil {
+		t.Fatalf("stats: %v", err)
+	}
+	if stats.TenantCount != 3 {
+		t.Fatalf("tenant count: got %d want 3", stats.TenantCount)
+	}
+	if stats.UserCount != 2 {
+		t.Fatalf("user count: got %d want 2", stats.UserCount)
 	}
 }

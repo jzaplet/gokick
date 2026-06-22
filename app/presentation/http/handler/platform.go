@@ -6,31 +6,50 @@ import (
 	"time"
 
 	"gokick/app/application/bus"
+	platformcmd "gokick/app/application/platform/command"
 	platformqry "gokick/app/application/platform/query"
 	"gokick/app/domain/tenant"
 	"gokick/app/domain/user"
+	"gokick/app/presentation/http/request"
 	"gokick/app/presentation/http/response"
 )
 
 // PlatformHandler serves the superadmin platform plane — cross-tenant overviews
-// gated behind platform:overview (superadmin only). Read-only; the product fills
-// the deeper data (token usage, activity, billing).
+// (gated platform:overview) plus cross-tenant user management (platform:users:*).
+// Superadmin only; an admin is denied at the bus.
 type PlatformHandler struct {
 	queryBus    *bus.QueryBus
+	commandBus  *bus.CommandBus
+	getStats    *platformqry.GetStatsHandler
 	listUsers   *platformqry.ListAllUsersHandler
 	listTenants *platformqry.ListTenantsHandler
+	updateUser  *platformcmd.UpdatePlatformUserHandler
+	deleteUser  *platformcmd.DeletePlatformUserHandler
 }
 
 func NewPlatformHandler(
 	queryBus *bus.QueryBus,
+	commandBus *bus.CommandBus,
+	getStats *platformqry.GetStatsHandler,
 	listUsers *platformqry.ListAllUsersHandler,
 	listTenants *platformqry.ListTenantsHandler,
+	updateUser *platformcmd.UpdatePlatformUserHandler,
+	deleteUser *platformcmd.DeletePlatformUserHandler,
 ) *PlatformHandler {
 	return &PlatformHandler{
 		queryBus:    queryBus,
+		commandBus:  commandBus,
+		getStats:    getStats,
 		listUsers:   listUsers,
 		listTenants: listTenants,
+		updateUser:  updateUser,
+		deleteUser:  deleteUser,
 	}
+}
+
+type platformStatsDTO struct {
+	TenantCount int `json:"tenant_count"`
+	UserCount   int `json:"user_count"`
 }
 
 type platformUserDTO struct {
@@ -40,6 +59,7 @@ type platformUserDTO struct {
 	Role        string  `json:"role"`
 	Active      bool    `json:"active"`
 	TenantID    string  `json:"tenant_id"`
+	TenantName  string  `json:"tenant_name"`
 	LastLoginAt *string `json:"last_login_at"`
 }
 
@@ -50,15 +70,46 @@ type platformTenantDTO struct {
 	UserCount int    `json:"user_count"`
 }
 
+type platformUserRequest struct {
+	Nickname string `json:"nickname"`
+	Password string `json:"password"`
+	Email    string `json:"email"`
+	Role     string `json:"role"`
+}
+
+func (h *PlatformHandler) Stats(w http.ResponseWriter, r *http.Request) {
+	q := platformqry.GetStatsQuery{}
+
+	stats, err := bus.Exec(
+		r.Context(),
+		h.queryBus.Bus,
+		"PlatformStats",
+		q,
+		func(ctx context.Context) (platformqry.PlatformStats, error) {
+			return h.getStats.Handle(ctx, q)
+		},
+	)
+	if err != nil {
+		response.HandleError(w, err)
+
+		return
+	}
+
+	response.JSON(w, http.StatusOK, platformStatsDTO{
+		TenantCount: stats.TenantCount,
+		UserCount:   stats.UserCount,
+	})
+}
+
 func (h *PlatformHandler) Users(w http.ResponseWriter, r *http.Request) {
 	q := platformqry.ListAllUsersQuery{}
 
-	users, err := bus.Exec(
+	rows, err := bus.Exec(
 		r.Context(),
 		h.queryBus.Bus,
 		"PlatformListUsers",
 		q,
-		func(ctx context.Context) ([]user.User, error) {
+		func(ctx context.Context) ([]user.PlatformRow, error) {
 			return h.listUsers.Handle(ctx, q)
 		},
 	)
@@ -68,9 +119,9 @@ func (h *PlatformHandler) Users(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dtos := make([]platformUserDTO, len(users))
-	for i, u := range users {
-		dtos[i] = toPlatformUserDTO(u)
+	dtos := make([]platformUserDTO, len(rows))
+	for i, row := range rows {
+		dtos[i] = toPlatformUserDTO(row)
 	}
 
 	response.JSON(w, http.StatusOK, dtos)
@@ -107,20 +158,76 @@ func (h *PlatformHandler) Tenants(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, dtos)
 }
 
-func toPlatformUserDTO(u user.User) platformUserDTO {
+func (h *PlatformHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
+	var body platformUserRequest
+	if err := request.DecodeJSON(w, r, &body); err != nil {
+		response.Error(w, http.StatusBadRequest, err)
+
+		return
+	}
+
+	cmd := platformcmd.UpdatePlatformUserCommand{
+		ID:       r.PathValue("id"),
+		Nickname: body.Nickname,
+		Password: body.Password,
+		Email:    body.Email,
+		Role:     body.Role,
+	}
+
+	err := bus.ExecVoid(
+		r.Context(),
+		h.commandBus.Bus,
+		"PlatformUpdateUser",
+		cmd,
+		func(ctx context.Context) error {
+			return h.updateUser.Handle(ctx, cmd)
+		},
+	)
+	if err != nil {
+		response.HandleError(w, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *PlatformHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	cmd := platformcmd.DeletePlatformUserCommand{ID: r.PathValue("id")}
+
+	err := bus.ExecVoid(
+		r.Context(),
+		h.commandBus.Bus,
+		"PlatformDeleteUser",
+		cmd,
+		func(ctx context.Context) error {
+			return h.deleteUser.Handle(ctx, cmd)
+		},
+	)
+	if err != nil {
+		response.HandleError(w, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func toPlatformUserDTO(row user.PlatformRow) platformUserDTO {
 	var lastLogin *string
-	if u.LastLoginAt.Valid {
-		s := u.LastLoginAt.Time.Format(time.RFC3339)
+	if row.LastLoginAt.Valid {
+		s := row.LastLoginAt.Time.Format(time.RFC3339)
 		lastLogin = &s
 	}
 
 	return platformUserDTO{
-		ID:          u.ID,
-		Nickname:    u.Nickname,
-		Email:       u.Email,
-		Role:        u.Role,
-		Active:      u.Active,
-		TenantID:    u.TenantID,
+		ID:          row.ID,
+		Nickname:    row.Nickname,
+		Email:       row.Email,
+		Role:        row.Role,
+		Active:      row.Active,
+		TenantID:    row.TenantID,
+		TenantName:  row.TenantName,
 		LastLoginAt: lastLogin,
 	}
 }

@@ -28,14 +28,12 @@ func (r *Repository) Save(ctx context.Context, u *user.User) error {
 	return err
 }
 
-// Update scopes the WHERE to the caller's tenant (r.Tenant) so an admin can
-// only modify users in their own tenant. Positional args (not the struct's
-// tenant_id) because the guard must be the CALLER's tenant, not the loaded
-// row's.
-// Update scopes by tenant AND excludes superadmin rows: a tenant admin must
-// never modify (e.g. reset the password of) a platform superadmin, even one that
-// shares its tenant — that would be a back-door escalation. The platform account
-// is managed out-of-band, never through tenant-admin user management.
+// Update scopes the WHERE to the caller's tenant (r.Tenant, positional — the
+// guard is the CALLER's tenant, not the loaded row's) AND excludes superadmin
+// rows: a tenant admin must never modify (e.g. reset the password of) a platform
+// superadmin, even one that shares its tenant — that would be a back-door
+// escalation. The platform account is managed out-of-band, never through
+// tenant-admin user management.
 func (r *Repository) Update(ctx context.Context, u *user.User) error {
 	const q = `UPDATE users SET nickname=?, password_hash=?, email=?, role=?, active=?, updated_at=?
 		WHERE id=? AND tenant_id=? AND role != 'superadmin'`
@@ -100,15 +98,51 @@ func (r *Repository) FindAll(ctx context.Context) ([]user.User, error) {
 	return users, err
 }
 
-// FindAllAcrossTenants is the platform-plane read: every user, all tenants, the
-// deliberate inverse of FindAll. It does NOT call r.Tenant(ctx) — the marker
-// makes the cross-tenant scope explicit to the conformance gate. Ordered by
-// tenant then nickname so the superadmin overview groups naturally.
-func (r *Repository) FindAllAcrossTenants(ctx context.Context) ([]user.User, error) {
-	var users []user.User
-	err := r.Conn(ctx).SelectContext(ctx, &users,
-		`SELECT * FROM users /* tenant-scope-exempt: platform superadmin */ ORDER BY tenant_id, nickname`)
-	return users, err
+// FindAllAcrossTenants is the platform-plane read: every user, all tenants,
+// joined to its tenant name — the deliberate inverse of FindAll. It does NOT call
+// r.Tenant(ctx); the marker makes the cross-tenant scope explicit to the
+// conformance gate. INNER JOIN is safe (tenant_id is a NOT NULL FK). Ordered by
+// tenant then nickname so the superadmin list groups naturally.
+func (r *Repository) FindAllAcrossTenants(ctx context.Context) ([]user.PlatformRow, error) {
+	var rows []user.PlatformRow
+	err := r.Conn(ctx).SelectContext(ctx, &rows,
+		`SELECT u.id, u.nickname, u.email, u.role, u.active, u.tenant_id,
+		        t.name AS tenant_name, u.last_login_at
+		   FROM users u
+		   JOIN tenants t ON t.id = u.tenant_id /* tenant-scope-exempt: platform superadmin */
+		  ORDER BY t.name, u.nickname`)
+	return rows, err
+}
+
+// CountAcrossTenants counts every user (all tenants, including superadmins) for
+// the platform dashboard — it must match what the platform user list shows.
+func (r *Repository) CountAcrossTenants(ctx context.Context) (int, error) {
+	var n int
+	err := r.Conn(ctx).GetContext(ctx, &n,
+		`SELECT COUNT(*) FROM users /* tenant-scope-exempt: platform superadmin */`)
+	return n, err
+}
+
+// UpdateAcrossTenants is the platform-plane write: a superadmin edits a user in
+// ANY tenant. Unlike Update it carries no tenant filter (the marker makes that
+// explicit), but it still excludes superadmin rows so no platform account can be
+// edited through the API. tenant_id is deliberately NOT in the SET clause — an
+// edit must never move a user between tenants.
+func (r *Repository) UpdateAcrossTenants(ctx context.Context, u *user.User) error {
+	const q = `UPDATE users SET nickname=?, password_hash=?, email=?, role=?, active=?, updated_at=?
+		WHERE id=? AND role != 'superadmin' /* tenant-scope-exempt: platform superadmin */`
+	_, err := r.Conn(ctx).ExecContext(ctx, q,
+		u.Nickname, u.PasswordHash, u.Email, u.Role, u.Active, u.UpdatedAt, u.ID)
+	return err
+}
+
+// DeleteAcrossTenants is the platform-plane delete — same cross-tenant scope and
+// superadmin exclusion as UpdateAcrossTenants.
+func (r *Repository) DeleteAcrossTenants(ctx context.Context, id string) error {
+	_, err := r.Conn(ctx).ExecContext(ctx,
+		`DELETE FROM users WHERE id=? AND role != 'superadmin' /* tenant-scope-exempt: platform superadmin */`,
+		id)
+	return err
 }
 
 // RecordLogin stamps last_login_at on successful login. Raw pool (r.DB.DB()),

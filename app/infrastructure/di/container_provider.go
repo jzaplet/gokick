@@ -10,6 +10,7 @@ import (
 	busmw "gokick/app/application/bus/middleware"
 	dashboardqry "gokick/app/application/dashboard/query"
 	jobapp "gokick/app/application/job"
+	platformcmd "gokick/app/application/platform/command"
 	platformqry "gokick/app/application/platform/query"
 	profilecmd "gokick/app/application/profile/command"
 	profileqry "gokick/app/application/profile/query"
@@ -237,6 +238,9 @@ func providePermissionsRegistry() *shared.PermissionsRegistry {
 		dashboardqry.GetAdminDashboardQuery{},
 		platformqry.ListAllUsersQuery{},
 		platformqry.ListTenantsQuery{},
+		platformqry.GetStatsQuery{},
+		platformcmd.UpdatePlatformUserCommand{},
+		platformcmd.DeletePlatformUserCommand{},
 	})
 }
 
@@ -291,6 +295,9 @@ func CreateApplication(
 		userqry.NewListUsersHandler,
 		platformqry.NewListAllUsersHandler,
 		platformqry.NewListTenantsHandler,
+		platformqry.NewGetStatsHandler,
+		platformcmd.NewUpdatePlatformUserHandler,
+		platformcmd.NewDeletePlatformUserHandler,
 		dashboardqry.NewGetUserDashboardHandler,
 		dashboardqry.NewGetAdminDashboardHandler,
 		providePublicFS,

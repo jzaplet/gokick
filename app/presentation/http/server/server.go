@@ -211,9 +211,15 @@ func (s *Server) registerRoutes() *http.ServeMux {
 	mux.Handle("PUT /api/v1/admin/users/{id}", authed(http.HandlerFunc(s.adminUsers.Update)))
 	mux.Handle("DELETE /api/v1/admin/users/{id}", authed(http.HandlerFunc(s.adminUsers.Delete)))
 
-	// Platform plane — superadmin only (platform:overview, enforced by the bus).
+	// Platform plane — superadmin only (platform:* permissions, enforced by the bus).
+	mux.Handle("GET /api/v1/platform/stats", authed(http.HandlerFunc(s.platform.Stats)))
 	mux.Handle("GET /api/v1/platform/users", authed(http.HandlerFunc(s.platform.Users)))
 	mux.Handle("GET /api/v1/platform/tenants", authed(http.HandlerFunc(s.platform.Tenants)))
+	mux.Handle("PUT /api/v1/platform/users/{id}", authed(http.HandlerFunc(s.platform.UpdateUser)))
+	mux.Handle(
+		"DELETE /api/v1/platform/users/{id}",
+		authed(http.HandlerFunc(s.platform.DeleteUser)),
+	)
 
 	// SPA catch-all — must be last so explicit routes win.
 	mux.HandleFunc("GET /{path...}", s.spa.Serve)

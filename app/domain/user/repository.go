@@ -14,11 +14,20 @@ type Repository interface {
 	FindAllActive(ctx context.Context) ([]User, error)
 	FindAll(ctx context.Context) ([]User, error)
 
-	// FindAllAcrossTenants returns every user regardless of tenant — the
-	// deliberate INVERSE of FindAll's tenant scoping. Reserved for the superadmin
-	// platform plane (platform:overview); the query carries a tenant-scope-exempt
-	// marker so the conformance gate admits it consciously.
-	FindAllAcrossTenants(ctx context.Context) ([]User, error)
+	// FindAllAcrossTenants returns every user (joined to its tenant name)
+	// regardless of tenant — the deliberate INVERSE of FindAll's tenant scoping.
+	// Reserved for the superadmin platform plane; the query carries a
+	// tenant-scope-exempt marker so the conformance gate admits it consciously.
+	FindAllAcrossTenants(ctx context.Context) ([]PlatformRow, error)
+
+	// CountAcrossTenants counts all users across all tenants (platform dashboard).
+	CountAcrossTenants(ctx context.Context) (int, error)
+
+	// UpdateAcrossTenants / DeleteAcrossTenants are the platform-plane writes: a
+	// superadmin manages a user in ANY tenant. No tenant filter, but superadmin
+	// rows are excluded so a platform account can never be edited/deleted via API.
+	UpdateAcrossTenants(ctx context.Context, user *User) error
+	DeleteAcrossTenants(ctx context.Context, id string) error
 
 	// RecordLogin stamps last_login_at = now for the user on a successful login.
 	// Best-effort analytics; runs OUTSIDE the caller's tx (raw pool) like

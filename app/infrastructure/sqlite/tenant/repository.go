@@ -34,6 +34,13 @@ func (r *Repository) FindByID(ctx context.Context, id string) (*tenant.Tenant, e
 	return &t, err
 }
 
+// Count returns the total number of tenants (platform dashboard card).
+func (r *Repository) Count(ctx context.Context) (int, error) {
+	var n int
+	err := r.Conn(ctx).GetContext(ctx, &n, `SELECT COUNT(*) FROM tenants`)
+	return n, err
+}
+
 // FindAllWithUserCount is the platform-plane aggregate: each tenant plus its
 // user count via a single GROUP BY tenant_id. The LEFT JOIN touches the
 // tenant-owned users table cross-tenant, so the query carries the platform

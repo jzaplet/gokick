@@ -25,6 +25,6 @@ func NewListAllUsersHandler(users user.Repository) *ListAllUsersHandler {
 func (h *ListAllUsersHandler) Handle(
 	ctx context.Context,
 	_ ListAllUsersQuery,
-) ([]user.User, error) {
+) ([]user.PlatformRow, error) {
 	return h.users.FindAllAcrossTenants(ctx)
 }

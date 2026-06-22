@@ -11,4 +11,7 @@ type Repository interface {
 	// FindAllWithUserCount returns every tenant with its user count, for the
 	// superadmin platform overview (platform:overview). Cross-tenant by design.
 	FindAllWithUserCount(ctx context.Context) ([]Overview, error)
+
+	// Count returns the total number of tenants (platform dashboard).
+	Count(ctx context.Context) (int, error)
 }

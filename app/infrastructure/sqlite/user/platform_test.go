@@ -30,12 +30,13 @@ func TestUserRepository_FindAllAcrossTenants_SeesAllTenants(t *testing.T) {
 	if len(all) != 3 {
 		t.Fatalf("platform read must see all 3 users across tenants, got %d", len(all))
 	}
-	seen := map[string]bool{}
+	// Each row must carry its tenant NAME (the JOIN), not just the id.
+	names := map[string]string{}
 	for _, u := range all {
-		seen[u.TenantID] = true
+		names[u.TenantID] = u.TenantName
 	}
-	if !seen[tenantA.ID] || !seen[tenantB.ID] {
-		t.Fatalf("platform read must span both tenants, got %v", seen)
+	if names[tenantA.ID] != "Acme" || names[tenantB.ID] != "Globex" {
+		t.Fatalf("platform read must span both tenants with names, got %v", names)
 	}
 }
 
