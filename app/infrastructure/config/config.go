@@ -18,6 +18,10 @@ type Config struct {
 	CORSOrigin           string
 	CookieSecure         bool
 	SeedAdminPassword    string
+	// SeedSuperAdminPassword is OPTIONAL — empty means "do not seed a superadmin"
+	// (the platform plane is off by default). When set, the seeder mints a
+	// superadmin account (Krok 4c).
+	SeedSuperAdminPassword string
 
 	// Sentry frontend config — injected into index.html at serve time so the
 	// SPA reads DSN + environment at runtime (one built image works across
@@ -59,20 +63,21 @@ func LoadConfig() (*Config, error) {
 	_ = godotenv.Load()
 
 	config := &Config{
-		HTTPPort:          getEnv("APP_HTTP_PORT", "3000"),
-		DBPath:            getEnv("APP_DB_PATH", "./data/app.db"),
-		DBJournalMode:     getEnv("APP_DB_JOURNAL_MODE", "WAL"),
-		JWTSecret:         getEnv("APP_JWT_SECRET", ""),
-		CORSOrigin:        getEnv("APP_CORS_ORIGIN", "http://localhost:5173"),
-		CookieSecure:      getEnv("APP_COOKIE_SECURE", "true") == "true",
-		SeedAdminPassword: getEnv("APP_SEED_ADMIN_PASSWORD", ""),
-		TrustProxyHeaders: getEnv("APP_TRUST_PROXY_HEADERS", "false") == "true",
-		Multitenancy:      getEnv("APP_MULTITENANCY", "false") == "true",
-		RateLimitLogin:    getEnv("APP_RATE_LIMIT_LOGIN", "10/min"),
-		RateLimitRefresh:  getEnv("APP_RATE_LIMIT_REFRESH", "60/min"),
-		FrontendSentryDSN: getEnv("APP_SENTRY_DSN_FRONTEND", ""),
-		SentryEnvironment: getEnv("APP_SENTRY_ENVIRONMENT", ""),
-		SentryDebug:       getEnv("APP_SENTRY_DEBUG", "false") == "true",
+		HTTPPort:               getEnv("APP_HTTP_PORT", "3000"),
+		DBPath:                 getEnv("APP_DB_PATH", "./data/app.db"),
+		DBJournalMode:          getEnv("APP_DB_JOURNAL_MODE", "WAL"),
+		JWTSecret:              getEnv("APP_JWT_SECRET", ""),
+		CORSOrigin:             getEnv("APP_CORS_ORIGIN", "http://localhost:5173"),
+		CookieSecure:           getEnv("APP_COOKIE_SECURE", "true") == "true",
+		SeedAdminPassword:      getEnv("APP_SEED_ADMIN_PASSWORD", ""),
+		SeedSuperAdminPassword: getEnv("APP_SEED_SUPERADMIN_PASSWORD", ""),
+		TrustProxyHeaders:      getEnv("APP_TRUST_PROXY_HEADERS", "false") == "true",
+		Multitenancy:           getEnv("APP_MULTITENANCY", "false") == "true",
+		RateLimitLogin:         getEnv("APP_RATE_LIMIT_LOGIN", "10/min"),
+		RateLimitRefresh:       getEnv("APP_RATE_LIMIT_REFRESH", "60/min"),
+		FrontendSentryDSN:      getEnv("APP_SENTRY_DSN_FRONTEND", ""),
+		SentryEnvironment:      getEnv("APP_SENTRY_ENVIRONMENT", ""),
+		SentryDebug:            getEnv("APP_SENTRY_DEBUG", "false") == "true",
 	}
 
 	var err error

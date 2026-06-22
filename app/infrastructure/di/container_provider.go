@@ -170,6 +170,12 @@ func provideSeedAdminPassword(cfg *config.Config) sqliteseeder.SeedAdminPassword
 	return sqliteseeder.SeedAdminPassword(cfg.SeedAdminPassword)
 }
 
+// provideSeedSuperAdminPassword surfaces the OPTIONAL superadmin seed password
+// as its own Wire-bound type (Krok 4c). Empty = no superadmin seeded.
+func provideSeedSuperAdminPassword(cfg *config.Config) sqliteseeder.SeedSuperAdminPassword {
+	return sqliteseeder.SeedSuperAdminPassword(cfg.SeedSuperAdminPassword)
+}
+
 // provideSchedulerJobs is the single source of truth for periodic in-process
 // jobs — mirrors providePermissionsRegistry / provideJobHandlerRegistry. Add
 // a new Job here; provideScheduler stays decoupled from job business.
@@ -253,6 +259,7 @@ func CreateApplication(
 		provideIPExtractor,
 		provideRateLimiters,
 		provideSeedAdminPassword,
+		provideSeedSuperAdminPassword,
 		provideSchedulerJobs,
 		provideScheduler,
 		provideJobHandlerRegistry,

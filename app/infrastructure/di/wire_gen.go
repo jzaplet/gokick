@@ -113,7 +113,8 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	worker := provideWorker(logger, reporter, repository, handlerRegistry, sqliteManager, jobDispatcher)
 	serveCommand := console.NewServeCommand(serverServer, scheduler, worker)
 	seedAdminPassword := provideSeedAdminPassword(configConfig)
-	seederSeeder := seeder.NewSeeder(userRepository, passwordHasher, seedAdminPassword, logger)
+	seedSuperAdminPassword := provideSeedSuperAdminPassword(configConfig)
+	seederSeeder := seeder.NewSeeder(userRepository, passwordHasher, seedAdminPassword, seedSuperAdminPassword, logger)
 	seedCommand := console.NewSeedCommand(seederSeeder)
 	createUserCommand := console.NewCreateUserCommand(createUserHandler)
 	workerCommand := console.NewWorkerCommand(worker)
@@ -240,6 +241,12 @@ func provideRateLimiters(
 // with other strings in the DI graph.
 func provideSeedAdminPassword(cfg *config.Config) seeder.SeedAdminPassword {
 	return seeder.SeedAdminPassword(cfg.SeedAdminPassword)
+}
+
+// provideSeedSuperAdminPassword surfaces the OPTIONAL superadmin seed password
+// as its own Wire-bound type (Krok 4c). Empty = no superadmin seeded.
+func provideSeedSuperAdminPassword(cfg *config.Config) seeder.SeedSuperAdminPassword {
+	return seeder.SeedSuperAdminPassword(cfg.SeedSuperAdminPassword)
 }
 
 // provideSchedulerJobs is the single source of truth for periodic in-process
