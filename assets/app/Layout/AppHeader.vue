@@ -67,6 +67,17 @@ const handleLogout = async (): Promise<void> => {
                 >
                     Users
                 </RouterLink>
+                <RouterLink
+                    v-if="hasPermission(Permission.PlatformOverview) === true"
+                    :to="{ name: 'platform-overview' }"
+                    :class="[
+                        'px-3 py-1.5 rounded-md text-sm font-medium',
+                        'text-gray-700 hover:text-gray-900 hover:bg-gray-100',
+                    ]"
+                    active-class="!text-orange-700 !bg-orange-50"
+                >
+                    Platform
+                </RouterLink>
             </nav>
 
             <Dropdown v-if="user !== null">
@@ -145,6 +156,17 @@ const handleLogout = async (): Promise<void> => {
                 active-class="!text-orange-700 !bg-orange-50"
             >
                 Users
+            </RouterLink>
+            <RouterLink
+                v-if="hasPermission(Permission.PlatformOverview) === true"
+                :to="{ name: 'platform-overview' }"
+                :class="[
+                    'px-3 py-1.5 rounded-md text-sm font-medium',
+                    'text-gray-700 hover:text-gray-900 hover:bg-gray-100',
+                ]"
+                active-class="!text-orange-700 !bg-orange-50"
+            >
+                Platform
             </RouterLink>
         </nav>
     </header>

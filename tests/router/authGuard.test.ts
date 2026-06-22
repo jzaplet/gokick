@@ -20,6 +20,15 @@ const makeTestRouter = (): Router => {
                 requiresPermission: 'admin:users:read',
             },
         },
+        {
+            path: '/platform/overview',
+            name: 'platform-overview',
+            component: Blank,
+            meta: {
+                requiresAuth: true,
+                requiresPermission: 'platform:overview',
+            },
+        },
     ];
     const router = createRouter({
         history: createMemoryHistory(),
@@ -90,6 +99,24 @@ describe('authGuard', () => {
         await router.push('/admin/users');
 
         expect(router.currentRoute.value.name).toBe('admin-users');
+    });
+
+    it('allows superadmin into the platform route', async (): Promise<void> => {
+        setLoggedIn('superadmin');
+        const router = makeTestRouter();
+
+        await router.push('/platform/overview');
+
+        expect(router.currentRoute.value.name).toBe('platform-overview');
+    });
+
+    it('denies admin the platform route (superadmin-only) → /home', async (): Promise<void> => {
+        setLoggedIn('admin');
+        const router = makeTestRouter();
+
+        await router.push('/platform/overview');
+
+        expect(router.currentRoute.value.name).toBe('home');
     });
 
     it('omits redirect query when protected route is /', async (): Promise<void> => {

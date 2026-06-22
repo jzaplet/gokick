@@ -43,9 +43,11 @@ const handleSubmit = async (): Promise<void> => {
     success(`Welcome back, ${result.data.user.nickname}.`);
 
     const redirectQuery = route.query['redirect'];
-    const defaultByRole = result.data.user.role === 'admin'
-        ? '/admin/dashboard'
-        : '/user/dashboard';
+    const roleHome: Record<string, string> = {
+        superadmin: '/platform/overview',
+        admin: '/admin/dashboard',
+    };
+    const defaultByRole = roleHome[result.data.user.role] ?? '/user/dashboard';
     const target = typeof redirectQuery === 'string' ? redirectQuery : defaultByRole;
 
     await router.push(target);

@@ -8,6 +8,7 @@ import AdminUserCreateView from '@/app/Admin/Views/AdminUserCreateView.vue';
 import AdminUserEditView from '@/app/Admin/Views/AdminUserEditView.vue';
 import UserDashboardView from '@/app/Dashboard/Views/UserDashboardView.vue';
 import AdminDashboardView from '@/app/Dashboard/Views/AdminDashboardView.vue';
+import PlatformOverviewView from '@/app/Platform/Views/PlatformOverviewView.vue';
 
 // Each route declares its auth posture explicitly (mirrors the backend
 // Permissioned / SkipPermission rule). TypeScript rejects any entry without
@@ -74,6 +75,15 @@ export const routes: AppRoute[] = [
         meta: {
             requiresAuth: true,
             requiresPermission: Permission.AdminUsersUpdate,
+        },
+    },
+    {
+        path: '/platform/overview',
+        name: 'platform-overview',
+        component: PlatformOverviewView,
+        meta: {
+            requiresAuth: true,
+            requiresPermission: Permission.PlatformOverview,
         },
     },
 ];
