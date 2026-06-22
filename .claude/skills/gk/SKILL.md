@@ -59,6 +59,7 @@ Nebo prostě popiš problém a AI sáhne po správném skillu sama (řídí se p
 |-------|---------|
 | `/gk-auth` | JWT access + refresh, rotace + theft detection, login, session, logout |
 | `/gk-permissions` | Kdo smí co — BE `Permissioned` + FE enum, jeden zdroj pravdy |
+| `/gk-multitenancy` | Zapínatelný row-level multitenancy + platformní rovina (superadmin), tenant izolace + CLI |
 | `/gk-rate-limiting` | Per-IP rate limit + brute-force lock + extrakce klientské IP |
 | `/gk-hardening` | CSRF + security headers + maskování tajemství před error trackerem |
 

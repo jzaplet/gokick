@@ -67,6 +67,11 @@ make build && make serve
 
 | Příkaz | Co dělá |
 |---|---|
-| `./bin/app serve` | Spustí HTTP server |
-| `./bin/app seed` | Naplní DB výchozími daty (admin user) |
-| `./bin/app create-user -n <nick> -p <pass> [-e <email>] [-r <role>]` | Vytvoří uživatele (výchozí role `admin`) |
+| `./bin/app serve` | HTTP server + in-process scheduler + job worker (sdílí jeden ctx) |
+| `./bin/app worker` | Jen persistentní job worker (bez HTTP serveru) |
+| `./bin/app seed` | Admin účet (heslo z `APP_SEED_ADMIN_PASSWORD`, povinné) + superadmin (jen když je `APP_SEED_SUPERADMIN_PASSWORD`); s multitenancy on založí adminovi vlastní tenant (`APP_SEED_ADMIN_TENANT`) |
+| `./bin/app create-user -n <nick> -p <pass> [-e <email>] [-r admin\|user] [--tenant-id <id> \| --tenant-name <name>]` | Vytvoří uživatele (default role `admin`). S multitenancy on je tenant **povinný** — buď existující `--tenant-id`, nebo nový `--tenant-name` |
+| `./bin/app create-superadmin -n <nick> -p <pass> [-e <email>]` | Vytvoří platformního **superadmina** (cross-tenant přístup) — jediná cesta, jak ho založit |
+| `./bin/app create-tenant -n <name>` | Vytvoří tenant a vypíše jeho id (pro `create-user --tenant-id`) |
+
+> **Multitenancy** je celé popsané ve skillu `/gk-multitenancy` (přepínač, izolace, platformní rovina, tenant tooling).
