@@ -104,8 +104,8 @@ func TestMigrationDown_RollsBackLastMigration(t *testing.T) {
 	}
 
 	// Precondition: the last migration's table is present before rollback.
-	if !tableExists(t, ctx, mgr, "audit_log") {
-		t.Fatal("precondition: expected audit_log table to exist after migrate up")
+	if !tableExists(t, ctx, mgr, "tenants") {
+		t.Fatal("precondition: expected tenants table to exist after migrate up")
 	}
 
 	if err := goose.DownContext(ctx, mgr.DB().DB, "."); err != nil {
@@ -121,9 +121,9 @@ func TestMigrationDown_RollsBackLastMigration(t *testing.T) {
 		t.Fatalf("expected version to decrease after down: before=%d after=%d", before, after)
 	}
 
-	// The most recent migration created audit_log; its down dropped it.
-	if tableExists(t, ctx, mgr, "audit_log") {
-		t.Fatal("expected audit_log table to be dropped by migrate down, but it still exists")
+	// The most recent migration created tenants; its down dropped it.
+	if tableExists(t, ctx, mgr, "tenants") {
+		t.Fatal("expected tenants table to be dropped by migrate down, but it still exists")
 	}
 
 	// An earlier table (users, from the init migration) must remain — down

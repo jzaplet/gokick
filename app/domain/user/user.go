@@ -4,18 +4,25 @@ import (
 	"database/sql"
 	"time"
 
+	"gokick/app/domain/shared"
+
 	"github.com/google/uuid"
 )
 
 type User struct {
-	ID           string    `db:"id"`
-	Nickname     string    `db:"nickname"`
-	PasswordHash string    `db:"password_hash"`
-	Email        string    `db:"email"`
-	Role         string    `db:"role"`
-	Active       bool      `db:"active"`
-	CreatedAt    time.Time `db:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at"`
+	ID           string `db:"id"`
+	Nickname     string `db:"nickname"`
+	PasswordHash string `db:"password_hash"`
+	Email        string `db:"email"`
+	Role         string `db:"role"`
+	// TenantID scopes the user to a tenant. In single-tenant mode it is
+	// shared.DefaultTenantID for everyone; the DB column NOT NULL DEFAULT
+	// supplies it on insert (the repo INSERT omits it), and NewUser sets it
+	// in-memory so a freshly built User matches what the DB stores.
+	TenantID  string    `db:"tenant_id"`
+	Active    bool      `db:"active"`
+	CreatedAt time.Time `db:"created_at"`
+	UpdatedAt time.Time `db:"updated_at"`
 
 	// Brute-force tracking. Mutated only via Repository's
 	// RecordFailedLogin / ResetFailedLogin (which run outside the bus
@@ -36,6 +43,7 @@ func NewUser(nickname Nickname, passwordHash string, email Email, role Role) *Us
 		PasswordHash: passwordHash,
 		Email:        string(email),
 		Role:         string(role),
+		TenantID:     shared.DefaultTenantID,
 		Active:       true,
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
