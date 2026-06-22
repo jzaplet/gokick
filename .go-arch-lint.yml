@@ -64,6 +64,8 @@ components:
     in: domain/token/**
   domain_job:
     in: domain/job/**
+  domain_tenant:
+    in: domain/tenant/**
 
   # Layer 2: Application
   bus:
@@ -90,6 +92,7 @@ components:
     in:
       - infrastructure/sqlite/audit/**
       - infrastructure/sqlite/job/**
+      - infrastructure/sqlite/tenant/**
       - infrastructure/sqlite/token/**
       - infrastructure/sqlite/user/**
   sqlite_seeder:
@@ -134,6 +137,8 @@ deps:
     anyVendorDeps: true
   domain_job:
     anyVendorDeps: true
+  domain_tenant:
+    anyVendorDeps: true
 
   # Application — depends on domain only
   bus:
@@ -163,6 +168,7 @@ deps:
       - domain_user
       - domain_token
       - domain_job
+      - domain_tenant
     anyVendorDeps: true
 
   # Infrastructure — depends on domain
@@ -185,6 +191,7 @@ deps:
       - domain_user
       - domain_token
       - domain_job
+      - domain_tenant
   sqlite_seeder:
     mayDependOn:
       - database

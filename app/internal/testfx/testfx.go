@@ -14,12 +14,14 @@ import (
 	busmw "gokick/app/application/bus/middleware"
 	"gokick/app/domain/job"
 	"gokick/app/domain/shared"
+	"gokick/app/domain/tenant"
 	"gokick/app/domain/token"
 	"gokick/app/domain/user"
 	"gokick/app/infrastructure/config"
 	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/security"
 	sqlitejob "gokick/app/infrastructure/sqlite/job"
+	sqlitetenant "gokick/app/infrastructure/sqlite/tenant"
 	sqlitetoken "gokick/app/infrastructure/sqlite/token"
 	sqliteuser "gokick/app/infrastructure/sqlite/user"
 
@@ -27,12 +29,13 @@ import (
 )
 
 type Fixture struct {
-	DB     *database.SqliteManager
-	Users  user.Repository
-	Tokens token.TokenRepository
-	Jobs   job.Repository
-	Hasher *security.PasswordHasher
-	Jwt    *security.JwtService
+	DB      *database.SqliteManager
+	Users   user.Repository
+	Tokens  token.TokenRepository
+	Jobs    job.Repository
+	Tenants tenant.Repository
+	Hasher  *security.PasswordHasher
+	Jwt     *security.JwtService
 }
 
 // New spins up an isolated SQLite database at dbPath, runs migrations and wires
@@ -65,12 +68,13 @@ func New(t *testing.T, dbPath string) *Fixture {
 	}
 
 	return &Fixture{
-		DB:     db,
-		Users:  sqliteuser.NewRepository(db),
-		Tokens: sqlitetoken.NewRepository(db),
-		Jobs:   sqlitejob.NewRepository(db),
-		Hasher: security.NewPasswordHasher(),
-		Jwt:    jwt,
+		DB:      db,
+		Users:   sqliteuser.NewRepository(db),
+		Tokens:  sqlitetoken.NewRepository(db),
+		Jobs:    sqlitejob.NewRepository(db),
+		Tenants: sqlitetenant.NewRepository(db),
+		Hasher:  security.NewPasswordHasher(),
+		Jwt:     jwt,
 	}
 }
 
@@ -174,6 +178,17 @@ func (f *Fixture) SeedUser(t *testing.T, nickname, password, role string) *user.
 		t.Fatalf("save user: %v", err)
 	}
 	return u
+}
+
+// SeedTenant persists a tenant with the given name and returns it. Used by
+// multitenant tests to create the distinct tenants whose isolation they assert.
+func (f *Fixture) SeedTenant(t *testing.T, name string) *tenant.Tenant {
+	t.Helper()
+	tn := tenant.NewTenant(name)
+	if err := f.Tenants.Save(context.Background(), tn); err != nil {
+		t.Fatalf("save tenant: %v", err)
+	}
+	return tn
 }
 
 // SeedRefreshToken persists a refresh token for the user and returns the raw (unhashed) value.
