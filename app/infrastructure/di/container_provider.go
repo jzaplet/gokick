@@ -177,6 +177,16 @@ func provideSeedSuperAdminPassword(cfg *config.Config) sqliteseeder.SeedSuperAdm
 	return sqliteseeder.SeedSuperAdminPassword(cfg.SeedSuperAdminPassword)
 }
 
+// provideSeedAdminTenant / provideMultitenant surface the seeder's tenant inputs
+// as Wire-distinct types so it gets the specific values, not the whole config.
+func provideSeedAdminTenant(cfg *config.Config) sqliteseeder.SeedAdminTenant {
+	return sqliteseeder.SeedAdminTenant(cfg.SeedAdminTenant)
+}
+
+func provideMultitenant(cfg *config.Config) sqliteseeder.Multitenant {
+	return sqliteseeder.Multitenant(cfg.Multitenancy)
+}
+
 // provideSchedulerJobs is the single source of truth for periodic in-process
 // jobs — mirrors providePermissionsRegistry / provideJobHandlerRegistry. Add
 // a new Job here; provideScheduler stays decoupled from job business.
@@ -265,6 +275,8 @@ func CreateApplication(
 		provideRateLimiters,
 		provideSeedAdminPassword,
 		provideSeedSuperAdminPassword,
+		provideSeedAdminTenant,
+		provideMultitenant,
 		provideSchedulerJobs,
 		provideScheduler,
 		provideJobHandlerRegistry,

@@ -198,6 +198,7 @@ deps:
       - database
       - testfx
       - domain_user
+      - domain_tenant
   scheduler:
     anyVendorDeps: true
   worker:

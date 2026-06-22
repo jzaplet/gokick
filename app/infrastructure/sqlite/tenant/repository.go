@@ -34,6 +34,17 @@ func (r *Repository) FindByID(ctx context.Context, id string) (*tenant.Tenant, e
 	return &t, err
 }
 
+// FindByName returns the first tenant matching name (or nil). tenants is
+// control-plane / exempt, so no tenant_id scoping applies.
+func (r *Repository) FindByName(ctx context.Context, name string) (*tenant.Tenant, error) {
+	var t tenant.Tenant
+	err := r.Conn(ctx).GetContext(ctx, &t, `SELECT * FROM tenants WHERE name=? LIMIT 1`, name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return &t, err
+}
+
 // Count returns the total number of tenants (platform dashboard card).
 func (r *Repository) Count(ctx context.Context) (int, error) {
 	var n int

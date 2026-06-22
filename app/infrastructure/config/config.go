@@ -22,6 +22,10 @@ type Config struct {
 	// (the platform plane is off by default). When set, the seeder mints a
 	// superadmin account.
 	SeedSuperAdminPassword string
+	// SeedAdminTenant names the tenant the seeded admin lands in WHEN multitenancy
+	// is on (find-or-create). With multitenancy off the admin stays in the default
+	// tenant and this is ignored.
+	SeedAdminTenant string
 
 	// Sentry frontend config — injected into index.html at serve time so the
 	// SPA reads DSN + environment at runtime (one built image works across
@@ -71,6 +75,7 @@ func LoadConfig() (*Config, error) {
 		CookieSecure:           getEnv("APP_COOKIE_SECURE", "true") == "true",
 		SeedAdminPassword:      getEnv("APP_SEED_ADMIN_PASSWORD", ""),
 		SeedSuperAdminPassword: getEnv("APP_SEED_SUPERADMIN_PASSWORD", ""),
+		SeedAdminTenant:        getEnv("APP_SEED_ADMIN_TENANT", "Tenant 1"),
 		TrustProxyHeaders:      getEnv("APP_TRUST_PROXY_HEADERS", "false") == "true",
 		Multitenancy:           getEnv("APP_MULTITENANCY", "false") == "true",
 		RateLimitLogin:         getEnv("APP_RATE_LIMIT_LOGIN", "10/min"),

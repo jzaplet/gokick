@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"gokick/app/domain/shared"
 	"gokick/app/infrastructure/sqlite/seeder"
 	"gokick/app/internal/testfx"
 )
@@ -15,11 +16,12 @@ import (
 func newSeeder(t *testing.T, fx *testfx.Fixture, pw seeder.SeedAdminPassword) *seeder.Seeder {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return seeder.NewSeeder(fx.Users, fx.Hasher, pw, "", logger)
+	// Single-tenant (multitenant=false) — admin lands in the default tenant.
+	return seeder.NewSeeder(fx.Users, fx.Tenants, fx.Hasher, pw, "", "Tenant 1", false, logger)
 }
 
 // newSeederSuper builds a seeder with both the admin and the (optional)
-// superadmin password set, for the superadmin-seed tests.
+// superadmin password set, for the superadmin-seed tests (single-tenant).
 func newSeederSuper(
 	t *testing.T,
 	fx *testfx.Fixture,
@@ -28,7 +30,38 @@ func newSeederSuper(
 ) *seeder.Seeder {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return seeder.NewSeeder(fx.Users, fx.Hasher, adminPw, superPw, logger)
+	return seeder.NewSeeder(
+		fx.Users,
+		fx.Tenants,
+		fx.Hasher,
+		adminPw,
+		superPw,
+		"Tenant 1",
+		false,
+		logger,
+	)
+}
+
+// newSeederMT builds a MULTITENANT seeder with the given admin-tenant name.
+func newSeederMT(
+	t *testing.T,
+	fx *testfx.Fixture,
+	adminPw seeder.SeedAdminPassword,
+	superPw seeder.SeedSuperAdminPassword,
+	tenantName seeder.SeedAdminTenant,
+) *seeder.Seeder {
+	t.Helper()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	return seeder.NewSeeder(
+		fx.Users,
+		fx.Tenants,
+		fx.Hasher,
+		adminPw,
+		superPw,
+		tenantName,
+		true,
+		logger,
+	)
 }
 
 func TestSeeder_RejectsEmptyPassword(t *testing.T) {
@@ -136,5 +169,71 @@ func TestSeeder_RejectsInvalidSuperAdminPassword(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "APP_SEED_SUPERADMIN_PASSWORD") {
 		t.Fatalf("error must name the offending env var, got %q", err)
+	}
+}
+
+// Single-tenant (multitenancy off): the seeded admin lands in the DEFAULT tenant
+// — the deployment behaves as if tenants did not exist.
+func TestSeeder_SingleTenant_AdminInDefaultTenant(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "seed_single_tenant.db"))
+
+	if err := newSeeder(t, fx, "valid-password-12").Seed(ctx); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	admin, _ := fx.Users.FindByNickname(ctx, "admin")
+	if admin == nil {
+		t.Fatal("admin must exist")
+	}
+	if admin.TenantID != shared.DefaultTenantID {
+		t.Fatalf("single-tenant admin must be in the default tenant, got %q", admin.TenantID)
+	}
+}
+
+// Multitenant: the seeded admin gets its OWN named tenant (not the default), the
+// superadmin still lives in the default tenant, and re-seeding is idempotent (no
+// second tenant, no error).
+func TestSeeder_Multitenant_AdminGetsOwnTenant(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "seed_multitenant.db"))
+
+	if err := newSeederMT(t, fx, "valid-password-12", "super-password-12", "Acme").Seed(ctx); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	admin, _ := fx.Users.FindByNickname(ctx, "admin")
+	if admin == nil {
+		t.Fatal("admin must exist")
+	}
+	if admin.TenantID == shared.DefaultTenantID {
+		t.Fatal("multitenant admin must NOT be in the default tenant")
+	}
+
+	adminTenant, err := fx.Tenants.FindByID(ctx, admin.TenantID)
+	if err != nil {
+		t.Fatalf("load admin tenant: %v", err)
+	}
+	if adminTenant == nil || adminTenant.Name != "Acme" {
+		t.Fatalf("admin must land in the named tenant 'Acme', got %+v", adminTenant)
+	}
+
+	// Superadmin stays in the default tenant even under multitenancy.
+	super, _ := fx.Users.FindByNickname(ctx, "superadmin")
+	if super == nil || super.TenantID != shared.DefaultTenantID {
+		t.Fatalf("superadmin must stay in the default tenant, got %+v", super)
+	}
+
+	// Idempotent: a second seed must not create a second 'Acme' tenant.
+	if err := newSeederMT(t, fx, "valid-password-12", "super-password-12", "Acme").Seed(ctx); err != nil {
+		t.Fatalf("second seed: %v", err)
+	}
+	var acmeCount int
+	if err := fx.DB.DB().GetContext(ctx, &acmeCount,
+		`SELECT COUNT(*) FROM tenants WHERE name='Acme'`); err != nil {
+		t.Fatalf("count tenants: %v", err)
+	}
+	if acmeCount != 1 {
+		t.Fatalf("re-seed must not duplicate the admin tenant, got %d 'Acme' tenants", acmeCount)
 	}
 }

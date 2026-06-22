@@ -118,7 +118,9 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	serveCommand := console.NewServeCommand(serverServer, scheduler, worker)
 	seedAdminPassword := provideSeedAdminPassword(configConfig)
 	seedSuperAdminPassword := provideSeedSuperAdminPassword(configConfig)
-	seederSeeder := seeder.NewSeeder(userRepository, passwordHasher, seedAdminPassword, seedSuperAdminPassword, logger)
+	seedAdminTenant := provideSeedAdminTenant(configConfig)
+	multitenant := provideMultitenant(configConfig)
+	seederSeeder := seeder.NewSeeder(userRepository, tenantRepository, passwordHasher, seedAdminPassword, seedSuperAdminPassword, seedAdminTenant, multitenant, logger)
 	seedCommand := console.NewSeedCommand(seederSeeder)
 	createUserCommand := console.NewCreateUserCommand(createUserHandler)
 	createSuperAdminHandler := command4.NewCreateSuperAdminHandler(userRepository, passwordHasher)
@@ -253,6 +255,16 @@ func provideSeedAdminPassword(cfg *config.Config) seeder.SeedAdminPassword {
 // as its own Wire-bound type. Empty = no superadmin seeded.
 func provideSeedSuperAdminPassword(cfg *config.Config) seeder.SeedSuperAdminPassword {
 	return seeder.SeedSuperAdminPassword(cfg.SeedSuperAdminPassword)
+}
+
+// provideSeedAdminTenant / provideMultitenant surface the seeder's tenant inputs
+// as Wire-distinct types so it gets the specific values, not the whole config.
+func provideSeedAdminTenant(cfg *config.Config) seeder.SeedAdminTenant {
+	return seeder.SeedAdminTenant(cfg.SeedAdminTenant)
+}
+
+func provideMultitenant(cfg *config.Config) seeder.Multitenant {
+	return seeder.Multitenant(cfg.Multitenancy)
 }
 
 // provideSchedulerJobs is the single source of truth for periodic in-process
