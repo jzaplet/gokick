@@ -6,19 +6,19 @@ slug: 'framework-query-flow'
 parent: 'framework'
 navTitle: 'Query flow'
 title: 'Query flow'
-description: 'Čtecí cesta CQRS — krátký řetězec Recovery → Logging → Authorize, typovaný návrat, žádná transakce ani eventy.'
+description: 'Čtecí cesta CQRS — krátký řetězec Recovery → Logging → Authorize → Tenant, typovaný návrat, žádná transakce ani eventy.'
 ---
 
 # Query flow
 
-Čtecí operace tečou přes `QueryBus`. Oproti [Command flow](/framework/command-flow) je řetězec krátký — jen **Recovery → Logging → Authorize**. Žádná transakce, audit ani eventy: čtení nemění stav, takže nemá co commitovat ani ohlašovat. Návratová hodnota je typovaná díky generikám v `bus.Exec[R]`.
+Čtecí operace tečou přes `QueryBus`. Oproti [Command flow](/framework/command-flow) je řetězec krátký — jen **Recovery → Logging → Authorize → Tenant**. Žádná transakce, audit ani eventy: čtení nemění stav, takže nemá co commitovat ani ohlašovat. Tenant resoluce tu je (čtení se scopuje stejně jako zápisy — viz `/gk-multitenancy`). Návratová hodnota je typovaná díky generikám v `bus.Exec[R]`.
 
 > Přehled toku. Návod „jak napsat query handler" je ve skillu `/gk-queries`, mechaniku busů rozebírá `/gk-bus`.
 
 
 ## K čemu to je
 
-Když potřebuješ **přečíst data** (seznam, detail) a vrátit je z endpointu. Bus zajistí i u čtení tři věci: panika se nedostane ke klientovi (Recovery), každý dotaz má access log s `duration_ms` (Logging) a permission se vynutí i u čtecího endpointu (Authorize → 403). Co patří k zápisům — transakce, audit, eventy — tu záměrně chybí.
+Když potřebuješ **přečíst data** (seznam, detail) a vrátit je z endpointu. Bus zajistí i u čtení čtyři věci: panika se nedostane ke klientovi (Recovery), každý dotaz má access log s `duration_ms` (Logging), permission se vynutí i u čtecího endpointu (Authorize → 403) a dotaz se scopne na aktivní tenant (Tenant). Co patří k zápisům — transakce, audit, eventy — tu záměrně chybí.
 
 
 ## Jak to teče
@@ -27,8 +27,9 @@ Když potřebuješ **přečíst data** (seznam, detail) a vrátit je z endpointu
 2. **Recovery** zachytí případnou paniku → `PanicError` (500) + report.
 3. **Logging** zaloguje `bus: executing` → `bus: completed` + `duration_ms`.
 4. **Authorize** porovná `RequiredPermission()` s `PermissionChecker` → jinak 403.
-5. Query handler `Handle` čte přes `r.Conn(ctx)` (raw pool, žádná transakce).
-6. `bus.Exec[R]` vrátí typovaný výsledek (na `nil` vrátí zero value `R`); chybu mapuje `response.HandleError` na HTTP status.
+5. **Tenant** resolvuje aktivní tenant do `ctx` (row-level multitenancy; viz `/gk-multitenancy`).
+6. Query handler `Handle` čte přes `r.Conn(ctx)` (raw pool, žádná transakce).
+7. `bus.Exec[R]` vrátí typovaný výsledek (na `nil` vrátí zero value `R`); chybu mapuje `response.HandleError` na HTTP status.
 
 
 ## Příklad
