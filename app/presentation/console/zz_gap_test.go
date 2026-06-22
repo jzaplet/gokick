@@ -9,6 +9,7 @@ import (
 	"time"
 
 	jobapp "gokick/app/application/job"
+	platformcmd "gokick/app/application/platform/command"
 	"gokick/app/domain/shared"
 	"gokick/app/infrastructure/config"
 	"gokick/app/infrastructure/scheduler"
@@ -224,5 +225,46 @@ func TestServeCommand_SchedulerDoneGatesReturnAndSharesCtx(t *testing.T) {
 		if !contains(msgs, want) {
 			t.Fatalf("missing %q in lifecycle logs — co-run/drain not observed; saw %v", want, msgs)
 		}
+	}
+}
+
+// The create-superadmin CLI command delegates to the platform handler and
+// persists a superadmin out-of-band — the path the HTTP/admin API refuses. It
+// also enforces the required flags before RunE runs.
+func TestCreateSuperAdminCommand_CreatesSuperAdmin(t *testing.T) {
+	// No t.Parallel — see the other testfx-backed tests in this package (goose globals).
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "console_superadmin.db"))
+	handler := platformcmd.NewCreateSuperAdminHandler(fx.Users, fx.Hasher)
+
+	cmd := NewCreateSuperAdminCommand(handler).Command()
+	cmd.SilenceUsage = true
+	cmd.SetArgs([]string{"-n", "root", "-p", "secret12"})
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("execute create-superadmin: %v", err)
+	}
+
+	got, err := fx.Users.FindByNickname(context.Background(), "root")
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	if got == nil || got.Role != "superadmin" {
+		t.Fatalf("create-superadmin must persist a superadmin, got %+v", got)
+	}
+}
+
+func TestCreateSuperAdminCommand_MissingPasswordErrors(t *testing.T) {
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "console_superadmin_missing.db"))
+	handler := platformcmd.NewCreateSuperAdminHandler(fx.Users, fx.Hasher)
+
+	cmd := NewCreateSuperAdminCommand(handler).Command()
+	cmd.SilenceUsage = true
+	cmd.SilenceErrors = true
+	cmd.SetArgs([]string{"-n", "root"})
+	if err := cmd.ExecuteContext(context.Background()); err == nil {
+		t.Fatal("expected error when --password is missing")
+	}
+
+	if got, _ := fx.Users.FindByNickname(context.Background(), "root"); got != nil {
+		t.Fatal("no user must be created when a required flag is missing")
 	}
 }

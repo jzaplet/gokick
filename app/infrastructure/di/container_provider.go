@@ -241,6 +241,7 @@ func providePermissionsRegistry() *shared.PermissionsRegistry {
 		platformqry.GetStatsQuery{},
 		platformcmd.UpdatePlatformUserCommand{},
 		platformcmd.DeletePlatformUserCommand{},
+		platformcmd.CreateSuperAdminCommand{},
 	})
 }
 
@@ -298,6 +299,7 @@ func CreateApplication(
 		platformqry.NewGetStatsHandler,
 		platformcmd.NewUpdatePlatformUserHandler,
 		platformcmd.NewDeletePlatformUserHandler,
+		platformcmd.NewCreateSuperAdminHandler,
 		dashboardqry.NewGetUserDashboardHandler,
 		dashboardqry.NewGetAdminDashboardHandler,
 		providePublicFS,
@@ -313,6 +315,7 @@ func CreateApplication(
 		console.NewServeCommand,
 		console.NewSeedCommand,
 		console.NewCreateUserCommand,
+		console.NewCreateSuperAdminCommand,
 		console.NewWorkerCommand,
 		console.NewRootCommand,
 		app.NewApplication,

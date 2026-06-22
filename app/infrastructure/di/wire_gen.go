@@ -121,8 +121,10 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	seederSeeder := seeder.NewSeeder(userRepository, passwordHasher, seedAdminPassword, seedSuperAdminPassword, logger)
 	seedCommand := console.NewSeedCommand(seederSeeder)
 	createUserCommand := console.NewCreateUserCommand(createUserHandler)
+	createSuperAdminHandler := command4.NewCreateSuperAdminHandler(userRepository, passwordHasher)
+	createSuperAdminCommand := console.NewCreateSuperAdminCommand(createSuperAdminHandler)
 	workerCommand := console.NewWorkerCommand(worker)
-	rootCommand := console.NewRootCommand(serveCommand, seedCommand, createUserCommand, workerCommand)
+	rootCommand := console.NewRootCommand(serveCommand, seedCommand, createUserCommand, createSuperAdminCommand, workerCommand)
 	migrationManager := database.NewMigrationManager(sqliteManager, logger)
 	application := app.NewApplication(rootCommand, migrationManager)
 	return application, nil
@@ -302,5 +304,5 @@ func provideWorker(
 }
 
 func providePermissionsRegistry() *shared.PermissionsRegistry {
-	return shared.NewPermissionsRegistry([]shared.Permissioned{command.LogoutCommand{}, command2.ChangePasswordCommand{}, query.GetProfileQuery{}, command3.CreateUserCommand{}, command3.UpdateUserCommand{}, command3.DeleteUserCommand{}, query2.ListUsersQuery{}, query3.GetUserDashboardQuery{}, query3.GetAdminDashboardQuery{}, query4.ListAllUsersQuery{}, query4.ListTenantsQuery{}, query4.GetStatsQuery{}, command4.UpdatePlatformUserCommand{}, command4.DeletePlatformUserCommand{}})
+	return shared.NewPermissionsRegistry([]shared.Permissioned{command.LogoutCommand{}, command2.ChangePasswordCommand{}, query.GetProfileQuery{}, command3.CreateUserCommand{}, command3.UpdateUserCommand{}, command3.DeleteUserCommand{}, query2.ListUsersQuery{}, query3.GetUserDashboardQuery{}, query3.GetAdminDashboardQuery{}, query4.ListAllUsersQuery{}, query4.ListTenantsQuery{}, query4.GetStatsQuery{}, command4.UpdatePlatformUserCommand{}, command4.DeletePlatformUserCommand{}, command4.CreateSuperAdminCommand{}})
 }

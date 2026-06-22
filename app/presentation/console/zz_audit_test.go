@@ -170,7 +170,7 @@ func TestCreateUserCommand_RoleFlagCreatesUserRole(t *testing.T) {
 
 // ---------------------------------------------------------------------------
 // root command wiring
-//   presentation-01 — root exposes serve, seed, create-user, worker subcommands
+//   presentation-01 — root exposes serve, seed, create-user, create-superadmin, worker subcommands
 // ---------------------------------------------------------------------------
 
 func TestRootCommand_RegistersSubcommands(t *testing.T) {
@@ -182,6 +182,7 @@ func TestRootCommand_RegistersSubcommands(t *testing.T) {
 		NewServeCommand(nil, nil, nil),
 		NewSeedCommand(nil),
 		NewCreateUserCommand(nil),
+		NewCreateSuperAdminCommand(nil),
 		NewWorkerCommand(nil),
 	)
 
@@ -190,7 +191,7 @@ func TestRootCommand_RegistersSubcommands(t *testing.T) {
 		names[sub.Name()] = true
 	}
 
-	for _, want := range []string{"serve", "seed", "create-user", "worker"} {
+	for _, want := range []string{"serve", "seed", "create-user", "create-superadmin", "worker"} {
 		if !names[want] {
 			t.Fatalf("root command missing subcommand %q; registered: %v", want, names)
 		}

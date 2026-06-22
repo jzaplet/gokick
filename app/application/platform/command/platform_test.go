@@ -174,3 +174,62 @@ func assertPermissionDenied(t *testing.T, label string, err error) {
 		t.Fatalf("platform %s: expected *shared.PermissionError, got %T: %v", label, err, err)
 	}
 }
+
+// The out-of-band creation path mints a superadmin in the default tenant — the
+// sanctioned way to add one (the admin API refuses the role).
+func TestCreateSuperAdminHandler_CreatesSuperAdmin(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_superadmin.db"))
+
+	h := NewCreateSuperAdminHandler(fx.Users, fx.Hasher)
+	if err := h.Handle(ctx, CreateSuperAdminCommand{
+		Nickname: "root",
+		Password: "secret12",
+		Email:    "root@example.com",
+	}); err != nil {
+		t.Fatalf("create superadmin: %v", err)
+	}
+
+	got, err := fx.Users.FindByNickname(ctx, "root")
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	if got == nil {
+		t.Fatal("superadmin must be persisted")
+	}
+	if got.Role != "superadmin" {
+		t.Fatalf("role: got %q want superadmin", got.Role)
+	}
+	if got.TenantID != shared.DefaultTenantID {
+		t.Fatalf("superadmin must live in the default tenant, got %q", got.TenantID)
+	}
+	if err := fx.Hasher.Verify("secret12", got.PasswordHash); err != nil {
+		t.Fatalf("password verify: %v", err)
+	}
+}
+
+func TestCreateSuperAdminHandler_RejectsDuplicateNickname(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_superadmin_dup.db"))
+	fx.SeedUserInTenant(t, "root", "user", shared.DefaultTenantID)
+
+	h := NewCreateSuperAdminHandler(fx.Users, fx.Hasher)
+	err := h.Handle(ctx, CreateSuperAdminCommand{Nickname: "root", Password: "secret12"})
+	if err == nil {
+		t.Fatal("a duplicate nickname must be rejected")
+	}
+	var ve *shared.ValidationError
+	if !errors.As(err, &ve) || ve.Field != "nickname" {
+		t.Fatalf("expected nickname ValidationError, got %T: %v", err, err)
+	}
+}
+
+func TestCreateSuperAdminHandler_RejectsShortPassword(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_superadmin_pw.db"))
+
+	h := NewCreateSuperAdminHandler(fx.Users, fx.Hasher)
+	if err := h.Handle(ctx, CreateSuperAdminCommand{Nickname: "root", Password: "short"}); err == nil {
+		t.Fatal("a too-short password must be rejected")
+	}
+}
