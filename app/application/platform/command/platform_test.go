@@ -129,3 +129,48 @@ func TestDeletePlatformUser_CrossTenantAndSuperadminGuard(t *testing.T) {
 		t.Fatal("victim must be deleted cross-tenant")
 	}
 }
+
+// The platform write commands must be DENIED at the BUS for an admin identity —
+// proving they actually demand a platform:* permission, not just that the
+// handler guards work. Without this, fat-fingering RequiredPermission() to an
+// admin:* string would hand an admin cross-tenant write with every other test
+// still green. (The inverse-direction guard for the write path.)
+func TestPlatformWriteCommands_AdminDeniedAtBus(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "platform_write_authz.db"))
+	victim := fx.SeedUserInTenant(t, "bob", "user", shared.DefaultTenantID)
+	cmdBus, _, _ := fx.NewBuses()
+
+	adminCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{UserID: "a1", Role: "admin"})
+
+	uh := NewUpdatePlatformUserHandler(fx.Users, fx.Hasher)
+	updateCmd := UpdatePlatformUserCommand{
+		ID: victim.ID, Nickname: "hax", Email: "h@x.com", Role: "user",
+	}
+	_, updErr := testfx.ExecCommand(adminCtx, cmdBus, "PlatformUpdateUser", updateCmd,
+		func(ctx context.Context) (any, error) { return nil, uh.Handle(ctx, updateCmd) })
+	assertPermissionDenied(t, "update", updErr)
+
+	dh := NewDeletePlatformUserHandler(fx.Users)
+	deleteCmd := DeletePlatformUserCommand{ID: victim.ID}
+	_, delErr := testfx.ExecCommand(adminCtx, cmdBus, "PlatformDeleteUser", deleteCmd,
+		func(ctx context.Context) (any, error) { return nil, dh.Handle(ctx, deleteCmd) })
+	assertPermissionDenied(t, "delete", delErr)
+
+	// The denied writes never ran — bob is untouched.
+	got, err := fx.Users.FindByID(ctx, victim.ID)
+	if err != nil || got.Nickname != "bob" {
+		t.Fatal("admin-denied platform writes must not have executed")
+	}
+}
+
+func assertPermissionDenied(t *testing.T, label string, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("admin must be denied the platform %s at the bus", label)
+	}
+	var pe *shared.PermissionError
+	if !errors.As(err, &pe) {
+		t.Fatalf("platform %s: expected *shared.PermissionError, got %T: %v", label, err, err)
+	}
+}

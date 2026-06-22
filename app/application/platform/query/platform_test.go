@@ -75,6 +75,7 @@ func TestGetStats_CountsTenantsAndUsers(t *testing.T) {
 	fx.SeedTenant(t, "Globex")
 	fx.SeedUserInTenant(t, "alice", "admin", shared.DefaultTenantID)
 	fx.SeedUserInTenant(t, "bob", "user", shared.DefaultTenantID)
+	fx.SeedUserInTenant(t, "root", "superadmin", shared.DefaultTenantID)
 
 	stats, err := NewGetStatsHandler(fx.Tenants, fx.Users).Handle(ctx, GetStatsQuery{})
 	if err != nil {
@@ -83,7 +84,27 @@ func TestGetStats_CountsTenantsAndUsers(t *testing.T) {
 	if stats.TenantCount != 3 {
 		t.Fatalf("tenant count: got %d want 3", stats.TenantCount)
 	}
-	if stats.UserCount != 2 {
-		t.Fatalf("user count: got %d want 2", stats.UserCount)
+	// The user count includes the superadmin (3 = alice + bob + root) — it must
+	// match what the platform user list shows, or the dashboard and table disagree.
+	if stats.UserCount != 3 {
+		t.Fatalf("user count: got %d want 3 (must include the superadmin)", stats.UserCount)
+	}
+
+	rows, err := fx.Users.FindAllAcrossTenants(ctx)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(rows) != stats.UserCount {
+		t.Fatalf("user_count (%d) must match the platform list length (%d)",
+			stats.UserCount, len(rows))
+	}
+	hasSuper := false
+	for _, r := range rows {
+		if r.Role == "superadmin" {
+			hasSuper = true
+		}
+	}
+	if !hasSuper {
+		t.Fatal("the platform list must include the superadmin (the count includes it)")
 	}
 }
