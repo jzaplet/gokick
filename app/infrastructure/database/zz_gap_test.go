@@ -151,3 +151,68 @@ func tableExists(t *testing.T, ctx context.Context, mgr *database.SqliteManager,
 	}
 	return count == 1
 }
+
+// Krok 4b — the users.tenant_id FK rebuild must PRESERVE refresh_tokens (which
+// references users via ON DELETE CASCADE) and ENFORCE the FK afterward. The
+// rebuild drops+recreates users; with foreign_keys left on, the implicit DELETE
+// during DROP would cascade-delete refresh_tokens. The migration runs
+// foreign_keys OFF on the single connection the MigrationManager pins — proven
+// here with refresh_token rows actually present (an empty table would hide a
+// cascade).
+func TestMigration_UsersTenantFK_PreservesRefreshTokensAndEnforcesFK(t *testing.T) {
+	mgr := newTestManager(t)
+	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	const defaultTenant = "00000000-0000-0000-0000-000000000000"
+
+	// Migrate up to just before the FK rebuild (Krok 3's jobs.tenant_id migration).
+	goose.SetLogger(goose.NopLogger())
+	goose.SetBaseFS(migrations.FS)
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		t.Fatalf("dialect: %v", err)
+	}
+	if err := goose.UpToContext(ctx, mgr.DB().DB, ".", 20260622000001); err != nil {
+		t.Fatalf("migrate up-to pre-4b: %v", err)
+	}
+
+	// Seed a user (default tenant) and a refresh_token referencing it.
+	if _, err := mgr.DB().ExecContext(ctx,
+		`INSERT INTO users (id, nickname, password_hash, email, role, tenant_id) VALUES (?,?,?,?,?,?)`,
+		"u1", "alice", "h", "a@x", "admin", defaultTenant); err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	if _, err := mgr.DB().ExecContext(ctx,
+		`INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at) VALUES (?,?,?,?)`,
+		"rt1", "u1", "tok", "2999-01-01"); err != nil {
+		t.Fatalf("insert refresh_token: %v", err)
+	}
+
+	// Apply the FK rebuild through the production runner (which pins one connection).
+	if err := database.NewMigrationManager(mgr, logger).RunUp(); err != nil {
+		t.Fatalf("apply FK rebuild: %v", err)
+	}
+
+	// Core guarantee: the refresh_token survived (no cascade-delete).
+	var rt, usr int
+	if err := mgr.DB().GetContext(ctx, &rt,
+		`SELECT COUNT(*) FROM refresh_tokens WHERE id='rt1'`); err != nil {
+		t.Fatalf("count tokens: %v", err)
+	}
+	if rt != 1 {
+		t.Fatalf("refresh_token must survive the users rebuild (no cascade-delete), got %d", rt)
+	}
+	if err := mgr.DB().GetContext(ctx, &usr,
+		`SELECT COUNT(*) FROM users WHERE id='u1'`); err != nil {
+		t.Fatalf("count users: %v", err)
+	}
+	if usr != 1 {
+		t.Fatalf("user must survive the rebuild, got %d", usr)
+	}
+
+	// The FK is now enforced: a user with a non-existent tenant is rejected.
+	if _, err := mgr.DB().ExecContext(ctx,
+		`INSERT INTO users (id, nickname, password_hash, email, role, tenant_id) VALUES (?,?,?,?,?,?)`,
+		"u2", "bob", "h", "b@x", "user", "no-such-tenant"); err == nil {
+		t.Fatal("FK must reject a user whose tenant_id has no matching tenants row")
+	}
+}

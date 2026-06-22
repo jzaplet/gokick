@@ -122,8 +122,8 @@ func TestSqliteManager_RefreshTokensCascadeOnUserDelete(t *testing.T) {
 
 	userID := uuid.New().String()
 	if _, err := mgr.DB().ExecContext(ctx,
-		`INSERT INTO users (id, nickname, password_hash, role) VALUES (?, ?, ?, ?)`,
-		userID, "cascadeuser", "hash", "user",
+		`INSERT INTO users (id, nickname, password_hash, role, tenant_id) VALUES (?, ?, ?, ?, ?)`,
+		userID, "cascadeuser", "hash", "user", "00000000-0000-0000-0000-000000000000",
 	); err != nil {
 		t.Fatalf("insert user: %v", err)
 	}

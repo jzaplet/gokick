@@ -175,6 +175,7 @@ func mockUser(id, nickname string) *user.User {
 	return &user.User{
 		ID: id, Nickname: nickname, PasswordHash: "hash",
 		Email: "", Role: "user", Active: true,
+		TenantID:  shared.DefaultTenantID,
 		CreatedAt: now, UpdatedAt: now,
 	}
 }
