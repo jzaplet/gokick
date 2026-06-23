@@ -282,7 +282,11 @@ func newCreateUserCmd(fx *testfx.Fixture, multitenant bool) *cobra.Command {
 	createTenant := tenantcmd.NewCreateTenantHandler(fx.Tenants)
 	getTenant := tenantqry.NewGetTenantHandler(fx.Tenants)
 	cmd := NewCreateUserCommand(
-		createUser, createTenant, getTenant, &config.Config{Multitenancy: multitenant}, fx.DB,
+		createUser,
+		createTenant,
+		getTenant,
+		&config.Config{Multitenancy: multitenant},
+		fx.NewSystemBus(),
 	).Command()
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true

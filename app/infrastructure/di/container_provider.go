@@ -85,6 +85,27 @@ func provideCommandBus(
 	return bus.NewCommandBus(chain...)
 }
 
+// provideSystemCommandBus wires the OPERATOR-TRUSTED write bus for the CLI
+// create-* commands. It is the CommandBus chain MINUS Authorize and Tenant (no
+// principal, no JWT-resolved tenant) and minus JobDispatcher (these commands
+// enqueue nothing). Audit still wraps OUTSIDE Transaction and DispatchEvents
+// still wraps it, so the ordering invariants hold. See bus.SystemCommandBus.
+func provideSystemCommandBus(
+	logger *slog.Logger,
+	db *database.SqliteManager,
+	eventBus *bus.EventBus,
+	audit shared.AuditLogger,
+	reporter shared.ErrorReporter,
+) *bus.SystemCommandBus {
+	return bus.NewSystemCommandBus(
+		busmw.RecoveryMiddleware(logger, reporter),
+		busmw.LoggingMiddleware(logger),
+		busmw.AuditMiddleware(logger, audit),
+		busmw.DispatchEventsMiddleware(logger, eventBus),
+		busmw.TransactionMiddleware(db),
+	)
+}
+
 func provideQueryBus(
 	logger *slog.Logger,
 	checker shared.PermissionChecker,
@@ -271,6 +292,7 @@ func CreateApplication(
 		providePermissionChecker,
 		provideTenantResolver,
 		provideCommandBus,
+		provideSystemCommandBus,
 		provideQueryBus,
 		provideEventHandlers,
 		provideEventBus,
@@ -294,7 +316,6 @@ func CreateApplication(
 		wire.Bind(new(token.TokenRepository), new(*sqlitetoken.Repository)),
 		wire.Bind(new(job.Repository), new(*sqlitejob.Repository)),
 		wire.Bind(new(tenant.Repository), new(*sqlitetenant.Repository)),
-		wire.Bind(new(shared.Transactor), new(*database.SqliteManager)),
 		wire.Bind(new(shared.Seeder), new(*sqliteseeder.Seeder)),
 		wire.Bind(new(shared.AuditLogger), new(*sqliteaudit.Repository)),
 		sqliteuser.NewRepository,

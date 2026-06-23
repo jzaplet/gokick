@@ -20,6 +20,7 @@ import (
 	"gokick/app/infrastructure/config"
 	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/security"
+	sqliteaudit "gokick/app/infrastructure/sqlite/audit"
 	sqlitejob "gokick/app/infrastructure/sqlite/job"
 	sqlitetenant "gokick/app/infrastructure/sqlite/tenant"
 	sqlitetoken "gokick/app/infrastructure/sqlite/token"
@@ -121,6 +122,27 @@ func (f *Fixture) NewBuses() (*bus.CommandBus, *bus.QueryBus, *bus.EventBus) {
 	return bus.NewCommandBus(commandChain...),
 		bus.NewQueryBus(busmw.BaseChain(logger, checker, reporter, resolver)...),
 		eventBus
+}
+
+// NewSystemBus wires a SystemCommandBus mirroring provideSystemCommandBus
+// (Recovery → Logging → Audit → DispatchEvents → Transaction, no Authorize/Tenant)
+// for CLI-command tests. Audit writes land in the real audit_log table.
+func (f *Fixture) NewSystemBus() *bus.SystemCommandBus {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	reporter := shared.NopReporter{}
+
+	eventBus := bus.NewEventBus(
+		busmw.RecoveryMiddleware(logger, reporter),
+		busmw.LoggingMiddleware(logger),
+	)
+
+	return bus.NewSystemCommandBus(
+		busmw.RecoveryMiddleware(logger, reporter),
+		busmw.LoggingMiddleware(logger),
+		busmw.AuditMiddleware(logger, sqliteaudit.NewRepository(f.DB)),
+		busmw.DispatchEventsMiddleware(logger, eventBus),
+		busmw.TransactionMiddleware(f.DB),
+	)
 }
 
 // ExecCommand dispatches cmd through cmdBus to handlerFn and returns the

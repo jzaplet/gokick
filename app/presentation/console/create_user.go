@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"gokick/app/application/bus"
 	tenantcmd "gokick/app/application/tenant/command"
 	tenantqry "gokick/app/application/tenant/query"
 	usercmd "gokick/app/application/user/command"
@@ -16,16 +17,18 @@ import (
 )
 
 // CreateUserCommand wraps the application-layer CreateUserHandler as a CLI
-// command. It bypasses the bus (no auth context), so — unlike the HTTP path
-// where TenantMiddleware resolves the caller's tenant — the tenant must be given
-// explicitly when multitenancy is on (--tenant-id / --tenant-name), otherwise the
-// user would silently land in the default tenant.
+// command. It dispatches through the SystemCommandBus (operator-trusted: no
+// Authorize/Tenant middleware), so — unlike the HTTP path where TenantMiddleware
+// resolves the caller's tenant — the tenant must be given explicitly when
+// multitenancy is on (--tenant-id / --tenant-name), otherwise the user would
+// silently land in the default tenant. The bus supplies the transaction (atomic
+// tenant+user create), audit and panic→Sentry that a bare handler call would not.
 type CreateUserCommand struct {
 	createUser   *usercmd.CreateUserHandler
 	createTenant *tenantcmd.CreateTenantHandler
 	getTenant    *tenantqry.GetTenantHandler
 	config       *config.Config
-	tx           shared.Transactor
+	sysBus       *bus.SystemCommandBus
 }
 
 func NewCreateUserCommand(
@@ -33,14 +36,14 @@ func NewCreateUserCommand(
 	createTenant *tenantcmd.CreateTenantHandler,
 	getTenant *tenantqry.GetTenantHandler,
 	cfg *config.Config,
-	tx shared.Transactor,
+	sysBus *bus.SystemCommandBus,
 ) *CreateUserCommand {
 	return &CreateUserCommand{
 		createUser:   createUser,
 		createTenant: createTenant,
 		getTenant:    getTenant,
 		config:       cfg,
-		tx:           tx,
+		sysBus:       sysBus,
 	}
 }
 
@@ -89,50 +92,41 @@ func (c *CreateUserCommand) run(ctx context.Context, a createUserArgs) error {
 	}
 
 	// Fail fast on bad input (and the superadmin role create-user refuses) before
-	// opening a transaction — cheaper than creating a tenant and rolling it back.
-	// The transaction below is the actual orphan-tenant safety net.
+	// touching the database — cheaper than creating a tenant and rolling it back.
 	if err := validateUserInput(a.nickname, a.password, a.email, a.role); err != nil {
 		return err
 	}
 
-	// --tenant-name creates a tenant before the user; the CLI bypasses the bus
-	// (no TransactionMiddleware), so wrap tenant resolution + user creation in one
-	// transaction here — otherwise a failed user creation (e.g. duplicate nickname)
-	// leaves the just-created tenant orphaned. The repos are tx-aware via
-	// r.Conn(ctx), so a rollback undoes the tenant too.
-	txCtx, err := c.tx.BeginTx(ctx)
-	if err != nil {
-		return err
+	cmd := usercmd.CreateUserCommand{
+		Nickname: a.nickname,
+		Password: a.password,
+		Email:    a.email,
+		Role:     a.role,
 	}
-	if err := c.create(txCtx, a); err != nil {
-		_ = c.tx.Rollback(txCtx)
 
-		return err
-	}
-	if err := c.tx.Commit(txCtx); err != nil {
+	// Dispatch through the system bus: its TransactionMiddleware wraps tenant
+	// resolution + user creation in ONE transaction, so a failed create rolls back
+	// a just-created --tenant-name tenant (no orphan) without a hand-rolled tx;
+	// AuditMiddleware persists the user.created record; RecoveryMiddleware reports
+	// a panic to Sentry. The chain has no Authorize/Tenant — the operator is
+	// trusted and the tenant is injected explicitly inside the unit of work.
+	err := bus.ExecVoid(ctx, c.sysBus.Bus, "CreateUser", cmd, func(ctx context.Context) error {
+		tenantID, err := c.resolveTenant(ctx, a.tenantID, a.tenantName)
+		if err != nil {
+			return err
+		}
+		if tenantID != "" {
+			ctx = shared.ContextWithTenantID(ctx, tenantID)
+		}
+		return c.createUser.Handle(ctx, cmd)
+	})
+	if err != nil {
 		return err
 	}
 
 	fmt.Printf("user %q (%s) created\n", a.nickname, a.role)
 
 	return nil
-}
-
-func (c *CreateUserCommand) create(ctx context.Context, a createUserArgs) error {
-	tenantID, err := c.resolveTenant(ctx, a.tenantID, a.tenantName)
-	if err != nil {
-		return err
-	}
-	if tenantID != "" {
-		ctx = shared.ContextWithTenantID(ctx, tenantID)
-	}
-
-	return c.createUser.Handle(ctx, usercmd.CreateUserCommand{
-		Nickname: a.nickname,
-		Password: a.password,
-		Email:    a.email,
-		Role:     a.role,
-	})
 }
 
 // checkTenantFlags enforces the multitenancy matrix: on → a tenant flag is

@@ -126,7 +126,8 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	seedCommand := console.NewSeedCommand(seederSeeder)
 	createTenantHandler := command5.NewCreateTenantHandler(tenantRepository)
 	getTenantHandler := query5.NewGetTenantHandler(tenantRepository)
-	createUserCommand := console.NewCreateUserCommand(createUserHandler, createTenantHandler, getTenantHandler, configConfig, sqliteManager)
+	systemCommandBus := provideSystemCommandBus(logger, sqliteManager, eventBus, auditRepository, reporter)
+	createUserCommand := console.NewCreateUserCommand(createUserHandler, createTenantHandler, getTenantHandler, configConfig, systemCommandBus)
 	createSuperAdminHandler := command4.NewCreateSuperAdminHandler(userRepository, passwordHasher)
 	createSuperAdminCommand := console.NewCreateSuperAdminCommand(createSuperAdminHandler)
 	createTenantCommand := console.NewCreateTenantCommand(createTenantHandler)
@@ -171,6 +172,21 @@ func provideCommandBus(
 ) *bus.CommandBus {
 	chain := append(middleware.BaseChain(logger, checker, reporter, tenantResolver), middleware.AuditMiddleware(logger, audit2), middleware.JobDispatcherMiddleware(dispatcher), middleware.DispatchEventsMiddleware(logger, eventBus), middleware.TransactionMiddleware(db))
 	return bus.NewCommandBus(chain...)
+}
+
+// provideSystemCommandBus wires the OPERATOR-TRUSTED write bus for the CLI
+// create-* commands. It is the CommandBus chain MINUS Authorize and Tenant (no
+// principal, no JWT-resolved tenant) and minus JobDispatcher (these commands
+// enqueue nothing). Audit still wraps OUTSIDE Transaction and DispatchEvents
+// still wraps it, so the ordering invariants hold. See bus.SystemCommandBus.
+func provideSystemCommandBus(
+	logger *slog.Logger,
+	db *database.SqliteManager,
+	eventBus *bus.EventBus, audit2 shared.AuditLogger,
+
+	reporter shared.ErrorReporter,
+) *bus.SystemCommandBus {
+	return bus.NewSystemCommandBus(middleware.RecoveryMiddleware(logger, reporter), middleware.LoggingMiddleware(logger), middleware.AuditMiddleware(logger, audit2), middleware.DispatchEventsMiddleware(logger, eventBus), middleware.TransactionMiddleware(db))
 }
 
 func provideQueryBus(

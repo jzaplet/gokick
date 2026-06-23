@@ -96,7 +96,7 @@ func TestCreateUserCommand_MissingRequiredFlagErrors(t *testing.T) {
 	// The rest of the codebase keeps testfx-backed tests serial for this reason.
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "console.db"))
 	handler := usercmd.NewCreateUserHandler(fx.Users, fx.Hasher)
-	cmd := NewCreateUserCommand(handler, nil, nil, &config.Config{}, fx.DB).Command()
+	cmd := NewCreateUserCommand(handler, nil, nil, &config.Config{}, fx.NewSystemBus()).Command()
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true
 
@@ -120,7 +120,7 @@ func TestCreateUserCommand_DefaultsRoleToAdmin(t *testing.T) {
 	// No t.Parallel — see TestCreateUserCommand_MissingRequiredFlagErrors (goose globals).
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "console.db"))
 	handler := usercmd.NewCreateUserHandler(fx.Users, fx.Hasher)
-	cmd := NewCreateUserCommand(handler, nil, nil, &config.Config{}, fx.DB).Command()
+	cmd := NewCreateUserCommand(handler, nil, nil, &config.Config{}, fx.NewSystemBus()).Command()
 	cmd.SilenceUsage = true
 
 	// No -r flag -> role must default to "admin".
@@ -145,7 +145,7 @@ func TestCreateUserCommand_RoleFlagCreatesUserRole(t *testing.T) {
 	// No t.Parallel — see TestCreateUserCommand_MissingRequiredFlagErrors (goose globals).
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "console.db"))
 	handler := usercmd.NewCreateUserHandler(fx.Users, fx.Hasher)
-	cmd := NewCreateUserCommand(handler, nil, nil, &config.Config{}, fx.DB).Command()
+	cmd := NewCreateUserCommand(handler, nil, nil, &config.Config{}, fx.NewSystemBus()).Command()
 	cmd.SilenceUsage = true
 
 	// Explicit -r user -> an arbitrary (non-admin) role is created.
