@@ -140,7 +140,7 @@ func TestCommandBus_EventsDispatchAfterCommit(t *testing.T) {
 			if e != nil {
 				return e
 			}
-			u := user.NewUser(nn, "hash", em, r)
+			u := user.NewUser(nn, "hash", em, r, shared.DefaultTenantID)
 			if e := fx.Users.Save(ctx, u); e != nil { // joins the bus tx via Conn(ctx)
 				return e
 			}
@@ -201,7 +201,7 @@ func TestCommandBus_EventsDiscardedOnRollback(t *testing.T) {
 			nn, _ := user.NewNickname(nick)
 			em, _ := user.NewEmail(nick + "@example.com")
 			r, _ := user.NewRole("user")
-			u := user.NewUser(nn, "hash", em, r)
+			u := user.NewUser(nn, "hash", em, r, shared.DefaultTenantID)
 			if e := fx.Users.Save(ctx, u); e != nil {
 				return e
 			}

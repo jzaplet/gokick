@@ -19,7 +19,13 @@ import (
 // rather than that they are equal.
 func TestNewUser_SetsDefaults(t *testing.T) {
 	before := time.Now()
-	u := NewUser(Nickname("bob"), "hash", Email("bob@example.com"), Role("user"))
+	u := NewUser(
+		Nickname("bob"),
+		"hash",
+		Email("bob@example.com"),
+		Role("user"),
+		shared.DefaultTenantID,
+	)
 	after := time.Now()
 
 	if _, err := uuid.Parse(u.ID); err != nil {
@@ -47,6 +53,10 @@ func TestNewUser_SetsDefaults(t *testing.T) {
 	}
 	if u.Role != "user" {
 		t.Fatalf("Role: got %q want %q", u.Role, "user")
+	}
+	// The tenant is a required parameter (born scoped) and copied through verbatim.
+	if u.TenantID != shared.DefaultTenantID {
+		t.Fatalf("TenantID: got %q want %q", u.TenantID, shared.DefaultTenantID)
 	}
 }
 

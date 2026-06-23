@@ -198,7 +198,7 @@ func (f *Fixture) SeedUser(t *testing.T, nickname, password, role string) *user.
 	if err != nil {
 		t.Fatalf("email: %v", err)
 	}
-	u := user.NewUser(nn, hash, em, r)
+	u := user.NewUser(nn, hash, em, r, shared.DefaultTenantID)
 	if err := f.Users.Save(context.Background(), u); err != nil {
 		t.Fatalf("save user: %v", err)
 	}
@@ -236,8 +236,7 @@ func (f *Fixture) SeedUserInTenant(t *testing.T, nickname, role, tenantID string
 	if err != nil {
 		t.Fatalf("email: %v", err)
 	}
-	u := user.NewUser(nn, hash, em, r)
-	u.TenantID = tenantID
+	u := user.NewUser(nn, hash, em, r, tenantID)
 	if err := f.Users.Save(context.Background(), u); err != nil {
 		t.Fatalf("save user: %v", err)
 	}

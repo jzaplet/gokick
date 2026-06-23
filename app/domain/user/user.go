@@ -4,8 +4,6 @@ import (
 	"database/sql"
 	"time"
 
-	"gokick/app/domain/shared"
-
 	"github.com/google/uuid"
 )
 
@@ -17,10 +15,11 @@ type User struct {
 	Role         string `db:"role"`
 	// TenantID scopes the user to a tenant. The DB column is NOT NULL with a FK
 	// to tenants(id) and no default, and the repo INSERT writes this field
-	// explicitly. NewUser seeds it to shared.DefaultTenantID; CreateUserHandler
-	// then overrides it with the caller's resolved tenant so an admin creates
-	// users in their OWN tenant. In single-tenant mode every caller resolves to
-	// DefaultTenantID, so the value is the same for everyone.
+	// explicitly. NewUser REQUIRES it as a parameter (born scoped) so a user can
+	// never be silently defaulted into the wrong tenant — enforced statically by
+	// app/domain/zz_bornscoped_test.go. Single-tenant callers pass
+	// shared.DefaultTenantID; an admin-created user gets the caller's resolved
+	// tenant; a superadmin is homed in the default tenant explicitly.
 	TenantID  string    `db:"tenant_id"`
 	Active    bool      `db:"active"`
 	CreatedAt time.Time `db:"created_at"`
@@ -44,14 +43,20 @@ type User struct {
 	LastLoginAt sql.NullTime `db:"last_login_at"`
 }
 
-func NewUser(nickname Nickname, passwordHash string, email Email, role Role) *User {
+func NewUser(
+	nickname Nickname,
+	passwordHash string,
+	email Email,
+	role Role,
+	tenantID string,
+) *User {
 	return &User{
 		ID:           uuid.New().String(),
 		Nickname:     string(nickname),
 		PasswordHash: passwordHash,
 		Email:        string(email),
 		Role:         string(role),
-		TenantID:     shared.DefaultTenantID,
+		TenantID:     tenantID,
 		Active:       true,
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),

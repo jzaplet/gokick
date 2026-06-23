@@ -65,5 +65,10 @@ func (h *CreateSuperAdminHandler) Handle(ctx context.Context, cmd CreateSuperAdm
 		return err
 	}
 
-	return h.users.Save(ctx, user.NewUser(nickname, hash, email, user.RoleSuperAdmin))
+	// A superadmin is a cross-tenant identity; home it in the default tenant
+	// explicitly (its own tenant is immaterial to the platform plane).
+	return h.users.Save(
+		ctx,
+		user.NewUser(nickname, hash, email, user.RoleSuperAdmin, shared.DefaultTenantID),
+	)
 }
