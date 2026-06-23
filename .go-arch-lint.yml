@@ -41,6 +41,7 @@ excludeFiles:
   # component's `in:` glob, so attach-exempt them.
   - domain/zz_audit_test.go
   - domain/zz_gap_test.go
+  - domain/zz_bornscoped_test.go
 
 # Only shared/ is common (AuthClaims, errors, ports). The bounded contexts
 # (user/token/job) are NOT common, so importing one from another is a
