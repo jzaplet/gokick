@@ -26,7 +26,7 @@ func TestListAllUsers_SuperadminSeesAllTenants_AdminDenied(t *testing.T) {
 	fx.SeedUserInTenant(t, "bob", "user", tenantB.ID)
 
 	_, queryBus, _ := fx.NewBuses()
-	h := NewListAllUsersHandler(fx.Users)
+	h := NewListAllUsersHandler(fx.PlatformUsers)
 	q := ListAllUsersQuery{}
 	dispatch := func(ctx context.Context) ([]user.PlatformRow, error) {
 		return testfx.ExecQuery(ctx, queryBus, "PlatformListUsers", q,
@@ -77,7 +77,7 @@ func TestGetStats_CountsTenantsAndUsers(t *testing.T) {
 	fx.SeedUserInTenant(t, "bob", "user", shared.DefaultTenantID)
 	fx.SeedUserInTenant(t, "root", "superadmin", shared.DefaultTenantID)
 
-	stats, err := NewGetStatsHandler(fx.Tenants, fx.Users).Handle(ctx, GetStatsQuery{})
+	stats, err := NewGetStatsHandler(fx.Tenants, fx.PlatformUsers).Handle(ctx, GetStatsQuery{})
 	if err != nil {
 		t.Fatalf("stats: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestGetStats_CountsTenantsAndUsers(t *testing.T) {
 		t.Fatalf("user count: got %d want 3 (must include the superadmin)", stats.UserCount)
 	}
 
-	rows, err := fx.Users.FindAllAcrossTenants(ctx)
+	rows, err := fx.PlatformUsers.FindAllAcrossTenants(ctx)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}

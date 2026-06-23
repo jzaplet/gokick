@@ -15,10 +15,10 @@ type DeletePlatformUserCommand struct {
 func (DeletePlatformUserCommand) RequiredPermission() string { return "platform:users:delete" }
 
 type DeletePlatformUserHandler struct {
-	users user.Repository
+	users user.PlatformRepository
 }
 
-func NewDeletePlatformUserHandler(users user.Repository) *DeletePlatformUserHandler {
+func NewDeletePlatformUserHandler(users user.PlatformRepository) *DeletePlatformUserHandler {
 	return &DeletePlatformUserHandler{users: users}
 }
 

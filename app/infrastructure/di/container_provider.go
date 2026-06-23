@@ -290,6 +290,7 @@ func CreateApplication(
 		security.NewJwtService,
 		wire.Bind(new(shared.JwtService), new(*security.JwtService)),
 		wire.Bind(new(user.Repository), new(*sqliteuser.Repository)),
+		wire.Bind(new(user.PlatformRepository), new(*sqliteuser.Repository)),
 		wire.Bind(new(token.TokenRepository), new(*sqlitetoken.Repository)),
 		wire.Bind(new(job.Repository), new(*sqlitejob.Repository)),
 		wire.Bind(new(tenant.Repository), new(*sqlitetenant.Repository)),

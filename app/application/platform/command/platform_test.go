@@ -20,7 +20,7 @@ func TestUpdatePlatformUser_CrossTenant_PreservesActiveAndTenant(t *testing.T) {
 	tenantB := fx.SeedTenant(t, "Beta")
 	victim := fx.SeedUserInTenant(t, "bob", "user", tenantB.ID) // active=true
 
-	h := NewUpdatePlatformUserHandler(fx.Users, fx.Hasher)
+	h := NewUpdatePlatformUserHandler(fx.PlatformUsers, fx.Hasher)
 	err := h.Handle(ctx, UpdatePlatformUserCommand{
 		ID:       victim.ID,
 		Nickname: "bobby",
@@ -53,7 +53,7 @@ func TestUpdatePlatformUser_RejectsSuperadminTarget(t *testing.T) {
 
 	super := fx.SeedUserInTenant(t, "root", "superadmin", shared.DefaultTenantID)
 
-	h := NewUpdatePlatformUserHandler(fx.Users, fx.Hasher)
+	h := NewUpdatePlatformUserHandler(fx.PlatformUsers, fx.Hasher)
 	err := h.Handle(ctx, UpdatePlatformUserCommand{
 		ID:       super.ID,
 		Nickname: "hax",
@@ -81,7 +81,7 @@ func TestUpdatePlatformUser_RejectsPromotionToSuperadmin(t *testing.T) {
 
 	victim := fx.SeedUserInTenant(t, "bob", "user", shared.DefaultTenantID)
 
-	h := NewUpdatePlatformUserHandler(fx.Users, fx.Hasher)
+	h := NewUpdatePlatformUserHandler(fx.PlatformUsers, fx.Hasher)
 	err := h.Handle(ctx, UpdatePlatformUserCommand{
 		ID:       victim.ID,
 		Nickname: "bob",
@@ -111,7 +111,7 @@ func TestDeletePlatformUser_CrossTenantAndSuperadminGuard(t *testing.T) {
 		UserID: "caller-super", Role: "superadmin",
 	})
 
-	h := NewDeletePlatformUserHandler(fx.Users)
+	h := NewDeletePlatformUserHandler(fx.PlatformUsers)
 
 	// A superadmin target is rejected (managed out-of-band).
 	if err := h.Handle(callerCtx, DeletePlatformUserCommand{ID: super.ID}); err == nil {
@@ -143,7 +143,7 @@ func TestPlatformWriteCommands_AdminDeniedAtBus(t *testing.T) {
 
 	adminCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{UserID: "a1", Role: "admin"})
 
-	uh := NewUpdatePlatformUserHandler(fx.Users, fx.Hasher)
+	uh := NewUpdatePlatformUserHandler(fx.PlatformUsers, fx.Hasher)
 	updateCmd := UpdatePlatformUserCommand{
 		ID: victim.ID, Nickname: "hax", Email: "h@x.com", Role: "user",
 	}
@@ -151,7 +151,7 @@ func TestPlatformWriteCommands_AdminDeniedAtBus(t *testing.T) {
 		func(ctx context.Context) (any, error) { return nil, uh.Handle(ctx, updateCmd) })
 	assertPermissionDenied(t, "update", updErr)
 
-	dh := NewDeletePlatformUserHandler(fx.Users)
+	dh := NewDeletePlatformUserHandler(fx.PlatformUsers)
 	deleteCmd := DeletePlatformUserCommand{ID: victim.ID}
 	_, delErr := testfx.ExecCommand(adminCtx, cmdBus, "PlatformDeleteUser", deleteCmd,
 		func(ctx context.Context) (any, error) { return nil, dh.Handle(ctx, deleteCmd) })

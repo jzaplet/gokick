@@ -15,10 +15,10 @@ type ListAllUsersQuery struct{}
 func (ListAllUsersQuery) RequiredPermission() string { return "platform:overview" }
 
 type ListAllUsersHandler struct {
-	users user.Repository
+	users user.PlatformRepository
 }
 
-func NewListAllUsersHandler(users user.Repository) *ListAllUsersHandler {
+func NewListAllUsersHandler(users user.PlatformRepository) *ListAllUsersHandler {
 	return &ListAllUsersHandler{users: users}
 }
 

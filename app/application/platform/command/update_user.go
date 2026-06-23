@@ -23,12 +23,12 @@ type UpdatePlatformUserCommand struct {
 func (UpdatePlatformUserCommand) RequiredPermission() string { return "platform:users:update" }
 
 type UpdatePlatformUserHandler struct {
-	users    user.Repository
+	users    user.PlatformRepository
 	password shared.PasswordHasher
 }
 
 func NewUpdatePlatformUserHandler(
-	users user.Repository,
+	users user.PlatformRepository,
 	password shared.PasswordHasher,
 ) *UpdatePlatformUserHandler {
 	return &UpdatePlatformUserHandler{users: users, password: password}

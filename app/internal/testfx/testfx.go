@@ -29,13 +29,14 @@ import (
 )
 
 type Fixture struct {
-	DB      *database.SqliteManager
-	Users   user.Repository
-	Tokens  token.TokenRepository
-	Jobs    job.Repository
-	Tenants tenant.Repository
-	Hasher  *security.PasswordHasher
-	Jwt     *security.JwtService
+	DB            *database.SqliteManager
+	Users         user.Repository
+	PlatformUsers user.PlatformRepository // same concrete repo; the cross-tenant port for platform handler tests
+	Tokens        token.TokenRepository
+	Jobs          job.Repository
+	Tenants       tenant.Repository
+	Hasher        *security.PasswordHasher
+	Jwt           *security.JwtService
 }
 
 // New spins up an isolated SQLite database at dbPath, runs migrations and wires
@@ -78,14 +79,17 @@ func newFixture(t *testing.T, dbPath string, multitenant bool) *Fixture {
 		t.Fatalf("jwt: %v", err)
 	}
 
+	usersRepo := sqliteuser.NewRepository(db)
+
 	return &Fixture{
-		DB:      db,
-		Users:   sqliteuser.NewRepository(db),
-		Tokens:  sqlitetoken.NewRepository(db),
-		Jobs:    sqlitejob.NewRepository(db),
-		Tenants: sqlitetenant.NewRepository(db),
-		Hasher:  security.NewPasswordHasher(),
-		Jwt:     jwt,
+		DB:            db,
+		Users:         usersRepo,
+		PlatformUsers: usersRepo,
+		Tokens:        sqlitetoken.NewRepository(db),
+		Jobs:          sqlitejob.NewRepository(db),
+		Tenants:       sqlitetenant.NewRepository(db),
+		Hasher:        security.NewPasswordHasher(),
+		Jwt:           jwt,
 	}
 }
 

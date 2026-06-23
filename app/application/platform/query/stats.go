@@ -20,10 +20,10 @@ func (GetStatsQuery) RequiredPermission() string { return "platform:overview" }
 
 type GetStatsHandler struct {
 	tenants tenant.Repository
-	users   user.Repository
+	users   user.PlatformRepository
 }
 
-func NewGetStatsHandler(tenants tenant.Repository, users user.Repository) *GetStatsHandler {
+func NewGetStatsHandler(tenants tenant.Repository, users user.PlatformRepository) *GetStatsHandler {
 	return &GetStatsHandler{tenants: tenants, users: users}
 }
 

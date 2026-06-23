@@ -23,7 +23,7 @@ func TestUserRepository_FindAllAcrossTenants_SeesAllTenants(t *testing.T) {
 
 	// A tenant-A context must NOT scope this read — it spans all tenants.
 	ctxA := shared.ContextWithTenantID(context.Background(), tenantA.ID)
-	all, err := fx.Users.FindAllAcrossTenants(ctxA)
+	all, err := fx.PlatformUsers.FindAllAcrossTenants(ctxA)
 	if err != nil {
 		t.Fatalf("FindAllAcrossTenants: %v", err)
 	}
