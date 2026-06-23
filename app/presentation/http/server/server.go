@@ -64,6 +64,7 @@ type Server struct {
 	profile    *handler.ProfileHandler
 	adminUsers *handler.AdminUsersHandler
 	dashboard  *handler.DashboardHandler
+	platform   *handler.PlatformHandler
 }
 
 func NewServer(
@@ -79,6 +80,7 @@ func NewServer(
 	profile *handler.ProfileHandler,
 	adminUsers *handler.AdminUsersHandler,
 	dashboard *handler.DashboardHandler,
+	platform *handler.PlatformHandler,
 ) *Server {
 	return &Server{
 		config:     config,
@@ -93,6 +95,7 @@ func NewServer(
 		profile:    profile,
 		adminUsers: adminUsers,
 		dashboard:  dashboard,
+		platform:   platform,
 	}
 }
 
@@ -207,6 +210,16 @@ func (s *Server) registerRoutes() *http.ServeMux {
 	mux.Handle("POST /api/v1/admin/users", authed(http.HandlerFunc(s.adminUsers.Create)))
 	mux.Handle("PUT /api/v1/admin/users/{id}", authed(http.HandlerFunc(s.adminUsers.Update)))
 	mux.Handle("DELETE /api/v1/admin/users/{id}", authed(http.HandlerFunc(s.adminUsers.Delete)))
+
+	// Platform plane — superadmin only (platform:* permissions, enforced by the bus).
+	mux.Handle("GET /api/v1/platform/stats", authed(http.HandlerFunc(s.platform.Stats)))
+	mux.Handle("GET /api/v1/platform/users", authed(http.HandlerFunc(s.platform.Users)))
+	mux.Handle("GET /api/v1/platform/tenants", authed(http.HandlerFunc(s.platform.Tenants)))
+	mux.Handle("PUT /api/v1/platform/users/{id}", authed(http.HandlerFunc(s.platform.UpdateUser)))
+	mux.Handle(
+		"DELETE /api/v1/platform/users/{id}",
+		authed(http.HandlerFunc(s.platform.DeleteUser)),
+	)
 
 	// SPA catch-all — must be last so explicit routes win.
 	mux.HandleFunc("GET /{path...}", s.spa.Serve)

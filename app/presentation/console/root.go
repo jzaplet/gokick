@@ -7,24 +7,30 @@ import (
 )
 
 type RootCommand struct {
-	cmd           *cobra.Command
-	serveCmd      *ServeCommand
-	seedCmd       *SeedCommand
-	createUserCmd *CreateUserCommand
-	workerCmd     *WorkerCommand
+	cmd                 *cobra.Command
+	serveCmd            *ServeCommand
+	seedCmd             *SeedCommand
+	createUserCmd       *CreateUserCommand
+	createSuperAdminCmd *CreateSuperAdminCommand
+	createTenantCmd     *CreateTenantCommand
+	workerCmd           *WorkerCommand
 }
 
 func NewRootCommand(
 	serveCmd *ServeCommand,
 	seedCmd *SeedCommand,
 	createUserCmd *CreateUserCommand,
+	createSuperAdminCmd *CreateSuperAdminCommand,
+	createTenantCmd *CreateTenantCommand,
 	workerCmd *WorkerCommand,
 ) *RootCommand {
 	root := &RootCommand{
-		serveCmd:      serveCmd,
-		seedCmd:       seedCmd,
-		createUserCmd: createUserCmd,
-		workerCmd:     workerCmd,
+		serveCmd:            serveCmd,
+		seedCmd:             seedCmd,
+		createUserCmd:       createUserCmd,
+		createSuperAdminCmd: createSuperAdminCmd,
+		createTenantCmd:     createTenantCmd,
+		workerCmd:           workerCmd,
 	}
 
 	root.cmd = &cobra.Command{
@@ -36,6 +42,8 @@ func NewRootCommand(
 	root.cmd.AddCommand(serveCmd.Command())
 	root.cmd.AddCommand(seedCmd.Command())
 	root.cmd.AddCommand(createUserCmd.Command())
+	root.cmd.AddCommand(createSuperAdminCmd.Command())
+	root.cmd.AddCommand(createTenantCmd.Command())
 	root.cmd.AddCommand(workerCmd.Command())
 
 	return root

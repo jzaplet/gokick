@@ -11,6 +11,7 @@ import (
 	jobapp "gokick/app/application/job"
 	usercmd "gokick/app/application/user/command"
 	"gokick/app/domain/shared"
+	"gokick/app/infrastructure/config"
 	"gokick/app/infrastructure/worker"
 	"gokick/app/internal/testfx"
 
@@ -52,7 +53,7 @@ func newTestWorker(t *testing.T, fx *testfx.Fixture) *worker.Worker {
 func TestCreateUserCommand_FlagSpec(t *testing.T) {
 	t.Parallel()
 
-	cmd := NewCreateUserCommand(nil).Command()
+	cmd := NewCreateUserCommand(nil, nil, nil, nil, nil).Command()
 
 	if got := cmd.Use; got != "create-user" {
 		t.Fatalf("Use: got %q want %q", got, "create-user")
@@ -95,7 +96,7 @@ func TestCreateUserCommand_MissingRequiredFlagErrors(t *testing.T) {
 	// The rest of the codebase keeps testfx-backed tests serial for this reason.
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "console.db"))
 	handler := usercmd.NewCreateUserHandler(fx.Users, fx.Hasher)
-	cmd := NewCreateUserCommand(handler).Command()
+	cmd := NewCreateUserCommand(handler, nil, nil, &config.Config{}, fx.DB).Command()
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true
 
@@ -119,7 +120,7 @@ func TestCreateUserCommand_DefaultsRoleToAdmin(t *testing.T) {
 	// No t.Parallel — see TestCreateUserCommand_MissingRequiredFlagErrors (goose globals).
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "console.db"))
 	handler := usercmd.NewCreateUserHandler(fx.Users, fx.Hasher)
-	cmd := NewCreateUserCommand(handler).Command()
+	cmd := NewCreateUserCommand(handler, nil, nil, &config.Config{}, fx.DB).Command()
 	cmd.SilenceUsage = true
 
 	// No -r flag -> role must default to "admin".
@@ -144,7 +145,7 @@ func TestCreateUserCommand_RoleFlagCreatesUserRole(t *testing.T) {
 	// No t.Parallel — see TestCreateUserCommand_MissingRequiredFlagErrors (goose globals).
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "console.db"))
 	handler := usercmd.NewCreateUserHandler(fx.Users, fx.Hasher)
-	cmd := NewCreateUserCommand(handler).Command()
+	cmd := NewCreateUserCommand(handler, nil, nil, &config.Config{}, fx.DB).Command()
 	cmd.SilenceUsage = true
 
 	// Explicit -r user -> an arbitrary (non-admin) role is created.
@@ -170,7 +171,7 @@ func TestCreateUserCommand_RoleFlagCreatesUserRole(t *testing.T) {
 
 // ---------------------------------------------------------------------------
 // root command wiring
-//   presentation-01 — root exposes serve, seed, create-user, worker subcommands
+//   presentation-01 — root exposes serve, seed, create-user, create-superadmin, worker subcommands
 // ---------------------------------------------------------------------------
 
 func TestRootCommand_RegistersSubcommands(t *testing.T) {
@@ -181,7 +182,9 @@ func TestRootCommand_RegistersSubcommands(t *testing.T) {
 	root := NewRootCommand(
 		NewServeCommand(nil, nil, nil),
 		NewSeedCommand(nil),
-		NewCreateUserCommand(nil),
+		NewCreateUserCommand(nil, nil, nil, nil, nil),
+		NewCreateSuperAdminCommand(nil),
+		NewCreateTenantCommand(nil),
 		NewWorkerCommand(nil),
 	)
 
@@ -190,7 +193,7 @@ func TestRootCommand_RegistersSubcommands(t *testing.T) {
 		names[sub.Name()] = true
 	}
 
-	for _, want := range []string{"serve", "seed", "create-user", "worker"} {
+	for _, want := range []string{"serve", "seed", "create-user", "create-superadmin", "create-tenant", "worker"} {
 		if !names[want] {
 			t.Fatalf("root command missing subcommand %q; registered: %v", want, names)
 		}

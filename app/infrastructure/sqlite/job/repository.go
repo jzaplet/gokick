@@ -21,8 +21,8 @@ func NewRepository(db *database.SqliteManager) *Repository {
 }
 
 func (r *Repository) Enqueue(ctx context.Context, j *job.Job) error {
-	const q = `INSERT INTO jobs (id, kind, payload, run_at, attempts, max_retries, locked_until, last_error, failed_at, completed_at, created_at)
-		VALUES (:id, :kind, :payload, :run_at, :attempts, :max_retries, :locked_until, :last_error, :failed_at, :completed_at, :created_at)`
+	const q = `INSERT INTO jobs (id, kind, tenant_id, payload, run_at, attempts, max_retries, locked_until, last_error, failed_at, completed_at, created_at)
+		VALUES (:id, :kind, :tenant_id, :payload, :run_at, :attempts, :max_retries, :locked_until, :last_error, :failed_at, :completed_at, :created_at)`
 	row := *j
 	row.RunAt = msPrecisionUTC(row.RunAt)
 	row.CreatedAt = msPrecisionUTC(row.CreatedAt)

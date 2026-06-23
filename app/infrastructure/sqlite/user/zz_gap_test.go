@@ -24,8 +24,8 @@ import (
 // constraints are what's under test. Returns the driver error verbatim.
 func rawInsertUser(t *testing.T, fx *testfx.Fixture, nickname, role string) error {
 	t.Helper()
-	const q = `INSERT INTO users (id, nickname, password_hash, email, role, active, created_at, updated_at)
-		VALUES (?, ?, 'hash', 'e@example.com', ?, 1, datetime('now'), datetime('now'))`
+	const q = `INSERT INTO users (id, nickname, password_hash, email, role, tenant_id, active, created_at, updated_at)
+		VALUES (?, ?, 'hash', 'e@example.com', ?, '00000000-0000-0000-0000-000000000000', 1, datetime('now'), datetime('now'))`
 	_, err := fx.DB.DB().ExecContext(context.Background(), q, uuid.New().String(), nickname, role)
 	return err
 }

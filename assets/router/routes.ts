@@ -8,6 +8,10 @@ import AdminUserCreateView from '@/app/Admin/Views/AdminUserCreateView.vue';
 import AdminUserEditView from '@/app/Admin/Views/AdminUserEditView.vue';
 import UserDashboardView from '@/app/Dashboard/Views/UserDashboardView.vue';
 import AdminDashboardView from '@/app/Dashboard/Views/AdminDashboardView.vue';
+import PlatformDashboardView from '@/app/Platform/Views/PlatformDashboardView.vue';
+import PlatformTenantsView from '@/app/Platform/Views/PlatformTenantsView.vue';
+import PlatformUsersView from '@/app/Platform/Views/PlatformUsersView.vue';
+import PlatformUserEditView from '@/app/Platform/Views/PlatformUserEditView.vue';
 
 // Each route declares its auth posture explicitly (mirrors the backend
 // Permissioned / SkipPermission rule). TypeScript rejects any entry without
@@ -74,6 +78,42 @@ export const routes: AppRoute[] = [
         meta: {
             requiresAuth: true,
             requiresPermission: Permission.AdminUsersUpdate,
+        },
+    },
+    {
+        path: '/platform/dashboard',
+        name: 'platform-dashboard',
+        component: PlatformDashboardView,
+        meta: {
+            requiresAuth: true,
+            requiresPermission: Permission.PlatformOverview,
+        },
+    },
+    {
+        path: '/platform/tenants',
+        name: 'platform-tenants',
+        component: PlatformTenantsView,
+        meta: {
+            requiresAuth: true,
+            requiresPermission: Permission.PlatformOverview,
+        },
+    },
+    {
+        path: '/platform/users',
+        name: 'platform-users',
+        component: PlatformUsersView,
+        meta: {
+            requiresAuth: true,
+            requiresPermission: Permission.PlatformOverview,
+        },
+    },
+    {
+        path: '/platform/users/:id/edit',
+        name: 'platform-users-edit',
+        component: PlatformUserEditView,
+        meta: {
+            requiresAuth: true,
+            requiresPermission: Permission.PlatformUsersUpdate,
         },
     },
 ];

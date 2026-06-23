@@ -7,6 +7,10 @@ type AuthClaims struct {
 	Role     string
 	Nickname string
 	Email    string
+	// TenantID carries the tenant minted into the JWT at login/refresh. The
+	// default single-tenant resolver falls back to shared.DefaultTenantID when it
+	// is empty, so a single-tenant deployment (JWT carries no tenant) is unchanged.
+	TenantID string
 }
 
 type authClaimsKeyType struct{}

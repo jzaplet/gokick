@@ -175,6 +175,7 @@ func mockUser(id, nickname string) *user.User {
 	return &user.User{
 		ID: id, Nickname: nickname, PasswordHash: "hash",
 		Email: "", Role: "user", Active: true,
+		TenantID:  shared.DefaultTenantID,
 		CreatedAt: now, UpdatedAt: now,
 	}
 }
@@ -402,5 +403,36 @@ func TestWorker_UnknownKind_MarksFailed_NoRetry(t *testing.T) {
 	}
 	if got.LastError == nil || !strings.Contains(*got.LastError, "unknown kind") {
 		t.Fatalf("LastError must mention unknown kind, got %v", got.LastError)
+	}
+}
+
+// Worker tenant propagation. The worker bypasses the bus, so it must
+// restore the tenant the job was enqueued for into the handler's context from
+// the claimed row. Uses an arbitrary tenant (not DefaultTenantID) so it proves
+// propagation rather than a tautology.
+func TestWorker_RestoresJobTenantIntoHandlerContext(t *testing.T) {
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "worker_tenant.db"))
+
+	const kind = "tenant.echo"
+	var seen string
+	w := newWorker(t, fx, kind, func(ctx context.Context, _ []byte) error {
+		seen = shared.TenantIDFromContext(ctx)
+		return nil
+	})
+
+	j := job.NewJob(kind, []byte(`{}`), 0)
+	j.TenantID = "tenant-A"
+	if err := fx.Jobs.Enqueue(context.Background(), j); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	runOnce(t, w)
+
+	if seen != "tenant-A" {
+		t.Fatalf(
+			"handler ctx tenant = %q, want %q — worker must restore the job's tenant",
+			seen,
+			"tenant-A",
+		)
 	}
 }

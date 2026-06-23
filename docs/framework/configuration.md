@@ -115,6 +115,20 @@ Pořadí rozlišení:
 > Bez origin-locku nech `APP_TRUST_PROXY_HEADERS=false` — radši ztratíš skutečnou IP (uvidíš edge/proxy IP), než abys důvěřoval podvrhnutelné hodnotě.
 
 
+## Multitenancy (APP_MULTITENANCY)
+
+| Proměnná | Default | Co dělá |
+|---|---|---|
+| `APP_MULTITENANCY` | `false` | Zapínatelný row-level multitenancy. `false` (single-tenant) = dnešní chování; `true` = multitenant s **fail-closed** vynucením. |
+
+Čteno přes `Config` struct (teče do `SqliteManager`). Vybírá jen **striktnost vynucení** při chybějícím tenantu, ne resoluci (ta je vždy data-driven z JWT):
+
+- `false` (default) — **fail-open**: dotaz bez resolvovaného tenantu spadne na default tenant, takže single-tenant nasazení běží beze změny.
+- `true` — **fail-closed**: chybějící tenant je **panika** (`r.Tenant(ctx)` → HTTP 500), nikdy tiché scopnutí na default. Zapínej jen v nasazení, které reálně zakládá víc tenantů.
+
+Celý model (izolace, conformance gate, platformní rovina, seed/CLI tenant tooling) viz skill `/gk-multitenancy`.
+
+
 ## Logging (APP_LOG_*)
 
 | Proměnná | Efektivní default | Co dělá |
@@ -153,6 +167,8 @@ Tyto proměnné běžící HTTP server **nepoužívá** — patří CLI příkaz
 | Proměnná | Default | Co dělá |
 |---|---|---|
 | `APP_SEED_ADMIN_PASSWORD` | (žádný) | Heslo admin uživatele pro `./bin/app seed` (8–128 znaků). Vyžaduje ho jen seed příkaz; v prostředích, kde se seed nikdy nespouští, nech prázdné. Wire ho injektuje jako distinct typ do seederu. |
+| `APP_SEED_SUPERADMIN_PASSWORD` | (prázdné) | Heslo platformního **superadmina** pro `./bin/app seed`. Prázdné = superadmin se neseeduje (platformní rovina zůstává nedostupná). Wire distinct typ. |
+| `APP_SEED_ADMIN_TENANT` | `Tenant 1` | Jméno tenantu, do kterého seed založí admina, **když je multitenancy zapnutá** (find-or-create). Single-tenant ho ignoruje (admin zůstává v default tenantu). Wire distinct typ. |
 | `VITE_SENTRY_DSN`, `VITE_SENTRY_ENVIRONMENT` | (prázdné) | Frontend Sentry config **jen pro Vite dev server** (`yarn dev`), kde se `index.html` doručuje přímo bez Go injekce. Když SPA obsluhuje Go server v produkci, tyto `VITE_*` se **nepoužijí** — přednost má injekce `APP_SENTRY_*`. |
 | `VITE_SENTRY_RELEASE` | (git tag z buildu) | Frontend release, zapečený při buildu (viz Sentry výše). Normálně se nenastavuje. |
 | `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT` | (žádné) | **Build-time** secrety pro upload frontend source maps. Patří do CI / Docker buildu, **ne** do runtime `.env`. Bez nich build neshipuje žádné mapy. Viz skill `/gk-sentry`. |

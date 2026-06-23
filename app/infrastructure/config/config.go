@@ -18,6 +18,14 @@ type Config struct {
 	CORSOrigin           string
 	CookieSecure         bool
 	SeedAdminPassword    string
+	// SeedSuperAdminPassword is OPTIONAL — empty means "do not seed a superadmin"
+	// (the platform plane is off by default). When set, the seeder mints a
+	// superadmin account.
+	SeedSuperAdminPassword string
+	// SeedAdminTenant names the tenant the seeded admin lands in WHEN multitenancy
+	// is on (find-or-create). With multitenancy off the admin stays in the default
+	// tenant and this is ignored.
+	SeedAdminTenant string
 
 	// Sentry frontend config — injected into index.html at serve time so the
 	// SPA reads DSN + environment at runtime (one built image works across
@@ -39,6 +47,16 @@ type Config struct {
 	// otherwise and bypass per-IP rate limiting in one curl.
 	TrustProxyHeaders bool
 
+	// Multitenancy picks the tenant-scoping ENFORCEMENT mode (resolution is
+	// always data-driven: the JWT carries the tenant, the resolver returns it).
+	// false (default): fail-OPEN — a request with no resolved tenant falls back
+	// to the default tenant, so a single-tenant deployment works unchanged.
+	// true: fail-CLOSED — a missing tenant panics rather than silently scoping
+	// to the default tenant (the cross-tenant leak this whole epic prevents).
+	// A buggy multitenant app is indistinguishable from a single-tenant one in
+	// the data, so this can't be inferred — it must be configured.
+	Multitenancy bool
+
 	// Rate-limit rules in "N/duration" form (e.g. "10/min", "5/30s").
 	// Empty disables that limit entirely.
 	RateLimitLogin   string
@@ -49,19 +67,22 @@ func LoadConfig() (*Config, error) {
 	_ = godotenv.Load()
 
 	config := &Config{
-		HTTPPort:          getEnv("APP_HTTP_PORT", "3000"),
-		DBPath:            getEnv("APP_DB_PATH", "./data/app.db"),
-		DBJournalMode:     getEnv("APP_DB_JOURNAL_MODE", "WAL"),
-		JWTSecret:         getEnv("APP_JWT_SECRET", ""),
-		CORSOrigin:        getEnv("APP_CORS_ORIGIN", "http://localhost:5173"),
-		CookieSecure:      getEnv("APP_COOKIE_SECURE", "true") == "true",
-		SeedAdminPassword: getEnv("APP_SEED_ADMIN_PASSWORD", ""),
-		TrustProxyHeaders: getEnv("APP_TRUST_PROXY_HEADERS", "false") == "true",
-		RateLimitLogin:    getEnv("APP_RATE_LIMIT_LOGIN", "10/min"),
-		RateLimitRefresh:  getEnv("APP_RATE_LIMIT_REFRESH", "60/min"),
-		FrontendSentryDSN: getEnv("APP_SENTRY_DSN_FRONTEND", ""),
-		SentryEnvironment: getEnv("APP_SENTRY_ENVIRONMENT", ""),
-		SentryDebug:       getEnv("APP_SENTRY_DEBUG", "false") == "true",
+		HTTPPort:               getEnv("APP_HTTP_PORT", "3000"),
+		DBPath:                 getEnv("APP_DB_PATH", "./data/app.db"),
+		DBJournalMode:          getEnv("APP_DB_JOURNAL_MODE", "WAL"),
+		JWTSecret:              getEnv("APP_JWT_SECRET", ""),
+		CORSOrigin:             getEnv("APP_CORS_ORIGIN", "http://localhost:5173"),
+		CookieSecure:           getEnv("APP_COOKIE_SECURE", "true") == "true",
+		SeedAdminPassword:      getEnv("APP_SEED_ADMIN_PASSWORD", ""),
+		SeedSuperAdminPassword: getEnv("APP_SEED_SUPERADMIN_PASSWORD", ""),
+		SeedAdminTenant:        getEnv("APP_SEED_ADMIN_TENANT", "Tenant 1"),
+		TrustProxyHeaders:      getEnv("APP_TRUST_PROXY_HEADERS", "false") == "true",
+		Multitenancy:           getEnv("APP_MULTITENANCY", "false") == "true",
+		RateLimitLogin:         getEnv("APP_RATE_LIMIT_LOGIN", "10/min"),
+		RateLimitRefresh:       getEnv("APP_RATE_LIMIT_REFRESH", "60/min"),
+		FrontendSentryDSN:      getEnv("APP_SENTRY_DSN_FRONTEND", ""),
+		SentryEnvironment:      getEnv("APP_SENTRY_ENVIRONMENT", ""),
+		SentryDebug:            getEnv("APP_SENTRY_DEBUG", "false") == "true",
 	}
 
 	var err error

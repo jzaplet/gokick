@@ -379,7 +379,7 @@ func seedUserInTx(t *testing.T, fx *testfx.Fixture, ctx context.Context, nicknam
 	if err != nil {
 		t.Fatalf("email: %v", err)
 	}
-	if err := fx.Users.Save(ctx, user.NewUser(nn, hash, em, r)); err != nil {
+	if err := fx.Users.Save(ctx, user.NewUser(nn, hash, em, r, shared.DefaultTenantID)); err != nil {
 		t.Fatalf("save user in tx: %v", err)
 	}
 }

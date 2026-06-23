@@ -192,6 +192,11 @@ func (w *Worker) runWithinTx(
 	// Block cascading Collect from inside job handlers — they must use
 	// JobDispatcher (already in ctx above) for follow-up async work.
 	txCtx = shared.ContextWithoutEventCollector(txCtx)
+	// Restore the tenant the job was enqueued for. The worker bypasses the bus,
+	// so TenantMiddleware never ran — without this, a tenant-scoped handler
+	// would see no tenant. ClaimDue stays a global drain; the tenant rides on
+	// the claimed row, not the claim query.
+	txCtx = shared.ContextWithTenantID(txCtx, j.TenantID)
 
 	if handlerErr := handler(txCtx, j.Payload); handlerErr != nil {
 		_ = w.tx.Rollback(txCtx)

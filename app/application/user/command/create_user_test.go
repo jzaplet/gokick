@@ -196,3 +196,66 @@ func TestCreateUserCommand_RequiredPermission(t *testing.T) {
 		t.Fatalf("expected admin:users:create, got %q", got)
 	}
 }
+
+// A user created by an admin must land in the ADMIN's tenant — the caller's
+// resolved tenant carried in ctx (as the bus's TenantMiddleware supplies it) —
+// not always the default. Without the stamp, every admin-created user would land
+// in the default tenant, a cross-tenant isolation gap once provisioning exists.
+func TestCreateUserHandler_StampsCallerTenant(t *testing.T) {
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_caller_tenant.db"))
+	tenantB := fx.SeedTenant(t, "Beta")
+
+	ctx, _ := shared.ContextWithEventCollector(context.Background())
+	ctx = shared.ContextWithTenantID(ctx, tenantB.ID)
+
+	h := NewCreateUserHandler(fx.Users, fx.Hasher)
+	if err := h.Handle(ctx, CreateUserCommand{
+		Nickname: "bob",
+		Password: "secret12",
+		Email:    "bob@example.com",
+		Role:     "user",
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	saved, err := fx.Users.FindByNickname(ctx, "bob")
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	if saved == nil {
+		t.Fatal("expected user persisted")
+	}
+	if saved.TenantID != tenantB.ID {
+		t.Fatalf(
+			"created user must land in the caller's tenant %q, got %q",
+			tenantB.ID,
+			saved.TenantID,
+		)
+	}
+}
+
+// Invoked outside the bus (the CLI create-user), there is no tenant in ctx; the
+// user must fall back to the default tenant, not an empty (FK-violating) value.
+func TestCreateUserHandler_DefaultsTenantWithoutContext(t *testing.T) {
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_default_tenant.db"))
+
+	ctx, _ := shared.ContextWithEventCollector(context.Background())
+
+	h := NewCreateUserHandler(fx.Users, fx.Hasher)
+	if err := h.Handle(ctx, CreateUserCommand{
+		Nickname: "cli",
+		Password: "secret12",
+		Email:    "cli@example.com",
+		Role:     "admin",
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	saved, err := fx.Users.FindByNickname(ctx, "cli")
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	if saved == nil || saved.TenantID != shared.DefaultTenantID {
+		t.Fatalf("CLI-created user must default to the default tenant, got %+v", saved)
+	}
+}

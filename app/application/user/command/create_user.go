@@ -42,6 +42,12 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
 	if err != nil {
 		return err
 	}
+	if role.IsSuperAdmin() {
+		return &shared.ValidationError{
+			Field:   "role",
+			Message: "cannot assign the superadmin role",
+		}
+	}
 
 	password, err := user.NewPassword(cmd.Password)
 	if err != nil {
@@ -69,7 +75,17 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
 		return err
 	}
 
-	u := user.NewUser(nickname, hash, email, role)
+	// Resolve the tenant the user lands in: the bus's TenantMiddleware always puts
+	// the caller's resolved tenant in ctx (HTTP), so an admin creates users in
+	// their OWN tenant; an empty value means the handler ran outside the bus (the
+	// CLI create-user), where the single-tenant default is correct. NewUser
+	// requires the tenant explicitly (born scoped). Mirrors the dispatcher guard.
+	tenantID := shared.TenantIDFromContext(ctx)
+	if tenantID == "" {
+		tenantID = shared.DefaultTenantID
+	}
+	u := user.NewUser(nickname, hash, email, role, tenantID)
+
 	if err := h.users.Save(ctx, u); err != nil {
 		return err
 	}

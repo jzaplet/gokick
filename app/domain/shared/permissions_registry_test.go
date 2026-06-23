@@ -66,6 +66,36 @@ func TestPermissionsRegistry_ForRole_UserDeniesAdminPrefix(t *testing.T) {
 	}
 }
 
+func TestPermissionsRegistry_ForRole_SuperAdminGetsPlatform(t *testing.T) {
+	// Superadmin is the only role that receives platform:* in the listing the
+	// frontend consumes — the registry must surface it.
+	reg := NewPermissionsRegistry([]Permissioned{
+		fakePermissioned("admin:users:create"),
+		fakePermissioned("platform:overview"),
+		fakePermissioned("profile:read"),
+	})
+
+	want := []string{"admin:users:create", "platform:overview", "profile:read"}
+	if got := reg.ForRole("superadmin"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("superadmin ForRole mismatch:\n got: %v\nwant: %v", got, want)
+	}
+}
+
+func TestPermissionsRegistry_ForRole_AdminDeniedPlatform(t *testing.T) {
+	// Admin gets admin:* and below but the platform plane is filtered out — the
+	// boundary that keeps a tenant admin from seeing across all tenants.
+	reg := NewPermissionsRegistry([]Permissioned{
+		fakePermissioned("admin:users:create"),
+		fakePermissioned("platform:overview"),
+		fakePermissioned("profile:read"),
+	})
+
+	want := []string{"admin:users:create", "profile:read"}
+	if got := reg.ForRole("admin"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("admin ForRole must exclude platform:*:\n got: %v\nwant: %v", got, want)
+	}
+}
+
 func TestPermissionsRegistry_ForRole_UnknownRoleSameAsUser(t *testing.T) {
 	// Any non-admin role is treated identically: admin:* is filtered out.
 	reg := NewPermissionsRegistry([]Permissioned{
@@ -118,6 +148,15 @@ func TestIsPermissionAllowedForRole(t *testing.T) {
 		{"guest cannot do admin action", "admin:anything", "guest", false},
 		{"empty role cannot do admin action", "admin:x", "", false},
 		{"empty role can do non-admin", "profile:read", "", true},
+
+		// Superadmin / platform ladder.
+		{"superadmin can do platform action", "platform:overview", "superadmin", true},
+		{"superadmin can do admin action", "admin:users:delete", "superadmin", true},
+		{"superadmin can do profile action", "profile:read", "superadmin", true},
+		// The crux: admin is NOT granted the platform plane.
+		{"admin CANNOT do platform action", "platform:overview", "admin", false},
+		{"user cannot do platform action", "platform:overview", "user", false},
+		{"empty role cannot do platform action", "platform:x", "", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

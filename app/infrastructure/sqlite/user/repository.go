@@ -22,53 +22,138 @@ func NewRepository(db *database.SqliteManager) *Repository {
 }
 
 func (r *Repository) Save(ctx context.Context, u *user.User) error {
-	const q = `INSERT INTO users (id, nickname, password_hash, email, role, active, created_at, updated_at)
-		VALUES (:id, :nickname, :password_hash, :email, :role, :active, :created_at, :updated_at)`
+	const q = `INSERT INTO users (id, nickname, password_hash, email, role, tenant_id, active, created_at, updated_at)
+		VALUES (:id, :nickname, :password_hash, :email, :role, :tenant_id, :active, :created_at, :updated_at)`
 	_, err := r.Conn(ctx).NamedExecContext(ctx, q, u)
 	return err
 }
 
+// Update scopes the WHERE to the caller's tenant (r.Tenant, positional — the
+// guard is the CALLER's tenant, not the loaded row's) AND excludes superadmin
+// rows: a tenant admin must never modify (e.g. reset the password of) a platform
+// superadmin, even one that shares its tenant — that would be a back-door
+// escalation. The platform account is managed out-of-band, never through
+// tenant-admin user management.
 func (r *Repository) Update(ctx context.Context, u *user.User) error {
-	const q = `UPDATE users SET nickname=:nickname, password_hash=:password_hash, email=:email,
-		role=:role, active=:active, updated_at=:updated_at WHERE id=:id`
-	_, err := r.Conn(ctx).NamedExecContext(ctx, q, u)
+	const q = `UPDATE users SET nickname=?, password_hash=?, email=?, role=?, active=?, updated_at=?
+		WHERE id=? AND tenant_id=? AND role != 'superadmin'`
+	_, err := r.Conn(ctx).ExecContext(ctx, q,
+		u.Nickname, u.PasswordHash, u.Email, u.Role, u.Active, u.UpdatedAt, u.ID, r.Tenant(ctx))
 	return err
 }
 
+// Delete scopes by tenant AND excludes superadmin rows — same rationale as Update.
 func (r *Repository) Delete(ctx context.Context, id string) error {
-	_, err := r.Conn(ctx).ExecContext(ctx, `DELETE FROM users WHERE id=?`, id)
+	_, err := r.Conn(ctx).ExecContext(ctx,
+		`DELETE FROM users WHERE id=? AND tenant_id=? AND role != 'superadmin'`, id, r.Tenant(ctx))
 	return err
 }
 
+// FindByID loads the user named by an exact id — used by auth (the JWT subject)
+// and by self/admin lookups. It is an identity load, not a tenant-filtered list,
+// so it is exempt from tenant scoping (and runs before a tenant is known on the
+// refresh path). CHOSEN 4a boundary: an admin CAN read another tenant's user by
+// exact id. The enumerable list leak is closed (FindAll is tenant-scoped) and the
+// mutate paths are scoped (Update/Delete), so a targeted by-id read is a known,
+// smaller surface — not an oversight. Scope it too if that surface matters.
 func (r *Repository) FindByID(ctx context.Context, id string) (*user.User, error) {
 	var u user.User
-	err := r.Conn(ctx).GetContext(ctx, &u, `SELECT * FROM users WHERE id=?`, id)
+	err := r.Conn(ctx).GetContext(ctx, &u,
+		`SELECT * FROM users WHERE id=? /* tenant-scope-exempt: identity load by id */`, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, &shared.ValidationError{Field: "id", Message: "user not found"}
 	}
 	return &u, err
 }
 
+// FindByNickname is the login lookup — it runs before any tenant is resolved,
+// and nickname is globally unique, so it is a global identity lookup exempt
+// from tenant scoping.
 func (r *Repository) FindByNickname(ctx context.Context, nickname string) (*user.User, error) {
 	var u user.User
-	err := r.Conn(ctx).GetContext(ctx, &u, `SELECT * FROM users WHERE nickname=?`, nickname)
+	err := r.Conn(ctx).GetContext(ctx, &u,
+		`SELECT * FROM users WHERE nickname=? /* tenant-scope-exempt: global identity lookup (login) */`,
+		nickname)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return &u, err
 }
 
+// FindAllActive (like FindAll) excludes superadmin rows: a platform account must
+// never surface in a tenant admin's user listing — it lives above the tenant.
 func (r *Repository) FindAllActive(ctx context.Context) ([]user.User, error) {
 	var users []user.User
-	err := r.Conn(ctx).
-		SelectContext(ctx, &users, `SELECT * FROM users WHERE active=1 ORDER BY nickname`)
+	err := r.Conn(ctx).SelectContext(ctx, &users,
+		`SELECT * FROM users WHERE active=1 AND tenant_id=? AND role != 'superadmin' ORDER BY nickname`,
+		r.Tenant(ctx))
 	return users, err
 }
 
 func (r *Repository) FindAll(ctx context.Context) ([]user.User, error) {
 	var users []user.User
-	err := r.Conn(ctx).SelectContext(ctx, &users, `SELECT * FROM users ORDER BY nickname`)
+	err := r.Conn(ctx).SelectContext(ctx, &users,
+		`SELECT * FROM users WHERE tenant_id=? AND role != 'superadmin' ORDER BY nickname`,
+		r.Tenant(ctx))
 	return users, err
+}
+
+// FindAllAcrossTenants is the platform-plane read: every user, all tenants,
+// joined to its tenant name — the deliberate inverse of FindAll. It does NOT call
+// r.Tenant(ctx); the marker makes the cross-tenant scope explicit to the
+// conformance gate. INNER JOIN is safe (tenant_id is a NOT NULL FK). Ordered by
+// tenant then nickname so the superadmin list groups naturally.
+func (r *Repository) FindAllAcrossTenants(ctx context.Context) ([]user.PlatformRow, error) {
+	var rows []user.PlatformRow
+	err := r.Conn(ctx).SelectContext(ctx, &rows,
+		`SELECT u.id, u.nickname, u.email, u.role, u.active, u.tenant_id,
+		        t.name AS tenant_name, u.last_login_at
+		   FROM users u
+		   JOIN tenants t ON t.id = u.tenant_id /* tenant-scope-exempt: platform superadmin */
+		  ORDER BY t.name, u.nickname`)
+	return rows, err
+}
+
+// CountAcrossTenants counts every user (all tenants, including superadmins) for
+// the platform dashboard — it must match what the platform user list shows.
+func (r *Repository) CountAcrossTenants(ctx context.Context) (int, error) {
+	var n int
+	err := r.Conn(ctx).GetContext(ctx, &n,
+		`SELECT COUNT(*) FROM users /* tenant-scope-exempt: platform superadmin */`)
+	return n, err
+}
+
+// UpdateAcrossTenants is the platform-plane write: a superadmin edits a user in
+// ANY tenant. Unlike Update it carries no tenant filter (the marker makes that
+// explicit), but it still excludes superadmin rows so no platform account can be
+// edited through the API. tenant_id is deliberately NOT in the SET clause — an
+// edit must never move a user between tenants.
+func (r *Repository) UpdateAcrossTenants(ctx context.Context, u *user.User) error {
+	const q = `UPDATE users SET nickname=?, password_hash=?, email=?, role=?, active=?, updated_at=?
+		WHERE id=? AND role != 'superadmin' /* tenant-scope-exempt: platform superadmin */`
+	_, err := r.Conn(ctx).ExecContext(ctx, q,
+		u.Nickname, u.PasswordHash, u.Email, u.Role, u.Active, u.UpdatedAt, u.ID)
+	return err
+}
+
+// DeleteAcrossTenants is the platform-plane delete — same cross-tenant scope and
+// superadmin exclusion as UpdateAcrossTenants.
+func (r *Repository) DeleteAcrossTenants(ctx context.Context, id string) error {
+	_, err := r.Conn(ctx).ExecContext(ctx,
+		`DELETE FROM users WHERE id=? AND role != 'superadmin' /* tenant-scope-exempt: platform superadmin */`,
+		id)
+	return err
+}
+
+// RecordLogin stamps last_login_at on successful login. Raw pool (r.DB.DB()),
+// outside the bus tx — same rationale as ResetFailedLogin: a successful login
+// should record even if a later step in the handler rolls back. Best-effort.
+func (r *Repository) RecordLogin(ctx context.Context, userID string) error {
+	_, err := r.DB.DB().ExecContext(ctx,
+		`UPDATE users SET last_login_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?
+		 /* tenant-scope-exempt: stamp successful login by id */`,
+		userID)
+	return err
 }
 
 // RecordFailedLogin runs ENTIRELY in SQL so the counter decision (reset
@@ -94,6 +179,7 @@ func (r *Repository) RecordFailedLogin(
 	//   - if the resulting count hits the threshold → reset to 0 (so the
 	//     post-unlock cycle starts fresh) AND set locked_until
 	const q = `
+		/* tenant-scope-exempt: brute-force counter, runs pre/at-login by user id */
 		UPDATE users SET
 		    failed_login_attempts = CASE
 		        WHEN last_failed_login_at IS NULL
@@ -131,7 +217,8 @@ func (r *Repository) RecordFailedLogin(
 // if a later step in the same handler hits an error and rolls back.
 func (r *Repository) ResetFailedLogin(ctx context.Context, userID string) error {
 	_, err := r.DB.DB().ExecContext(ctx,
-		`UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?`,
+		`UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?
+		 /* tenant-scope-exempt: clear brute-force counter on successful login */`,
 		userID)
 	return err
 }

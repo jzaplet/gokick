@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 
+	"gokick/app/domain/shared"
 	"gokick/app/infrastructure/database"
 )
 
@@ -26,4 +27,19 @@ func (b *BaseRepository) Conn(ctx context.Context) Conn {
 		return tx
 	}
 	return b.DB.DB()
+}
+
+// Tenant returns the tenant id to scope a query by — read from the value
+// TenantMiddleware put in ctx. When none is present it falls back to the default
+// tenant in single-tenant mode, or panics in multitenant mode
+// (APP_MULTITENANCY=true): there, a missing tenant is a bug that must NOT
+// silently scope to the default tenant (a cross-tenant leak).
+func (b *BaseRepository) Tenant(ctx context.Context) string {
+	if id := shared.TenantIDFromContext(ctx); id != "" {
+		return id
+	}
+	if b.DB.Multitenant() {
+		panic("sqlite: tenant required but absent from context (APP_MULTITENANCY=true)")
+	}
+	return shared.DefaultTenantID
 }

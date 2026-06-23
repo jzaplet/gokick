@@ -41,6 +41,7 @@ excludeFiles:
   # component's `in:` glob, so attach-exempt them.
   - domain/zz_audit_test.go
   - domain/zz_gap_test.go
+  - domain/zz_bornscoped_test.go
 
 # Only shared/ is common (AuthClaims, errors, ports). The bounded contexts
 # (user/token/job) are NOT common, so importing one from another is a
@@ -64,6 +65,8 @@ components:
     in: domain/token/**
   domain_job:
     in: domain/job/**
+  domain_tenant:
+    in: domain/tenant/**
 
   # Layer 2: Application
   bus:
@@ -90,6 +93,7 @@ components:
     in:
       - infrastructure/sqlite/audit/**
       - infrastructure/sqlite/job/**
+      - infrastructure/sqlite/tenant/**
       - infrastructure/sqlite/token/**
       - infrastructure/sqlite/user/**
   sqlite_seeder:
@@ -134,6 +138,8 @@ deps:
     anyVendorDeps: true
   domain_job:
     anyVendorDeps: true
+  domain_tenant:
+    anyVendorDeps: true
 
   # Application — depends on domain only
   bus:
@@ -147,6 +153,7 @@ deps:
       - domain_user
       - domain_token
       - domain_job
+      - domain_tenant
     anyVendorDeps: true
 
   # Test fixtures — may wire real infrastructure for integration tests.
@@ -163,6 +170,7 @@ deps:
       - domain_user
       - domain_token
       - domain_job
+      - domain_tenant
     anyVendorDeps: true
 
   # Infrastructure — depends on domain
@@ -185,11 +193,13 @@ deps:
       - domain_user
       - domain_token
       - domain_job
+      - domain_tenant
   sqlite_seeder:
     mayDependOn:
       - database
       - testfx
       - domain_user
+      - domain_tenant
   scheduler:
     anyVendorDeps: true
   worker:
@@ -209,6 +219,7 @@ deps:
       - response
       - testfx
       - domain_user
+      - domain_tenant
   request:
     anyVendorDeps: true
   http_middleware:
@@ -232,3 +243,5 @@ deps:
       - database
       - application
       - bus
+      - domain_user
+      - domain_tenant

@@ -4,11 +4,16 @@ import (
 	"context"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	jobapp "gokick/app/application/job"
+	platformcmd "gokick/app/application/platform/command"
+	tenantcmd "gokick/app/application/tenant/command"
+	tenantqry "gokick/app/application/tenant/query"
+	usercmd "gokick/app/application/user/command"
 	"gokick/app/domain/shared"
 	"gokick/app/infrastructure/config"
 	"gokick/app/infrastructure/scheduler"
@@ -17,6 +22,8 @@ import (
 	"gokick/app/presentation/http/handler"
 	"gokick/app/presentation/http/middleware"
 	"gokick/app/presentation/http/server"
+
+	"github.com/spf13/cobra"
 )
 
 // ---------------------------------------------------------------------------
@@ -101,7 +108,7 @@ func serveTestServer(logger *slog.Logger) *server.Server {
 		limiters,
 		extract,
 		handler.NewHealthHandler(),
-		nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil,
 	)
 }
 
@@ -224,5 +231,193 @@ func TestServeCommand_SchedulerDoneGatesReturnAndSharesCtx(t *testing.T) {
 		if !contains(msgs, want) {
 			t.Fatalf("missing %q in lifecycle logs — co-run/drain not observed; saw %v", want, msgs)
 		}
+	}
+}
+
+// The create-superadmin CLI command delegates to the platform handler and
+// persists a superadmin out-of-band — the path the HTTP/admin API refuses. It
+// also enforces the required flags before RunE runs.
+func TestCreateSuperAdminCommand_CreatesSuperAdmin(t *testing.T) {
+	// No t.Parallel — see the other testfx-backed tests in this package (goose globals).
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "console_superadmin.db"))
+	handler := platformcmd.NewCreateSuperAdminHandler(fx.Users, fx.Hasher)
+
+	cmd := NewCreateSuperAdminCommand(handler).Command()
+	cmd.SilenceUsage = true
+	cmd.SetArgs([]string{"-n", "root", "-p", "secret12"})
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("execute create-superadmin: %v", err)
+	}
+
+	got, err := fx.Users.FindByNickname(context.Background(), "root")
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	if got == nil || got.Role != "superadmin" {
+		t.Fatalf("create-superadmin must persist a superadmin, got %+v", got)
+	}
+}
+
+func TestCreateSuperAdminCommand_MissingPasswordErrors(t *testing.T) {
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "console_superadmin_missing.db"))
+	handler := platformcmd.NewCreateSuperAdminHandler(fx.Users, fx.Hasher)
+
+	cmd := NewCreateSuperAdminCommand(handler).Command()
+	cmd.SilenceUsage = true
+	cmd.SilenceErrors = true
+	cmd.SetArgs([]string{"-n", "root"})
+	if err := cmd.ExecuteContext(context.Background()); err == nil {
+		t.Fatal("expected error when --password is missing")
+	}
+
+	if got, _ := fx.Users.FindByNickname(context.Background(), "root"); got != nil {
+		t.Fatal("no user must be created when a required flag is missing")
+	}
+}
+
+// newCreateUserCmd builds the create-user CLI command wired to a real fixture,
+// with multitenancy on/off, for the tenant-flag matrix tests.
+func newCreateUserCmd(fx *testfx.Fixture, multitenant bool) *cobra.Command {
+	createUser := usercmd.NewCreateUserHandler(fx.Users, fx.Hasher)
+	createTenant := tenantcmd.NewCreateTenantHandler(fx.Tenants)
+	getTenant := tenantqry.NewGetTenantHandler(fx.Tenants)
+	cmd := NewCreateUserCommand(
+		createUser, createTenant, getTenant, &config.Config{Multitenancy: multitenant}, fx.DB,
+	).Command()
+	cmd.SilenceUsage = true
+	cmd.SilenceErrors = true
+	return cmd
+}
+
+// Multitenancy on, no tenant flag → error AND no user persisted.
+func TestCreateUserCommand_MultitenantRequiresTenantFlag(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "cu_mt_required.db"))
+
+	cmd := newCreateUserCmd(fx, true)
+	cmd.SetArgs([]string{"-n", "alice", "-p", "secret12"})
+	err := cmd.ExecuteContext(ctx)
+	if err == nil {
+		t.Fatal("multitenancy on without a tenant flag must error")
+	}
+	if !strings.Contains(err.Error(), "multitenancy is on") {
+		t.Fatalf("error must explain the requirement, got %q", err)
+	}
+	if got, _ := fx.Users.FindByNickname(ctx, "alice"); got != nil {
+		t.Fatal("no user must be created when the tenant flag is missing")
+	}
+}
+
+// Multitenancy on + --tenant-name → creates the tenant and the user in it.
+func TestCreateUserCommand_MultitenantCreatesTenantByName(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "cu_mt_name.db"))
+
+	cmd := newCreateUserCmd(fx, true)
+	cmd.SetArgs([]string{"-n", "alice", "-p", "secret12", "-r", "user", "--tenant-name", "Acme"})
+	if err := cmd.ExecuteContext(ctx); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+
+	u, _ := fx.Users.FindByNickname(ctx, "alice")
+	if u == nil {
+		t.Fatal("user must be created")
+	}
+	tn, _ := fx.Tenants.FindByID(ctx, u.TenantID)
+	if tn == nil || tn.Name != "Acme" {
+		t.Fatalf("user must land in the new tenant 'Acme', got %+v", tn)
+	}
+}
+
+// Multitenancy on + --tenant-id to an existing tenant → the user lands in it.
+func TestCreateUserCommand_MultitenantUsesExistingTenantId(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "cu_mt_id.db"))
+	tn := fx.SeedTenant(t, "Beta")
+
+	cmd := newCreateUserCmd(fx, true)
+	cmd.SetArgs([]string{"-n", "bob", "-p", "secret12", "-r", "user", "--tenant-id", tn.ID})
+	if err := cmd.ExecuteContext(ctx); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+
+	u, _ := fx.Users.FindByNickname(ctx, "bob")
+	if u == nil || u.TenantID != tn.ID {
+		t.Fatalf("user must land in tenant %q, got %+v", tn.ID, u)
+	}
+}
+
+// Unknown --tenant-id → clean "not found", no user, no orphan tenant.
+func TestCreateUserCommand_MultitenantUnknownTenantIdErrors(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "cu_mt_badid.db"))
+
+	cmd := newCreateUserCmd(fx, true)
+	cmd.SetArgs([]string{"-n", "alice", "-p", "secret12", "--tenant-id", "no-such-id"})
+	err := cmd.ExecuteContext(ctx)
+	if err == nil {
+		t.Fatal("an unknown --tenant-id must error")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("error must say the tenant was not found, got %q", err)
+	}
+	if got, _ := fx.Users.FindByNickname(ctx, "alice"); got != nil {
+		t.Fatal("no user must be created for an unknown tenant")
+	}
+}
+
+// Multitenancy off + a tenant flag → error (the flags are not applicable).
+func TestCreateUserCommand_SingleTenantRejectsTenantFlag(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "cu_single_flag.db"))
+
+	cmd := newCreateUserCmd(fx, false)
+	cmd.SetArgs([]string{"-n", "alice", "-p", "secret12", "--tenant-name", "Acme"})
+	err := cmd.ExecuteContext(ctx)
+	if err == nil {
+		t.Fatal("multitenancy off with a tenant flag must error")
+	}
+	if !strings.Contains(err.Error(), "multitenancy is off") {
+		t.Fatalf("error must explain, got %q", err)
+	}
+}
+
+// create-tenant prints the new tenant and persists it.
+func TestCreateTenantCommand_CreatesTenant(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "ct_create.db"))
+
+	cmd := NewCreateTenantCommand(tenantcmd.NewCreateTenantHandler(fx.Tenants)).Command()
+	cmd.SilenceUsage = true
+	cmd.SetArgs([]string{"-n", "Acme"})
+	if err := cmd.ExecuteContext(ctx); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+
+	tn, _ := fx.Tenants.FindByName(ctx, "Acme")
+	if tn == nil {
+		t.Fatal("create-tenant must persist the tenant")
+	}
+}
+
+// Rollback: --tenant-name creates a tenant before the user; if user creation
+// fails (here: duplicate nickname), the just-created tenant must be rolled back —
+// no orphan. The CLI bypasses the bus, so create-user wraps both in its own tx.
+func TestCreateUserCommand_TenantNameRolledBackWhenUserFails(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "cu_rollback.db"))
+
+	// A user named "alice" already exists → create-user with the same nickname fails.
+	fx.SeedUserInTenant(t, "alice", "user", shared.DefaultTenantID)
+
+	cmd := newCreateUserCmd(fx, true)
+	cmd.SetArgs([]string{"-n", "alice", "-p", "secret12", "-r", "user", "--tenant-name", "Beta"})
+	if err := cmd.ExecuteContext(ctx); err == nil {
+		t.Fatal("create-user with a duplicate nickname must fail")
+	}
+
+	// The tenant 'Beta' must NOT exist — the failed user creation rolled it back.
+	if tn, _ := fx.Tenants.FindByName(ctx, "Beta"); tn != nil {
+		t.Fatalf("orphan tenant: 'Beta' must be rolled back when user creation fails, got %+v", tn)
 	}
 }

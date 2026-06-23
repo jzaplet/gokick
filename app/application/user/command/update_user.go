@@ -45,6 +45,15 @@ func (h *UpdateUserHandler) Handle(ctx context.Context, cmd UpdateUserCommand) e
 	if err != nil {
 		return err
 	}
+	// An admin must not promote anyone TO superadmin (self-escalation to the
+	// platform plane). The repo's Update also excludes superadmin rows, so an
+	// existing superadmin can't be demoted/edited here either.
+	if role.IsSuperAdmin() {
+		return &shared.ValidationError{
+			Field:   "role",
+			Message: "cannot assign the superadmin role",
+		}
+	}
 
 	// Mirror DeleteUserHandler's self-lockout guard: don't let an admin
 	// demote themselves out of admin and lock the org out of admin ops.

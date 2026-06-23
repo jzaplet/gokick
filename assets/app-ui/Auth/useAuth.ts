@@ -9,6 +9,7 @@ import {
     hasPermission,
     hasRole,
     isAdmin,
+    isSuperAdmin,
 } from '@/app-ui/Auth/permissions';
 
 // Thin composable — exposes the session state as readonly refs and the
@@ -22,6 +23,7 @@ export const useAuth = (): {
     refresh: typeof refresh;
     hasRole: typeof hasRole;
     isAdmin: typeof isAdmin;
+    isSuperAdmin: typeof isSuperAdmin;
     hasPermission: typeof hasPermission;
     hasAllPermissions: typeof hasAllPermissions;
     hasAnyPermission: typeof hasAnyPermission;
@@ -34,6 +36,7 @@ export const useAuth = (): {
         refresh,
         hasRole,
         isAdmin,
+        isSuperAdmin,
         hasPermission,
         hasAllPermissions,
         hasAnyPermission,

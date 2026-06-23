@@ -37,6 +37,17 @@ func (m *MigrationManager) RunUp() error {
 		return err
 	}
 
+	// Pin migrations to a single connection. SQLite table-rebuild migrations use
+	// `-- +goose NO TRANSACTION` so they can toggle PRAGMA foreign_keys (needed
+	// so a DROP of a referenced table doesn't cascade-delete via ON DELETE
+	// CASCADE) — but PRAGMA is per-connection, and goose runs NO TRANSACTION
+	// statements on the *sql.DB pool, where the next statement may land on a
+	// different connection. One connection makes the PRAGMA hold across the whole
+	// rebuild. Migrations run once at startup, serially, so this costs nothing;
+	// restore the pool afterward.
+	m.db.SetMaxOpenConns(1)
+	defer m.db.SetMaxOpenConns(0)
+
 	before, _ := goose.GetDBVersion(m.db.DB)
 
 	if err := goose.UpContext(context.Background(), m.db.DB, "."); err != nil {

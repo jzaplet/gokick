@@ -21,6 +21,8 @@ description: 'Go Kick je produkční základ, na kterém postavíš vlastní apl
 
 Bezpečnost i architektura jsou **nad úrovní defaultů velkých frameworků** (Rails, Laravel, NestJS): rotace refresh tokenů s detekcí krádeže, atomický account lockout, timing-safe login, kompletní CSP/HSTS, audit přežívající rollback, reálné DDD + CQRS staticky vynucené `go-arch-lint` a jediná logovací cesta hlídaná lintem.
 
+Umí i **zapínatelný row-level multitenancy** — jedním přepínačem (`APP_MULTITENANCY`), bez jakéhokoli dopadu na single-tenant nasazení.
+
 Běží bez Redisu, brokeru či jiné externí infrastruktury a nasazuje se jako jedna samostatná binárka (s embedovaným frontendem i migracemi). Jediný vědomý strop — single-node SQLite bez horizontálního škálování — z něj dělá ideální volbu pro malá až střední nasazení s důrazem na bezpečnost, čistotu a jednoduchý provoz.
 
 
@@ -35,6 +37,7 @@ Běží bez Redisu, brokeru či jiné externí infrastruktury a nasazuje se jako
 - **DDD** – čtyřvrstvá architektura (domain → application → infrastructure → presentation) s bounded kontexty, entitami, value objects a domain eventy
 - **CQRS** – oddělené command/query/event busy s middleware chain (logging, autorizace, transakce, recovery)
 - **Dependency inversion** – doména definuje interfaces (porty), infrastruktura dodává implementace (adaptery). Př: SQLite lze zaměnit za Postgres bez zásahu do domény
+- **Multitenancy na přepínač** – zapínatelný row-level multitenancy (`APP_MULTITENANCY`, default vypnuto = single-tenant) s izolací vynucenou per-dotaz conformance testem; platformní rovina (role `superadmin`, cross-tenant přehled + správa) a CLI pro správu tenantů
 - **Vue 3** SPA (Vite, TypeScript, Tailwind) embedovaná do Go binárky
 - **SQLite** s migracemi (Goose), pure-Go bez CGO
 - **JWT** access + refresh token autentizace

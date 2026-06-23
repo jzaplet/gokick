@@ -14,8 +14,12 @@ import (
 	"gokick/app/application/bus/middleware"
 	query3 "gokick/app/application/dashboard/query"
 	job2 "gokick/app/application/job"
+	command4 "gokick/app/application/platform/command"
+	query4 "gokick/app/application/platform/query"
 	command2 "gokick/app/application/profile/command"
 	"gokick/app/application/profile/query"
+	command5 "gokick/app/application/tenant/command"
+	query5 "gokick/app/application/tenant/query"
 	command3 "gokick/app/application/user/command"
 	query2 "gokick/app/application/user/query"
 	job3 "gokick/app/domain/job"
@@ -28,6 +32,7 @@ import (
 	"gokick/app/infrastructure/sqlite/audit"
 	"gokick/app/infrastructure/sqlite/job"
 	"gokick/app/infrastructure/sqlite/seeder"
+	"gokick/app/infrastructure/sqlite/tenant"
 	"gokick/app/infrastructure/sqlite/token"
 	"gokick/app/infrastructure/sqlite/user"
 	"gokick/app/infrastructure/worker"
@@ -76,7 +81,8 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	}
 	jobDispatcher := provideJobDispatcher(repository, handlerRegistry)
 	auditRepository := audit.NewRepository(sqliteManager)
-	commandBus := provideCommandBus(logger, sqliteManager, permissionChecker, eventBus, jobDispatcher, auditRepository, reporter)
+	tenantResolver := provideTenantResolver()
+	commandBus := provideCommandBus(logger, sqliteManager, permissionChecker, eventBus, jobDispatcher, auditRepository, reporter, tenantResolver)
 	userRepository := user.NewRepository(sqliteManager)
 	tokenRepository := token.NewRepository(sqliteManager)
 	passwordHasher := providePasswordHasher()
@@ -85,7 +91,7 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	logoutHandler := command.NewLogoutHandler(tokenRepository)
 	permissionsRegistry := providePermissionsRegistry()
 	authHandler := handler.NewAuthHandler(cookieSecure, commandBus, loginHandler, refreshTokenHandler, logoutHandler, permissionsRegistry)
-	queryBus := provideQueryBus(logger, permissionChecker, reporter)
+	queryBus := provideQueryBus(logger, permissionChecker, reporter, tenantResolver)
 	getProfileHandler := query.NewGetProfileHandler(userRepository)
 	changePasswordHandler := command2.NewChangePasswordHandler(userRepository, passwordHasher)
 	profileHandler := handler.NewProfileHandler(commandBus, queryBus, getProfileHandler, changePasswordHandler, permissionsRegistry)
@@ -97,7 +103,14 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	getUserDashboardHandler := query3.NewGetUserDashboardHandler()
 	getAdminDashboardHandler := query3.NewGetAdminDashboardHandler()
 	dashboardHandler := handler.NewDashboardHandler(queryBus, getUserDashboardHandler, getAdminDashboardHandler)
-	serverServer := server.NewServer(configConfig, logger, reporter, jwtService, rateLimiters, ipExtractor, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler)
+	tenantRepository := tenant.NewRepository(sqliteManager)
+	getStatsHandler := query4.NewGetStatsHandler(tenantRepository, userRepository)
+	listAllUsersHandler := query4.NewListAllUsersHandler(userRepository)
+	listTenantsHandler := query4.NewListTenantsHandler(tenantRepository)
+	updatePlatformUserHandler := command4.NewUpdatePlatformUserHandler(userRepository, passwordHasher)
+	deletePlatformUserHandler := command4.NewDeletePlatformUserHandler(userRepository)
+	platformHandler := handler.NewPlatformHandler(queryBus, commandBus, getStatsHandler, listAllUsersHandler, listTenantsHandler, updatePlatformUserHandler, deletePlatformUserHandler)
+	serverServer := server.NewServer(configConfig, logger, reporter, jwtService, rateLimiters, ipExtractor, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler, platformHandler)
 	v2 := provideSchedulerJobs(tokenRepository)
 	scheduler, err := provideScheduler(logger, v2)
 	if err != nil {
@@ -106,11 +119,19 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	worker := provideWorker(logger, reporter, repository, handlerRegistry, sqliteManager, jobDispatcher)
 	serveCommand := console.NewServeCommand(serverServer, scheduler, worker)
 	seedAdminPassword := provideSeedAdminPassword(configConfig)
-	seederSeeder := seeder.NewSeeder(userRepository, passwordHasher, seedAdminPassword, logger)
+	seedSuperAdminPassword := provideSeedSuperAdminPassword(configConfig)
+	seedAdminTenant := provideSeedAdminTenant(configConfig)
+	multitenant := provideMultitenant(configConfig)
+	seederSeeder := seeder.NewSeeder(userRepository, tenantRepository, passwordHasher, seedAdminPassword, seedSuperAdminPassword, seedAdminTenant, multitenant, logger)
 	seedCommand := console.NewSeedCommand(seederSeeder)
-	createUserCommand := console.NewCreateUserCommand(createUserHandler)
+	createTenantHandler := command5.NewCreateTenantHandler(tenantRepository)
+	getTenantHandler := query5.NewGetTenantHandler(tenantRepository)
+	createUserCommand := console.NewCreateUserCommand(createUserHandler, createTenantHandler, getTenantHandler, configConfig, sqliteManager)
+	createSuperAdminHandler := command4.NewCreateSuperAdminHandler(userRepository, passwordHasher)
+	createSuperAdminCommand := console.NewCreateSuperAdminCommand(createSuperAdminHandler)
+	createTenantCommand := console.NewCreateTenantCommand(createTenantHandler)
 	workerCommand := console.NewWorkerCommand(worker)
-	rootCommand := console.NewRootCommand(serveCommand, seedCommand, createUserCommand, workerCommand)
+	rootCommand := console.NewRootCommand(serveCommand, seedCommand, createUserCommand, createSuperAdminCommand, createTenantCommand, workerCommand)
 	migrationManager := database.NewMigrationManager(sqliteManager, logger)
 	application := app.NewApplication(rootCommand, migrationManager)
 	return application, nil
@@ -126,6 +147,13 @@ func providePermissionChecker() shared.PermissionChecker {
 	return security.NewPermissionChecker()
 }
 
+// provideTenantResolver wires the single-tenant default resolver (multitenancy
+// off). Swapping this binding is how a multi-tenant deployment turns isolation
+// on without touching handlers.
+func provideTenantResolver() shared.TenantResolver {
+	return security.NewDefaultTenantResolver()
+}
+
 // provideCommandBus wires the write-side bus. Audit wraps OUTSIDE both
 // DispatchEvents and Transaction so security-relevant events persist even
 // when business work rolls back. JobDispatcher sits outside Transaction so
@@ -139,8 +167,9 @@ func provideCommandBus(
 	dispatcher shared.JobDispatcher, audit2 shared.AuditLogger,
 
 	reporter shared.ErrorReporter,
+	tenantResolver shared.TenantResolver,
 ) *bus.CommandBus {
-	chain := append(middleware.BaseChain(logger, checker, reporter), middleware.AuditMiddleware(logger, audit2), middleware.JobDispatcherMiddleware(dispatcher), middleware.DispatchEventsMiddleware(logger, eventBus), middleware.TransactionMiddleware(db))
+	chain := append(middleware.BaseChain(logger, checker, reporter, tenantResolver), middleware.AuditMiddleware(logger, audit2), middleware.JobDispatcherMiddleware(dispatcher), middleware.DispatchEventsMiddleware(logger, eventBus), middleware.TransactionMiddleware(db))
 	return bus.NewCommandBus(chain...)
 }
 
@@ -148,8 +177,9 @@ func provideQueryBus(
 	logger *slog.Logger,
 	checker shared.PermissionChecker,
 	reporter shared.ErrorReporter,
+	tenantResolver shared.TenantResolver,
 ) *bus.QueryBus {
-	return bus.NewQueryBus(middleware.BaseChain(logger, checker, reporter)...)
+	return bus.NewQueryBus(middleware.BaseChain(logger, checker, reporter, tenantResolver)...)
 }
 
 func providePublicFS() fs.FS {
@@ -226,6 +256,22 @@ func provideSeedAdminPassword(cfg *config.Config) seeder.SeedAdminPassword {
 	return seeder.SeedAdminPassword(cfg.SeedAdminPassword)
 }
 
+// provideSeedSuperAdminPassword surfaces the OPTIONAL superadmin seed password
+// as its own Wire-bound type. Empty = no superadmin seeded.
+func provideSeedSuperAdminPassword(cfg *config.Config) seeder.SeedSuperAdminPassword {
+	return seeder.SeedSuperAdminPassword(cfg.SeedSuperAdminPassword)
+}
+
+// provideSeedAdminTenant / provideMultitenant surface the seeder's tenant inputs
+// as Wire-distinct types so it gets the specific values, not the whole config.
+func provideSeedAdminTenant(cfg *config.Config) seeder.SeedAdminTenant {
+	return seeder.SeedAdminTenant(cfg.SeedAdminTenant)
+}
+
+func provideMultitenant(cfg *config.Config) seeder.Multitenant {
+	return seeder.Multitenant(cfg.Multitenancy)
+}
+
 // provideSchedulerJobs is the single source of truth for periodic in-process
 // jobs — mirrors providePermissionsRegistry / provideJobHandlerRegistry. Add
 // a new Job here; provideScheduler stays decoupled from job business.
@@ -275,5 +321,5 @@ func provideWorker(
 }
 
 func providePermissionsRegistry() *shared.PermissionsRegistry {
-	return shared.NewPermissionsRegistry([]shared.Permissioned{command.LogoutCommand{}, command2.ChangePasswordCommand{}, query.GetProfileQuery{}, command3.CreateUserCommand{}, command3.UpdateUserCommand{}, command3.DeleteUserCommand{}, query2.ListUsersQuery{}, query3.GetUserDashboardQuery{}, query3.GetAdminDashboardQuery{}})
+	return shared.NewPermissionsRegistry([]shared.Permissioned{command.LogoutCommand{}, command2.ChangePasswordCommand{}, query.GetProfileQuery{}, command3.CreateUserCommand{}, command3.UpdateUserCommand{}, command3.DeleteUserCommand{}, query2.ListUsersQuery{}, query3.GetUserDashboardQuery{}, query3.GetAdminDashboardQuery{}, query4.ListAllUsersQuery{}, query4.ListTenantsQuery{}, query4.GetStatsQuery{}, command4.UpdatePlatformUserCommand{}, command4.DeletePlatformUserCommand{}, command4.CreateSuperAdminCommand{}, command5.CreateTenantCommand{}, query5.GetTenantQuery{}})
 }

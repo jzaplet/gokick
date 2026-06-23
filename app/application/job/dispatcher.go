@@ -48,6 +48,14 @@ func (d *Dispatcher) Enqueue(
 	}
 
 	j := job.NewJob(kind, raw, maxRetries)
+	// Stamp the tenant from the enqueuing context so the worker can restore it
+	// for the handler (the worker bypasses the bus). Fall back to the default
+	// tenant when the ctx carries none — an explicit "" would override the
+	// column's NOT NULL DEFAULT and write an empty tenant.
+	j.TenantID = shared.TenantIDFromContext(ctx)
+	if j.TenantID == "" {
+		j.TenantID = shared.DefaultTenantID
+	}
 	if options.Delay > 0 {
 		j.RunAt = time.Now().Add(options.Delay)
 	}

@@ -14,8 +14,13 @@ import (
 //
 // Persistence sets created_at via the DB DEFAULT.
 type Job struct {
-	ID          string     `db:"id"`
-	Kind        string     `db:"kind"`
+	ID   string `db:"id"`
+	Kind string `db:"kind"`
+	// TenantID is the tenant the job was enqueued for. The worker restores it
+	// into the handler's context (the worker bypasses the bus, so the request's
+	// TenantMiddleware never ran). The dispatcher stamps it from the enqueuing
+	// context; the column NOT NULL DEFAULT is the fallback.
+	TenantID    string     `db:"tenant_id"`
 	Payload     []byte     `db:"payload"`
 	RunAt       time.Time  `db:"run_at"`
 	Attempts    int        `db:"attempts"`    // 0-based count of how many times claim has run this job

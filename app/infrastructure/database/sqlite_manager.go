@@ -16,8 +16,14 @@ type txKeyType struct{}
 var txKey = txKeyType{}
 
 type SqliteManager struct {
-	db *sqlx.DB
+	db          *sqlx.DB
+	multitenant bool
 }
+
+// Multitenant reports the configured enforcement mode (APP_MULTITENANCY). When
+// true, BaseRepository.Tenant fails closed (panics) on a missing tenant instead
+// of falling back to the default tenant.
+func (m *SqliteManager) Multitenant() bool { return m.multitenant }
 
 func NewSqliteManager(config *config.Config) (*SqliteManager, error) {
 	dir := filepath.Dir(config.DBPath)
@@ -76,7 +82,7 @@ func NewSqliteManager(config *config.Config) (*SqliteManager, error) {
 		return nil, err
 	}
 
-	return &SqliteManager{db: db}, nil
+	return &SqliteManager{db: db, multitenant: config.Multitenancy}, nil
 }
 
 func (m *SqliteManager) DB() *sqlx.DB {

@@ -10,12 +10,17 @@ import (
 	busmw "gokick/app/application/bus/middleware"
 	dashboardqry "gokick/app/application/dashboard/query"
 	jobapp "gokick/app/application/job"
+	platformcmd "gokick/app/application/platform/command"
+	platformqry "gokick/app/application/platform/query"
 	profilecmd "gokick/app/application/profile/command"
 	profileqry "gokick/app/application/profile/query"
+	tenantcmd "gokick/app/application/tenant/command"
+	tenantqry "gokick/app/application/tenant/query"
 	usercmd "gokick/app/application/user/command"
 	userqry "gokick/app/application/user/query"
 	"gokick/app/domain/job"
 	"gokick/app/domain/shared"
+	"gokick/app/domain/tenant"
 	"gokick/app/domain/token"
 	"gokick/app/domain/user"
 	"gokick/app/infrastructure/config"
@@ -25,6 +30,7 @@ import (
 	sqliteaudit "gokick/app/infrastructure/sqlite/audit"
 	sqlitejob "gokick/app/infrastructure/sqlite/job"
 	sqliteseeder "gokick/app/infrastructure/sqlite/seeder"
+	sqlitetenant "gokick/app/infrastructure/sqlite/tenant"
 	sqlitetoken "gokick/app/infrastructure/sqlite/token"
 	sqliteuser "gokick/app/infrastructure/sqlite/user"
 	"gokick/app/infrastructure/worker"
@@ -48,6 +54,13 @@ func providePermissionChecker() shared.PermissionChecker {
 	return security.NewPermissionChecker()
 }
 
+// provideTenantResolver wires the single-tenant default resolver (multitenancy
+// off). Swapping this binding is how a multi-tenant deployment turns isolation
+// on without touching handlers.
+func provideTenantResolver() shared.TenantResolver {
+	return security.NewDefaultTenantResolver()
+}
+
 // provideCommandBus wires the write-side bus. Audit wraps OUTSIDE both
 // DispatchEvents and Transaction so security-relevant events persist even
 // when business work rolls back. JobDispatcher sits outside Transaction so
@@ -61,8 +74,9 @@ func provideCommandBus(
 	dispatcher shared.JobDispatcher,
 	audit shared.AuditLogger,
 	reporter shared.ErrorReporter,
+	tenantResolver shared.TenantResolver,
 ) *bus.CommandBus {
-	chain := append(busmw.BaseChain(logger, checker, reporter),
+	chain := append(busmw.BaseChain(logger, checker, reporter, tenantResolver),
 		busmw.AuditMiddleware(logger, audit),
 		busmw.JobDispatcherMiddleware(dispatcher),
 		busmw.DispatchEventsMiddleware(logger, eventBus),
@@ -75,8 +89,9 @@ func provideQueryBus(
 	logger *slog.Logger,
 	checker shared.PermissionChecker,
 	reporter shared.ErrorReporter,
+	tenantResolver shared.TenantResolver,
 ) *bus.QueryBus {
-	return bus.NewQueryBus(busmw.BaseChain(logger, checker, reporter)...)
+	return bus.NewQueryBus(busmw.BaseChain(logger, checker, reporter, tenantResolver)...)
 }
 
 func providePublicFS() fs.FS {
@@ -158,6 +173,22 @@ func provideSeedAdminPassword(cfg *config.Config) sqliteseeder.SeedAdminPassword
 	return sqliteseeder.SeedAdminPassword(cfg.SeedAdminPassword)
 }
 
+// provideSeedSuperAdminPassword surfaces the OPTIONAL superadmin seed password
+// as its own Wire-bound type. Empty = no superadmin seeded.
+func provideSeedSuperAdminPassword(cfg *config.Config) sqliteseeder.SeedSuperAdminPassword {
+	return sqliteseeder.SeedSuperAdminPassword(cfg.SeedSuperAdminPassword)
+}
+
+// provideSeedAdminTenant / provideMultitenant surface the seeder's tenant inputs
+// as Wire-distinct types so it gets the specific values, not the whole config.
+func provideSeedAdminTenant(cfg *config.Config) sqliteseeder.SeedAdminTenant {
+	return sqliteseeder.SeedAdminTenant(cfg.SeedAdminTenant)
+}
+
+func provideMultitenant(cfg *config.Config) sqliteseeder.Multitenant {
+	return sqliteseeder.Multitenant(cfg.Multitenancy)
+}
+
 // provideSchedulerJobs is the single source of truth for periodic in-process
 // jobs — mirrors providePermissionsRegistry / provideJobHandlerRegistry. Add
 // a new Job here; provideScheduler stays decoupled from job business.
@@ -217,6 +248,14 @@ func providePermissionsRegistry() *shared.PermissionsRegistry {
 		userqry.ListUsersQuery{},
 		dashboardqry.GetUserDashboardQuery{},
 		dashboardqry.GetAdminDashboardQuery{},
+		platformqry.ListAllUsersQuery{},
+		platformqry.ListTenantsQuery{},
+		platformqry.GetStatsQuery{},
+		platformcmd.UpdatePlatformUserCommand{},
+		platformcmd.DeletePlatformUserCommand{},
+		platformcmd.CreateSuperAdminCommand{},
+		tenantcmd.CreateTenantCommand{},
+		tenantqry.GetTenantQuery{},
 	})
 }
 
@@ -230,6 +269,7 @@ func CreateApplication(
 		database.NewMigrationManager,
 		providePasswordHasher,
 		providePermissionChecker,
+		provideTenantResolver,
 		provideCommandBus,
 		provideQueryBus,
 		provideEventHandlers,
@@ -238,6 +278,9 @@ func CreateApplication(
 		provideIPExtractor,
 		provideRateLimiters,
 		provideSeedAdminPassword,
+		provideSeedSuperAdminPassword,
+		provideSeedAdminTenant,
+		provideMultitenant,
 		provideSchedulerJobs,
 		provideScheduler,
 		provideJobHandlerRegistry,
@@ -247,13 +290,17 @@ func CreateApplication(
 		security.NewJwtService,
 		wire.Bind(new(shared.JwtService), new(*security.JwtService)),
 		wire.Bind(new(user.Repository), new(*sqliteuser.Repository)),
+		wire.Bind(new(user.PlatformRepository), new(*sqliteuser.Repository)),
 		wire.Bind(new(token.TokenRepository), new(*sqlitetoken.Repository)),
 		wire.Bind(new(job.Repository), new(*sqlitejob.Repository)),
+		wire.Bind(new(tenant.Repository), new(*sqlitetenant.Repository)),
+		wire.Bind(new(shared.Transactor), new(*database.SqliteManager)),
 		wire.Bind(new(shared.Seeder), new(*sqliteseeder.Seeder)),
 		wire.Bind(new(shared.AuditLogger), new(*sqliteaudit.Repository)),
 		sqliteuser.NewRepository,
 		sqlitetoken.NewRepository,
 		sqlitejob.NewRepository,
+		sqlitetenant.NewRepository,
 		sqliteseeder.NewSeeder,
 		sqliteaudit.NewRepository,
 		authcmd.NewLoginHandler,
@@ -265,6 +312,14 @@ func CreateApplication(
 		usercmd.NewUpdateUserHandler,
 		usercmd.NewDeleteUserHandler,
 		userqry.NewListUsersHandler,
+		platformqry.NewListAllUsersHandler,
+		platformqry.NewListTenantsHandler,
+		platformqry.NewGetStatsHandler,
+		platformcmd.NewUpdatePlatformUserHandler,
+		platformcmd.NewDeletePlatformUserHandler,
+		platformcmd.NewCreateSuperAdminHandler,
+		tenantcmd.NewCreateTenantHandler,
+		tenantqry.NewGetTenantHandler,
 		dashboardqry.NewGetUserDashboardHandler,
 		dashboardqry.NewGetAdminDashboardHandler,
 		providePublicFS,
@@ -275,10 +330,13 @@ func CreateApplication(
 		handler.NewProfileHandler,
 		handler.NewAdminUsersHandler,
 		handler.NewDashboardHandler,
+		handler.NewPlatformHandler,
 		server.NewServer,
 		console.NewServeCommand,
 		console.NewSeedCommand,
 		console.NewCreateUserCommand,
+		console.NewCreateSuperAdminCommand,
+		console.NewCreateTenantCommand,
 		console.NewWorkerCommand,
 		console.NewRootCommand,
 		app.NewApplication,

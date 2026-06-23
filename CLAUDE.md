@@ -41,14 +41,17 @@ go test ./app/infrastructure/security/ -run TestHash  # Single Go test
 ### CLI Commands
 
 ```bash
-./bin/app serve    # Start HTTP server + in-process scheduler + job worker
-./bin/app worker   # Run only the persistent job worker (no HTTP server)
-./bin/app seed     # Seed database with default data (admin user)
+./bin/app serve              # Start HTTP server + in-process scheduler + job worker
+./bin/app worker             # Run only the persistent job worker (no HTTP server)
+./bin/app seed               # Seed admin (+ superadmin if APP_SEED_SUPERADMIN_PASSWORD); multitenant → admin gets its own tenant
+./bin/app create-user        # Create a user (-n -p [-e] [-r admin|user] [--tenant-id|--tenant-name]); multitenant → tenant required
+./bin/app create-superadmin  # Create a platform superadmin (-n -p [-e]) — the only path to one (admin API refuses the role)
+./bin/app create-tenant      # Create a tenant and print its id (-n)
 ```
 
 ### Environment
 
-Copy `.env.example` to `.env`. Key vars: `APP_HTTP_PORT`, `APP_DB_PATH`, `APP_JWT_SECRET` (≥ 32 chars), `APP_CORS_ORIGIN`, `APP_JWT_ACCESS_EXPIRATION`, `APP_JWT_REFRESH_EXPIRATION`, `APP_COOKIE_SECURE`, `APP_SEED_ADMIN_PASSWORD` (required by `./bin/app seed`), `APP_TRUST_PROXY_HEADERS` (flip to `true` only behind a trusted reverse proxy — flips IP source for rate limit + audit), `APP_RATE_LIMIT_LOGIN`, `APP_RATE_LIMIT_REFRESH`, `APP_SENTRY_DSN` / `APP_SENTRY_DSN_FRONTEND` (error tracking, empty = off). Full reference: [Configuration](docs/framework/configuration.md); Sentry setup: the `/gk-sentry` skill.
+Copy `.env.example` to `.env`. Key vars: `APP_HTTP_PORT`, `APP_DB_PATH`, `APP_JWT_SECRET` (≥ 32 chars), `APP_CORS_ORIGIN`, `APP_JWT_ACCESS_EXPIRATION`, `APP_JWT_REFRESH_EXPIRATION`, `APP_COOKIE_SECURE`, `APP_SEED_ADMIN_PASSWORD` (required by `./bin/app seed`), `APP_SEED_SUPERADMIN_PASSWORD` (optional — seeds a platform superadmin), `APP_MULTITENANCY` (default `false` = single-tenant; `true` = row-level multitenancy, fail-closed enforcement), `APP_SEED_ADMIN_TENANT` (admin's tenant name when multitenant), `APP_TRUST_PROXY_HEADERS` (flip to `true` only behind a trusted reverse proxy — flips IP source for rate limit + audit), `APP_RATE_LIMIT_LOGIN`, `APP_RATE_LIMIT_REFRESH`, `APP_SENTRY_DSN` / `APP_SENTRY_DSN_FRONTEND` (error tracking, empty = off). Full reference: [Configuration](docs/framework/configuration.md); Sentry setup: the `/gk-sentry` skill.
 
 ## Architecture
 
@@ -77,10 +80,11 @@ Bounded contexts in separate packages. **Never import between contexts** (e.g. `
 
 | Package | Contains |
 |---------|----------|
-| `domain/shared/` | `AuthClaims`, `ValidationError`, `AuthError`, `PermissionError`, `DomainEvent`, `EventCollector`, `AuditCollector` + `AuditEvent` / `AuditRecord`, `PermissionsRegistry`, interfaces (`PasswordHasher`, `PermissionChecker`, `JwtService`, `Transactor`, `Seeder`, `AuditLogger`, `JobDispatcher`) |
-| `domain/user/` | `User` entity, `Nickname`/`Role` value objects, `Repository` interface, `UserCreated` event |
+| `domain/shared/` | `AuthClaims` (incl. `TenantID`), `ValidationError`, `AuthError`, `PermissionError`, `DomainEvent`, `EventCollector`, `AuditCollector` + `AuditEvent` / `AuditRecord`, `PermissionsRegistry`, `DefaultTenantID`, interfaces (`PasswordHasher`, `PermissionChecker`, `JwtService`, `TenantResolver`, `Transactor`, `Seeder`, `AuditLogger`, `JobDispatcher`) |
+| `domain/user/` | `User` entity, `Nickname`/`Role` (admin/user/**superadmin**) value objects, `Repository` interface, `PlatformRow` read model, `UserCreated` event |
 | `domain/token/` | `RefreshToken` entity, `TokenRepository` interface |
 | `domain/job/` | `Job` entity, `Repository` interface — persistent background work queue |
+| `domain/tenant/` | `Tenant` entity + `Overview` read model, `Repository` interface — row-level multitenancy boundary |
 
 **Conventions:**
 - Entity structs have `db:"..."` tags for sqlx scanning
@@ -95,9 +99,11 @@ CQRS with three bus types, each with its own middleware chain:
 
 | Bus | Chain | Use |
 |-----|-------|-----|
-| `CommandBus` | Recovery → Logging → Authorize → Audit → JobDispatcher → DispatchEvents → Transaction | Write operations |
-| `QueryBus` | Recovery → Logging → Authorize | Read operations |
+| `CommandBus` | Recovery → Logging → Authorize → Tenant → Audit → JobDispatcher → DispatchEvents → Transaction | Write operations |
+| `QueryBus` | Recovery → Logging → Authorize → Tenant | Read operations |
 | `EventBus` | Recovery → Logging | Side-effects after commit |
+
+**TenantMiddleware** (in `BaseChain`, right after Authorize → covers both command and query bus) resolves the active tenant into ctx so every downstream handler/repo sees it; reads need scoping as much as writes. See the `/gk-multitenancy` skill.
 
 **Audit middleware lives OUTSIDE Transaction** so security-relevant events (login_failed, account_locked, theft_detected) persist even when the business tx rolls back. Audit write failures are logged but never propagated to the caller.
 
@@ -122,7 +128,7 @@ func (h *ListUsersHandler) Handle(ctx context.Context, q ListUsersQuery) ([]user
 **Permission rules:**
 - Every command/query MUST implement either `shared.Permissioned` (returns required permission string) or `shared.SkipPermission` (explicit opt-out)
 - If neither is implemented, `AuthorizeMiddleware` returns error — protects against forgotten declarations
-- Admin role has full access; user role is denied `admin:*` permissions
+- Role ladder (`shared.IsPermissionAllowedForRole`): `superadmin` has full access incl. `platform:*` (the cross-tenant platform plane); `admin` has `admin:*` and below but **NOT** `platform:*`; `user` is denied both `admin:*` and `platform:*`
 
 **Event pattern** (`application/event/`):
 - `DispatchEventsMiddleware` creates a **per-request** `*shared.EventCollector` and stores it in `ctx` (no singleton — race-safe).
@@ -149,11 +155,12 @@ bus.Exec[[]user.User](ctx, h.queryBus.Bus, "ListUsers", q, func(ctx context.Cont
 | `config/` | `LoadConfig()` from `.env` via godotenv → `*Config` struct |
 | `database/` | `SqliteManager` (connection, WAL, `_txlock=immediate`, `busy_timeout`, `foreign_keys` via DSN), `MigrationManager` (Goose), transaction context (`BeginTx`/`Commit`/`Rollback`) |
 | `sqlite/` | `BaseRepository` (embed in repos for transparent tx support via `r.Conn(ctx)`) |
-| `sqlite/user/` | `user.Repository` implementation (incl. `RecordFailedLogin` / `ResetFailedLogin`, raw-pool on purpose) |
+| `sqlite/user/` | `user.Repository` impl (incl. `RecordFailedLogin` / `ResetFailedLogin` / `RecordLogin` raw-pool on purpose; tenant-scoped admin reads/writes + cross-tenant platform reads) |
 | `sqlite/token/` | `token.TokenRepository` implementation |
 | `sqlite/job/` | `job.Repository` implementation |
+| `sqlite/tenant/` | `tenant.Repository` implementation (row-level multitenancy boundary) |
 | `sqlite/audit/` | `shared.AuditLogger` implementation (raw-pool — survives business rollback) |
-| `sqlite/seeder/` | `shared.Seeder` implementation (`SeedAdminPassword` Wire-distinct type) |
+| `sqlite/seeder/` | `shared.Seeder` impl — admin (+ optional superadmin) seeding; `SeedAdminPassword` / `SeedSuperAdminPassword` / `SeedAdminTenant` / `Multitenant` Wire-distinct types |
 | `security/` | `JwtService` (HS256 access + crypto/rand refresh), `PasswordHasher` (SHA-256 prehash + bcrypt), `PermissionChecker` |
 | `di/` | Wire compile-time DI. `container_provider.go` (wireinject tag) + generated `wire_gen.go` |
 
@@ -181,7 +188,7 @@ wire.Bind(new(shared.Seeder), new(*sqlite.Seeder))
 | `http/middleware/` | Trace ID, CORS, CSRF (stdlib Go 1.25), Logging, JWT Auth, Role Guard |
 | `http/response/` | `JSON()`, `Error()`, `HandleError()` — maps domain errors to HTTP status |
 | `http/server/` | `http.ServeMux` routing, middleware chain assembly |
-| `console/` | Cobra CLI commands (`serve`, `seed`, `create-user`) — `serve` co-runs the in-process scheduler alongside the HTTP server, sharing one ctx so SIGTERM drains both |
+| `console/` | Cobra CLI commands (`serve`, `worker`, `seed`, `create-user`, `create-superadmin`, `create-tenant`) — `serve` co-runs the in-process scheduler + worker alongside the HTTP server, sharing one ctx so SIGTERM drains all. Create commands bypass the bus (operator-trusted); with multitenancy on, `create-user` requires a tenant (`--tenant-id` / `--tenant-name`) |
 
 **Error → HTTP mapping** (duck typing, no import between response/ and domain/):
 - `*shared.ValidationError` → 400
@@ -294,13 +301,14 @@ wire.Bind(new(shared.Seeder), new(*sqlite.Seeder))
 6. **`infrastructure/di/container_provider.go`** — add Wire providers + `wire.Bind` for interfaces
 7. **`make di && make arch-check`** — regenerate DI + verify layer rules
 
-Broad-glob components auto-cover new sub-packages: a new `application/<ctx>/command/` matches `application/**`, a new handler matches `presentation/http/handler/**`. But the **bounded-context** components are enumerated, not wildcarded — `domain` is split per context (`domain_user`, `domain_token`, `domain_job`) and `sqlite_repos` lists each repo dir — exactly so a cross-context import is caught. So adding a new context (`domain/order/`, `infrastructure/sqlite/order/`) **does** require editing `.go-arch-lint.yml`: add a `domain_order` component, grant it in each consumer's `mayDependOn` (`application`, `sqlite_repos`, `testfx`, …), and add `infrastructure/sqlite/order/**` to `sqlite_repos`. That ~6-line edit is the price of enforcing cross-context isolation in the linter.
+Broad-glob components auto-cover new sub-packages: a new `application/<ctx>/command/` matches `application/**`, a new handler matches `presentation/http/handler/**`. But the **bounded-context** components are enumerated, not wildcarded — `domain` is split per context (`domain_user`, `domain_token`, `domain_job`, `domain_tenant`) and `sqlite_repos` lists each repo dir — exactly so a cross-context import is caught. So adding a new context (`domain/order/`, `infrastructure/sqlite/order/`) **does** require editing `.go-arch-lint.yml`: add a `domain_order` component, grant it in each consumer's `mayDependOn` (`application`, `sqlite_repos`, `testfx`, …), and add `infrastructure/sqlite/order/**` to `sqlite_repos`. That ~6-line edit is the price of enforcing cross-context isolation in the linter.
 
 ## Key Invariants
 
 - **Domain interfaces only.** Command/query handlers, seeders, and CLI commands depend on domain interfaces (`user.Repository`, `shared.Seeder`), never on concrete infrastructure types (`*sqliteuser.Repository`, `*sqlite.Seeder`).
 - **Bus dispatch required.** All commands/queries go through the bus — never call handlers directly from HTTP handlers. The bus provides recovery, logging, authorization, transactions, and event dispatch.
-- **`r.Conn(ctx)` in repositories.** Always use `r.Conn(ctx)` (from embedded `BaseRepository`), never `r.DB.DB()` directly. This ensures transparent transaction participation. **Exception:** writes that MUST persist even when the surrounding bus tx rolls back — `user.Repository.RecordFailedLogin/ResetFailedLogin` and `audit.Repository.Save` — use `r.DB.DB()` on purpose. These are the only legitimate raw-pool callers; document the reason in the method comment.
+- **`r.Conn(ctx)` in repositories.** Always use `r.Conn(ctx)` (from embedded `BaseRepository`), never `r.DB.DB()` directly. This ensures transparent transaction participation. **Exception:** writes that MUST persist even when the surrounding bus tx rolls back — `user.Repository.RecordFailedLogin/ResetFailedLogin/RecordLogin` and `audit.Repository.Save` — use `r.DB.DB()` on purpose. These are the only legitimate raw-pool callers; document the reason in the method comment.
+- **Tenant scoping (multitenancy).** Every SQL query on a tenant-owned table (`users`, …) must scope by `tenant_id` (from `r.Tenant(ctx)`) OR carry an inline `/* tenant-scope-exempt: <reason> */` marker — the `zz_tenant_test.go` conformance gate fails CI otherwise (an unclassified table also fails). The resolver supplies the tenant, the repo applies it (no transparent `WHERE` injection); `r.Tenant(ctx)` panics on a missing tenant in multitenant mode (fail-closed). Cross-tenant platform reads carry `tenant-scope-exempt: platform superadmin`. See `/gk-multitenancy`.
 - **Permission declaration.** Every command/query must declare permissions. Forgetting both `Permissioned` and `SkipPermission` is a runtime error.
 - **Events use primitives.** Domain events carry only primitive types (string IDs, timestamps), never entities or value objects.
 - **No cross-context imports.** Bounded contexts (`domain/user/`, `domain/token/`) are isolated. Shared types live in `domain/shared/`.
