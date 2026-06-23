@@ -94,8 +94,8 @@ func TestApplicationRun_MigratesBeforeSubcommand(t *testing.T) {
 		console.NewServeCommand(nil, nil, nil),
 		console.NewSeedCommand(probe),
 		console.NewCreateUserCommand(nil, nil, nil, nil, nil),
-		console.NewCreateSuperAdminCommand(nil),
-		console.NewCreateTenantCommand(nil),
+		console.NewCreateSuperAdminCommand(nil, nil),
+		console.NewCreateTenantCommand(nil, nil),
 		console.NewWorkerCommand(nil),
 	)
 
@@ -153,8 +153,8 @@ func TestApplicationRun_StopsWhenMigrationFails(t *testing.T) {
 		console.NewServeCommand(nil, nil, nil),
 		console.NewSeedCommand(probe),
 		console.NewCreateUserCommand(nil, nil, nil, nil, nil),
-		console.NewCreateSuperAdminCommand(nil),
-		console.NewCreateTenantCommand(nil),
+		console.NewCreateSuperAdminCommand(nil, nil),
+		console.NewCreateTenantCommand(nil, nil),
 		console.NewWorkerCommand(nil),
 	)
 	application := NewApplication(rootCmd, migrations)

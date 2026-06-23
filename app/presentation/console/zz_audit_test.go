@@ -183,8 +183,8 @@ func TestRootCommand_RegistersSubcommands(t *testing.T) {
 		NewServeCommand(nil, nil, nil),
 		NewSeedCommand(nil),
 		NewCreateUserCommand(nil, nil, nil, nil, nil),
-		NewCreateSuperAdminCommand(nil),
-		NewCreateTenantCommand(nil),
+		NewCreateSuperAdminCommand(nil, nil),
+		NewCreateTenantCommand(nil, nil),
 		NewWorkerCommand(nil),
 	)
 

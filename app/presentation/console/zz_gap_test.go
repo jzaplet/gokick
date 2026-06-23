@@ -242,7 +242,7 @@ func TestCreateSuperAdminCommand_CreatesSuperAdmin(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "console_superadmin.db"))
 	handler := platformcmd.NewCreateSuperAdminHandler(fx.Users, fx.Hasher)
 
-	cmd := NewCreateSuperAdminCommand(handler).Command()
+	cmd := NewCreateSuperAdminCommand(handler, fx.NewSystemBus()).Command()
 	cmd.SilenceUsage = true
 	cmd.SetArgs([]string{"-n", "root", "-p", "secret12"})
 	if err := cmd.ExecuteContext(context.Background()); err != nil {
@@ -262,7 +262,7 @@ func TestCreateSuperAdminCommand_MissingPasswordErrors(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "console_superadmin_missing.db"))
 	handler := platformcmd.NewCreateSuperAdminHandler(fx.Users, fx.Hasher)
 
-	cmd := NewCreateSuperAdminCommand(handler).Command()
+	cmd := NewCreateSuperAdminCommand(handler, fx.NewSystemBus()).Command()
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true
 	cmd.SetArgs([]string{"-n", "root"})
@@ -391,7 +391,10 @@ func TestCreateTenantCommand_CreatesTenant(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "ct_create.db"))
 
-	cmd := NewCreateTenantCommand(tenantcmd.NewCreateTenantHandler(fx.Tenants)).Command()
+	cmd := NewCreateTenantCommand(
+		tenantcmd.NewCreateTenantHandler(fx.Tenants),
+		fx.NewSystemBus(),
+	).Command()
 	cmd.SilenceUsage = true
 	cmd.SetArgs([]string{"-n", "Acme"})
 	if err := cmd.ExecuteContext(ctx); err != nil {
