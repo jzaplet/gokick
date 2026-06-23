@@ -256,6 +256,16 @@ func TestCreateSuperAdminCommand_CreatesSuperAdmin(t *testing.T) {
 	if got == nil || got.Role != "superadmin" {
 		t.Fatalf("create-superadmin must persist a superadmin, got %+v", got)
 	}
+
+	// The SystemCommandBus's AuditMiddleware persisted the user.created trail.
+	var n int
+	if err := fx.DB.DB().GetContext(context.Background(), &n,
+		`SELECT COUNT(*) FROM audit_log WHERE action='user.created' AND target_id=?`, got.ID); err != nil {
+		t.Fatalf("audit query: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("create-superadmin must write a user.created audit record, got %d", n)
+	}
 }
 
 func TestCreateSuperAdminCommand_MissingPasswordErrors(t *testing.T) {
@@ -405,11 +415,22 @@ func TestCreateTenantCommand_CreatesTenant(t *testing.T) {
 	if tn == nil {
 		t.Fatal("create-tenant must persist the tenant")
 	}
+
+	// The SystemCommandBus's AuditMiddleware persisted the tenant.created trail.
+	var n int
+	if err := fx.DB.DB().GetContext(ctx, &n,
+		`SELECT COUNT(*) FROM audit_log WHERE action='tenant.created' AND target_id=?`, tn.ID); err != nil {
+		t.Fatalf("audit query: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("create-tenant must write a tenant.created audit record, got %d", n)
+	}
 }
 
 // Rollback: --tenant-name creates a tenant before the user; if user creation
 // fails (here: duplicate nickname), the just-created tenant must be rolled back —
-// no orphan. The CLI bypasses the bus, so create-user wraps both in its own tx.
+// no orphan. create-user dispatches through the SystemCommandBus, so its
+// TransactionMiddleware wraps tenant resolution + user creation in one tx.
 func TestCreateUserCommand_TenantNameRolledBackWhenUserFails(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "cu_rollback.db"))

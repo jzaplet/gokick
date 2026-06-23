@@ -67,8 +67,20 @@ func (h *CreateSuperAdminHandler) Handle(ctx context.Context, cmd CreateSuperAdm
 
 	// A superadmin is a cross-tenant identity; home it in the default tenant
 	// explicitly (its own tenant is immaterial to the platform plane).
-	return h.users.Save(
-		ctx,
-		user.NewUser(nickname, hash, email, user.RoleSuperAdmin, shared.DefaultTenantID),
-	)
+	u := user.NewUser(nickname, hash, email, user.RoleSuperAdmin, shared.DefaultTenantID)
+	if err := h.users.Save(ctx, u); err != nil {
+		return err
+	}
+
+	// Mirrors CreateUserHandler's audit. Outside the bus (no AuditMiddleware) the
+	// collector is a throwaway; through the SystemCommandBus it persists the trail
+	// of minting a cross-tenant account.
+	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
+		Action:     "user.created",
+		TargetType: "user",
+		TargetID:   u.ID,
+		Metadata:   map[string]any{"role": u.Role},
+	})
+
+	return nil
 }
