@@ -47,10 +47,12 @@ jobs:
           restore-keys: yarn-${{ runner.os }}-
 
       - name: Cache Go tools ($GOBIN binaries + build cache)
-        # `make install-tools` runs 5 `go install ...@latest` commands; each
-        # rebuilds a transitive tree (golangci-lint alone is ~hundreds of
-        # packages). Caching the resulting binaries + go-build cache makes
-        # subsequent runs near-instant.
+        # `make install-tools` runs 5 version-pinned `go install` commands (built
+        # with the go.mod-pinned toolchain via GOTOOLCHAIN); each rebuilds a
+        # transitive tree (golangci-lint alone is ~hundreds of packages). Caching
+        # the resulting binaries + go-build cache makes subsequent runs
+        # near-instant. The key includes hashFiles('Makefile'), so bumping a
+        # pinned tool version invalidates the cache and reinstalls.
         uses: actions/cache@v4
         with:
           path: |
