@@ -1,6 +1,4 @@
 ---
-name: gk-entities
-description: Doménové modelování — entity (db tagy pro sqlx) a value objects, které brání vzniku nevalidního objektu. Use when přidáváš nový doménový typ (User, Token, Job…), value object s validací nebo factory funkci, nebo řešíš „kam patří validace".
 layout: 'page'
 uri: '/skills/gk-entities'
 position: 10
@@ -8,6 +6,8 @@ slug: 'skills-gk-entities'
 parent: 'skills-domain'
 navTitle: 'gk-entities'
 title: 'GK — Entities & Value Objects'
+description: 'Doménové modelování — entity (db tagy pro sqlx) a value objects, které brání vzniku nevalidního objektu. Use when přidáváš nový doménový typ (User, Token, Job…), value object s validací nebo factory funkci, nebo řešíš „kam patří validace".'
+name: 'gk-entities'
 ---
 
 # GK — Entities & Value Objects

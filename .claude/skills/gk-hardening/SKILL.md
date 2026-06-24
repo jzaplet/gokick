@@ -1,6 +1,4 @@
 ---
-name: gk-hardening
-description: HTTP hardening serveru — CSRF ochrana (Go 1.25 stdlib), bezpečnostní hlavičky (CSP/HSTS/…) a maskování tajemství před odchodem do error trackeru. Use when přidáváš/měníš middleware chain, ladíš zablokovaný cross-origin požadavek, upravuješ CSP kvůli externímu skriptu, nebo si ověřuješ, že se credential nedostane do Sentry.
 layout: 'page'
 uri: '/skills/gk-hardening'
 position: 40
@@ -8,6 +6,8 @@ slug: 'skills-gk-hardening'
 parent: 'skills-auth'
 navTitle: 'gk-hardening'
 title: 'GK — HTTP hardening (CSRF, security headers, secret masking)'
+description: 'HTTP hardening serveru — CSRF ochrana (Go 1.25 stdlib), bezpečnostní hlavičky (CSP/HSTS/…) a maskování tajemství před odchodem do error trackeru. Use when přidáváš/měníš middleware chain, ladíš zablokovaný cross-origin požadavek, upravuješ CSP kvůli externímu skriptu, nebo si ověřuješ, že se credential nedostane do Sentry.'
+name: 'gk-hardening'
 ---
 
 # GK — HTTP hardening (CSRF, security headers, secret masking)

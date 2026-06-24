@@ -1,6 +1,4 @@
 ---
-name: gk-auth
-description: Autentizace přes dva tokeny (krátký JWT access + dlouhý opaque refresh), rotace refresh tokenů s detekcí krádeže, login odolný proti timing útoku a durable logout. Use when řešíš login/refresh/logout flow, session cookies, "proč mě to odhlásilo", theft detection nebo brute-force lock účtu.
 layout: 'page'
 uri: '/skills/gk-auth'
 position: 10
@@ -8,6 +6,8 @@ slug: 'skills-gk-auth'
 parent: 'skills-auth'
 navTitle: 'gk-auth'
 title: 'GK — Autentizace (JWT access + opaque refresh)'
+description: 'Autentizace přes dva tokeny (krátký JWT access + dlouhý opaque refresh), rotace refresh tokenů s detekcí krádeže, login odolný proti timing útoku a durable logout. Use when řešíš login/refresh/logout flow, session cookies, "proč mě to odhlásilo", theft detection nebo brute-force lock účtu.'
+name: 'gk-auth'
 ---
 
 # GK — Autentizace (JWT access + opaque refresh)

@@ -1,6 +1,4 @@
 ---
-name: gk-deploy
-description: Vydání aplikace jako jediné samostatné binárky (embedovaný SPA + migrace), multi-stage Dockerfile, GitHub CI (validate/release) a stamping verze do Sentry release. Use when buildíš produkční image, řešíš jak se aplikace vydává/nasazuje, co dělají CLI příkazy serve/worker/seed, nebo odkud se bere verze v Sentry.
 layout: 'page'
 uri: '/skills/gk-deploy'
 position: 10
@@ -8,6 +6,8 @@ slug: 'skills-gk-deploy'
 parent: 'skills-ship'
 navTitle: 'gk-deploy'
 title: 'GK — Deploy & release'
+description: 'Vydání aplikace jako jediné samostatné binárky (embedovaný SPA + migrace), multi-stage Dockerfile, GitHub CI (validate/release) a stamping verze do Sentry release. Use when buildíš produkční image, řešíš jak se aplikace vydává/nasazuje, co dělají CLI příkazy serve/worker/seed, nebo odkud se bere verze v Sentry.'
+name: 'gk-deploy'
 ---
 
 # GK — Deploy & release

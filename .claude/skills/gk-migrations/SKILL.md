@@ -1,6 +1,4 @@
 ---
-name: gk-migrations
-description: Databázové migrace přes Goose — SQL soubory embedované do binárky, automaticky aplikované při startu, plus make migrate-* nástroje pro vývoj. Use when přidáváš/měníš tabulku nebo sloupec, zakládáš novou entitu v DB, nebo řešíš „proč jsou migrace dvakrát — make i automaticky".
 layout: 'page'
 uri: '/skills/gk-migrations'
 position: 20
@@ -8,6 +6,8 @@ slug: 'skills-gk-migrations'
 parent: 'skills-data'
 navTitle: 'gk-migrations'
 title: 'GK — Database migrations (Goose)'
+description: 'Databázové migrace přes Goose — SQL soubory embedované do binárky, automaticky aplikované při startu, plus make migrate-* nástroje pro vývoj. Use when přidáváš/měníš tabulku nebo sloupec, zakládáš novou entitu v DB, nebo řešíš „proč jsou migrace dvakrát — make i automaticky".'
+name: 'gk-migrations'
 ---
 
 # GK — Database migrations (Goose)

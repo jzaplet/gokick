@@ -1,6 +1,4 @@
 ---
-name: gk-domain-events
-description: Vyhlášení "stalo se X" tak, aby na to reagoval kdokoli další, aniž by command handler musel vědět kdo — per-request sběrač, primitivní payloady, synchronní rozeslání až po commitu. Use when chceš po úspěšném commandu spustit vedlejší efekt (notifikace, indexace, follow-up) bez toho, aby ho command handler znal.
 layout: 'page'
 uri: '/skills/gk-domain-events'
 position: 20
@@ -8,6 +6,8 @@ slug: 'skills-gk-domain-events'
 parent: 'skills-domain'
 navTitle: 'gk-domain-events'
 title: 'GK — Domain events'
+description: 'Vyhlášení "stalo se X" tak, aby na to reagoval kdokoli další, aniž by command handler musel vědět kdo — per-request sběrač, primitivní payloady, synchronní rozeslání až po commitu. Use when chceš po úspěšném commandu spustit vedlejší efekt (notifikace, indexace, follow-up) bez toho, aby ho command handler znal.'
+name: 'gk-domain-events'
 ---
 
 # GK — Domain events

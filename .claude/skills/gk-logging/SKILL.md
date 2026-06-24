@@ -1,6 +1,4 @@
 ---
-name: gk-logging
-description: Strukturované logování přes jedinou slog cestu — konstantní klíče (LogKey*), korelace requestů přes trace_id/user_id a statické vynucení lintem (depguard/forbidigo/sloglint). Use when přidáváš log řádek, hledáš „odkud se loguje" / „proč mi lint zařval na fmt.Println nebo slog.New", nebo nastavuješ formát/level přes APP_LOG_*.
 layout: 'page'
 uri: '/skills/gk-logging'
 position: 10
@@ -8,6 +6,8 @@ slug: 'skills-gk-logging'
 parent: 'skills-observability'
 navTitle: 'gk-logging'
 title: 'GK — Structured logging'
+description: 'Strukturované logování přes jedinou slog cestu — konstantní klíče (LogKey*), korelace requestů přes trace_id/user_id a statické vynucení lintem (depguard/forbidigo/sloglint). Use when přidáváš log řádek, hledáš „odkud se loguje" / „proč mi lint zařval na fmt.Println nebo slog.New", nebo nastavuješ formát/level přes APP_LOG_*.'
+name: 'gk-logging'
 ---
 
 # GK — Structured logging

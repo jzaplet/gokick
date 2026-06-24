@@ -1,6 +1,4 @@
 ---
-name: gk-feature
-description: Přidání nové featury end-to-end přes všechny vrstvy bez zapomenuté permission, route nebo DI bindingu. Use when přidáváš nový endpoint / command / query (CRUD nad entitou, nová akce) a potřebuješ checklist napříč domain → repo → command/query → handler → route → DI.
 layout: 'page'
 uri: '/skills/gk-feature'
 position: 40
@@ -8,6 +6,8 @@ slug: 'skills-gk-feature'
 parent: 'skills-start'
 navTitle: 'gk-feature'
 title: 'GK — Feature end-to-end'
+description: 'Přidání nové featury end-to-end přes všechny vrstvy bez zapomenuté permission, route nebo DI bindingu. Use when přidáváš nový endpoint / command / query (CRUD nad entitou, nová akce) a potřebuješ checklist napříč domain → repo → command/query → handler → route → DI.'
+name: 'gk-feature'
 ---
 
 # GK — Feature end-to-end

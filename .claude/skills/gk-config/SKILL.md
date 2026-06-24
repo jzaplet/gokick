@@ -1,6 +1,4 @@
 ---
-name: gk-config
-description: Konfigurace aplikace z .env — co se čte, kdy, jaké jsou defaulty a kde se hodnoty validují. Use when přidáváš/měníš env proměnnou, řešíš "odkud se bere tahle hodnota", nebo nechápeš, proč aplikace při startu selže kvůli konfiguraci.
 layout: 'page'
 uri: '/skills/gk-config'
 position: 20
@@ -8,6 +6,8 @@ slug: 'skills-gk-config'
 parent: 'skills-start'
 navTitle: 'gk-config'
 title: 'GK — Konfigurace z `.env`'
+description: 'Konfigurace aplikace z .env — co se čte, kdy, jaké jsou defaulty a kde se hodnoty validují. Use when přidáváš/měníš env proměnnou, řešíš "odkud se bere tahle hodnota", nebo nechápeš, proč aplikace při startu selže kvůli konfiguraci.'
+name: 'gk-config'
 ---
 
 # GK — Konfigurace z `.env`

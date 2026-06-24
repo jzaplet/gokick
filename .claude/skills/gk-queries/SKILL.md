@@ -1,6 +1,4 @@
 ---
-name: gk-queries
-description: Read operace (čtení dat bez změny stavu) — struktura query handleru, deklarace permission a typovaný návrat přes bus.Exec. Use when přidáváš endpoint, který něco čte/vypisuje (list, detail, dashboard), a řešíš strukturu handleru, permission nebo jak ho poslat přes bus.
 layout: 'page'
 uri: '/skills/gk-queries'
 position: 30
@@ -8,6 +6,8 @@ slug: 'skills-gk-queries'
 parent: 'skills-cqrs'
 navTitle: 'gk-queries'
 title: 'GK — Query handlers (read operace)'
+description: 'Read operace (čtení dat bez změny stavu) — struktura query handleru, deklarace permission a typovaný návrat přes bus.Exec. Use when přidáváš endpoint, který něco čte/vypisuje (list, detail, dashboard), a řešíš strukturu handleru, permission nebo jak ho poslat přes bus.'
+name: 'gk-queries'
 ---
 
 # GK — Query handlers (read operace)

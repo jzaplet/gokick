@@ -1,6 +1,4 @@
 ---
-name: gk-bus
-description: CQRS busy (Command/Query/Event), middleware chain a jeho pořadí, dispatch přes Exec/ExecVoid. Use when posíláš command/query/event z HTTP handleru nebo CLI, řešíš pořadí middleware (transakce, autorizace, audit, eventy), nebo přidáváš nový handler a nevíš, kudy teče.
 layout: 'page'
 uri: '/skills/gk-bus'
 position: 10
@@ -8,6 +6,8 @@ slug: 'skills-gk-bus'
 parent: 'skills-cqrs'
 navTitle: 'gk-bus'
 title: 'GK — CQRS bus & middleware chain'
+description: 'CQRS busy (Command/Query/Event), middleware chain a jeho pořadí, dispatch přes Exec/ExecVoid. Use when posíláš command/query/event z HTTP handleru nebo CLI, řešíš pořadí middleware (transakce, autorizace, audit, eventy), nebo přidáváš nový handler a nevíš, kudy teče.'
+name: 'gk-bus'
 ---
 
 # GK — CQRS bus & middleware chain

@@ -1,6 +1,4 @@
 ---
-name: gk-frontend-fetch
-description: FE data fetching — apiFetch vs authFetch, single-flight refresh + self-heal session, access token jen v paměti, discriminated-union ApiResponse, upload/download. Use when voláš z Vue backend API, řešíš proč ti request padá na 401, jak se obnovuje session, nebo jak vrátit data/chybu z fetch helperu.
 layout: 'page'
 uri: '/skills/gk-frontend-fetch'
 position: 10
@@ -8,6 +6,8 @@ slug: 'skills-gk-frontend-fetch'
 parent: 'skills-frontend'
 navTitle: 'gk-frontend-fetch'
 title: 'GK — Frontend data fetching'
+description: 'FE data fetching — apiFetch vs authFetch, single-flight refresh + self-heal session, access token jen v paměti, discriminated-union ApiResponse, upload/download. Use when voláš z Vue backend API, řešíš proč ti request padá na 401, jak se obnovuje session, nebo jak vrátit data/chybu z fetch helperu.'
+name: 'gk-frontend-fetch'
 ---
 
 # GK — Frontend data fetching

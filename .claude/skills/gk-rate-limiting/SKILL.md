@@ -1,6 +1,4 @@
 ---
-name: gk-rate-limiting
-description: Obrana auth endpointů proti hádání hesel a zahlcení — per-IP token bucket (429), lockout účtu po 5 selháních, konstantní čas loginu (neprozradí, jestli login existuje) a jednotná extrakce klientské IP. Use when ladíš/měníš rate limit na /login či /refresh, řešíš lockout účtu, 429 v testech, nebo „odkud aplikace bere klientskou IP" za reverse proxy.
 layout: 'page'
 uri: '/skills/gk-rate-limiting'
 position: 30
@@ -8,6 +6,8 @@ slug: 'skills-gk-rate-limiting'
 parent: 'skills-auth'
 navTitle: 'gk-rate-limiting'
 title: 'GK — Rate limiting & brute-force ochrana'
+description: 'Obrana auth endpointů proti hádání hesel a zahlcení — per-IP token bucket (429), lockout účtu po 5 selháních, konstantní čas loginu (neprozradí, jestli login existuje) a jednotná extrakce klientské IP. Use when ladíš/měníš rate limit na /login či /refresh, řešíš lockout účtu, 429 v testech, nebo „odkud aplikace bere klientskou IP" za reverse proxy.'
+name: 'gk-rate-limiting'
 ---
 
 # GK — Rate limiting & brute-force ochrana
