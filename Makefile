@@ -119,6 +119,9 @@ docker-build:
 # Each target ensures the container is up (docker compose up -d is idempotent),
 # then execs the documan CLI inside it. First invocation builds the image and
 # runs the lint as part of the build (per docker/documan/Dockerfile).
+# The served docs UI is at https://docs.gokick.local (OrbStack domain via the
+# dev.orbstack.* labels in docker-compose.yml — no published host port, so it
+# never collides with another project's documan). `make documan` brings it up.
 #
 # In CI / containerless environments set SKIP_DOCUMAN=1 to make these targets
 # no-ops (e.g. `SKIP_DOCUMAN=1 make lint`). Doc validation in CI is handled by
