@@ -14,13 +14,13 @@ services:
       # mount the container writes to. Docker Desktop's virtualised FS does
       # not provide reliable mmap/shm coordination that WAL needs.
       APP_DB_JOURNAL_MODE: DELETE
-    # OrbStack routes the domain straight to the container — no host port
-    # mapping, so nothing collides on the host (run several projects at once,
-    # no more "port already allocated"). Reach the app at http(s)://gokick.local.
-    # dev.orbstack.http-port tells OrbStack which container port to forward to
-    # (the port the app listens on, APP_HTTP_PORT).
+    # OrbStack routes the domain straight to the container — no host port mapping,
+    # so nothing collides on the host (run several projects at once, no more "port
+    # already allocated"). The domain is per-project configurable via APP_DOMAIN in
+    # .env (default gokick.local); reach the app at http(s)://$APP_DOMAIN.
+    # dev.orbstack.http-port is the container port to forward to (APP_HTTP_PORT).
     labels:
-      - "dev.orbstack.domains=gokick.local"
+      - "dev.orbstack.domains=${APP_DOMAIN:-gokick.local}"
       - "dev.orbstack.http-port=${APP_HTTP_PORT}"
     volumes:
       - ./data:/data
@@ -31,11 +31,11 @@ services:
       dockerfile: ./docker/documan/Dockerfile
     env_file:
       - .env
-    # Docs UI at http(s)://docs.gokick.local — same OrbStack domain routing as
-    # the app, no host port. The `documan-*` make targets exec/run the CLI inside
-    # this container, so they never needed a published port anyway.
+    # Docs UI at http(s)://docs.$APP_DOMAIN — derived from the same APP_DOMAIN base,
+    # so ONE env var configures both services. Same OrbStack routing, no host port;
+    # the `documan-*` make targets exec/run the CLI inside this container anyway.
     labels:
-      - "dev.orbstack.domains=docs.gokick.local"
+      - "dev.orbstack.domains=docs.${APP_DOMAIN:-gokick.local}"
       - "dev.orbstack.http-port=${DOCUMAN_HTTP_PORT}"
     volumes:
       - ./docs:/documan/data/docs
