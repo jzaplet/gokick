@@ -15,6 +15,29 @@ GOLANGCI_LINT := $(GOBIN_DIR)/golangci-lint
 GOOSE := $(GOBIN_DIR)/goose
 GO_ARCH_LINT := $(GOBIN_DIR)/go-arch-lint
 
+# Pin the Go toolchain that BUILDS our dev tools to the project's go.mod version.
+# `go install pkg@v` keys off the TOOL's go.mod, not ours, so on a machine whose
+# PATH `go` is older than go.mod (multiple Go versions on one box is common) the
+# tool gets built with that older toolchain — and golangci-lint then refuses to
+# run ("the Go language version go1.X used to build golangci-lint is lower than
+# the targeted go1.Y"). golines / go-arch-lint / wire share the same latent
+# parse/type-check coupling. GOTOOLCHAIN=go<gomod>+auto floors the build
+# toolchain at our go.mod version (Go fetches it on demand, cached), upgrading
+# only if a tool itself needs newer. Derived from go.mod, so every gokick-based
+# project pins to its own version automatically.
+GO_VERSION := $(shell awk '/^go /{print $$2; exit}' go.mod)
+TOOL_GOTOOLCHAIN := go$(GO_VERSION)+auto
+
+# Tool versions are pinned (not @latest) so every machine and CI install the same
+# linter set — @latest means two devs a month apart get different golangci-lint
+# findings (and golangci retires linters across minors). Bumping go.mod's `go`
+# may require bumping GOLANGCI_LINT_VERSION to a release built with that Go.
+WIRE_VERSION := v0.7.0
+GOLINES_VERSION := v0.13.0
+GOLANGCI_LINT_VERSION := v2.12.2
+GOOSE_VERSION := v3.27.1
+GO_ARCH_LINT_VERSION := v1.15.0
+
 # Release version stamped into the binary (-X main.release) and the SPA bundle
 # (VITE_SENTRY_RELEASE) — both feed the Sentry release so issues group by
 # deployed version. Derived from the latest git tag locally; CI / the Docker
@@ -28,11 +51,11 @@ go-deps:
 	go mod download && go mod tidy
 
 install-tools:
-	go install github.com/google/wire/cmd/wire@latest
-	go install github.com/segmentio/golines@latest
-	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
-	go install github.com/pressly/goose/v3/cmd/goose@latest
-	go install github.com/fe3dback/go-arch-lint@latest
+	GOTOOLCHAIN=$(TOOL_GOTOOLCHAIN) go install github.com/google/wire/cmd/wire@$(WIRE_VERSION)
+	GOTOOLCHAIN=$(TOOL_GOTOOLCHAIN) go install github.com/segmentio/golines@$(GOLINES_VERSION)
+	GOTOOLCHAIN=$(TOOL_GOTOOLCHAIN) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+	GOTOOLCHAIN=$(TOOL_GOTOOLCHAIN) go install github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION)
+	GOTOOLCHAIN=$(TOOL_GOTOOLCHAIN) go install github.com/fe3dback/go-arch-lint@$(GO_ARCH_LINT_VERSION)
 
 # Build — frontend first (Vite → public/), then Go (embeds public/)
 build: di fe-build
