@@ -61,11 +61,8 @@ func provideTenantResolver() shared.TenantResolver {
 	return security.NewDefaultTenantResolver()
 }
 
-// provideCommandBus wires the write-side bus. Audit wraps OUTSIDE both
-// DispatchEvents and Transaction so security-relevant events persist even
-// when business work rolls back. JobDispatcher sits outside Transaction so
-// the dispatcher is injected before tx begin — Enqueue itself uses Conn(ctx),
-// joining the transaction when called from a handler.
+// provideCommandBus wires the write-side bus from busmw.CommandChain (the single
+// source of the chain order, shared with testfx so they can't drift).
 func provideCommandBus(
 	logger *slog.Logger,
 	db *database.SqliteManager,
@@ -76,13 +73,18 @@ func provideCommandBus(
 	reporter shared.ErrorReporter,
 	tenantResolver shared.TenantResolver,
 ) *bus.CommandBus {
-	chain := append(busmw.BaseChain(logger, checker, reporter, tenantResolver),
-		busmw.AuditMiddleware(logger, audit),
-		busmw.JobDispatcherMiddleware(dispatcher),
-		busmw.DispatchEventsMiddleware(logger, eventBus),
-		busmw.TransactionMiddleware(db),
+	return bus.NewCommandBus(
+		busmw.CommandChain(
+			logger,
+			checker,
+			reporter,
+			tenantResolver,
+			audit,
+			dispatcher,
+			eventBus,
+			db,
+		)...,
 	)
-	return bus.NewCommandBus(chain...)
 }
 
 // provideSystemCommandBus wires the OPERATOR-TRUSTED write bus for the CLI

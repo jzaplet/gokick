@@ -114,12 +114,27 @@ func (f *Fixture) NewBuses() (*bus.CommandBus, *bus.QueryBus, *bus.EventBus) {
 		busmw.LoggingMiddleware(logger),
 	)
 
-	commandChain := append(busmw.BaseChain(logger, checker, reporter, resolver),
-		busmw.DispatchEventsMiddleware(logger, eventBus),
-		busmw.TransactionMiddleware(f.DB),
-	)
+	// Throwaway dispatcher (the no-op the worker tests use) — no command handler
+	// enqueues today, so JobDispatcherMiddleware injects it but it is never
+	// invoked. Importing the real application/job dispatcher here would cycle
+	// (its test imports testfx). The chain itself stays faithful via CommandChain.
+	dispatcher := shared.JobDispatcherFromContext(context.Background())
+	audit := sqliteaudit.NewRepository(f.DB)
 
-	return bus.NewCommandBus(commandChain...),
+	// Same chain as provideCommandBus (busmw.CommandChain is the single source),
+	// so the test CommandBus can't drift from production — incl. Audit + JobDispatcher.
+	return bus.NewCommandBus(
+			busmw.CommandChain(
+				logger,
+				checker,
+				reporter,
+				resolver,
+				audit,
+				dispatcher,
+				eventBus,
+				f.DB,
+			)...,
+		),
 		bus.NewQueryBus(busmw.BaseChain(logger, checker, reporter, resolver)...),
 		eventBus
 }
