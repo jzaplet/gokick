@@ -40,7 +40,7 @@ Sémantickou validaci dělají konzumenti:
 
 | Proměnná | Default | Co dělá |
 |---|---|---|
-| `APP_HTTP_PORT` | `3000` | Port, na kterém naslouchá HTTP server (`./bin/app serve`). |
+| `APP_HTTP_PORT` | `3000` | Port, na kterém naslouchá HTTP server (`./bin/app serve`). V `docker-compose.yml` ho OrbStack přes `dev.orbstack.http-port` forwarduje na **`https://gokick.local`** (žádný host port mapping). |
 | `APP_CORS_ORIGIN` | `http://localhost:5173` | Jediný povolený origin pro CORS (Vite dev server). V produkci nastav na doménu SPA. |
 
 Čteno přes `Config` struct.
@@ -172,6 +172,6 @@ Tyto proměnné běžící HTTP server **nepoužívá** — patří CLI příkaz
 | `VITE_SENTRY_DSN`, `VITE_SENTRY_ENVIRONMENT` | (prázdné) | Frontend Sentry config **jen pro Vite dev server** (`yarn dev`), kde se `index.html` doručuje přímo bez Go injekce. Když SPA obsluhuje Go server v produkci, tyto `VITE_*` se **nepoužijí** — přednost má injekce `APP_SENTRY_*`. |
 | `VITE_SENTRY_RELEASE` | (git tag z buildu) | Frontend release, zapečený při buildu (viz Sentry výše). Normálně se nenastavuje. |
 | `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT` | (žádné) | **Build-time** secrety pro upload frontend source maps. Patří do CI / Docker buildu, **ne** do runtime `.env`. Bez nich build neshipuje žádné mapy. Viz skill `/gk-sentry`. |
-| `DOCUMAN_HTTP_PORT` | `3005` | Port pro `documan` Docker service (lokální preview dokumentace). `docker-compose.yml` ho interpoluje přes `${DOCUMAN_HTTP_PORT}`. Nesouvisí s aplikační binárkou. |
+| `DOCUMAN_HTTP_PORT` | `3005` | Interní port, na kterém `documan` Docker service naslouchá; `docker-compose.yml` ho přes `${DOCUMAN_HTTP_PORT}` předá OrbStacku (`dev.orbstack.http-port`), který docs servíruje na **`https://docs.gokick.local`** (bez host port mappingu). Nesouvisí s aplikační binárkou. |
 
 > `APP_SEED_ADMIN_PASSWORD` je technicky pole v `Config` struct (`SeedAdminPassword`), ale čte ho **jen** CLI příkaz `seed` — server běžící přes `serve` ho ignoruje, proto je uvedený zde.
