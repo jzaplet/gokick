@@ -97,13 +97,7 @@ func provideSystemCommandBus(
 	audit shared.AuditLogger,
 	reporter shared.ErrorReporter,
 ) *bus.SystemCommandBus {
-	return bus.NewSystemCommandBus(
-		busmw.RecoveryMiddleware(logger, reporter),
-		busmw.LoggingMiddleware(logger),
-		busmw.AuditMiddleware(logger, audit),
-		busmw.DispatchEventsMiddleware(logger, eventBus),
-		busmw.TransactionMiddleware(db),
-	)
+	return bus.NewSystemCommandBus(busmw.SystemChain(logger, db, eventBus, audit, reporter)...)
 }
 
 func provideQueryBus(

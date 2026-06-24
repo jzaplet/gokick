@@ -24,3 +24,31 @@ func BaseChain(
 		TenantMiddleware(tenantResolver),
 	}
 }
+
+// SystemChain is the middleware chain for the SystemCommandBus — the
+// operator-trusted CLI commands (create-*, seed). It is the CommandBus chain
+// MINUS Authorize and Tenant (no principal, no JWT-resolved tenant) and minus
+// JobDispatcher (these commands enqueue nothing):
+//
+//	Recovery → Logging → Audit → DispatchEvents → Transaction
+//
+// Audit wraps OUTSIDE Transaction (failure events survive rollback) and
+// DispatchEvents wraps it (events fire post-commit). This is the SINGLE source of
+// the chain: the DI provider (provideSystemCommandBus) and testfx (NewSystemBus)
+// both call it, so the production and test buses can never drift. It takes
+// interfaces only, so both the infrastructure and test layers can build it.
+func SystemChain(
+	logger *slog.Logger,
+	tx shared.Transactor,
+	eventBus *bus.EventBus,
+	audit shared.AuditLogger,
+	reporter shared.ErrorReporter,
+) []bus.Middleware {
+	return []bus.Middleware{
+		RecoveryMiddleware(logger, reporter),
+		LoggingMiddleware(logger),
+		AuditMiddleware(logger, audit),
+		DispatchEventsMiddleware(logger, eventBus),
+		TransactionMiddleware(tx),
+	}
+}

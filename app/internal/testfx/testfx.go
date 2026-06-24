@@ -124,9 +124,10 @@ func (f *Fixture) NewBuses() (*bus.CommandBus, *bus.QueryBus, *bus.EventBus) {
 		eventBus
 }
 
-// NewSystemBus wires a SystemCommandBus mirroring provideSystemCommandBus
-// (Recovery → Logging → Audit → DispatchEvents → Transaction, no Authorize/Tenant)
-// for CLI-command tests. Audit writes land in the real audit_log table.
+// NewSystemBus wires a SystemCommandBus for CLI-command tests. It uses the SAME
+// busmw.SystemChain as provideSystemCommandBus (the single source of the chain),
+// so the test bus can never drift from production — add a middleware once and
+// both get it. Audit writes land in the real audit_log table.
 func (f *Fixture) NewSystemBus() *bus.SystemCommandBus {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	reporter := shared.NopReporter{}
@@ -137,11 +138,7 @@ func (f *Fixture) NewSystemBus() *bus.SystemCommandBus {
 	)
 
 	return bus.NewSystemCommandBus(
-		busmw.RecoveryMiddleware(logger, reporter),
-		busmw.LoggingMiddleware(logger),
-		busmw.AuditMiddleware(logger, sqliteaudit.NewRepository(f.DB)),
-		busmw.DispatchEventsMiddleware(logger, eventBus),
-		busmw.TransactionMiddleware(f.DB),
+		busmw.SystemChain(logger, f.DB, eventBus, sqliteaudit.NewRepository(f.DB), reporter)...,
 	)
 }
 
