@@ -181,7 +181,7 @@ func TestRootCommand_RegistersSubcommands(t *testing.T) {
 	// dependencies, so nil deps are safe for inspecting the command set.
 	root := NewRootCommand(
 		NewServeCommand(nil, nil, nil),
-		NewSeedCommand(nil),
+		NewSeedCommand(nil, nil),
 		NewCreateUserCommand(nil, nil, nil, nil, nil),
 		NewCreateSuperAdminCommand(nil, nil),
 		NewCreateTenantCommand(nil, nil),
@@ -221,10 +221,12 @@ func (s *recordingSeeder) Seed(ctx context.Context) error {
 }
 
 func TestSeedCommand_DelegatesToSeederWithContext(t *testing.T) {
-	t.Parallel()
+	// No t.Parallel — testfx.New runs goose migrations (process-global goose
+	// state). The system bus's TransactionMiddleware needs a real DB to BeginTx.
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "seed_delegate.db"))
 
 	seeder := &recordingSeeder{}
-	cmd := NewSeedCommand(seeder).Command()
+	cmd := NewSeedCommand(seeder, fx.NewSystemBus()).Command()
 	cmd.SilenceUsage = true
 
 	// Tag the context so we can prove RunE forwarded *this* context to Seed.
