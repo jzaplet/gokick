@@ -117,6 +117,16 @@ func (s *Seeder) seedAdmin(ctx context.Context) error {
 		return err
 	}
 
+	// Through the SystemCommandBus (the seed command dispatches via it) this
+	// persists the bootstrap audit trail; outside the bus the collector is a
+	// throwaway (no-op). No actor — a system bootstrap has no human principal.
+	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
+		Action:     "user.created",
+		TargetType: "user",
+		TargetID:   admin.ID,
+		Metadata:   map[string]any{"role": admin.Role},
+	})
+
 	s.logger.Info("seeded default admin user", logKeyNickname, "admin")
 	return nil
 }
@@ -144,6 +154,13 @@ func (s *Seeder) adminTenantID(ctx context.Context) (string, error) {
 	if err := s.tenants.Save(ctx, t); err != nil {
 		return "", err
 	}
+
+	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
+		Action:     "tenant.created",
+		TargetType: "tenant",
+		TargetID:   t.ID,
+		Metadata:   map[string]any{"name": t.Name},
+	})
 
 	s.logger.Info("seeded admin tenant", logKeyTenant, name)
 	return t.ID, nil
@@ -190,6 +207,13 @@ func (s *Seeder) seedSuperAdmin(ctx context.Context) error {
 	if err := s.users.Save(ctx, superAdmin); err != nil {
 		return err
 	}
+
+	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
+		Action:     "user.created",
+		TargetType: "user",
+		TargetID:   superAdmin.ID,
+		Metadata:   map[string]any{"role": superAdmin.Role},
+	})
 
 	s.logger.Info("seeded superadmin user", logKeyNickname, "superadmin")
 	return nil

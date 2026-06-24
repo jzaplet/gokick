@@ -4,23 +4,27 @@ import (
 	"context"
 	"fmt"
 
+	"gokick/app/application/bus"
 	platformcmd "gokick/app/application/platform/command"
 
 	"github.com/spf13/cobra"
 )
 
 // CreateSuperAdminCommand wraps the platform CreateSuperAdminHandler as a CLI
-// command. Like create-user it bypasses the bus (operator-trusted, no auth
-// context). It is the sanctioned way to mint a superadmin on a server, since the
-// HTTP/admin path deliberately refuses to assign that role.
+// command. Like the other create-* commands it dispatches through the
+// SystemCommandBus (operator-trusted: no Authorize/Tenant), which wraps the write
+// in a transaction + audit + panic→Sentry. It is the sanctioned way to mint a
+// superadmin on a server, since the HTTP/admin path deliberately refuses the role.
 type CreateSuperAdminCommand struct {
 	handler *platformcmd.CreateSuperAdminHandler
+	sysBus  *bus.SystemCommandBus
 }
 
 func NewCreateSuperAdminCommand(
 	handler *platformcmd.CreateSuperAdminHandler,
+	sysBus *bus.SystemCommandBus,
 ) *CreateSuperAdminCommand {
-	return &CreateSuperAdminCommand{handler: handler}
+	return &CreateSuperAdminCommand{handler: handler, sysBus: sysBus}
 }
 
 func (c *CreateSuperAdminCommand) Command() *cobra.Command {
@@ -47,11 +51,22 @@ func (c *CreateSuperAdminCommand) Command() *cobra.Command {
 }
 
 func (c *CreateSuperAdminCommand) run(ctx context.Context, nickname, password, email string) error {
-	if err := c.handler.Handle(ctx, platformcmd.CreateSuperAdminCommand{
+	cmd := platformcmd.CreateSuperAdminCommand{
 		Nickname: nickname,
 		Password: password,
 		Email:    email,
-	}); err != nil {
+	}
+
+	err := bus.ExecVoid(
+		ctx,
+		c.sysBus.Bus,
+		"CreateSuperAdmin",
+		cmd,
+		func(ctx context.Context) error {
+			return c.handler.Handle(ctx, cmd)
+		},
+	)
+	if err != nil {
 		return err
 	}
 

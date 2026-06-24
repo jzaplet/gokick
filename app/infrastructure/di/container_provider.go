@@ -61,11 +61,8 @@ func provideTenantResolver() shared.TenantResolver {
 	return security.NewDefaultTenantResolver()
 }
 
-// provideCommandBus wires the write-side bus. Audit wraps OUTSIDE both
-// DispatchEvents and Transaction so security-relevant events persist even
-// when business work rolls back. JobDispatcher sits outside Transaction so
-// the dispatcher is injected before tx begin — Enqueue itself uses Conn(ctx),
-// joining the transaction when called from a handler.
+// provideCommandBus wires the write-side bus from busmw.CommandChain (the single
+// source of the chain order, shared with testfx so they can't drift).
 func provideCommandBus(
 	logger *slog.Logger,
 	db *database.SqliteManager,
@@ -76,13 +73,33 @@ func provideCommandBus(
 	reporter shared.ErrorReporter,
 	tenantResolver shared.TenantResolver,
 ) *bus.CommandBus {
-	chain := append(busmw.BaseChain(logger, checker, reporter, tenantResolver),
-		busmw.AuditMiddleware(logger, audit),
-		busmw.JobDispatcherMiddleware(dispatcher),
-		busmw.DispatchEventsMiddleware(logger, eventBus),
-		busmw.TransactionMiddleware(db),
+	return bus.NewCommandBus(
+		busmw.CommandChain(
+			logger,
+			checker,
+			reporter,
+			tenantResolver,
+			audit,
+			dispatcher,
+			eventBus,
+			db,
+		)...,
 	)
-	return bus.NewCommandBus(chain...)
+}
+
+// provideSystemCommandBus wires the OPERATOR-TRUSTED write bus for the CLI
+// create-* commands. It is the CommandBus chain MINUS Authorize and Tenant (no
+// principal, no JWT-resolved tenant) and minus JobDispatcher (these commands
+// enqueue nothing). Audit still wraps OUTSIDE Transaction and DispatchEvents
+// still wraps it, so the ordering invariants hold. See bus.SystemCommandBus.
+func provideSystemCommandBus(
+	logger *slog.Logger,
+	db *database.SqliteManager,
+	eventBus *bus.EventBus,
+	audit shared.AuditLogger,
+	reporter shared.ErrorReporter,
+) *bus.SystemCommandBus {
+	return bus.NewSystemCommandBus(busmw.SystemChain(logger, db, eventBus, audit, reporter)...)
 }
 
 func provideQueryBus(
@@ -271,6 +288,7 @@ func CreateApplication(
 		providePermissionChecker,
 		provideTenantResolver,
 		provideCommandBus,
+		provideSystemCommandBus,
 		provideQueryBus,
 		provideEventHandlers,
 		provideEventBus,
@@ -294,7 +312,6 @@ func CreateApplication(
 		wire.Bind(new(token.TokenRepository), new(*sqlitetoken.Repository)),
 		wire.Bind(new(job.Repository), new(*sqlitejob.Repository)),
 		wire.Bind(new(tenant.Repository), new(*sqlitetenant.Repository)),
-		wire.Bind(new(shared.Transactor), new(*database.SqliteManager)),
 		wire.Bind(new(shared.Seeder), new(*sqliteseeder.Seeder)),
 		wire.Bind(new(shared.AuditLogger), new(*sqliteaudit.Repository)),
 		sqliteuser.NewRepository,

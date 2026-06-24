@@ -4,20 +4,27 @@ import (
 	"context"
 	"fmt"
 
+	"gokick/app/application/bus"
 	tenantcmd "gokick/app/application/tenant/command"
+	"gokick/app/domain/tenant"
 
 	"github.com/spf13/cobra"
 )
 
 // CreateTenantCommand is the CLI to create a tenant and print its id, so the
-// operator can then pass that id to `create-user --tenant-id`. Bypasses the bus
-// (operator-trusted), like the other create-* commands.
+// operator can then pass that id to `create-user --tenant-id`. Dispatches through
+// the SystemCommandBus (operator-trusted: no Authorize/Tenant) like the other
+// create-* commands, so the write is transactional and audited.
 type CreateTenantCommand struct {
 	handler *tenantcmd.CreateTenantHandler
+	sysBus  *bus.SystemCommandBus
 }
 
-func NewCreateTenantCommand(handler *tenantcmd.CreateTenantHandler) *CreateTenantCommand {
-	return &CreateTenantCommand{handler: handler}
+func NewCreateTenantCommand(
+	handler *tenantcmd.CreateTenantHandler,
+	sysBus *bus.SystemCommandBus,
+) *CreateTenantCommand {
+	return &CreateTenantCommand{handler: handler, sysBus: sysBus}
 }
 
 func (c *CreateTenantCommand) Command() *cobra.Command {
@@ -39,7 +46,12 @@ func (c *CreateTenantCommand) Command() *cobra.Command {
 }
 
 func (c *CreateTenantCommand) run(ctx context.Context, name string) error {
-	t, err := c.handler.Handle(ctx, tenantcmd.CreateTenantCommand{Name: name})
+	cmd := tenantcmd.CreateTenantCommand{Name: name}
+
+	t, err := bus.Exec(ctx, c.sysBus.Bus, "CreateTenant", cmd,
+		func(ctx context.Context) (*tenant.Tenant, error) {
+			return c.handler.Handle(ctx, cmd)
+		})
 	if err != nil {
 		return err
 	}

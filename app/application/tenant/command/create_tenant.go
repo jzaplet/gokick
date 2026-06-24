@@ -37,5 +37,15 @@ func (h *CreateTenantHandler) Handle(
 	if err := h.tenants.Save(ctx, t); err != nil {
 		return nil, err
 	}
+
+	// Through the SystemCommandBus this persists the audit trail of creating a
+	// tenant; outside the bus the collector is a throwaway (no-op).
+	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
+		Action:     "tenant.created",
+		TargetType: "tenant",
+		TargetID:   t.ID,
+		Metadata:   map[string]any{"name": t.Name},
+	})
+
 	return t, nil
 }

@@ -242,7 +242,7 @@ func TestCreateSuperAdminCommand_CreatesSuperAdmin(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "console_superadmin.db"))
 	handler := platformcmd.NewCreateSuperAdminHandler(fx.Users, fx.Hasher)
 
-	cmd := NewCreateSuperAdminCommand(handler).Command()
+	cmd := NewCreateSuperAdminCommand(handler, fx.NewSystemBus()).Command()
 	cmd.SilenceUsage = true
 	cmd.SetArgs([]string{"-n", "root", "-p", "secret12"})
 	if err := cmd.ExecuteContext(context.Background()); err != nil {
@@ -256,13 +256,23 @@ func TestCreateSuperAdminCommand_CreatesSuperAdmin(t *testing.T) {
 	if got == nil || got.Role != "superadmin" {
 		t.Fatalf("create-superadmin must persist a superadmin, got %+v", got)
 	}
+
+	// The SystemCommandBus's AuditMiddleware persisted the user.created trail.
+	var n int
+	if err := fx.DB.DB().GetContext(context.Background(), &n,
+		`SELECT COUNT(*) FROM audit_log WHERE action='user.created' AND target_id=?`, got.ID); err != nil {
+		t.Fatalf("audit query: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("create-superadmin must write a user.created audit record, got %d", n)
+	}
 }
 
 func TestCreateSuperAdminCommand_MissingPasswordErrors(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "console_superadmin_missing.db"))
 	handler := platformcmd.NewCreateSuperAdminHandler(fx.Users, fx.Hasher)
 
-	cmd := NewCreateSuperAdminCommand(handler).Command()
+	cmd := NewCreateSuperAdminCommand(handler, fx.NewSystemBus()).Command()
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true
 	cmd.SetArgs([]string{"-n", "root"})
@@ -282,7 +292,11 @@ func newCreateUserCmd(fx *testfx.Fixture, multitenant bool) *cobra.Command {
 	createTenant := tenantcmd.NewCreateTenantHandler(fx.Tenants)
 	getTenant := tenantqry.NewGetTenantHandler(fx.Tenants)
 	cmd := NewCreateUserCommand(
-		createUser, createTenant, getTenant, &config.Config{Multitenancy: multitenant}, fx.DB,
+		createUser,
+		createTenant,
+		getTenant,
+		&config.Config{Multitenancy: multitenant},
+		fx.NewSystemBus(),
 	).Command()
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true
@@ -387,7 +401,10 @@ func TestCreateTenantCommand_CreatesTenant(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "ct_create.db"))
 
-	cmd := NewCreateTenantCommand(tenantcmd.NewCreateTenantHandler(fx.Tenants)).Command()
+	cmd := NewCreateTenantCommand(
+		tenantcmd.NewCreateTenantHandler(fx.Tenants),
+		fx.NewSystemBus(),
+	).Command()
 	cmd.SilenceUsage = true
 	cmd.SetArgs([]string{"-n", "Acme"})
 	if err := cmd.ExecuteContext(ctx); err != nil {
@@ -398,11 +415,22 @@ func TestCreateTenantCommand_CreatesTenant(t *testing.T) {
 	if tn == nil {
 		t.Fatal("create-tenant must persist the tenant")
 	}
+
+	// The SystemCommandBus's AuditMiddleware persisted the tenant.created trail.
+	var n int
+	if err := fx.DB.DB().GetContext(ctx, &n,
+		`SELECT COUNT(*) FROM audit_log WHERE action='tenant.created' AND target_id=?`, tn.ID); err != nil {
+		t.Fatalf("audit query: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("create-tenant must write a tenant.created audit record, got %d", n)
+	}
 }
 
 // Rollback: --tenant-name creates a tenant before the user; if user creation
 // fails (here: duplicate nickname), the just-created tenant must be rolled back —
-// no orphan. The CLI bypasses the bus, so create-user wraps both in its own tx.
+// no orphan. create-user dispatches through the SystemCommandBus, so its
+// TransactionMiddleware wraps tenant resolution + user creation in one tx.
 func TestCreateUserCommand_TenantNameRolledBackWhenUserFails(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "cu_rollback.db"))

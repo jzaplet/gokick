@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"gokick/app/application/bus"
+	busmw "gokick/app/application/bus/middleware"
 	"gokick/app/infrastructure/config"
 	"gokick/app/infrastructure/database"
 	"gokick/app/presentation/console"
@@ -87,15 +89,18 @@ func TestApplicationRun_MigratesBeforeSubcommand(t *testing.T) {
 	migrations := database.NewMigrationManager(manager, logger)
 
 	probe := &migrationProbeSeeder{db: manager}
-	// Only the seed command needs real wiring; the others are nil because
-	// .Command() builds the cobra tree without dereferencing their deps
-	// (mirrors TestRootCommand_RegistersSubcommands in console).
+	// seed now dispatches through the SystemCommandBus; a minimal one (just
+	// TransactionMiddleware) suffices to run the probe inside a unit of work for
+	// this migration-ordering test. The others are nil because .Command() builds
+	// the cobra tree without dereferencing their deps (mirrors
+	// TestRootCommand_RegistersSubcommands in console).
+	sysBus := bus.NewSystemCommandBus(busmw.TransactionMiddleware(manager))
 	rootCmd := console.NewRootCommand(
 		console.NewServeCommand(nil, nil, nil),
-		console.NewSeedCommand(probe),
+		console.NewSeedCommand(probe, sysBus),
 		console.NewCreateUserCommand(nil, nil, nil, nil, nil),
-		console.NewCreateSuperAdminCommand(nil),
-		console.NewCreateTenantCommand(nil),
+		console.NewCreateSuperAdminCommand(nil, nil),
+		console.NewCreateTenantCommand(nil, nil),
 		console.NewWorkerCommand(nil),
 	)
 
@@ -151,10 +156,10 @@ func TestApplicationRun_StopsWhenMigrationFails(t *testing.T) {
 	probe := &migrationProbeSeeder{db: manager}
 	rootCmd := console.NewRootCommand(
 		console.NewServeCommand(nil, nil, nil),
-		console.NewSeedCommand(probe),
+		console.NewSeedCommand(probe, nil), // seed never runs (migration fails first)
 		console.NewCreateUserCommand(nil, nil, nil, nil, nil),
-		console.NewCreateSuperAdminCommand(nil),
-		console.NewCreateTenantCommand(nil),
+		console.NewCreateSuperAdminCommand(nil, nil),
+		console.NewCreateTenantCommand(nil, nil),
 		console.NewWorkerCommand(nil),
 	)
 	application := NewApplication(rootCmd, migrations)

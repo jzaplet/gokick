@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"gokick/app/application/bus"
 	"gokick/app/domain/shared"
 	"gokick/app/infrastructure/sqlite/seeder"
 	"gokick/app/internal/testfx"
@@ -235,5 +236,35 @@ func TestSeeder_Multitenant_AdminGetsOwnTenant(t *testing.T) {
 	}
 	if acmeCount != 1 {
 		t.Fatalf("re-seed must not duplicate the admin tenant, got %d 'Acme' tenants", acmeCount)
+	}
+}
+
+// Seed dispatched through the SystemCommandBus persists the bootstrap audit trail:
+// the seeder's Record calls drain through AuditMiddleware in a single tx. MT +
+// superadmin → two user.created (admin, superadmin) and one tenant.created (the
+// admin's own tenant). Outside the bus (the other tests) the collector is a no-op.
+func TestSeeder_AuditTrailThroughSystemBus(t *testing.T) {
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "seed_audit.db"))
+	s := newSeederMT(t, fx, "valid-password-12", "super-password-12", "Acme")
+
+	err := bus.ExecVoid(context.Background(), fx.NewSystemBus().Bus, "Seed", struct{}{},
+		func(ctx context.Context) error { return s.Seed(ctx) })
+	if err != nil {
+		t.Fatalf("seed through bus: %v", err)
+	}
+
+	assertAuditCount(t, fx, "user.created", 2)
+	assertAuditCount(t, fx, "tenant.created", 1)
+}
+
+func assertAuditCount(t *testing.T, fx *testfx.Fixture, action string, want int) {
+	t.Helper()
+	var n int
+	if err := fx.DB.DB().GetContext(context.Background(), &n,
+		`SELECT COUNT(*) FROM audit_log WHERE action=?`, action); err != nil {
+		t.Fatalf("audit count %q: %v", action, err)
+	}
+	if n != want {
+		t.Fatalf("audit_log %q: got %d want %d", action, n, want)
 	}
 }

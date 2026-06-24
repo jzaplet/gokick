@@ -123,13 +123,14 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	seedAdminTenant := provideSeedAdminTenant(configConfig)
 	multitenant := provideMultitenant(configConfig)
 	seederSeeder := seeder.NewSeeder(userRepository, tenantRepository, passwordHasher, seedAdminPassword, seedSuperAdminPassword, seedAdminTenant, multitenant, logger)
-	seedCommand := console.NewSeedCommand(seederSeeder)
+	systemCommandBus := provideSystemCommandBus(logger, sqliteManager, eventBus, auditRepository, reporter)
+	seedCommand := console.NewSeedCommand(seederSeeder, systemCommandBus)
 	createTenantHandler := command5.NewCreateTenantHandler(tenantRepository)
 	getTenantHandler := query5.NewGetTenantHandler(tenantRepository)
-	createUserCommand := console.NewCreateUserCommand(createUserHandler, createTenantHandler, getTenantHandler, configConfig, sqliteManager)
+	createUserCommand := console.NewCreateUserCommand(createUserHandler, createTenantHandler, getTenantHandler, configConfig, systemCommandBus)
 	createSuperAdminHandler := command4.NewCreateSuperAdminHandler(userRepository, passwordHasher)
-	createSuperAdminCommand := console.NewCreateSuperAdminCommand(createSuperAdminHandler)
-	createTenantCommand := console.NewCreateTenantCommand(createTenantHandler)
+	createSuperAdminCommand := console.NewCreateSuperAdminCommand(createSuperAdminHandler, systemCommandBus)
+	createTenantCommand := console.NewCreateTenantCommand(createTenantHandler, systemCommandBus)
 	workerCommand := console.NewWorkerCommand(worker)
 	rootCommand := console.NewRootCommand(serveCommand, seedCommand, createUserCommand, createSuperAdminCommand, createTenantCommand, workerCommand)
 	migrationManager := database.NewMigrationManager(sqliteManager, logger)
@@ -154,11 +155,8 @@ func provideTenantResolver() shared.TenantResolver {
 	return security.NewDefaultTenantResolver()
 }
 
-// provideCommandBus wires the write-side bus. Audit wraps OUTSIDE both
-// DispatchEvents and Transaction so security-relevant events persist even
-// when business work rolls back. JobDispatcher sits outside Transaction so
-// the dispatcher is injected before tx begin — Enqueue itself uses Conn(ctx),
-// joining the transaction when called from a handler.
+// provideCommandBus wires the write-side bus from busmw.CommandChain (the single
+// source of the chain order, shared with testfx so they can't drift).
 func provideCommandBus(
 	logger *slog.Logger,
 	db *database.SqliteManager,
@@ -169,8 +167,23 @@ func provideCommandBus(
 	reporter shared.ErrorReporter,
 	tenantResolver shared.TenantResolver,
 ) *bus.CommandBus {
-	chain := append(middleware.BaseChain(logger, checker, reporter, tenantResolver), middleware.AuditMiddleware(logger, audit2), middleware.JobDispatcherMiddleware(dispatcher), middleware.DispatchEventsMiddleware(logger, eventBus), middleware.TransactionMiddleware(db))
-	return bus.NewCommandBus(chain...)
+	return bus.NewCommandBus(middleware.CommandChain(logger, checker, reporter, tenantResolver, audit2, dispatcher, eventBus, db)...,
+	)
+}
+
+// provideSystemCommandBus wires the OPERATOR-TRUSTED write bus for the CLI
+// create-* commands. It is the CommandBus chain MINUS Authorize and Tenant (no
+// principal, no JWT-resolved tenant) and minus JobDispatcher (these commands
+// enqueue nothing). Audit still wraps OUTSIDE Transaction and DispatchEvents
+// still wraps it, so the ordering invariants hold. See bus.SystemCommandBus.
+func provideSystemCommandBus(
+	logger *slog.Logger,
+	db *database.SqliteManager,
+	eventBus *bus.EventBus, audit2 shared.AuditLogger,
+
+	reporter shared.ErrorReporter,
+) *bus.SystemCommandBus {
+	return bus.NewSystemCommandBus(middleware.SystemChain(logger, db, eventBus, audit2, reporter)...)
 }
 
 func provideQueryBus(

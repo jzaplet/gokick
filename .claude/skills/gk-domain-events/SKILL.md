@@ -118,9 +118,11 @@ Cíl: po `CreateUser` spustit nový vedlejší efekt na event `user.created`.
   `shared.JobDispatcherFromContext(ctx).Enqueue(...)`.
 - **Handler nemůže odvolat command.** Když selže, command už commitnul; chyba se
   jen zaloguje (`RecoveryMiddleware` na EventBusu), uživatel dostal 2xx.
-- **Mimo bus** (CLI `create-user`, který bus bypassuje) vrátí
-  `EventCollectorFromContext` *jednorázový* sběrač — `Collect` projde, ale nikam to
-  nejde. Žádný welcome mail pro seedovaného admina.
+- **Mimo bus** (přímé volání handleru v testech) vrátí `EventCollectorFromContext`
+  *jednorázový* sběrač — `Collect` projde, ale nikam to nejde. CLI commandy teď
+  jedou přes `SystemCommandBus` (má DispatchEvents), takže event z `create-user` se
+  po commitu rozešle; seeder ale eventy nesbírá (staví entity přímo) — žádný welcome
+  mail pro seedovaného admina.
 - **Registruj jen v `provideEventHandlers()`** během DI initu (single-goroutine).
   `EventBus.Dispatch` čte mapu handlerů bez zámku — registrace po prvním dispatchu
   by byl data race.

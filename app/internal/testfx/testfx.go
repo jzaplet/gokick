@@ -20,6 +20,7 @@ import (
 	"gokick/app/infrastructure/config"
 	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/security"
+	sqliteaudit "gokick/app/infrastructure/sqlite/audit"
 	sqlitejob "gokick/app/infrastructure/sqlite/job"
 	sqlitetenant "gokick/app/infrastructure/sqlite/tenant"
 	sqlitetoken "gokick/app/infrastructure/sqlite/token"
@@ -113,14 +114,47 @@ func (f *Fixture) NewBuses() (*bus.CommandBus, *bus.QueryBus, *bus.EventBus) {
 		busmw.LoggingMiddleware(logger),
 	)
 
-	commandChain := append(busmw.BaseChain(logger, checker, reporter, resolver),
-		busmw.DispatchEventsMiddleware(logger, eventBus),
-		busmw.TransactionMiddleware(f.DB),
-	)
+	// Throwaway dispatcher (the no-op the worker tests use) — no command handler
+	// enqueues today, so JobDispatcherMiddleware injects it but it is never
+	// invoked. Importing the real application/job dispatcher here would cycle
+	// (its test imports testfx). The chain itself stays faithful via CommandChain.
+	dispatcher := shared.JobDispatcherFromContext(context.Background())
+	audit := sqliteaudit.NewRepository(f.DB)
 
-	return bus.NewCommandBus(commandChain...),
+	// Same chain as provideCommandBus (busmw.CommandChain is the single source),
+	// so the test CommandBus can't drift from production — incl. Audit + JobDispatcher.
+	return bus.NewCommandBus(
+			busmw.CommandChain(
+				logger,
+				checker,
+				reporter,
+				resolver,
+				audit,
+				dispatcher,
+				eventBus,
+				f.DB,
+			)...,
+		),
 		bus.NewQueryBus(busmw.BaseChain(logger, checker, reporter, resolver)...),
 		eventBus
+}
+
+// NewSystemBus wires a SystemCommandBus for CLI-command tests. It uses the SAME
+// busmw.SystemChain as provideSystemCommandBus (the single source of the chain),
+// so the test bus can never drift from production — add a middleware once and
+// both get it. Audit writes land in the real audit_log table.
+func (f *Fixture) NewSystemBus() *bus.SystemCommandBus {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	reporter := shared.NopReporter{}
+
+	eventBus := bus.NewEventBus(
+		busmw.RecoveryMiddleware(logger, reporter),
+		busmw.LoggingMiddleware(logger),
+	)
+
+	return bus.NewSystemCommandBus(
+		busmw.SystemChain(logger, f.DB, eventBus, sqliteaudit.NewRepository(f.DB), reporter)...,
+	)
 }
 
 // ExecCommand dispatches cmd through cmdBus to handlerFn and returns the
