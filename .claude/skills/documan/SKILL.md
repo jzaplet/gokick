@@ -1,6 +1,4 @@
 ---
-name: documan
-description: Pomocník pro tvorbu a úpravu Documan markdown souborů v docs/. Use when pracuješ s dokumentací projektu, zakládáš nové stránky/sekce nebo upravuješ existující docs.
 layout: 'page'
 uri: '/skills/documan'
 position: 10
@@ -8,6 +6,8 @@ slug: 'skills-documan'
 parent: 'skills'
 navTitle: 'documan'
 title: 'Documan — pomocník pro dokumentaci'
+description: 'Pomocník pro tvorbu a úpravu Documan markdown souborů v docs/. Use when pracuješ s dokumentací projektu, zakládáš nové stránky/sekce nebo upravuješ existující docs.'
+name: 'documan'
 ---
 
 # Documan — pomocník pro dokumentaci

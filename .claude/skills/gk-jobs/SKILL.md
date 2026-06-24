@@ -1,6 +1,4 @@
 ---
-name: gk-jobs
-description: Perzistentní fronta pro background práci, která musí proběhnout i když proces mezitím spadne — atomický enqueue v transakci, worker s retry/backoff, mark-complete v handlerově tx. Use when chceš spustit pomalou nebo nespolehlivou práci náchylnou k opakování (poslat mail přes SMTP, volat externí API) mimo HTTP request a potřebuješ, aby přežila restart i pád procesu.
 layout: 'page'
 uri: '/skills/gk-jobs'
 position: 30
@@ -8,6 +6,8 @@ slug: 'skills-gk-jobs'
 parent: 'skills-data'
 navTitle: 'gk-jobs'
 title: 'GK — Job queue'
+description: 'Perzistentní fronta pro background práci, která musí proběhnout i když proces mezitím spadne — atomický enqueue v transakci, worker s retry/backoff, mark-complete v handlerově tx. Use when chceš spustit pomalou nebo nespolehlivou práci náchylnou k opakování (poslat mail přes SMTP, volat externí API) mimo HTTP request a potřebuješ, aby přežila restart i pád procesu.'
+name: 'gk-jobs'
 ---
 
 # GK — Job queue

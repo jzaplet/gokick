@@ -1,6 +1,4 @@
 ---
-name: gk-commands
-description: Psaní command handlerů (write operace) — struktura command + handler, povinná deklarace permission (Permissioned / SkipPermission) a validace přes value objects. Use when přidáváš nebo upravuješ write operaci (vytvoř/uprav/smaž entitu, login, logout) a potřebuješ vědět, jak má handler vypadat a co musí deklarovat.
 layout: 'page'
 uri: '/skills/gk-commands'
 position: 20
@@ -8,6 +6,8 @@ slug: 'skills-gk-commands'
 parent: 'skills-cqrs'
 navTitle: 'gk-commands'
 title: 'GK — Command handlery (write operace)'
+description: 'Psaní command handlerů (write operace) — struktura command + handler, povinná deklarace permission (Permissioned / SkipPermission) a validace přes value objects. Use when přidáváš nebo upravuješ write operaci (vytvoř/uprav/smaž entitu, login, logout) a potřebuješ vědět, jak má handler vypadat a co musí deklarovat.'
+name: 'gk-commands'
 ---
 
 # GK — Command handlery (write operace)

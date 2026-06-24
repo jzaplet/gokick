@@ -1,6 +1,4 @@
 ---
-name: gk-repositories
-description: Repozitáře nad SQLite — jak píšeš datovou vrstvu, aby sama běžela uvnitř transakce (r.Conn(ctx)), kde jsou vědomé výjimky (raw pool) a proč je DB takhle naladěná. Use when přidáváš/upravuješ repozitář, řešíš proč zápis přežil/nepřežil rollback, nebo ladíš "database is locked" / SQLITE_BUSY.
 layout: 'page'
 uri: '/skills/gk-repositories'
 position: 10
@@ -8,6 +6,8 @@ slug: 'skills-gk-repositories'
 parent: 'skills-data'
 navTitle: 'gk-repositories'
 title: 'GK — Repositories (SQLite datová vrstva)'
+description: 'Repozitáře nad SQLite — jak píšeš datovou vrstvu, aby sama běžela uvnitř transakce (r.Conn(ctx)), kde jsou vědomé výjimky (raw pool) a proč je DB takhle naladěná. Use when přidáváš/upravuješ repozitář, řešíš proč zápis přežil/nepřežil rollback, nebo ladíš "database is locked" / SQLITE_BUSY.'
+name: 'gk-repositories'
 ---
 
 # GK — Repositories (SQLite datová vrstva)

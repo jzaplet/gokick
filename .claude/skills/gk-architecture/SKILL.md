@@ -1,6 +1,4 @@
 ---
-name: gk-architecture
-description: Mentální model celého gokicku — DDD 4 vrstvy, CQRS, pravidla závislostí a bounded kontexty vynucené go-arch-lintem. Use when potřebuješ pochopit, kam nový kód patří, proč nějaký import neprojde, nebo jak vrstvy mezi sebou mluví.
 layout: 'page'
 uri: '/skills/gk-architecture'
 position: 30
@@ -8,6 +6,8 @@ slug: 'skills-gk-architecture'
 parent: 'skills-start'
 navTitle: 'gk-architecture'
 title: 'GK — Architecture (DDD 4 vrstvy + CQRS)'
+description: 'Mentální model celého gokicku — DDD 4 vrstvy, CQRS, pravidla závislostí a bounded kontexty vynucené go-arch-lintem. Use when potřebuješ pochopit, kam nový kód patří, proč nějaký import neprojde, nebo jak vrstvy mezi sebou mluví.'
+name: 'gk-architecture'
 ---
 
 # GK — Architecture (DDD 4 vrstvy + CQRS)

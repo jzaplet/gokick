@@ -1,6 +1,4 @@
 ---
-name: gk-permissions
-description: Oprávnění end-to-end — kdo smí spustit který command/query a co vidí na frontendu, řízené jedním zdrojem pravdy odvozeným z kódu. Use when přidáváš chráněný endpoint, řešíš proč request padá na 403/401, schováváš UI podle role, nebo přidáváš novou permission.
 layout: 'page'
 uri: '/skills/gk-permissions'
 position: 20
@@ -8,6 +6,8 @@ slug: 'skills-gk-permissions'
 parent: 'skills-auth'
 navTitle: 'gk-permissions'
 title: 'GK — Permissions (oprávnění)'
+description: 'Oprávnění end-to-end — kdo smí spustit který command/query a co vidí na frontendu, řízené jedním zdrojem pravdy odvozeným z kódu. Use when přidáváš chráněný endpoint, řešíš proč request padá na 403/401, schováváš UI podle role, nebo přidáváš novou permission.'
+name: 'gk-permissions'
 ---
 
 # GK — Permissions (oprávnění)

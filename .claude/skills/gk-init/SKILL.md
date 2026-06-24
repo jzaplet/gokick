@@ -1,6 +1,4 @@
 ---
-name: gk-init
-description: Rozjetí projektu po `git clone` — install, build, seed admina a dev loop, aby server běžel a šel se přihlásit. Use when máš čerstvý clone (nebo nový stroj / kolega) a potřebuješ se dostat od nuly k běžícímu serveru s funkčním adminem a frontendem.
 layout: 'page'
 uri: '/skills/gk-init'
 position: 10
@@ -8,6 +6,8 @@ slug: 'skills-gk-init'
 parent: 'skills-start'
 navTitle: 'gk-init'
 title: 'GK — Rozjetí projektu (init)'
+description: 'Rozjetí projektu po `git clone` — install, build, seed admina a dev loop, aby server běžel a šel se přihlásit. Use when máš čerstvý clone (nebo nový stroj / kolega) a potřebuješ se dostat od nuly k běžícímu serveru s funkčním adminem a frontendem.'
+name: 'gk-init'
 ---
 
 # GK — Rozjetí projektu (init)

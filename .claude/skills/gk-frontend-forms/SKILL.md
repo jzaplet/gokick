@@ -1,6 +1,4 @@
 ---
-name: gk-frontend-forms
-description: Formuláře ve Vue, které nevalidují na frontendu — jen pošlou data a propíšou chyby z backendu na konkrétní pole. Use when píšeš/upravuješ formulář, chyba z API se nezobrazuje u správného pole, nebo řešíš, kam patří validace a proč ji frontend nedělá.
 layout: 'page'
 uri: '/skills/gk-frontend-forms'
 position: 20
@@ -8,6 +6,8 @@ slug: 'skills-gk-frontend-forms'
 parent: 'skills-frontend'
 navTitle: 'gk-frontend-forms'
 title: 'GK — Frontend formuláře (backend-authoritative)'
+description: 'Formuláře ve Vue, které nevalidují na frontendu — jen pošlou data a propíšou chyby z backendu na konkrétní pole. Use when píšeš/upravuješ formulář, chyba z API se nezobrazuje u správného pole, nebo řešíš, kam patří validace a proč ji frontend nedělá.'
+name: 'gk-frontend-forms'
 ---
 
 # GK — Frontend formuláře (backend-authoritative)

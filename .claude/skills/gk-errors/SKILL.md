@@ -1,6 +1,4 @@
 ---
-name: gk-errors
-description: Doménové chyby (ValidationError / AuthError / PermissionError) a jejich automatické mapování na HTTP status (400 / 401 / 403 / 500) bez cross-layer importu. Use when potřebuješ vrátit z handleru / handleru commandu chybu se správným HTTP kódem, nebo nevíš, proč ti něco padá na 500 místo 400.
 layout: 'page'
 uri: '/skills/gk-errors'
 position: 30
@@ -8,6 +6,8 @@ slug: 'skills-gk-errors'
 parent: 'skills-domain'
 navTitle: 'gk-errors'
 title: 'GK — Doménové chyby a mapování na HTTP status'
+description: 'Doménové chyby (ValidationError / AuthError / PermissionError) a jejich automatické mapování na HTTP status (400 / 401 / 403 / 500) bez cross-layer importu. Use when potřebuješ vrátit z handleru / handleru commandu chybu se správným HTTP kódem, nebo nevíš, proč ti něco padá na 500 místo 400.'
+name: 'gk-errors'
 ---
 
 # GK — Doménové chyby a mapování na HTTP status

@@ -1,6 +1,4 @@
 ---
-name: gk-testing
-description: Testování v gokicku — testfx harness s reálnou SQLite DB, architektonické konformní testy (zz_audit/zz_gap) a quality gate (lint + arch + test + race + vitest + docs). Use when píšeš handler/repo test, nevíš jak rozjet DB v testu, řešíš proč ti spadl zz_audit/zz_gap, nebo co musí projít před commitem.
 layout: 'page'
 uri: '/skills/gk-testing'
 position: 20
@@ -8,6 +6,8 @@ slug: 'skills-gk-testing'
 parent: 'skills-ship'
 navTitle: 'gk-testing'
 title: 'GK — Testing'
+description: 'Testování v gokicku — testfx harness s reálnou SQLite DB, architektonické konformní testy (zz_audit/zz_gap) a quality gate (lint + arch + test + race + vitest + docs). Use when píšeš handler/repo test, nevíš jak rozjet DB v testu, řešíš proč ti spadl zz_audit/zz_gap, nebo co musí projít před commitem.'
+name: 'gk-testing'
 ---
 
 # GK — Testing

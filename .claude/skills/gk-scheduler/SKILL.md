@@ -1,6 +1,4 @@
 ---
-name: gk-scheduler
-description: Periodické úlohy uvnitř serveru (cron-like) — goroutina + ticker, první tick hned po startu, panika v jednom jobu neshodí ostatní. Use when chceš spustit něco opakovaně na pozadí (cleanup, sync, housekeeping) bez externího OS cronu.
 layout: 'page'
 uri: '/skills/gk-scheduler'
 position: 40
@@ -8,6 +6,8 @@ slug: 'skills-gk-scheduler'
 parent: 'skills-data'
 navTitle: 'gk-scheduler'
 title: 'GK — In-process scheduler'
+description: 'Periodické úlohy uvnitř serveru (cron-like) — goroutina + ticker, první tick hned po startu, panika v jednom jobu neshodí ostatní. Use when chceš spustit něco opakovaně na pozadí (cleanup, sync, housekeeping) bez externího OS cronu.'
+name: 'gk-scheduler'
 ---
 
 # GK — In-process scheduler

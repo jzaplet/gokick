@@ -1,6 +1,4 @@
 ---
-name: gk-di
-description: Wire compile-time DI — kde se registrují providery, jak se interface naváže na implementaci přes wire.Bind a kdy spustit make di. Use when přidáváš službu/constructor do DI, vážeš doménový interface na konkrétní typ, změnil jsi signaturu konstruktoru, nebo ti build hlásí chybu ve wire_gen.go.
 layout: 'page'
 uri: '/skills/gk-di'
 position: 50
@@ -8,6 +6,8 @@ slug: 'skills-gk-di'
 parent: 'skills-data'
 navTitle: 'gk-di'
 title: 'GK — Wire compile-time DI'
+description: 'Wire compile-time DI — kde se registrují providery, jak se interface naváže na implementaci přes wire.Bind a kdy spustit make di. Use when přidáváš službu/constructor do DI, vážeš doménový interface na konkrétní typ, změnil jsi signaturu konstruktoru, nebo ti build hlásí chybu ve wire_gen.go.'
+name: 'gk-di'
 ---
 
 # GK — Wire compile-time DI

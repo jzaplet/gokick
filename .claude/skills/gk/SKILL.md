@@ -1,6 +1,4 @@
 ---
-name: gk
-description: Rozcestník po gokick projektu — přehled všech gk-* skillů a co který řeší, od git clone po deploy a observabilitu. Use when naklonuješ projekt a chceš vědět co všechno s ním můžeš dělat, nebo nevíš, který specializovaný skill na svůj problém sáhnout.
 layout: 'page'
 uri: '/skills/gk'
 position: 15
@@ -8,6 +6,8 @@ slug: 'skills-gk'
 parent: 'skills'
 navTitle: 'gk'
 title: 'GK — rozcestník skillů'
+description: 'Rozcestník po gokick projektu — přehled všech gk-* skillů a co který řeší, od git clone po deploy a observabilitu. Use when naklonuješ projekt a chceš vědět co všechno s ním můžeš dělat, nebo nevíš, který specializovaný skill na svůj problém sáhnout.'
+name: 'gk'
 ---
 
 # GK — rozcestník skillů

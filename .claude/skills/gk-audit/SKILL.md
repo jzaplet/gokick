@@ -1,6 +1,4 @@
 ---
-name: gk-audit
-description: Append-only záznam security-relevantních akcí, který přežije rollback business transakce — kdo, kdy, odkud a co udělal. Use when přidáváš audit zápis (login, smazání uživatele, theft detection), ladíš „proč mi failed login nezapadl do auditu", nebo řešíš, kde v middleware chainu audit leží.
 layout: 'page'
 uri: '/skills/gk-audit'
 position: 30
@@ -8,6 +6,8 @@ slug: 'skills-gk-audit'
 parent: 'skills-observability'
 navTitle: 'gk-audit'
 title: 'GK — Audit log'
+description: 'Append-only záznam security-relevantních akcí, který přežije rollback business transakce — kdo, kdy, odkud a co udělal. Use when přidáváš audit zápis (login, smazání uživatele, theft detection), ladíš „proč mi failed login nezapadl do auditu", nebo řešíš, kde v middleware chainu audit leží.'
+name: 'gk-audit'
 ---
 
 # GK — Audit log

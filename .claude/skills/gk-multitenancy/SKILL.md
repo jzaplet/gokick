@@ -1,6 +1,4 @@
 ---
-name: gk-multitenancy
-description: Zapínatelný row-level multitenancy + platformní rovina (superadmin). Use when zapínáš/ladíš tenant izolaci, přidáváš tenant-owned tabulku, řešíš proč dotaz leakuje cizí tenant, nebo zakládáš tenanty/superadmina z CLI.
 layout: 'page'
 uri: '/skills/gk-multitenancy'
 position: 50
@@ -8,6 +6,8 @@ slug: 'skills-gk-multitenancy'
 parent: 'skills-auth'
 navTitle: 'gk-multitenancy'
 title: 'GK — Multitenancy'
+description: 'Zapínatelný row-level multitenancy + platformní rovina (superadmin). Use when zapínáš/ladíš tenant izolaci, přidáváš tenant-owned tabulku, řešíš proč dotaz leakuje cizí tenant, nebo zakládáš tenanty/superadmina z CLI.'
+name: 'gk-multitenancy'
 ---
 
 # GK — Multitenancy

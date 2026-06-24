@@ -1,6 +1,4 @@
 ---
-name: gk-sentry
-description: Error tracking (Sentry) na BE i FE — hlásí jen neočekávaná selhání (paniky, terminálně padlé joby, Vue chyby), obohacuje event o uživatele/request/breadcrumbs, je vypnuté bez DSN. Use when zapínáš Sentry, řešíš proč nepřišel/přišel event, nastavuješ FE DSN nebo source mapy, nebo nevíš, co se vlastně reportuje.
 layout: 'page'
 uri: '/skills/gk-sentry'
 position: 20
@@ -8,6 +6,8 @@ slug: 'skills-gk-sentry'
 parent: 'skills-observability'
 navTitle: 'gk-sentry'
 title: 'GK — Sentry error tracking'
+description: 'Error tracking (Sentry) na BE i FE — hlásí jen neočekávaná selhání (paniky, terminálně padlé joby, Vue chyby), obohacuje event o uživatele/request/breadcrumbs, je vypnuté bez DSN. Use when zapínáš Sentry, řešíš proč nepřišel/přišel event, nastavuješ FE DSN nebo source mapy, nebo nevíš, co se vlastně reportuje.'
+name: 'gk-sentry'
 ---
 
 # GK — Sentry error tracking

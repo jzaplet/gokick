@@ -1,6 +1,4 @@
 ---
-name: gk-frontend-ui
-description: Struktura a konvence frontendu — sdílené app-ui komponenty + composables, doménová organizace app/, router s guardy a maximálně přísný TypeScript/ESLint/Tailwind. Use when přidáváš nebo upravuješ Vue komponentu/view, řešíš kam soubor patří, importuješ fetch/auth/toast utilitu, registruješ route nebo nevíš, proč ti lint/tsc na něco nadává.
 layout: 'page'
 uri: '/skills/gk-frontend-ui'
 position: 30
@@ -8,6 +6,8 @@ slug: 'skills-gk-frontend-ui'
 parent: 'skills-frontend'
 navTitle: 'gk-frontend-ui'
 title: 'GK — Frontend struktura & konvence'
+description: 'Struktura a konvence frontendu — sdílené app-ui komponenty + composables, doménová organizace app/, router s guardy a maximálně přísný TypeScript/ESLint/Tailwind. Use when přidáváš nebo upravuješ Vue komponentu/view, řešíš kam soubor patří, importuješ fetch/auth/toast utilitu, registruješ route nebo nevíš, proč ti lint/tsc na něco nadává.'
+name: 'gk-frontend-ui'
 ---
 
 # GK — Frontend struktura & konvence
