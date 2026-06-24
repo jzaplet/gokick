@@ -37,11 +37,12 @@ stanice než **čtení** (Query) nebo **reakce po uložení** (Event).
 
 ## How it works
 Jádro je `app/application/bus/bus.go`: typ `Middleware` a privátní `newBus(...)`.
-Tři veřejné typy obalují stejný `*Bus`:
+Čtyři veřejné typy obalují stejný `*Bus`:
 
 | Typ | Soubor | Použití |
 |---|---|---|
-| `CommandBus` | `command.go` | zápisy (mění stav) |
+| `CommandBus` | `command.go` | zápisy z HTTP (mění stav) |
+| `SystemCommandBus` | `system_command.go` | zápisy z CLI (operator-trusted: bez Authorize/Tenant) |
 | `QueryBus` | `query.go` | čtení (nic nemění) |
 | `EventBus` | `event.go` | side-effects po commitu |
 
@@ -59,6 +60,7 @@ ne v `bus/`. `busmw.BaseChain(...)` (`middleware/base.go`) je sdílený základ
 | Bus | Chain (pořadí) |
 |---|---|
 | `CommandBus` | Recovery → Logging → Authorize → **Audit → JobDispatcher → DispatchEvents → Transaction** |
+| `SystemCommandBus` | Recovery → Logging → **Audit → DispatchEvents → Transaction** (bez Authorize/Tenant/JobDispatcher — operator-trusted CLI, tenant injectovaný explicitně) |
 | `QueryBus` | Recovery → Logging → Authorize |
 | `EventBus` | Recovery → Logging |
 

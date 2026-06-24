@@ -188,7 +188,7 @@ wire.Bind(new(shared.Seeder), new(*sqlite.Seeder))
 | `http/middleware/` | Trace ID, CORS, CSRF (stdlib Go 1.25), Logging, JWT Auth, Role Guard |
 | `http/response/` | `JSON()`, `Error()`, `HandleError()` — maps domain errors to HTTP status |
 | `http/server/` | `http.ServeMux` routing, middleware chain assembly |
-| `console/` | Cobra CLI commands (`serve`, `worker`, `seed`, `create-user`, `create-superadmin`, `create-tenant`) — `serve` co-runs the in-process scheduler + worker alongside the HTTP server, sharing one ctx so SIGTERM drains all. Create commands bypass the bus (operator-trusted); with multitenancy on, `create-user` requires a tenant (`--tenant-id` / `--tenant-name`) |
+| `console/` | Cobra CLI commands (`serve`, `worker`, `seed`, `create-user`, `create-superadmin`, `create-tenant`) — `serve` co-runs the in-process scheduler + worker alongside the HTTP server, sharing one ctx so SIGTERM drains all. The create/seed commands dispatch through the **`SystemCommandBus`** (operator-trusted: no Authorize/Tenant, but transaction + audit + panic→Sentry); with multitenancy on, `create-user` requires a tenant (`--tenant-id` / `--tenant-name`) |
 
 **Error → HTTP mapping** (duck typing, no import between response/ and domain/):
 - `*shared.ValidationError` → 400
@@ -306,7 +306,7 @@ Broad-glob components auto-cover new sub-packages: a new `application/<ctx>/comm
 ## Key Invariants
 
 - **Domain interfaces only.** Command/query handlers, seeders, and CLI commands depend on domain interfaces (`user.Repository`, `shared.Seeder`), never on concrete infrastructure types (`*sqliteuser.Repository`, `*sqlite.Seeder`).
-- **Bus dispatch required.** All commands/queries go through the bus — never call handlers directly from HTTP handlers. The bus provides recovery, logging, authorization, transactions, and event dispatch.
+- **Bus dispatch required.** All commands/queries go through a bus — HTTP handlers never call application handlers directly (they use the `CommandBus`/`QueryBus`); the CLI create/seed commands use the `SystemCommandBus` (the CommandBus chain minus Authorize/Tenant). The bus provides recovery, logging, authorization (HTTP), transactions, audit, and event dispatch.
 - **`r.Conn(ctx)` in repositories.** Always use `r.Conn(ctx)` (from embedded `BaseRepository`), never `r.DB.DB()` directly. This ensures transparent transaction participation. **Exception:** writes that MUST persist even when the surrounding bus tx rolls back — `user.Repository.RecordFailedLogin/ResetFailedLogin/RecordLogin` and `audit.Repository.Save` — use `r.DB.DB()` on purpose. These are the only legitimate raw-pool callers; document the reason in the method comment.
 - **Tenant scoping (multitenancy).** Every SQL query on a tenant-owned table (`users`, …) must scope by `tenant_id` (from `r.Tenant(ctx)`) OR carry an inline `/* tenant-scope-exempt: <reason> */` marker — the `zz_tenant_test.go` conformance gate fails CI otherwise (an unclassified table also fails). The resolver supplies the tenant, the repo applies it (no transparent `WHERE` injection); `r.Tenant(ctx)` panics on a missing tenant in multitenant mode (fail-closed). Cross-tenant platform reads carry `tenant-scope-exempt: platform superadmin`. See `/gk-multitenancy`.
 - **Permission declaration.** Every command/query must declare permissions. Forgetting both `Permissioned` and `SkipPermission` is a runtime error.

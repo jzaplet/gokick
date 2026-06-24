@@ -49,7 +49,7 @@ Root command `app` (`root.go`) registruje čtyři subcommandy:
 | `serve` | HTTP server **+** in-process scheduler **+** job worker v jednom procesu (`serve.go`: `scheduler.Run` a `worker.Run` jako goroutiny, sdílí jeden `ctx` ze signal handleru → SIGTERM nechá vše korektně dobíhat) |
 | `worker` | Jen perzistentní job worker, bez HTTP a scheduleru (`worker.go`) — pro škálování workeru zvlášť (1 serve replika + N worker replik) |
 | `seed` | Vytvoří admin účet (heslo z `APP_SEED_ADMIN_PASSWORD`), pokud ještě není |
-| `create-user` | Vytvoří uživatele (`-n` nickname, `-p` heslo, `-e` email, `-r` role); obchází bus, volá přímo `CreateUserHandler` |
+| `create-user` | Vytvoří uživatele (`-n` nickname, `-p` heslo, `-e` email, `-r` role); jede přes `SystemCommandBus` (transakce + audit) |
 
 ### Production Dockerfile (`docker/production/Dockerfile`)
 

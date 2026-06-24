@@ -66,7 +66,7 @@ Přidání nového command handleru (např. `ArchiveUser`):
 - **Handler závisí jen na doménových interfaces.** Nikdy neimportuj `infrastructure/security/`, `infrastructure/sqlite/` ani `application/bus` z handleru — Wire injektuje interface, ne konkrétní typ.
 - **Command struct nemá logiku** — jen pole. Validace a I/O patří do `Handle`.
 - **Většina commandů běží v bus transakci automaticky — neopt-outuj jen tak.** `SkipTransaction()` (interface `SkipsTransaction`, `bus/middleware/transaction.go`) je vzácná výjimka; reálně ji mají jen `login.go` a `refresh_token.go` kvůli raw-pool zápisům / force-logoutu. Bez konkrétního důvodu ji nepřidávej.
-- **Audit/event collectory jsou vždy bezpečné zavolat** — mimo bus (CLI) vrátí helper „zahazovací" collector, takže `Handle` nemusí nil-checkovat.
+- **Audit/event collectory jsou vždy bezpečné zavolat** — mimo bus (přímé volání handleru v testech) vrátí helper „zahazovací" collector, takže `Handle` nemusí nil-checkovat. CLI commandy jedou přes `SystemCommandBus`, kde se collectory drainnou.
 - **`*shared.ValidationError` s `Field` → konkrétní pole na FE.** Vracej ho z validace, ať se chyba namapuje na správný input. Mapování chyb na HTTP status řeší `/gk-errors`.
 
 ## Related

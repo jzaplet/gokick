@@ -75,8 +75,10 @@ Recovery → Logging → Authorize → Audit → JobDispatcher → DispatchEvent
 ```
 Ověř v `app/infrastructure/di/container_provider.go` (build) a generated `wire_gen.go`.
 
-**Mimo bus (CLI, testy)** — `AuditCollectorFromContext` vrátí jednorázový collector,
-`Record` je no-op. Handler tedy nikdy nil-checkuje.
+**Mimo bus (přímé volání handleru v testech)** — `AuditCollectorFromContext` vrátí
+jednorázový collector, `Record` je no-op. Handler tedy nikdy nil-checkuje. CLI
+commandy (create-*, seed) jedou přes `SystemCommandBus`, který AuditMiddleware má —
+jejich audit záznamy se perzistují.
 
 ## Recipe
 Přidat audit zápis do command handleru:
