@@ -7,9 +7,12 @@ import (
 	"log/slog"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"gokick/app/application/bus"
 	jobapp "gokick/app/application/job"
+	runapp "gokick/app/application/run"
+	"gokick/app/domain/run"
 	"gokick/app/domain/shared"
 	"gokick/app/infrastructure/security"
 	sqliteaudit "gokick/app/infrastructure/sqlite/audit"
@@ -36,6 +39,7 @@ func newProductionCommandBus(
 	t *testing.T,
 	fx *testfx.Fixture,
 	dispatcher shared.JobDispatcher,
+	runDispatcher shared.RunDispatcher,
 ) *bus.CommandBus {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -48,7 +52,7 @@ func newProductionCommandBus(
 		checker,
 		eventBus,
 		dispatcher,
-		noopDispatcher{},
+		runDispatcher,
 		audit,
 		shared.NopReporter{},
 		security.NewDefaultTenantResolver(),
@@ -66,7 +70,7 @@ func TestCommandBus_AuditSurvivesBusinessRollback(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "audit_rollback.db"))
 	u := fx.SeedUser(t, "victim", "password123", "user")
 
-	cmdBus := newProductionCommandBus(t, fx, noopDispatcher{})
+	cmdBus := newProductionCommandBus(t, fx, noopDispatcher{}, noopDispatcher{})
 
 	err := bus.ExecVoid(
 		ctx,
@@ -130,7 +134,7 @@ func TestCommandBus_JobEnqueueJoinsBusinessTransaction(t *testing.T) {
 		t.Fatalf("registry: %v", err)
 	}
 	dispatcher := jobapp.NewDispatcher(fx.Jobs, registry)
-	cmdBus := newProductionCommandBus(t, fx, dispatcher)
+	cmdBus := newProductionCommandBus(t, fx, dispatcher, noopDispatcher{})
 
 	jobCount := func() int {
 		var n int
@@ -169,6 +173,66 @@ func TestCommandBus_JobEnqueueJoinsBusinessTransaction(t *testing.T) {
 	}
 }
 
+// The run dispatcher carries the SAME promise as the job dispatcher: a durable
+// run enqueued from a command handler joins that handler's transaction — the
+// INSERT into runs commits or rolls back atomically with the business write.
+// Proven through the real provider chain (RunDispatcherMiddleware injects a
+// dispatcher whose repo.Enqueue uses Conn(ctx)), so a missing or misordered
+// RunDispatcherMiddleware relative to TransactionMiddleware fails here. This is
+// the run-side mirror of TestCommandBus_JobEnqueueJoinsBusinessTransaction; with
+// a noop run dispatcher (as the other tests use) the guarantee was untested.
+func TestCommandBus_RunEnqueueJoinsBusinessTransaction(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "run_tx.db"))
+
+	registry, err := runapp.NewHandlerRegistry(map[string]runapp.Registration{
+		"test.run": {
+			Handler: func(context.Context, *run.Run, runapp.Checkpointer) error { return nil },
+		},
+	}, time.Second)
+	if err != nil {
+		t.Fatalf("registry: %v", err)
+	}
+	dispatcher := runapp.NewDispatcher(fx.Runs, registry)
+	cmdBus := newProductionCommandBus(t, fx, noopDispatcher{}, dispatcher)
+
+	runCount := func() int {
+		var n int
+		if e := fx.DB.DB().GetContext(ctx, &n, `SELECT COUNT(*) FROM runs`); e != nil {
+			t.Fatalf("count runs: %v", e)
+		}
+		return n
+	}
+
+	// Rollback case: enqueue a run then fail → the run row must NOT persist,
+	// proving the enqueue joined the rolled-back business tx.
+	_ = bus.ExecVoid(
+		ctx,
+		cmdBus.Bus,
+		"EnqueueRunThenFail",
+		skipPermCmd{},
+		func(ctx context.Context) error {
+			if e := shared.RunDispatcherFromContext(ctx).Enqueue(ctx, "test.run", 0, map[string]any{"x": 1}); e != nil {
+				return e
+			}
+			return errors.New("boom")
+		},
+	)
+	if n := runCount(); n != 0 {
+		t.Fatalf("run enqueue must roll back with the business tx, got %d run rows", n)
+	}
+
+	// Commit case: enqueue a run then succeed → the run row persists.
+	if e := bus.ExecVoid(ctx, cmdBus.Bus, "EnqueueRunThenCommit", skipPermCmd{}, func(ctx context.Context) error {
+		return shared.RunDispatcherFromContext(ctx).Enqueue(ctx, "test.run", 0, map[string]any{"x": 2})
+	}); e != nil {
+		t.Fatalf("enqueue+commit: %v", e)
+	}
+	if n := runCount(); n != 1 {
+		t.Fatalf("run enqueue must commit with the business tx, got %d run rows", n)
+	}
+}
+
 // Tenant spine: TenantMiddleware (in BaseChain) must thread the resolved tenant
 // into the handler's ctx through the REAL production command chain — proving the
 // spine is wired, not just unit-correct. Single-tenant mode yields the default
@@ -176,7 +240,7 @@ func TestCommandBus_JobEnqueueJoinsBusinessTransaction(t *testing.T) {
 func TestCommandBus_InjectsTenantIntoHandlerContext(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_ctx.db"))
-	cmdBus := newProductionCommandBus(t, fx, noopDispatcher{})
+	cmdBus := newProductionCommandBus(t, fx, noopDispatcher{}, noopDispatcher{})
 
 	var seen string
 	err := bus.ExecVoid(
