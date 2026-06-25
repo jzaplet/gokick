@@ -85,6 +85,20 @@ type Repository interface {
 	// is preserved for postmortem. (false, nil) = lease lost or already terminal.
 	MarkFailed(ctx context.Context, id, owner string, lastErr string) (bool, error)
 
+	// RequestCancel sets the operator cancel signal on a non-terminal run. It is
+	// NOT owner-checked (the operator is not the worker) and is idempotent — a
+	// no-op on a terminal or missing run. cancel_requested rides on the row, so a
+	// worker that reclaims a crashed run honors a pending cancel. The worker
+	// observes the signal, winds the handler down, and records the terminal state
+	// via MarkCancelled.
+	RequestCancel(ctx context.Context, id string) error
+
+	// MarkCancelled records terminal cancellation (cancelled_at = now) and clears
+	// the lock, iff still owned and not already terminal — the worker's response to
+	// the cancel signal. The last checkpoint state is preserved. (false, nil) =
+	// lease lost or already terminal.
+	MarkCancelled(ctx context.Context, id, owner string) (bool, error)
+
 	// FindByID returns the run, or (nil, nil) when absent.
 	FindByID(ctx context.Context, id string) (*Run, error)
 }

@@ -48,8 +48,12 @@ type Run struct {
 	LastError   *string    `db:"last_error"`
 	FailedAt    *time.Time `db:"failed_at"`
 	CompletedAt *time.Time `db:"completed_at"`
-	CreatedAt   time.Time  `db:"created_at"`
-	UpdatedAt   time.Time  `db:"updated_at"` // bumped by every mutating repo write (claim/renew/checkpoint/finalize)
+	// CancelRequested is the operator signal; the worker observes it and winds the
+	// handler down, then records CancelledAt. It survives a reclaim (rides on the row).
+	CancelRequested bool       `db:"cancel_requested"`
+	CancelledAt     *time.Time `db:"cancelled_at"` // terminal: cancellation recorded by the worker
+	CreatedAt       time.Time  `db:"created_at"`
+	UpdatedAt       time.Time  `db:"updated_at"` // bumped by every mutating repo write (claim/renew/checkpoint/finalize)
 }
 
 // NewRun constructs a fresh pending Run with a uuid id, RunAt=now, and zero

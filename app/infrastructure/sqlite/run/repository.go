@@ -47,8 +47,8 @@ const nowExpr = `strftime('%Y-%m-%d %H:%M:%f', 'now')`
 const leaseExpr = `strftime('%Y-%m-%d %H:%M:%f', julianday('now') + ? / 86400.0)`
 
 func (r *Repository) Enqueue(ctx context.Context, rn *run.Run) error {
-	const q = `INSERT INTO runs (id, kind, tenant_id, payload, state, run_at, attempts, reclaims, max_retries, locked_by, locked_until, last_error, failed_at, completed_at, created_at, updated_at)
-		VALUES (:id, :kind, :tenant_id, :payload, :state, :run_at, :attempts, :reclaims, :max_retries, :locked_by, :locked_until, :last_error, :failed_at, :completed_at, :created_at, :updated_at)`
+	const q = `INSERT INTO runs (id, kind, tenant_id, payload, state, run_at, attempts, reclaims, max_retries, locked_by, locked_until, last_error, failed_at, completed_at, cancel_requested, cancelled_at, created_at, updated_at)
+		VALUES (:id, :kind, :tenant_id, :payload, :state, :run_at, :attempts, :reclaims, :max_retries, :locked_by, :locked_until, :last_error, :failed_at, :completed_at, :cancel_requested, :cancelled_at, :created_at, :updated_at)`
 	row := *rn
 	// Never write an empty tenant: an explicit "" would override the column's
 	// NOT NULL DEFAULT and break scoping. The dispatcher stamps the real tenant
@@ -88,6 +88,7 @@ func (r *Repository) ClaimDue(
 		    SELECT id FROM runs
 		    WHERE completed_at IS NULL
 		      AND failed_at IS NULL
+		      AND cancelled_at IS NULL
 		      AND julianday(run_at) <= julianday('now')
 		      AND (locked_until IS NULL OR julianday(locked_until) < julianday('now'))
 		    ORDER BY julianday(run_at)
@@ -122,7 +123,7 @@ func (r *Repository) RenewLease(
 		SET locked_until = ` + leaseExpr + `,
 		    updated_at = ` + nowExpr + `
 		WHERE id = ? AND locked_by = ?
-		  AND completed_at IS NULL AND failed_at IS NULL`
+		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL`
 	res, err := r.Conn(ctx).ExecContext(ctx, q, lease.Seconds(), id, owner)
 	return rowsAffectedBool(res, err)
 }
@@ -144,7 +145,7 @@ func (r *Repository) Checkpoint(
 		    locked_until = ` + leaseExpr + `,
 		    updated_at = ` + nowExpr + `
 		WHERE id = ? AND locked_by = ?
-		  AND completed_at IS NULL AND failed_at IS NULL`
+		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL`
 	res, err := r.Conn(ctx).ExecContext(ctx, q, state, lease.Seconds(), id, owner)
 	return rowsAffectedBool(res, err)
 }
@@ -159,7 +160,7 @@ func (r *Repository) MarkComplete(ctx context.Context, id, owner string) (bool, 
 		    locked_by = NULL,
 		    updated_at = ` + nowExpr + `
 		WHERE id = ? AND locked_by = ?
-		  AND completed_at IS NULL AND failed_at IS NULL`
+		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL`
 	res, err := r.Conn(ctx).ExecContext(ctx, q, id, owner)
 	return rowsAffectedBool(res, err)
 }
@@ -182,7 +183,7 @@ func (r *Repository) Reschedule(
 		    locked_by = NULL,
 		    updated_at = ` + nowExpr + `
 		WHERE id = ? AND locked_by = ?
-		  AND completed_at IS NULL AND failed_at IS NULL`
+		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL`
 	res, err := r.Conn(ctx).ExecContext(ctx, q, msPrecisionUTC(runAt), lastErr, id, owner)
 	return rowsAffectedBool(res, err)
 }
@@ -203,8 +204,38 @@ func (r *Repository) MarkFailed(
 		    locked_by = NULL,
 		    updated_at = ` + nowExpr + `
 		WHERE id = ? AND locked_by = ?
-		  AND completed_at IS NULL AND failed_at IS NULL`
+		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL`
 	res, err := r.Conn(ctx).ExecContext(ctx, q, lastErr, id, owner)
+	return rowsAffectedBool(res, err)
+}
+
+// RequestCancel sets the operator cancel signal on a non-terminal run. NOT
+// owner-checked (the operator is not the worker) and idempotent — a no-op on a
+// terminal/missing run. cancel_requested rides on the row, so it survives a reclaim.
+func (r *Repository) RequestCancel(ctx context.Context, id string) error {
+	const q = `
+		UPDATE runs
+		SET cancel_requested = 1,
+		    updated_at = ` + nowExpr + `
+		WHERE id = ?
+		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL`
+	_, err := r.Conn(ctx).ExecContext(ctx, q, id)
+	return err
+}
+
+// MarkCancelled records terminal cancellation and clears the lock, iff still owned
+// and not already terminal — the worker's response to the cancel signal. The last
+// checkpoint state is preserved.
+func (r *Repository) MarkCancelled(ctx context.Context, id, owner string) (bool, error) {
+	const q = `
+		UPDATE runs
+		SET cancelled_at = ` + nowExpr + `,
+		    locked_until = NULL,
+		    locked_by = NULL,
+		    updated_at = ` + nowExpr + `
+		WHERE id = ? AND locked_by = ?
+		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL`
+	res, err := r.Conn(ctx).ExecContext(ctx, q, id, owner)
 	return rowsAffectedBool(res, err)
 }
 

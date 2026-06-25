@@ -34,6 +34,12 @@ CREATE TABLE IF NOT EXISTS runs (
     last_error   TEXT,
     failed_at    DATETIME,
     completed_at DATETIME,
+    -- Cancel is two-phase: an operator sets cancel_requested (the run keeps running
+    -- so the worker can wind the handler down); the worker then records the terminal
+    -- cancelled_at. cancel_requested rides on the row, so it survives a reclaim — a
+    -- worker that picks up a crashed run honors a pending cancel.
+    cancel_requested INTEGER NOT NULL DEFAULT 0,
+    cancelled_at DATETIME,
     created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP  -- bumped on every checkpoint / heartbeat
 );
@@ -42,7 +48,7 @@ CREATE TABLE IF NOT EXISTS runs (
 -- in-progress vs free (an expired lease is reclaimable). Completed/failed rows
 -- are kept for audit but excluded via the partial-index predicate.
 CREATE INDEX idx_runs_claim ON runs(run_at, locked_until)
-    WHERE completed_at IS NULL AND failed_at IS NULL;
+    WHERE completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL;
 
 CREATE INDEX idx_runs_kind ON runs(kind, created_at);
 
