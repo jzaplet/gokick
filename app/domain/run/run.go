@@ -38,7 +38,7 @@ type Run struct {
 	// global drain (no tenant filter) — this only propagates.
 	TenantID    string     `db:"tenant_id"`
 	Payload     []byte     `db:"payload"`      // immutable initial input
-	State       []byte     `db:"state"`        // latest checkpoint; nil (NULL) until the first Checkpoint
+	State       []byte     `db:"state"`        // latest checkpoint; empty (len 0) until the first Checkpoint
 	RunAt       time.Time  `db:"run_at"`       // when eligible to claim
 	Attempts    int        `db:"attempts"`     // logic retries (bumped on Reschedule)
 	Reclaims    int        `db:"reclaims"`     // crash reclaims (bumped on ClaimDue of an expired lease)

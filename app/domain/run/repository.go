@@ -59,8 +59,10 @@ type Repository interface {
 
 	// Checkpoint persists resumable state AND renews the lease (a successful
 	// checkpoint proves liveness) iff still owned and not terminal. state is stored
-	// verbatim as a BLOB (nil → NULL, empty → empty, binary preserved). On
-	// (false, nil) = lease lost, the stale state is NOT written. lease must be > 0.
+	// verbatim as a BLOB; binary preserved. The driver maps both a NULL column and
+	// an empty blob to a zero-length slice, so a handler treats len(State)==0 as
+	// resume-from-scratch. On (false, nil) = lease lost, the stale state is NOT
+	// written. lease must be > 0.
 	Checkpoint(
 		ctx context.Context,
 		id, owner string,
