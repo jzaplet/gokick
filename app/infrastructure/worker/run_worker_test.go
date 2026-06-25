@@ -187,8 +187,8 @@ func TestRunWorker_Failure_NoRetries_MarksFailed(t *testing.T) {
 	if got.LastError == nil || *got.LastError != "boom" {
 		t.Fatalf("last_error: %v", got.LastError)
 	}
-	if reporter.Count() == 0 {
-		t.Fatal("a terminal failure must be reported exactly once")
+	if c := reporter.Count(); c != 1 {
+		t.Fatalf("a terminal failure must be reported exactly once, got %d", c)
 	}
 }
 
@@ -197,7 +197,7 @@ func TestRunWorker_Failure_WithRetries_Reschedules(t *testing.T) {
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		return errors.New("transient")
 	}
-	w, _ := newRunWorker(
+	w, reporter := newRunWorker(
 		t,
 		fx,
 		map[string]runapp.Registration{"agent": {Handler: handler}},
@@ -221,6 +221,9 @@ func TestRunWorker_Failure_WithRetries_Reschedules(t *testing.T) {
 	if !got.RunAt.After(time.Now()) {
 		t.Fatal("reschedule must push run_at into the future (backoff)")
 	}
+	if c := reporter.Count(); c != 0 {
+		t.Fatalf("a rescheduled (retryable) run must NOT report, got %d", c)
+	}
 }
 
 // ─── Cancel ───────────────────────────────────────────────────────────────────
@@ -231,7 +234,7 @@ func TestRunWorker_CancelAtClaim_MarksCancelled(t *testing.T) {
 		<-ctx.Done() // ctx-aware: stop when cancelled
 		return ctx.Err()
 	}
-	w, _ := newRunWorker(
+	w, reporter := newRunWorker(
 		t,
 		fx,
 		map[string]runapp.Registration{"agent": {Handler: handler}},
@@ -251,6 +254,9 @@ func TestRunWorker_CancelAtClaim_MarksCancelled(t *testing.T) {
 	got := findW(t, fx, r.ID)
 	if got.CompletedAt != nil || got.FailedAt != nil {
 		t.Fatal("a cancelled run must not also be completed/failed")
+	}
+	if c := reporter.Count(); c != 0 {
+		t.Fatalf("a cancelled run must NOT report, got %d", c)
 	}
 }
 
@@ -292,7 +298,12 @@ func TestRunWorker_PoisonReclaim_FailsWithoutRunningHandler(t *testing.T) {
 		return nil
 	}
 	cfg := fastCfg() // MaxReclaims = 2
-	w, _ := newRunWorker(t, fx, map[string]runapp.Registration{"agent": {Handler: handler}}, cfg)
+	w, reporter := newRunWorker(
+		t,
+		fx,
+		map[string]runapp.Registration{"agent": {Handler: handler}},
+		cfg,
+	)
 	r := enqueueRunW(t, fx, "agent", 3)
 	// Simulate a poison run: it has already been reclaimed past the cap.
 	if _, err := fx.DB.DB().ExecContext(context.Background(),
@@ -308,6 +319,9 @@ func TestRunWorker_PoisonReclaim_FailsWithoutRunningHandler(t *testing.T) {
 	})
 	if ran.Load() {
 		t.Fatal("a poison run past MaxReclaims must NOT run the handler")
+	}
+	if c := reporter.Count(); c != 1 {
+		t.Fatalf("the poison guard must report exactly once, got %d", c)
 	}
 }
 
@@ -451,8 +465,8 @@ func TestRunWorker_HandlerPanic_DoesNotCrashPool_FailsRun(t *testing.T) {
 		g := findW(t, fx, r.ID)
 		return g != nil && g.FailedAt != nil
 	})
-	if reporter.Count() == 0 {
-		t.Fatal("a handler panic (terminal) must be reported")
+	if c := reporter.Count(); c != 1 {
+		t.Fatalf("a handler panic (terminal) must be reported exactly once, got %d", c)
 	}
 	// The pool survived the panic (else waitFor above would have timed out).
 }

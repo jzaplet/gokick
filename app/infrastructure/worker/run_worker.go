@@ -47,6 +47,11 @@ func (c RunWorkerConfig) withDefaults() RunWorkerConfig {
 	if c.HeartbeatInterval <= 0 {
 		c.HeartbeatInterval = c.DefaultLease / 3
 	}
+	// A heartbeat not comfortably shorter than the lease can't keep it renewed;
+	// clamp a misconfigured interval. Per-kind leases must likewise stay >> this.
+	if c.HeartbeatInterval > c.DefaultLease/2 {
+		c.HeartbeatInterval = c.DefaultLease / 3
+	}
 	if c.PollInterval <= 0 {
 		c.PollInterval = time.Second
 	}
@@ -231,6 +236,24 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 	hbDone := make(chan struct{})
 	go func() {
 		defer close(hbDone)
+		defer func() {
+			// A panic in the heartbeat (e.g. a repo call) must not crash the pool:
+			// recover, report, and abandon the run (left for lease-lapse reclaim).
+			if rec := recover(); rec != nil {
+				w.logger.LogAttrs(hbCtx, slog.LevelError, "run worker: heartbeat panicked",
+					slog.Any(logKeyPanic, rec), slog.String(logKeyStack, string(debug.Stack())))
+				w.reporter.Capture(
+					hbCtx,
+					&shared.PanicError{
+						Value:   rec,
+						Message: fmt.Sprintf("heartbeat panic: %v", rec),
+					},
+					slog.String(logKeyRunID, r.ID),
+				)
+				abandon.Store(true)
+				cancelHandler()
+			}
+		}()
 		w.heartbeat(hbCtx, r.ID, owner, kindLease, cancelHandler, &abandon, &cancelled)
 	}()
 
