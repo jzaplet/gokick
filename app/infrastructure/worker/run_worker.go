@@ -210,9 +210,10 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 		return
 	}
 
-	// Close the claim gap: re-lease to the kind's lease before running, so the
-	// heartbeat interval is sound against kindLease and a short DefaultLease can't
-	// let another worker reclaim before the first heartbeat. False = already lost.
+	// Close the claim gap: re-lease to the kind's lease before running, so a short
+	// DefaultLease can't let another worker reclaim before the first heartbeat. The
+	// heartbeat interval is kept sound against kindLease by deriving it from the lease
+	// inside heartbeat() (not here). False = already lost.
 	if ok, err := w.repo.RenewLease(workerCtx, r.ID, owner, kindLease); err != nil {
 		log.Error("run worker: initial re-lease errored, abandoning", shared.LogKeyError, err)
 		return
@@ -314,7 +315,19 @@ func (w *RunWorker) heartbeat(
 	cancelHandler context.CancelFunc,
 	abandon, cancelled *atomic.Bool,
 ) {
-	ticker := time.NewTicker(w.cfg.HeartbeatInterval)
+	// The ticker must fire well within the lease it renews — which is the per-kind
+	// lease, NOT the global DefaultLease that sized cfg.HeartbeatInterval. Derive the
+	// effective interval from the actual lease (cap at lease/3, matching withDefaults'
+	// DefaultLease/3) so a per-kind lease shorter than the global interval can't expire
+	// before the first renewal and let another worker reclaim a still-running run.
+	interval := w.cfg.HeartbeatInterval
+	if third := lease / 3; third < interval {
+		interval = third
+	}
+	if interval <= 0 {
+		interval = time.Millisecond
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	errs := 0
 
@@ -348,10 +361,10 @@ func (w *RunWorker) heartbeat(
 		}
 
 		// Observe a cancel requested after claim. Once seen, stop checking (cancel
-		// latency is loose) but keep renewing through the winddown.
+		// latency is loose) but keep renewing through the winddown. A flag-only read —
+		// never the full row + state BLOB — on every tick.
 		if !cancelled.Load() {
-			if cur, ferr := w.repo.FindByID(ctx, id); ferr == nil && cur != nil &&
-				cur.CancelRequested {
+			if want, ferr := w.repo.IsCancelRequested(ctx, id); ferr == nil && want {
 				cancelled.Store(true)
 				cancelHandler()
 			}

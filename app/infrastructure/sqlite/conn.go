@@ -3,10 +3,22 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"gokick/app/domain/shared"
 	"gokick/app/infrastructure/database"
 )
+
+// MsPrecisionUTC normalizes a Go time.Time to UTC + millisecond precision before
+// it crosses into SQLite. ncruces' WASM SQLite 'now' ticks at ~1 ms and trails
+// Go's time.Now() by up to ~1 ms, so a time written at µs precision can lose the
+// julianday(col) <= julianday('now') race and a freshly-enqueued row be missed.
+// Truncating to ms removes it; reads round-trip the exact same ms value. Shared by
+// every repo that writes Go-sourced times (job, run) so the time discipline cannot
+// drift between queues — see /gk-repositories.
+func MsPrecisionUTC(t time.Time) time.Time {
+	return t.UTC().Truncate(time.Millisecond)
+}
 
 // Conn is the common interface satisfied by both *sqlx.DB and *sqlx.Tx.
 type Conn interface {

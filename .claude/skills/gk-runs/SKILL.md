@@ -51,7 +51,8 @@ od začátku. Aby se dva průvodci nehádali o stejnou výpravu, každý má **�
 `Reclaims` = **crash reclaimy** (bumpuje `ClaimDue` při převzetí vypršelého leasu,
 cap zvlášť). Mutující metody jsou **owner-checked** a vrací `bool`: `false` = lease
 ztracen → caller se vzdá (fencing). `ClaimDue`/`RenewLease`/`Checkpoint`/`MarkComplete`/
-`Reschedule`/`MarkFailed`/`MarkCancelled`/`RequestCancel`. Čas: `julianday()` na
+`Reschedule`/`MarkFailed`/`MarkCancelled`/`RequestCancel`/`IsCancelRequested` (levný
+flag-only poll pro heartbeat, netáhne state BLOB)/`FindByID`. Čas: `julianday()` na
 porovnání, ms-precizní zápisy, sub-second lease — viz `/gk-repositories`.
 
 **Kontrakt** (`app/application/run/registry.go`): handler píše aplikace, ne gokick:

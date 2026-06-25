@@ -282,6 +282,18 @@ func TestMutators_AllBumpUpdatedAt(t *testing.T) {
 				t.Fatalf("markfailed: ok=%v err=%v", ok, err)
 			}
 		}},
+		{"RequestCancel", func(t *testing.T, fx *testfx.Fixture, id, owner string) {
+			// Not owner-checked; touches updated_at on the operator cancel signal.
+			if err := fx.Runs.RequestCancel(context.Background(), id); err != nil {
+				t.Fatalf("requestcancel: %v", err)
+			}
+		}},
+		{"MarkCancelled", func(t *testing.T, fx *testfx.Fixture, id, owner string) {
+			if ok, err := fx.Runs.MarkCancelled(context.Background(), id, owner); err != nil ||
+				!ok {
+				t.Fatalf("markcancelled: ok=%v err=%v", ok, err)
+			}
+		}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

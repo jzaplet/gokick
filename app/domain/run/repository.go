@@ -99,6 +99,13 @@ type Repository interface {
 	// lease lost or already terminal.
 	MarkCancelled(ctx context.Context, id, owner string) (bool, error)
 
+	// IsCancelRequested reports whether the operator cancel signal is set on the run
+	// — the worker's heartbeat polls it to observe a mid-run cancel. It reads only
+	// the cancel_requested flag, NOT the whole row, so it never transfers the payload
+	// or the (potentially large, growing) state BLOB on every heartbeat tick. Returns
+	// (false, nil) when the run is absent.
+	IsCancelRequested(ctx context.Context, id string) (bool, error)
+
 	// FindByID returns the run, or (nil, nil) when absent.
 	FindByID(ctx context.Context, id string) (*Run, error)
 }

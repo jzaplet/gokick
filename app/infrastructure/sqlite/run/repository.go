@@ -26,16 +26,6 @@ func NewRepository(db *database.SqliteManager) *Repository {
 	return &Repository{BaseRepository: sqlite.BaseRepository{DB: db}}
 }
 
-// msPrecisionUTC normalizes a Go time.Time to UTC + millisecond precision before
-// it crosses into SQLite — identical to the jobs repo. ncruces' WASM SQLite 'now'
-// ticks at ~1 ms and trails Go's time.Now() by up to ~1 ms, so a run_at written
-// at µs precision can lose the julianday(run_at) <= julianday('now') race and a
-// freshly-enqueued run be missed. Truncating to ms removes it; reads round-trip
-// the exact same ms value.
-func msPrecisionUTC(t time.Time) time.Time {
-	return t.UTC().Truncate(time.Millisecond)
-}
-
 // nowExpr writes the DB clock at ms precision (for completed_at/failed_at/updated_at).
 const nowExpr = `strftime('%Y-%m-%d %H:%M:%f', 'now')`
 
@@ -56,9 +46,9 @@ func (r *Repository) Enqueue(ctx context.Context, rn *run.Run) error {
 	if row.TenantID == "" {
 		row.TenantID = shared.DefaultTenantID
 	}
-	row.RunAt = msPrecisionUTC(row.RunAt)
-	row.CreatedAt = msPrecisionUTC(row.CreatedAt)
-	row.UpdatedAt = msPrecisionUTC(row.UpdatedAt)
+	row.RunAt = sqlite.MsPrecisionUTC(row.RunAt)
+	row.CreatedAt = sqlite.MsPrecisionUTC(row.CreatedAt)
+	row.UpdatedAt = sqlite.MsPrecisionUTC(row.UpdatedAt)
 	_, err := r.Conn(ctx).NamedExecContext(ctx, q, &row)
 	return err
 }
@@ -184,7 +174,7 @@ func (r *Repository) Reschedule(
 		    updated_at = ` + nowExpr + `
 		WHERE id = ? AND locked_by = ?
 		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL`
-	res, err := r.Conn(ctx).ExecContext(ctx, q, msPrecisionUTC(runAt), lastErr, id, owner)
+	res, err := r.Conn(ctx).ExecContext(ctx, q, sqlite.MsPrecisionUTC(runAt), lastErr, id, owner)
 	return rowsAffectedBool(res, err)
 }
 
@@ -246,6 +236,19 @@ func (r *Repository) FindByID(ctx context.Context, id string) (*run.Run, error) 
 		return nil, nil
 	}
 	return &rn, err
+}
+
+// IsCancelRequested reads only the cancel_requested flag — the heartbeat's cheap
+// cancel poll, avoiding a full-row FindByID (and its payload/state BLOBs) on every
+// tick. Absent run → (false, nil).
+func (r *Repository) IsCancelRequested(ctx context.Context, id string) (bool, error) {
+	var cancel bool
+	err := r.Conn(ctx).
+		GetContext(ctx, &cancel, `SELECT cancel_requested FROM runs WHERE id = ?`, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return cancel, err
 }
 
 // rowsAffectedBool turns an owner-checked UPDATE result into the fencing bool:

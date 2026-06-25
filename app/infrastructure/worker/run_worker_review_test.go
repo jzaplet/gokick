@@ -105,6 +105,41 @@ func TestRunWorker_CancelNilReturn_MarksCancelledNotCompleted(t *testing.T) {
 	}
 }
 
+// #1b — a cancel requested AFTER the run is already executing must be observed by
+// the heartbeat's cancel-read and end the run cancelled. The sibling above requests
+// the cancel BEFORE start (caught at claim time, run_worker.go:262); this exercises
+// the mid-run cancel-read path (the IsCancelRequested call inside heartbeat()).
+func TestRunWorker_MidRunCancel_Observed(t *testing.T) {
+	fx := testfx.New(t, t.TempDir()+"/rwr_midcancel.db")
+	started := make(chan struct{})
+	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
+		close(started)
+		<-ctx.Done() // unblocks when the heartbeat observes the cancel and cancels us
+		return nil
+	}
+	w, _ := newRunWorker(
+		t,
+		fx,
+		map[string]runapp.Registration{"agent": {Handler: handler}},
+		fastCfg(),
+	)
+	r := enqueueRunW(t, fx, "agent", 3)
+
+	stop := startWorker(w)
+	defer stop()
+	<-started // run is executing; cancel was NOT requested at claim time
+	if err := fx.Runs.RequestCancel(context.Background(), r.ID); err != nil {
+		t.Fatalf("request cancel: %v", err)
+	}
+	waitFor(t, "cancelled", func() bool {
+		g := findW(t, fx, r.ID)
+		return g != nil && g.CancelledAt != nil
+	})
+	if findW(t, fx, r.ID).CompletedAt != nil {
+		t.Fatal("a mid-run cancel must end cancelled, not completed")
+	}
+}
+
 // #2 — unknown kind with retries available is PARKED (rescheduled), not killed.
 func TestRunWorker_UnknownKind_WithRetries_Parks(t *testing.T) {
 	fx := testfx.New(t, t.TempDir()+"/rwr_unknown_park.db")
@@ -296,6 +331,54 @@ func TestRunWorker_PerKindLease_AppliedAfterClaim(t *testing.T) {
 		)
 	}
 	close(release)
+}
+
+// #11b — a per-kind lease SHORTER than the global heartbeat interval must still
+// be kept alive. The heartbeat cadence must derive from the EFFECTIVE lease
+// (kindLease), not from the global cfg.HeartbeatInterval that was sized off
+// DefaultLease — otherwise the re-leased short lease expires before the first
+// heartbeat ever fires and another worker reclaims a still-running run (double
+// execution). Sibling of #11, which only covers the safe direction (kindLease >>
+// heartbeat). Fails on the pre-fix code where the ticker uses cfg.HeartbeatInterval.
+func TestRunWorker_PerKindLeaseShorterThanHeartbeat_StaysAlive(t *testing.T) {
+	fx := testfx.New(t, t.TempDir()+"/rwr_shortlease.db")
+	started := make(chan struct{})
+	release := make(chan struct{})
+	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
+		close(started)
+		<-release
+		return nil
+	}
+	cfg := fastCfg()
+	cfg.DefaultLease = 6 * time.Second
+	cfg.HeartbeatInterval = 2 * time.Second // deliberately LARGER than the 300ms kind lease
+	regs := map[string]runapp.Registration{
+		"agent": {Handler: handler, Lease: 300 * time.Millisecond},
+	}
+	w, _ := newRunWorker(t, fx, regs, cfg)
+	r := enqueueRunW(t, fx, "agent", 3)
+
+	stop := startWorker(w)
+	defer stop()
+	<-started
+	// Well past the 300ms kind lease, but before the 2s global heartbeat would tick
+	// on the buggy code. On the buggy code the lease lapsed ~600ms ago, so the worker
+	// self-reclaims its own still-running run → reclaims bumps. A correctly-derived
+	// heartbeat (lease/3 = 100ms) renews in time, so the lease never lapses and
+	// reclaims stays 0. Reclaims is the clean, race-free signal (a competing ClaimDue
+	// is confounded by the worker's own self-reclaim).
+	time.Sleep(900 * time.Millisecond)
+	reclaims := findW(t, fx, r.ID).Reclaims
+	close(release) // unblock the handler regardless of outcome
+	if reclaims != 0 {
+		t.Fatalf("a per-kind lease shorter than the heartbeat interval lapsed and was reclaimed "+
+			"(reclaims=%d); the heartbeat must derive its cadence from the effective lease, not the "+
+			"global interval", reclaims)
+	}
+	waitFor(t, "completed", func() bool {
+		g := findW(t, fx, r.ID)
+		return g != nil && g.CompletedAt != nil
+	})
 }
 
 // #13 — the heartbeat abandons after maxHeartbeatErrors consecutive RenewLease
