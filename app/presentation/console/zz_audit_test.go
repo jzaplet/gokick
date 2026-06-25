@@ -9,6 +9,7 @@ import (
 	"time"
 
 	jobapp "gokick/app/application/job"
+	runapp "gokick/app/application/run"
 	usercmd "gokick/app/application/user/command"
 	"gokick/app/domain/shared"
 	"gokick/app/infrastructure/config"
@@ -180,12 +181,12 @@ func TestRootCommand_RegistersSubcommands(t *testing.T) {
 	// .Command() builds the cobra tree without dereferencing the injected
 	// dependencies, so nil deps are safe for inspecting the command set.
 	root := NewRootCommand(
-		NewServeCommand(nil, nil, nil),
+		NewServeCommand(nil, nil, nil, nil),
 		NewSeedCommand(nil, nil),
 		NewCreateUserCommand(nil, nil, nil, nil, nil),
 		NewCreateSuperAdminCommand(nil, nil),
 		NewCreateTenantCommand(nil, nil),
-		NewWorkerCommand(nil),
+		NewWorkerCommand(nil, nil),
 	)
 
 	names := map[string]bool{}
@@ -249,12 +250,29 @@ func TestSeedCommand_DelegatesToSeederWithContext(t *testing.T) {
 //   cmd.Context() to worker.Run, so cancelling the context drains it.
 // ---------------------------------------------------------------------------
 
+// newTestRunWorker builds a real RunWorker the cheap way — an empty registry and
+// the fixture's repo; zero config takes safe defaults.
+func newTestRunWorker(t *testing.T, fx *testfx.Fixture) *worker.RunWorker {
+	t.Helper()
+	registry, err := runapp.NewHandlerRegistry(map[string]runapp.Registration{}, time.Second)
+	if err != nil {
+		t.Fatalf("run registry: %v", err)
+	}
+	return worker.NewRunWorker(
+		silentLogger(),
+		shared.NopReporter{},
+		fx.Runs,
+		registry,
+		worker.RunWorkerConfig{},
+	)
+}
+
 func TestWorkerCommand_RunDrainsOnContextCancel(t *testing.T) {
 	// No t.Parallel — see TestCreateUserCommand_MissingRequiredFlagErrors (goose globals).
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "console.db"))
 	w := newTestWorker(t, fx)
 
-	cmd := NewWorkerCommand(w).Command()
+	cmd := NewWorkerCommand(w, newTestRunWorker(t, fx)).Command()
 	cmd.SilenceUsage = true
 
 	ctx, cancel := context.WithCancel(context.Background())

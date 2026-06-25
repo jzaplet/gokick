@@ -11,6 +11,7 @@ import (
 
 	jobapp "gokick/app/application/job"
 	platformcmd "gokick/app/application/platform/command"
+	runapp "gokick/app/application/run"
 	tenantcmd "gokick/app/application/tenant/command"
 	tenantqry "gokick/app/application/tenant/query"
 	usercmd "gokick/app/application/user/command"
@@ -126,6 +127,25 @@ func serveTestWorker(t *testing.T, fx *testfx.Fixture, logger *slog.Logger) *wor
 	return worker.NewWorker(logger, shared.NopReporter{}, fx.Jobs, registry, fx.DB, dispatcher, 1)
 }
 
+func serveTestRunWorker(
+	t *testing.T,
+	fx *testfx.Fixture,
+	logger *slog.Logger,
+) *worker.RunWorker {
+	t.Helper()
+	registry, err := runapp.NewHandlerRegistry(map[string]runapp.Registration{}, time.Second)
+	if err != nil {
+		t.Fatalf("run registry: %v", err)
+	}
+	return worker.NewRunWorker(
+		logger,
+		shared.NopReporter{},
+		fx.Runs,
+		registry,
+		worker.RunWorkerConfig{},
+	)
+}
+
 // TestServeCommand_SchedulerDoneGatesReturnAndSharesCtx is the load-bearing
 // drain test for serve's RunE. It proves, deterministically, that:
 //
@@ -173,7 +193,7 @@ func TestServeCommand_SchedulerDoneGatesReturnAndSharesCtx(t *testing.T) {
 	w := serveTestWorker(t, fx, logger)
 	srv := serveTestServer(logger)
 
-	cmd := NewServeCommand(srv, sched, w).Command()
+	cmd := NewServeCommand(srv, sched, w, serveTestRunWorker(t, fx, logger)).Command()
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true
 

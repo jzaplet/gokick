@@ -123,6 +123,7 @@ func (f *Fixture) NewBuses() (*bus.CommandBus, *bus.QueryBus, *bus.EventBus) {
 	// invoked. Importing the real application/job dispatcher here would cycle
 	// (its test imports testfx). The chain itself stays faithful via CommandChain.
 	dispatcher := shared.JobDispatcherFromContext(context.Background())
+	runDispatcher := shared.RunDispatcherFromContext(context.Background())
 	audit := sqliteaudit.NewRepository(f.DB)
 
 	// Same chain as provideCommandBus (busmw.CommandChain is the single source),
@@ -135,6 +136,7 @@ func (f *Fixture) NewBuses() (*bus.CommandBus, *bus.QueryBus, *bus.EventBus) {
 				resolver,
 				audit,
 				dispatcher,
+				runDispatcher,
 				eventBus,
 				f.DB,
 			)...,

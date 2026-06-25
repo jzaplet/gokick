@@ -48,6 +48,7 @@ func newProductionCommandBus(
 		checker,
 		eventBus,
 		dispatcher,
+		noopDispatcher{},
 		audit,
 		shared.NopReporter{},
 		security.NewDefaultTenantResolver(),

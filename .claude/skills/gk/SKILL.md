@@ -51,6 +51,7 @@ Nebo prostě popiš problém a AI sáhne po správném skillu sama (řídí se p
 | `/gk-repositories` | Datová vrstva nad SQLite — tx-aware `r.Conn(ctx)`, raw-pool výjimky, tuning |
 | `/gk-migrations` | Goose migrace — embedované, automaticky aplikované při startu |
 | `/gk-jobs` | Perzistentní background fronta + worker (přežije restart/crash) |
+| `/gk-runs` | Durable runs — long-running „agenti" mimo tx, checkpoint + resume po pádu |
 | `/gk-scheduler` | Periodické úlohy uvnitř serveru (cron-like, bez OS cronu) |
 | `/gk-di` | Wire compile-time DI — providery, `wire.Bind`, `make di` |
 
@@ -89,7 +90,8 @@ Nebo prostě popiš problém a AI sáhne po správném skillu sama (řídí se p
 - **„Chci přidat endpoint / CRUD"** → `/gk-feature` (provede tě a odkáže na detail).
 - **„Padá mi to / nevím proč"** → podle vrstvy: `/gk-errors`, `/gk-permissions`,
   `/gk-repositories`, `/gk-config`.
-- **„Background práce"** → `/gk-jobs` (musí přežít restart) nebo `/gk-scheduler` (periodicky).
+- **„Background práce"** → `/gk-jobs` (krátký job, přežije restart), `/gk-runs`
+  (dlouho běžící „agent", checkpoint + resume) nebo `/gk-scheduler` (periodicky).
 - **„Vydat / nasadit"** → `/gk-deploy`.
 
 ## Přidání nového gk skillu
