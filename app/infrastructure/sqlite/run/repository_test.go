@@ -441,6 +441,36 @@ func TestRenewLease_LeaseZeroOrNegative_Rejected_RunStaysHeld(t *testing.T) {
 	}
 }
 
+// Checkpoint carries the same lease > 0 guard as ClaimDue and RenewLease (both of
+// which have a dedicated rejection test); this closes the missing third. A rejected
+// checkpoint must write nothing — neither the new state nor the lease.
+func TestCheckpoint_LeaseZeroOrNegative_Rejected_StateUnchanged(t *testing.T) {
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "lease_ckpt0.db"))
+	r := enqueueRun(t, fx, "agent")
+	owner := newOwner("wA")
+	claimAs(t, fx, owner)
+	// Seed a known checkpoint so a rejected one is provably a no-op against it.
+	if ok, err := fx.Runs.Checkpoint(context.Background(), r.ID, owner, []byte(`{"keep":1}`), testLease); err != nil ||
+		!ok {
+		t.Fatalf("seed checkpoint: ok=%v err=%v", ok, err)
+	}
+	before := mustFind(t, fx, r.ID)
+
+	for _, lease := range []time.Duration{0, -time.Second} {
+		ok, err := fx.Runs.Checkpoint(context.Background(), r.ID, owner, []byte(`{"bad":1}`), lease)
+		if err == nil || ok {
+			t.Fatalf("checkpoint lease %s must be rejected: ok=%v err=%v", lease, ok, err)
+		}
+	}
+	after := mustFind(t, fx, r.ID)
+	if string(after.State) != `{"keep":1}` {
+		t.Fatalf("a rejected checkpoint must not overwrite state: got %q", after.State)
+	}
+	if !after.LockedUntil.Equal(*before.LockedUntil) {
+		t.Fatal("a rejected checkpoint must not change the live lease")
+	}
+}
+
 func TestClaimDue_SubSecondLease_NotInstantlyReclaimable(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "lease_subsec.db"))
 	enqueueRun(t, fx, "agent")

@@ -19,11 +19,15 @@ import (
 // checkpoint that reports ownership lost) that timing alone can't reliably force.
 type flakyRepo struct {
 	run.Repository
-	failRenewAfter atomic.Int32 // RenewLease calls past this index return an error (0 = never)
-	failCheckpoint atomic.Bool  // Checkpoint returns (false, nil)
-	failComplete   atomic.Bool  // MarkComplete returns (false, nil)
-	renewCalls     atomic.Int32
-	completeCalls  atomic.Int32
+	failRenewAfter  atomic.Int32 // RenewLease calls past this index return an error (0 = never)
+	failRenewFrom   atomic.Int32 // RenewLease calls at/after this index error (1 = even the initial re-lease)
+	renewOkFalse    atomic.Bool  // RenewLease returns (false, nil) — lease lost, no error
+	panicCancelRead atomic.Bool  // IsCancelRequested panics (heartbeat-goroutine-only path)
+	failCheckpoint  atomic.Bool  // Checkpoint returns (false, nil)
+	failComplete    atomic.Bool  // MarkComplete returns (false, nil)
+	panicComplete   atomic.Bool  // MarkComplete panics (process()-level, non-handler path)
+	renewCalls      atomic.Int32
+	completeCalls   atomic.Int32
 }
 
 var _ run.Repository = (*flakyRepo)(nil)
@@ -34,10 +38,25 @@ func (f *flakyRepo) RenewLease(
 	lease time.Duration,
 ) (bool, error) {
 	n := f.renewCalls.Add(1)
+	if f.renewOkFalse.Load() {
+		return false, nil
+	}
+	if from := f.failRenewFrom.Load(); from > 0 && n >= from {
+		return false, errors.New("injected renew error")
+	}
 	if after := f.failRenewAfter.Load(); after > 0 && n > after {
 		return false, errors.New("injected renew error")
 	}
 	return f.Repository.RenewLease(ctx, id, owner, lease)
+}
+
+// IsCancelRequested is invoked ONLY from the heartbeat goroutine, so a panic here
+// exercises the heartbeat-goroutine recover (distinct from the process() recover).
+func (f *flakyRepo) IsCancelRequested(ctx context.Context, id string) (bool, error) {
+	if f.panicCancelRead.Load() {
+		panic("injected IsCancelRequested panic")
+	}
+	return f.Repository.IsCancelRequested(ctx, id)
 }
 
 func (f *flakyRepo) Checkpoint(
@@ -52,8 +71,13 @@ func (f *flakyRepo) Checkpoint(
 	return f.Repository.Checkpoint(ctx, id, owner, state, lease)
 }
 
+// MarkComplete runs ONLY from finalize on the process() linear path (never the
+// handler), so a panic here exercises the process()-level recover.
 func (f *flakyRepo) MarkComplete(ctx context.Context, id, owner string) (bool, error) {
 	f.completeCalls.Add(1)
+	if f.panicComplete.Load() {
+		panic("injected MarkComplete panic")
+	}
 	if f.failComplete.Load() {
 		return false, nil
 	}
@@ -465,5 +489,144 @@ func TestRunWorker_SlotReleasedAfterFailure(t *testing.T) {
 			}
 		}
 		return true
+	})
+}
+
+// #16 — the initial re-lease to kindLease fails with an ERROR right after claim
+// (run_worker.go:217): the worker must abandon WITHOUT running the handler and
+// WITHOUT finalizing (the run is left for lease-lapse reclaim). This is the
+// claim-gap guard that exists to stop double execution under a short DefaultLease.
+func TestRunWorker_InitialReleaseError_AbandonsWithoutRunningHandler(t *testing.T) {
+	fx := testfx.New(t, t.TempDir()+"/rwr_initrelease_err.db")
+	repo := &flakyRepo{Repository: fx.Runs}
+	repo.failRenewFrom.Store(1) // call #1 (the initial re-lease) errors
+	var handlerRan atomic.Bool
+	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
+		handlerRan.Store(true)
+		return nil
+	}
+	w, _ := newRunWorkerWithRepo(
+		t,
+		repo,
+		map[string]runapp.Registration{"agent": {Handler: handler}},
+		fastCfg(),
+	)
+	r := enqueueRunW(t, fx, "agent", 3)
+
+	stop := startWorker(w)
+	defer stop()
+	waitFor(t, "initial re-lease attempted", func() bool { return repo.renewCalls.Load() >= 1 })
+	time.Sleep(60 * time.Millisecond) // settle: a broken guard would run the handler by now
+	if handlerRan.Load() {
+		t.Fatal("handler must NOT run when the initial re-lease errors — the worker must abandon")
+	}
+	got := findW(t, fx, r.ID)
+	if got.CompletedAt != nil || got.FailedAt != nil || got.CancelledAt != nil {
+		t.Fatal(
+			"an initial-re-lease error must abandon (leave non-finalized for lease-lapse reclaim)",
+		)
+	}
+}
+
+// #17 — the initial re-lease returns ok=false (another worker reclaimed the row
+// in the claim gap; run_worker.go:220): same contract — abandon without running
+// the handler or finalizing.
+func TestRunWorker_InitialReleaseLost_AbandonsWithoutRunningHandler(t *testing.T) {
+	fx := testfx.New(t, t.TempDir()+"/rwr_initrelease_lost.db")
+	repo := &flakyRepo{Repository: fx.Runs}
+	repo.renewOkFalse.Store(true) // the initial re-lease reports the lease already lost
+	var handlerRan atomic.Bool
+	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
+		handlerRan.Store(true)
+		return nil
+	}
+	w, _ := newRunWorkerWithRepo(
+		t,
+		repo,
+		map[string]runapp.Registration{"agent": {Handler: handler}},
+		fastCfg(),
+	)
+	r := enqueueRunW(t, fx, "agent", 3)
+
+	stop := startWorker(w)
+	defer stop()
+	waitFor(t, "initial re-lease attempted", func() bool { return repo.renewCalls.Load() >= 1 })
+	time.Sleep(60 * time.Millisecond)
+	if handlerRan.Load() {
+		t.Fatal("handler must NOT run when the initial re-lease reports the lease lost")
+	}
+	got := findW(t, fx, r.ID)
+	if got.CompletedAt != nil || got.FailedAt != nil || got.CancelledAt != nil {
+		t.Fatal("a lost initial re-lease must abandon (leave non-finalized for reclaim)")
+	}
+}
+
+// #18 — a panic inside the HEARTBEAT goroutine (a repo call panicking, here
+// IsCancelRequested) must be recovered there (run_worker.go:240) and must NOT
+// crash the pool: a second healthy run on a single-slot pool still completes,
+// proving the panic recovered AND the backpressure slot was released.
+func TestRunWorker_HeartbeatPanic_DoesNotCrashPool(t *testing.T) {
+	fx := testfx.New(t, t.TempDir()+"/rwr_hbpanic.db")
+	repo := &flakyRepo{Repository: fx.Runs}
+	repo.panicCancelRead.Store(true) // the heartbeat's cancel-read panics
+	blocking := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
+		<-ctx.Done() // unblocks when the heartbeat recover cancels the handler
+		return ctx.Err()
+	}
+	healthy := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error { return nil }
+	cfg := fastCfg()
+	cfg.MaxInFlight = 1 // single slot → the healthy run can only run if the slot was released
+	w, reporter := newRunWorkerWithRepo(
+		t,
+		repo,
+		map[string]runapp.Registration{
+			"panicky": {Handler: blocking},
+			"healthy": {Handler: healthy},
+		},
+		cfg,
+	)
+	enqueueRunW(t, fx, "panicky", 3)
+
+	stop := startWorker(w)
+	defer stop()
+	waitFor(t, "heartbeat panic captured", func() bool { return reporter.Count() >= 1 })
+	repo.panicCancelRead.Store(false) // stop panicking so the healthy run can heartbeat normally
+	healthyRun := enqueueRunW(t, fx, "healthy", 0)
+	waitFor(t, "healthy run completes after the heartbeat panic", func() bool {
+		g := findW(t, fx, healthyRun.ID)
+		return g != nil && g.CompletedAt != nil
+	})
+}
+
+// #19 — a panic OUTSIDE the handler (here MarkComplete in finalize) must be
+// recovered at the process() top (run_worker.go:181) and must NOT crash the pool:
+// a second healthy run on a single-slot pool still completes (recover + slot release).
+func TestRunWorker_FinalizePanic_DoesNotCrashPool(t *testing.T) {
+	fx := testfx.New(t, t.TempDir()+"/rwr_finalizepanic.db")
+	repo := &flakyRepo{Repository: fx.Runs}
+	repo.panicComplete.Store(true) // MarkComplete (finalize) panics
+	succeeds := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error { return nil }
+	healthy := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error { return nil }
+	cfg := fastCfg()
+	cfg.MaxInFlight = 1
+	w, reporter := newRunWorkerWithRepo(
+		t,
+		repo,
+		map[string]runapp.Registration{
+			"panicky": {Handler: succeeds},
+			"healthy": {Handler: healthy},
+		},
+		cfg,
+	)
+	enqueueRunW(t, fx, "panicky", 3)
+
+	stop := startWorker(w)
+	defer stop()
+	waitFor(t, "finalize panic captured", func() bool { return reporter.Count() >= 1 })
+	repo.panicComplete.Store(false) // stop panicking so the healthy run can complete
+	healthyRun := enqueueRunW(t, fx, "healthy", 0)
+	waitFor(t, "healthy run completes after the finalize panic", func() bool {
+		g := findW(t, fx, healthyRun.ID)
+		return g != nil && g.CompletedAt != nil
 	})
 }

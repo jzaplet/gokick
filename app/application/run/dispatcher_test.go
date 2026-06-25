@@ -190,3 +190,24 @@ func TestRegistry_RejectsNonPositiveDefaultLease(t *testing.T) {
 		}
 	}
 }
+
+// A payload that cannot be JSON-marshalled (a chan) must fail the enqueue with a
+// wrapped "marshal payload" error AND persist no row — the validation between a
+// caller and a corrupt/empty run.
+func TestDispatcher_EnqueueMarshalErrorFails(t *testing.T) {
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "run_dispatch_marshal.db"))
+	d := NewDispatcher(fx.Runs, newRegistry(t, "agent"))
+
+	err := d.Enqueue(context.Background(), "agent", 0, make(chan int))
+	if err == nil || !strings.Contains(err.Error(), "marshal payload") {
+		t.Fatalf("expected a marshal-payload error, got %v", err)
+	}
+
+	got, cerr := fx.Runs.ClaimDue(context.Background(), "owner-1", time.Minute)
+	if cerr != nil {
+		t.Fatalf("claim: %v", cerr)
+	}
+	if got != nil {
+		t.Fatalf("a marshal failure must not enqueue a row, got %+v", got)
+	}
+}

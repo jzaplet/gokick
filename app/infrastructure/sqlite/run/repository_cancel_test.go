@@ -171,3 +171,30 @@ func TestCancelled_IsTerminal_GuardsAndClaim(t *testing.T) {
 		t.Fatal("a cancelled run must not be claimable")
 	}
 }
+
+// IsCancelRequested reads only the cancel flag, across all three branches: false
+// before any request, true after RequestCancel, and (false, nil) for an absent run
+// — the heartbeat polls by id, and a row that vanished (reclaimed elsewhere then
+// finalized) must read as "no cancel", never error out and break the renew loop.
+func TestIsCancelRequested_AllBranches(t *testing.T) {
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "iscancel.db"))
+	ctx := context.Background()
+	r := enqueueRun(t, fx, "agent")
+
+	// Before any request → false.
+	if got, err := fx.Runs.IsCancelRequested(ctx, r.ID); err != nil || got {
+		t.Fatalf("before RequestCancel: got=%v err=%v, want false/nil", got, err)
+	}
+	// After RequestCancel → true.
+	if err := fx.Runs.RequestCancel(ctx, r.ID); err != nil {
+		t.Fatalf("request cancel: %v", err)
+	}
+	if got, err := fx.Runs.IsCancelRequested(ctx, r.ID); err != nil || !got {
+		t.Fatalf("after RequestCancel: got=%v err=%v, want true/nil", got, err)
+	}
+	// Absent run → (false, nil), NOT an error. newOwner yields an arbitrary
+	// uuid-suffixed string that matches no row.
+	if got, err := fx.Runs.IsCancelRequested(ctx, newOwner("ghost")); err != nil || got {
+		t.Fatalf("absent run: got=%v err=%v, want (false, nil)", got, err)
+	}
+}

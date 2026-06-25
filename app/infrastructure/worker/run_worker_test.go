@@ -492,3 +492,141 @@ func TestRunWorker_UnknownKind_ParksThenFails(t *testing.T) {
 		return g != nil && g.FailedAt != nil
 	})
 }
+
+// The run worker bypasses the bus, so it must restore the tenant the run was
+// enqueued for into the handler's context from the claimed row. Uses a non-default
+// tenant so it proves propagation rather than a tautology — the run-side mirror of
+// the job worker's TestWorker_RestoresJobTenantIntoHandlerContext. A handler that
+// saw the wrong tenant would query another tenant's data (the multitenant-agent
+// correctness this whole engine exists for).
+func TestRunWorker_RestoresRunTenantIntoHandlerContext(t *testing.T) {
+	fx := testfx.New(t, t.TempDir()+"/rw_tenant.db")
+	seenCh := make(chan string, 1) // channel receive → happens-before the read (race-safe)
+	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
+		seenCh <- shared.TenantIDFromContext(ctx)
+		return nil
+	}
+	w, _ := newRunWorker(
+		t,
+		fx,
+		map[string]runapp.Registration{"agent": {Handler: handler}},
+		fastCfg(),
+	)
+
+	r := run.NewRun("agent", []byte(`{}`), 0)
+	r.TenantID = "tenant-A"
+	if err := fx.Runs.Enqueue(context.Background(), r); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	stop := startWorker(w)
+	defer stop()
+	if seen := <-seenCh; seen != "tenant-A" {
+		t.Fatalf(
+			"handler ctx tenant = %q, want %q — the run worker must restore the run's tenant",
+			seen,
+			"tenant-A",
+		)
+	}
+}
+
+// The headline durable-execution promise, end-to-end THROUGH the worker pool: a run
+// that a prior worker claimed, checkpointed, then crashed on (lease lapsed) is
+// RECLAIMED by the pool (Reclaims 0->1), re-leased, and the handler RE-RUNS seeing
+// the carried checkpoint state, then completes. The two halves (repo carries state;
+// worker resumes from pre-seeded state) were each tested in isolation; this splices
+// them through a real reclaim — the claim -> poison-check -> re-lease -> resume ->
+// complete path on a run with Reclaims>=1, which no other test drives to completion.
+func TestRunWorker_ResumesAfterReclaim_Completes(t *testing.T) {
+	fx := testfx.New(t, t.TempDir()+"/rw_resume_reclaim.db")
+	ctx := context.Background()
+
+	// Simulate a prior worker: claim (reclaims stays 0, lease was NULL), checkpoint
+	// {"step":1}, then crash — modelled by expiring the lease via real methods so the
+	// seed cannot drift from production behavior.
+	r := enqueueRunW(t, fx, "agent", 3)
+	if _, err := fx.Runs.ClaimDue(ctx, "dead-worker", time.Minute); err != nil {
+		t.Fatalf("seed claim: %v", err)
+	}
+	if ok, err := fx.Runs.Checkpoint(ctx, r.ID, "dead-worker", []byte(`{"step":1}`), time.Minute); err != nil ||
+		!ok {
+		t.Fatalf("seed checkpoint: ok=%v err=%v", ok, err)
+	}
+	forceExpireW(t, fx, r.ID) // the dead worker's lease lapses -> claimable again
+
+	resumed := make(chan string, 1)
+	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
+		resumed <- string(r.State)
+		return nil
+	}
+	w, _ := newRunWorker(
+		t,
+		fx,
+		map[string]runapp.Registration{"agent": {Handler: handler}},
+		fastCfg(),
+	)
+
+	stop := startWorker(w)
+	defer stop()
+	if got := <-resumed; got != `{"step":1}` {
+		t.Fatalf("resumed handler saw state %q, want the carried checkpoint %q", got, `{"step":1}`)
+	}
+	waitFor(t, "reclaimed run completes", func() bool {
+		g := findW(t, fx, r.ID)
+		return g != nil && g.CompletedAt != nil
+	})
+	if got := findW(t, fx, r.ID); got.Reclaims != 1 {
+		t.Fatalf("a run reclaimed once must carry Reclaims=1, got %d", got.Reclaims)
+	}
+}
+
+// withDefaults turns a zero/misconfigured config into safe runtime values. Pure and
+// deterministic, but every clamp/default branch was unexercised (tests build cfg by
+// hand with all-valid fields). Covers the six defaults + the misconfigured-heartbeat
+// clamp (HeartbeatInterval > Lease/2 -> Lease/3) that guards against false expiry.
+func TestRunWorkerConfig_WithDefaults(t *testing.T) {
+	t.Parallel()
+
+	// All-zero → every documented default applies; HeartbeatInterval derives Lease/3.
+	d := RunWorkerConfig{}.withDefaults()
+	if d.DefaultLease != 5*time.Minute {
+		t.Fatalf("DefaultLease default: got %s want 5m", d.DefaultLease)
+	}
+	if d.HeartbeatInterval != d.DefaultLease/3 {
+		t.Fatalf("HeartbeatInterval default: got %s want Lease/3", d.HeartbeatInterval)
+	}
+	if d.PollInterval != time.Second {
+		t.Fatalf("PollInterval default: got %s want 1s", d.PollInterval)
+	}
+	if d.DrainTimeout != 10*time.Second {
+		t.Fatalf("DrainTimeout default: got %s want 10s", d.DrainTimeout)
+	}
+	if d.MaxInFlight != 1 {
+		t.Fatalf("MaxInFlight default: got %d want 1", d.MaxInFlight)
+	}
+	if d.MaxReclaims != 20 {
+		t.Fatalf("MaxReclaims default: got %d want 20", d.MaxReclaims)
+	}
+
+	// A heartbeat NOT comfortably shorter than the lease (> Lease/2) is clamped to
+	// Lease/3 — the misconfigured-heartbeat guard against false lease expiry.
+	clamped := RunWorkerConfig{
+		DefaultLease:      6 * time.Second,
+		HeartbeatInterval: 5 * time.Second,
+	}.withDefaults()
+	if clamped.HeartbeatInterval != 2*time.Second {
+		t.Fatalf(
+			"oversized HeartbeatInterval must clamp to Lease/3 (2s), got %s",
+			clamped.HeartbeatInterval,
+		)
+	}
+
+	// A valid explicit heartbeat (<= Lease/2) is preserved untouched.
+	kept := RunWorkerConfig{
+		DefaultLease:      6 * time.Second,
+		HeartbeatInterval: time.Second,
+	}.withDefaults()
+	if kept.HeartbeatInterval != time.Second {
+		t.Fatalf("a valid HeartbeatInterval must be preserved, got %s", kept.HeartbeatInterval)
+	}
+}
