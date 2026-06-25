@@ -41,6 +41,7 @@ var exemptTables = map[string]bool{
 	"refresh_tokens":   true, // keyed by token hash (a secret); refresh runs without an access token.
 	"audit_log":        true, // control-plane, raw pool, records pre-auth events.
 	"jobs":             true, // ClaimDue is a global drain; the tenant rides on the row, not the claim.
+	"runs":             true, // durable runs: same global-drain claim; tenant rides on the row, not the claim.
 	"tenants":          true, // the tenant registry itself.
 	"sqlite_master":    true, // SQLite internals.
 	"sqlite_sequence":  true,
