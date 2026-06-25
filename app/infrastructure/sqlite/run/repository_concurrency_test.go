@@ -69,6 +69,12 @@ func TestReschedule_ClaimableAgain_BumpsAttempts_ResumesFromCheckpoint(t *testin
 	if b.Attempts != 1 {
 		t.Fatalf("attempts: got %d want 1 (claim does not bump it)", b.Attempts)
 	}
+	if b.Reclaims != 0 {
+		t.Fatalf(
+			"reschedule is a logic retry, not a crash reclaim: reclaims got %d want 0",
+			b.Reclaims,
+		)
+	}
 }
 
 func TestReschedule_FutureNotClaimable(t *testing.T) {
@@ -196,6 +202,106 @@ func TestConcurrency_NWorkersVsMRuns_NoDoubleClaim(t *testing.T) {
 		if count != 1 {
 			t.Fatalf("run %s claimed %d times (must be exactly 1)", id, count)
 		}
+	}
+}
+
+// Two workers racing to reclaim the SAME expired lease: exactly one wins, and the
+// reclaims counter is bumped exactly once (the loser's SELECT re-evaluates after
+// the winner commits and sees a future locked_until).
+func TestConcurrency_TwoOwnersRaceExpiredReclaim_OneWins_ReclaimsOnce(t *testing.T) {
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "conc_reclaim_race.db"))
+	r := enqueueRun(t, fx, "agent")
+	claimAs(t, fx, newOwner("wA"))
+	forceExpire(t, fx, r.ID)
+
+	var wins int32
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			got, err := fx.Runs.ClaimDue(context.Background(), newOwner("wReclaim"), testLease)
+			if err != nil {
+				t.Errorf("reclaim: %v", err)
+				return
+			}
+			if got != nil {
+				atomic.AddInt32(&wins, 1)
+			}
+		}()
+	}
+	wg.Wait()
+	if wins != 1 {
+		t.Fatalf("exactly one worker must reclaim the expired run, got %d", wins)
+	}
+	if got := mustFind(t, fx, r.ID); got.Reclaims != 1 {
+		t.Fatalf("a single reclaim must bump reclaims exactly once, got %d", got.Reclaims)
+	}
+}
+
+// Every mutating method must bump updated_at: the entity + migration document it,
+// and SQLite's DEFAULT CURRENT_TIMESTAMP fires only on INSERT, so each UPDATE must
+// set it explicitly.
+func TestMutators_AllBumpUpdatedAt(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(t *testing.T, fx *testfx.Fixture, id, owner string)
+	}{
+		{"ClaimDue_reclaim", func(t *testing.T, fx *testfx.Fixture, id, owner string) {
+			forceExpire(t, fx, id)
+			if _, err := fx.Runs.ClaimDue(context.Background(), newOwner("wRe"), testLease); err != nil {
+				t.Fatalf("reclaim: %v", err)
+			}
+		}},
+		{"RenewLease", func(t *testing.T, fx *testfx.Fixture, id, owner string) {
+			if ok, err := fx.Runs.RenewLease(context.Background(), id, owner, testLease); err != nil ||
+				!ok {
+				t.Fatalf("renew: ok=%v err=%v", ok, err)
+			}
+		}},
+		{"Checkpoint", func(t *testing.T, fx *testfx.Fixture, id, owner string) {
+			if ok, err := fx.Runs.Checkpoint(context.Background(), id, owner, []byte(`{"s":1}`), testLease); err != nil ||
+				!ok {
+				t.Fatalf("checkpoint: ok=%v err=%v", ok, err)
+			}
+		}},
+		{"MarkComplete", func(t *testing.T, fx *testfx.Fixture, id, owner string) {
+			if ok, err := fx.Runs.MarkComplete(context.Background(), id, owner); err != nil || !ok {
+				t.Fatalf("complete: ok=%v err=%v", ok, err)
+			}
+		}},
+		{"Reschedule", func(t *testing.T, fx *testfx.Fixture, id, owner string) {
+			if ok, err := fx.Runs.Reschedule(context.Background(), id, owner, time.Now().Add(time.Hour), "e"); err != nil ||
+				!ok {
+				t.Fatalf("reschedule: ok=%v err=%v", ok, err)
+			}
+		}},
+		{"MarkFailed", func(t *testing.T, fx *testfx.Fixture, id, owner string) {
+			if ok, err := fx.Runs.MarkFailed(context.Background(), id, owner, "e"); err != nil ||
+				!ok {
+				t.Fatalf("markfailed: ok=%v err=%v", ok, err)
+			}
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fx := testfx.New(t, filepath.Join(t.TempDir(), "upd.db"))
+			r := enqueueRun(t, fx, "agent")
+			owner := newOwner("wA")
+			claimAs(t, fx, owner)
+			before := mustFind(t, fx, r.ID)
+			time.Sleep(5 * time.Millisecond)
+			c.mutate(t, fx, r.ID, owner)
+			after := mustFind(t, fx, r.ID)
+			if !after.UpdatedAt.After(before.UpdatedAt) {
+				t.Fatalf(
+					"%s must bump updated_at: before=%v after=%v",
+					c.name,
+					before.UpdatedAt,
+					after.UpdatedAt,
+				)
+			}
+		})
 	}
 }
 

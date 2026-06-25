@@ -339,6 +339,30 @@ func TestClaimDue_LeaseZeroOrNegative_Rejected(t *testing.T) {
 
 // ─── Lease lifecycle ──────────────────────────────────────────────────────────
 
+// The fence is the TOKEN, not the clock: the ORIGINAL owner can still renew an
+// expired-but-not-yet-reclaimed lease (RenewLease omits a locked_until check). Once
+// another worker reclaims, that same renew is fenced (see the fencing suite).
+func TestRenewLease_OriginalOwner_RescuesExpiredUnreclaimedLease(t *testing.T) {
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "lease_rescue.db"))
+	ctx := context.Background()
+	r := enqueueRun(t, fx, "agent")
+	owner := newOwner("wA")
+	claimAs(t, fx, owner)
+	forceExpire(t, fx, r.ID)
+
+	ok, err := fx.Runs.RenewLease(ctx, r.ID, owner, testLease)
+	if err != nil || !ok {
+		t.Fatalf(
+			"original owner must rescue an expired-but-unreclaimed lease: ok=%v err=%v",
+			ok,
+			err,
+		)
+	}
+	if other := claimAs(t, fx, newOwner("wB")); other != nil {
+		t.Fatal("a rescued (re-armed) lease must keep the run unclaimable")
+	}
+}
+
 func TestRenewLease_ExtendsAbsolute_KeepsUnclaimable(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "lease_renew.db"))
 	r := enqueueRun(t, fx, "agent")

@@ -123,6 +123,36 @@ func TestFence_AllMethods_RightfulOwner_True(t *testing.T) {
 	}
 }
 
+// A run that was never claimed (locked_by IS NULL) cannot be renewed, checkpointed
+// or finalized by ANY owner: `locked_by = ?` against a stored NULL is never true.
+func TestFence_AllMethods_NeverClaimed_False(t *testing.T) {
+	for _, c := range ownerCheckedCalls {
+		t.Run(c.name, func(t *testing.T) {
+			fx := testfx.New(t, filepath.Join(t.TempDir(), "fence_pending_"+c.name+".db"))
+			r := enqueueRun(t, fx, "agent") // never claimed → locked_by IS NULL
+			ok, err := c.call(context.Background(), fx, r.ID, newOwner("w"))
+			if err != nil || ok {
+				t.Fatalf("%s on a never-claimed run: ok=%v err=%v want false,nil", c.name, ok, err)
+			}
+			if got := mustFind(t, fx, r.ID); got.LockedUntil != nil || len(got.State) != 0 ||
+				got.CompletedAt != nil || got.FailedAt != nil {
+				t.Fatalf("%s must not mutate a never-claimed run: %+v", c.name, got)
+			}
+		})
+	}
+}
+
+// NULL = ” is also NULL, so an empty owner can never match a lease.
+func TestFence_EmptyOwner_Checkpoint_False(t *testing.T) {
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "fence_empty_owner.db"))
+	r := enqueueRun(t, fx, "agent")
+	claimAs(t, fx, newOwner("wA"))
+	ok, err := fx.Runs.Checkpoint(context.Background(), r.ID, "", []byte(`{"x":1}`), testLease)
+	if err != nil || ok {
+		t.Fatalf("empty owner must never match (NULL = '' is NULL): ok=%v err=%v", ok, err)
+	}
+}
+
 // ─── Reclaim & resume — the stalled worker (A) is fenced after B reclaims ──────
 
 func TestReclaim_CarriesLastCheckpointState(t *testing.T) {

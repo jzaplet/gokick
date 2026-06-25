@@ -268,7 +268,11 @@ func TestCheckpoint_ConcurrentSameOwner_NoErrorNoLostUpdate(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
-	if got := mustFind(t, fx, r.ID); len(got.State) == 0 {
-		t.Fatal("final state must be one of the concurrent writes, not empty")
+	written := map[string]bool{}
+	for i := 0; i < n; i++ {
+		written[fmt.Sprintf(`{"w":%d}`, i)] = true
+	}
+	if got := mustFind(t, fx, r.ID); !written[string(got.State)] {
+		t.Fatalf("final state %q must be exactly one of the concurrent writes", got.State)
 	}
 }
