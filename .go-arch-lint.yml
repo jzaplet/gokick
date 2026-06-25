@@ -162,6 +162,7 @@ deps:
       - domain_token
       - domain_job
       - domain_tenant
+      - domain_run
     anyVendorDeps: true
 
   # Test fixtures — may wire real infrastructure for integration tests.
@@ -218,6 +219,7 @@ deps:
       - testfx
       - domain_user
       - domain_job
+      - domain_run
     anyVendorDeps: true
 
   # Presentation — depends on application + infrastructure
