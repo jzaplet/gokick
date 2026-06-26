@@ -107,10 +107,11 @@ Cíl: po `CreateUser` spustit nový vedlejší efekt na event `user.created`.
 
 ## Invariants & pitfalls
 
-- **Handler běží PO commitu, bez ambient transakce.** `DispatchEvents` obaluje `Transaction`,
-  takže handler není v business tx (jeho zápisy jsou samostatné) a běží synchronně v request
-  goroutině. Pro těžkou návaznou práci **zařaď job/run** ([[gk-jobs]] / [[gk-runs]]), ať
-  neblokuješ response. Kdy co → `docs/framework/background-work.md`.
+- **Handler běží PO commitu, v žádné transakci.** `DispatchEvents` obaluje `Transaction`, takže
+  než event handler dostane slovo, transakce commandu je už uzavřená (commitnutá a z ctx pryč) —
+  handler tedy v žádné transakci neběží a jeho případné zápisy jsou samostatné (každý sám za sebe).
+  Běží synchronně v request goroutině, takže pro těžkou návaznou práci **zařaď job/run**
+  ([[gk-jobs]] / [[gk-runs]]), ať neblokuješ response. Kdy co → `docs/framework/background-work.md`.
 - **Eventy = jen primitivy.** Nikdy nedávej do eventu entity ani value objects —
   musí jít serializovat a číst z cizího kontextu bez importu.
 - **`Collect` až po úspěšném zápisu**, ne před. Když handler vrátí chybu / commit

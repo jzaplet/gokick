@@ -60,7 +60,7 @@ func provideSchedulerJobs(tokens token.TokenRepository) []scheduler.Job {
 
 ## Invariants & pitfalls
 
-- **Fn běží inline, bez ambient transakce.** Lehký cleanup v krátké tx je OK; **těžkou periodickou práci zařaď jako job/run** ([[gk-jobs]] / [[gk-runs]]), ne ji dělej inline — dlouhá tx by zamkla SQLite. Kdy co → `docs/framework/background-work.md`.
+- **Fn běží inline, v žádné transakci.** Nikdo Fn do transakce neobaluje — případnou si musíš otevřít sám. Lehký cleanup v krátké transakci je OK; **těžkou periodickou práci zařaď jako job/run** ([[gk-jobs]] / [[gk-runs]]), ne ji dělej inline — dlouhá transakce by zamkla SQLite. Kdy co → `docs/framework/background-work.md`.
 - **Jméno unikátní, interval kladný, Fn nenilové.** Jinak `NewScheduler` vrátí error a proces nenastartuje (fail-fast) — chyba se chytí při startu, ne za běhu.
 - **Fn musí být idempotentní.** Kvůli run-once-then-tick se job spustí hned a může proběhnout vícekrát; nepředpokládej „přesně jednou".
 - **Job nesmí volat vlastní HTTP API přes localhost** — server běží paralelně, vznikl by závod (race). DB volání jsou OK (Wire je v té chvíli hotový).
