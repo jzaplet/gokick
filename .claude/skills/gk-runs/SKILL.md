@@ -102,6 +102,12 @@ Přidání nového run kindu (vzorově `agent:summarize`):
 
 ## Invariants & pitfalls
 
+- **Run handler NESMÍ otevřít transakci — vynuceno.** Dlouhý handler v `BEGIN IMMEDIATE`
+  by držel globální SQLite write-lock celou dobu běhu → freeze všech zápisů. Worker proto
+  označí handler ctx `shared.ContextForbidTx`; `Transactor.BeginTx` v té zóně **fail-closed
+  selže** (+ statická `zz_notx_test.go` brána skenuje run path). Stav perzistuj přes
+  `Checkpointer`; transakční side-work **zařaď jako command/job** (poběží ve vlastní krátké
+  tx mimo run). Kdy run vs job vs scheduler vs event → [[gk-jobs]] / `docs/framework/background-work.md`.
 - **Resumovatelnost je na tobě.** Mimo tx zaniká atomicita „handler-writes + complete"
   — handler musí být idempotentní a resumovatelný z `r.State`. Placené LLM/tool akce
   zaznamenej před efektem nebo udělej idempotentní (at-least-once + okno zdvojení

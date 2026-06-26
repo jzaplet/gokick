@@ -126,6 +126,10 @@ Přidání nového job kindu (vzorově `welcome:send` — pošli mail po `Create
 - **Atomicita business write + enqueue.** Enqueue z command handleru běží přes
   `Conn(ctx)` a `JobDispatcherMiddleware` je vně transakce — INSERT padne do téže
   transakce. Buď se uloží obojí, nebo nic.
+- **Handler běží V transakci** (`runWithinTx`): handler + `MarkComplete` v jedné **krátké**
+  tx → atomicky. To je správně pro krátký job. **Dlouhá práce (minuty/hodiny) sem NEpatří** —
+  držela by globální SQLite write-lock → freeze; na to je **durable run** ([[gk-runs]], běží
+  mimo tx). Rozhodovací matice job/run/scheduler/event → `docs/framework/background-work.md`.
 - **At-least-once.** Job proběhne **minimálně** jednou. Handler musí být
   **idempotentní pro externí side effects** — poslat dva maily je bug. DB writes
   se vrátí zpět (rollback) společně s mark-complete flagem, takže o jejich idempotenci

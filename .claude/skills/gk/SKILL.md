@@ -90,9 +90,21 @@ Nebo prostě popiš problém a AI sáhne po správném skillu sama (řídí se p
 - **„Chci přidat endpoint / CRUD"** → `/gk-feature` (provede tě a odkáže na detail).
 - **„Padá mi to / nevím proč"** → podle vrstvy: `/gk-errors`, `/gk-permissions`,
   `/gk-repositories`, `/gk-config`.
-- **„Background práce"** → `/gk-jobs` (krátký job, přežije restart), `/gk-runs`
-  (dlouho běžící „agent", checkpoint + resume) nebo `/gk-scheduler` (periodicky).
+- **„Background práce"** → viz matice níže.
 - **„Vydat / nasadit"** → `/gk-deploy`.
+
+## Background práce — co kdy (job / run / scheduler / event)
+
+| Potřeba | Mechanismus | Skill | V transakci? |
+|---|---|---|---|
+| Atomická write op. během requestu | **command** | `/gk-commands` | ✅ ano |
+| „Stalo se X" → reakce, co command nezná | **doménový event** | `/gk-domain-events` | ❌ po commitu, sync |
+| Krátká nespolehlivá práce, přežije restart (mail, API) | **job** | `/gk-jobs` | ✅ krátká |
+| Dlouho běžící „agent", resume po pádu | **durable run** | `/gk-runs` | ❌ **NE (vynuceno)** |
+| Periodicky (cron-like) | **scheduler** | `/gk-scheduler` | ❌ inline |
+
+**Klíč:** jen **runy běží mimo transakci** (vynuceno — dlouhý handler v tx by zamkl celou
+SQLite). Detail + diagram → `docs/framework/background-work.md` (+ per-flow `*-flow.md`).
 
 ## Přidání nového gk skillu
 Drž se vzoru v `_TEMPLATE.md` (vedle tohohle souboru) — definuje
