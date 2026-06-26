@@ -115,7 +115,7 @@ func serveTestServer(logger *slog.Logger) *server.Server {
 
 // serveTestWorker builds a real Worker (empty handler registry, throwaway
 // dispatcher) the same cheap way newTestWorker does, but routed through the
-// supplied logger so its "worker: starting" / "worker: stopped" lifecycle
+// supplied logger so its "job worker: starting" / "job worker: stopped" lifecycle
 // lines land in the capture buffer. Its Run drains promptly on ctx cancel.
 func serveTestWorker(t *testing.T, fx *testfx.Fixture, logger *slog.Logger) *worker.Worker {
 	t.Helper()
@@ -245,8 +245,10 @@ func TestServeCommand_SchedulerDoneGatesReturnAndSharesCtx(t *testing.T) {
 	for _, want := range []string{
 		"scheduler: starting",
 		"scheduler: stopped",
-		"worker: starting",
-		"worker: stopped",
+		"job worker: starting",
+		"job worker: stopped",
+		"run worker: starting",
+		"run worker: stopped",
 	} {
 		if !contains(msgs, want) {
 			t.Fatalf("missing %q in lifecycle logs — co-run/drain not observed; saw %v", want, msgs)

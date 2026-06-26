@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -527,6 +528,33 @@ func TestRunWorker_RestoresRunTenantIntoHandlerContext(t *testing.T) {
 			seen,
 			"tenant-A",
 		)
+	}
+}
+
+// A durable run handler must NOT open a transaction: the worker marks the handler
+// ctx no-tx (shared.ContextForbidTx), so BeginTx fails closed — a long handler in a
+// transaction would hold the global SQLite write lock for the run's lifetime and
+// freeze every other write. End-to-end proof the marker reaches the handler ctx.
+func TestRunWorker_HandlerCannotOpenTransaction(t *testing.T) {
+	fx := testfx.New(t, t.TempDir()+"/rw_notx.db")
+	beginErr := make(chan error, 1)
+	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
+		_, err := fx.DB.BeginTx(ctx) // fx.DB is the SqliteManager (shared.Transactor)
+		beginErr <- err
+		return nil
+	}
+	w, _ := newRunWorker(
+		t,
+		fx,
+		map[string]runapp.Registration{"agent": {Handler: handler}},
+		fastCfg(),
+	)
+	enqueueRunW(t, fx, "agent", 0)
+
+	stop := startWorker(w)
+	defer stop()
+	if err := <-beginErr; err == nil || !strings.Contains(err.Error(), "no-transaction zone") {
+		t.Fatalf("a run handler must be forbidden from opening a transaction, got %v", err)
 	}
 }
 

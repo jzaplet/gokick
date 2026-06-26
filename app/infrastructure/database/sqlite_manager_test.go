@@ -8,9 +8,32 @@ import (
 	"testing"
 	"time"
 
+	"gokick/app/domain/shared"
 	"gokick/app/infrastructure/config"
 	"gokick/app/infrastructure/database"
 )
+
+// The no-transaction zone guard: BeginTx must fail closed when ctx is marked by
+// shared.ContextForbidTx (a durable run handler ctx), so an accidental transaction
+// in a long-running run surfaces immediately instead of freezing the DB by holding
+// the global SQLite write lock for the run's lifetime.
+func TestSqliteManager_BeginTx_FailsClosedInNoTxZone(t *testing.T) {
+	mgr := newTestManager(t)
+
+	// A normal ctx → BeginTx succeeds (and we roll it back).
+	if ctx, err := mgr.BeginTx(context.Background()); err != nil {
+		t.Fatalf("BeginTx on a normal ctx must succeed, got %v", err)
+	} else if rbErr := mgr.Rollback(ctx); rbErr != nil {
+		t.Fatalf("rollback: %v", rbErr)
+	}
+
+	// A no-transaction zone → BeginTx fails closed, no tx opened.
+	if _, err := mgr.BeginTx(shared.ContextForbidTx(context.Background())); err == nil {
+		t.Fatal("BeginTx in a no-transaction zone must fail closed")
+	} else if !strings.Contains(err.Error(), "no-transaction zone") {
+		t.Fatalf("error must name the no-transaction zone, got %v", err)
+	}
+}
 
 // TestSqliteManager_ConcurrentTxWritesDoNotReturnBusy reproduces the
 // "sqlite3: database is locked" regression caused by BEGIN DEFERRED +

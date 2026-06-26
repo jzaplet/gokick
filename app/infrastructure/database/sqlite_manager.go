@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"gokick/app/domain/shared"
 	"gokick/app/infrastructure/config"
 	"os"
 	"path/filepath"
@@ -94,6 +95,16 @@ func (m *SqliteManager) Close() error {
 }
 
 func (m *SqliteManager) BeginTx(ctx context.Context) (context.Context, error) {
+	// Fail closed in a no-transaction zone (a durable run handler): a long handler
+	// inside a transaction would hold the global SQLite write lock for its whole
+	// lifetime and freeze every other write. See shared.ContextForbidTx.
+	if shared.IsTxForbidden(ctx) {
+		return ctx, fmt.Errorf(
+			"database: BeginTx called in a no-transaction zone — a durable run handler " +
+				"must not open a transaction (it would hold the global write lock for the run's " +
+				"lifetime); persist state via the Checkpointer or enqueue a command/job",
+		)
+	}
 	tx, err := m.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return ctx, err

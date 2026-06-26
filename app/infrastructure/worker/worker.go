@@ -70,7 +70,7 @@ func NewWorker(
 
 // Run starts the worker pool and blocks until ctx is cancelled.
 func (w *Worker) Run(ctx context.Context) {
-	w.logger.Info("worker: starting",
+	w.logger.Info("job worker: starting",
 		logKeyConcurrency, w.concurrency,
 		logKeyKinds, w.registry.Kinds(),
 	)
@@ -84,7 +84,7 @@ func (w *Worker) Run(ctx context.Context) {
 		}(i)
 	}
 	wg.Wait()
-	w.logger.Info("worker: stopped")
+	w.logger.Info("job worker: stopped")
 }
 
 func (w *Worker) loop(ctx context.Context, slot int) {
@@ -107,7 +107,7 @@ func (w *Worker) loop(ctx context.Context, slot int) {
 func (w *Worker) processOne(ctx context.Context, slot int) {
 	j, err := w.repo.ClaimDue(ctx, defaultLockFor)
 	if err != nil {
-		w.logger.Error("worker: claim failed", logKeySlot, slot, shared.LogKeyError, err)
+		w.logger.Error("job worker: claim failed", logKeySlot, slot, shared.LogKeyError, err)
 		return
 	}
 	if j == nil {
@@ -135,8 +135,8 @@ func (w *Worker) processOne(ctx context.Context, slot int) {
 		// Unknown kind = permanent terminal failure; no retry. Report it: this
 		// is the deploy/registry-skew case (a producer enqueued a kind this
 		// binary has no handler for), exactly what error tracking is for.
-		log.Error("worker: unknown job kind, marking failed")
-		w.reporter.Capture(ctx, fmt.Errorf("worker: unknown job kind %q", j.Kind),
+		log.Error("job worker: unknown job kind, marking failed")
+		w.reporter.Capture(ctx, fmt.Errorf("job worker: unknown job kind %q", j.Kind),
 			slog.String(shared.LogKeyJobKind, j.Kind),
 			slog.String(logKeyJobID, j.ID),
 		)
@@ -149,7 +149,7 @@ func (w *Worker) processOne(ctx context.Context, slot int) {
 		w.handleFailure(ctx, log, j, err, time.Since(start))
 		return
 	}
-	log.Info("worker: job completed", shared.DurationMsAttr(time.Since(start)))
+	log.Info("job worker: job completed", shared.DurationMsAttr(time.Since(start)))
 }
 
 // runWithinTx opens a transaction, injects the dispatcher, invokes the
@@ -174,7 +174,7 @@ func (w *Worker) runWithinTx(
 			// the error tracker later (after the handler frames have unwound),
 			// so the origin stack survives only here — mirrors the bus/HTTP
 			// recovery middleware which also log debug.Stack().
-			w.logger.LogAttrs(ctx, slog.LevelError, "worker: handler panicked",
+			w.logger.LogAttrs(ctx, slog.LevelError, "job worker: handler panicked",
 				slog.Any(logKeyPanic, r),
 				slog.String(logKeyStack, string(debug.Stack())),
 			)
@@ -224,7 +224,7 @@ func (w *Worker) handleFailure(
 	// j.Attempts is the (1-based) count of times claim has run this job.
 	// retriesUsed = Attempts - 1. Out of retries when retriesUsed >= MaxRetries.
 	if j.Attempts > j.MaxRetries {
-		log.Error("worker: job exhausted retries, marking failed",
+		log.Error("job worker: job exhausted retries, marking failed",
 			shared.DurationMsAttr(duration), slog.Any(shared.LogKeyError, jobErr),
 		)
 		// Terminal failure — report to the error tracker (no-op without a DSN).
@@ -234,7 +234,7 @@ func (w *Worker) handleFailure(
 			slog.String(logKeyJobID, j.ID),
 		)
 		if err := w.repo.MarkFailed(ctx, j.ID, jobErr.Error()); err != nil {
-			log.Error("worker: mark failed write errored", shared.LogKeyError, err)
+			log.Error("job worker: mark failed write errored", shared.LogKeyError, err)
 		}
 		return
 	}
@@ -242,13 +242,13 @@ func (w *Worker) handleFailure(
 	delay := backoff(j.Attempts)
 	runAt := time.Now().Add(delay)
 	log.Warn(
-		"worker: job failed, retry scheduled",
+		"job worker: job failed, retry scheduled",
 		shared.DurationMsAttr(duration),
 		shared.MillisAttr(shared.LogKeyRetryInMs, delay),
 		slog.Any(shared.LogKeyError, jobErr),
 	)
 	if err := w.repo.Reschedule(ctx, j.ID, runAt, jobErr.Error()); err != nil {
-		log.Error("worker: reschedule write errored", shared.LogKeyError, err)
+		log.Error("job worker: reschedule write errored", shared.LogKeyError, err)
 	}
 }
 

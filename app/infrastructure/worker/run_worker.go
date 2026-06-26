@@ -222,8 +222,10 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 		return
 	}
 
-	// Restore the tenant the run was enqueued for (the worker bypasses the bus).
-	runCtx := shared.ContextWithTenantID(workerCtx, r.TenantID)
+	// Restore the tenant the run was enqueued for (the worker bypasses the bus) and
+	// mark the ctx no-transaction: a durable run runs OUTSIDE a tx, so an accidental
+	// BeginTx in the handler must fail closed, not freeze the DB (shared.ContextForbidTx).
+	runCtx := shared.ContextForbidTx(shared.ContextWithTenantID(workerCtx, r.TenantID))
 
 	handlerCtx, cancelHandler := context.WithCancel(runCtx)
 	defer cancelHandler()
