@@ -10,8 +10,6 @@ import (
 	runapp "gokick/app/application/run"
 	"gokick/app/domain/run"
 	"gokick/app/internal/testfx"
-
-	"github.com/google/uuid"
 )
 
 // flakyRepo decorates a real run.Repository so a test can inject specific
@@ -304,23 +302,34 @@ func TestRunWorker_Heartbeat_KeepsLongRunAlive(t *testing.T) {
 		return nil
 	}
 	cfg := fastCfg()
-	cfg.DefaultLease = 300 * time.Millisecond
 	cfg.HeartbeatInterval = 50 * time.Millisecond
-	w, _ := newRunWorker(t, fx, map[string]runapp.Registration{"agent": {Handler: handler}}, cfg)
+	// Explicit 300ms kind lease — this is the lease actually renewed (kindLease), so
+	// WITHOUT heartbeat renewal it lapses at 300ms and the 700ms-later claim below
+	// would succeed. With heartbeat (50ms << 300ms) it stays held. An unset Lease
+	// would fall back to the 1s registry default and make this test vacuous (the
+	// initial re-lease alone would cover the 700ms window — heartbeat not load-bearing).
+	regs := map[string]runapp.Registration{
+		"agent": {Handler: handler, Lease: 300 * time.Millisecond},
+	}
+	w, _ := newRunWorker(t, fx, regs, cfg)
 	r := enqueueRunW(t, fx, "agent", 3)
 
 	stop := startWorker(w)
 	defer stop()
 	<-started
-	time.Sleep(700 * time.Millisecond) // > 2× the lease; the heartbeat must keep renewing
-	other, err := fx.Runs.ClaimDue(context.Background(), "other-"+uuid.NewString(), time.Minute)
-	if err != nil {
-		t.Fatalf("concurrent claim: %v", err)
-	}
-	if other != nil {
-		t.Fatal("the heartbeat must keep a running run un-reclaimable past its lease")
-	}
+	time.Sleep(
+		700 * time.Millisecond,
+	) // > 2× the 300ms lease; only continuous renewal keeps it held
+	// reclaims==0 is the clean, race-free signal that the lease never lapsed (a
+	// competing ClaimDue is confounded by the worker's own self-reclaim once the
+	// lease expires). With a broken heartbeat the 300ms lease lapses and the run is
+	// reclaimed before the 700ms mark, bumping reclaims.
+	reclaims := findW(t, fx, r.ID).Reclaims
 	close(release)
+	if reclaims != 0 {
+		t.Fatalf("the heartbeat must keep a running run alive past its lease, but it lapsed and "+
+			"was reclaimed (reclaims=%d)", reclaims)
+	}
 	waitFor(t, "completed", func() bool {
 		g := findW(t, fx, r.ID)
 		return g != nil && g.CompletedAt != nil

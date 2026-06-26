@@ -324,6 +324,9 @@ func (w *RunWorker) heartbeat(
 	if third := lease / 3; third < interval {
 		interval = third
 	}
+	// Defense-in-depth: NewHandlerRegistry rejects a sub-ms per-kind lease, so lease/3
+	// is normally well above zero; this floor only guards NewTicker against a 0 from an
+	// unvalidated path (e.g. a bare RunWorker built outside DI).
 	if interval <= 0 {
 		interval = time.Millisecond
 	}

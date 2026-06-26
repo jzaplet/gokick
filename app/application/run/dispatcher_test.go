@@ -191,6 +191,29 @@ func TestRegistry_RejectsNonPositiveDefaultLease(t *testing.T) {
 	}
 }
 
+// A positive sub-millisecond per-kind lease is a units typo (e.g. Lease: 1 = 1ns)
+// and must be rejected loudly at registration, not papered over at runtime. Lease==0
+// (use default) and any sane lease are accepted.
+func TestRegistry_RejectsImplausiblySmallKindLease(t *testing.T) {
+	t.Parallel()
+	h := func(context.Context, *run.Run, Checkpointer) error { return nil }
+
+	_, err := NewHandlerRegistry(map[string]Registration{
+		"agent": {Handler: h, Lease: 1}, // 1ns — a typo for time.Millisecond
+	}, time.Second)
+	if err == nil || !strings.Contains(err.Error(), "implausibly small") {
+		t.Fatalf("expected implausibly-small-lease error, got %v", err)
+	}
+
+	for _, lease := range []time.Duration{0, time.Millisecond, time.Minute} {
+		if _, e := NewHandlerRegistry(map[string]Registration{
+			"agent": {Handler: h, Lease: lease},
+		}, time.Second); e != nil {
+			t.Fatalf("lease=%s must be accepted, got %v", lease, e)
+		}
+	}
+}
+
 // A payload that cannot be JSON-marshalled (a chan) must fail the enqueue with a
 // wrapped "marshal payload" error AND persist no row — the validation between a
 // caller and a corrupt/empty run.
