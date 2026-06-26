@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gokick/app/domain/job"
+	"gokick/app/domain/shared"
 	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/sqlite"
 )
@@ -24,9 +25,18 @@ func (r *Repository) Enqueue(ctx context.Context, j *job.Job) error {
 	const q = `INSERT INTO jobs (id, kind, tenant_id, payload, run_at, attempts, max_retries, locked_until, last_error, failed_at, completed_at, created_at)
 		VALUES (:id, :kind, :tenant_id, :payload, :run_at, :attempts, :max_retries, :locked_until, :last_error, :failed_at, :completed_at, :created_at)`
 	row := *j
+	// Resolve the tenant fail-closed (mirrors the run repo): the dispatcher stamps it
+	// from ctx; an empty tenant (a non-bus direct Enqueue) becomes the default in
+	// single-tenant mode but an ERROR in multitenant mode — a job is never silently
+	// born in the default tenant.
+	tenantID, err := shared.RequireTenant(row.TenantID, shared.Multitenancy(r.DB.Multitenant()))
+	if err != nil {
+		return err
+	}
+	row.TenantID = tenantID
 	row.RunAt = sqlite.MsPrecisionUTC(row.RunAt)
 	row.CreatedAt = sqlite.MsPrecisionUTC(row.CreatedAt)
-	_, err := r.Conn(ctx).NamedExecContext(ctx, q, &row)
+	_, err = r.Conn(ctx).NamedExecContext(ctx, q, &row)
 	return err
 }
 

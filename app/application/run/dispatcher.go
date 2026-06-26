@@ -48,12 +48,10 @@ func (d *Dispatcher) Enqueue(
 
 	r := run.NewRun(kind, raw, maxRetries)
 	// Stamp the tenant from the enqueuing context so the worker can restore it for
-	// the handler (the worker bypasses the bus). Fall back to the default tenant
-	// when ctx carries none — an explicit "" would override the column's DEFAULT.
+	// the handler (the worker bypasses the bus). The empty case (a non-bus enqueue)
+	// is resolved fail-closed by the repo (RequireTenant): default in single-tenant,
+	// error in multitenant — so a run is never silently born in the default tenant.
 	r.TenantID = shared.TenantIDFromContext(ctx)
-	if r.TenantID == "" {
-		r.TenantID = shared.DefaultTenantID
-	}
 	if options.Delay > 0 {
 		r.RunAt = time.Now().Add(options.Delay)
 	}

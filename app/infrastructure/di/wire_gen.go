@@ -105,7 +105,8 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	changePasswordHandler := command2.NewChangePasswordHandler(userRepository, passwordHasher)
 	profileHandler := handler.NewProfileHandler(commandBus, queryBus, getProfileHandler, changePasswordHandler, permissionsRegistry)
 	listUsersHandler := query2.NewListUsersHandler(userRepository)
-	createUserHandler := command3.NewCreateUserHandler(userRepository, passwordHasher)
+	multitenancy := provideMultitenancy(configConfig)
+	createUserHandler := command3.NewCreateUserHandler(userRepository, passwordHasher, multitenancy)
 	updateUserHandler := command3.NewUpdateUserHandler(userRepository, passwordHasher)
 	deleteUserHandler := command3.NewDeleteUserHandler(userRepository)
 	adminUsersHandler := handler.NewAdminUsersHandler(commandBus, queryBus, listUsersHandler, createUserHandler, updateUserHandler, deleteUserHandler)
@@ -302,6 +303,13 @@ func provideSeedAdminTenant(cfg *config.Config) seeder.SeedAdminTenant {
 
 func provideMultitenant(cfg *config.Config) seeder.Multitenant {
 	return seeder.Multitenant(cfg.Multitenancy)
+}
+
+// provideMultitenancy surfaces APP_MULTITENANCY to application-layer constructors
+// (the create-user handler) that fail-close tenant resolution but cannot import
+// infrastructure. shared.Multitenancy is the Wire-distinct domain type.
+func provideMultitenancy(cfg *config.Config) shared.Multitenancy {
+	return shared.Multitenancy(cfg.Multitenancy)
 }
 
 // provideSchedulerJobs is the single source of truth for periodic in-process

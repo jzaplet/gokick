@@ -21,7 +21,7 @@ func TestCreateUserHandler_RejectsSuperadminRole(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_super.db"))
 	ctx, _ := shared.ContextWithEventCollector(context.Background())
 
-	h := NewCreateUserHandler(fx.Users, fx.Hasher)
+	h := NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	err := h.Handle(ctx, CreateUserCommand{
 		Nickname: "sneaky",
 		Password: "secret12",

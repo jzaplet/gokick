@@ -40,16 +40,20 @@ func (r *Repository) Enqueue(ctx context.Context, rn *run.Run) error {
 	const q = `INSERT INTO runs (id, kind, tenant_id, payload, state, run_at, attempts, reclaims, max_retries, locked_by, locked_until, last_error, failed_at, completed_at, cancel_requested, cancelled_at, created_at, updated_at)
 		VALUES (:id, :kind, :tenant_id, :payload, :state, :run_at, :attempts, :reclaims, :max_retries, :locked_by, :locked_until, :last_error, :failed_at, :completed_at, :cancel_requested, :cancelled_at, :created_at, :updated_at)`
 	row := *rn
-	// Never write an empty tenant: an explicit "" would override the column's
-	// NOT NULL DEFAULT and break scoping. The dispatcher stamps the real tenant
-	// from ctx; this is the fallback for a direct Enqueue.
-	if row.TenantID == "" {
-		row.TenantID = shared.DefaultTenantID
+	// Resolve the tenant fail-closed (RequireTenant): the dispatcher stamps it from
+	// ctx; an empty tenant (a non-bus direct Enqueue) becomes the default in
+	// single-tenant mode but an ERROR in multitenant mode — a run is never silently
+	// born in the default tenant. An explicit "" would also override the column's
+	// NOT NULL DEFAULT and break scoping.
+	tenantID, err := shared.RequireTenant(row.TenantID, shared.Multitenancy(r.DB.Multitenant()))
+	if err != nil {
+		return err
 	}
+	row.TenantID = tenantID
 	row.RunAt = sqlite.MsPrecisionUTC(row.RunAt)
 	row.CreatedAt = sqlite.MsPrecisionUTC(row.CreatedAt)
 	row.UpdatedAt = sqlite.MsPrecisionUTC(row.UpdatedAt)
-	_, err := r.Conn(ctx).NamedExecContext(ctx, q, &row)
+	_, err = r.Conn(ctx).NamedExecContext(ctx, q, &row)
 	return err
 }
 

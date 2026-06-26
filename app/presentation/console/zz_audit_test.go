@@ -96,7 +96,7 @@ func TestCreateUserCommand_MissingRequiredFlagErrors(t *testing.T) {
 	// state (SetLogger/SetDialect) — concurrent New() calls race under -race.
 	// The rest of the codebase keeps testfx-backed tests serial for this reason.
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "console.db"))
-	handler := usercmd.NewCreateUserHandler(fx.Users, fx.Hasher)
+	handler := usercmd.NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	cmd := NewCreateUserCommand(handler, nil, nil, &config.Config{}, fx.NewSystemBus()).Command()
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true
@@ -120,7 +120,7 @@ func TestCreateUserCommand_MissingRequiredFlagErrors(t *testing.T) {
 func TestCreateUserCommand_DefaultsRoleToAdmin(t *testing.T) {
 	// No t.Parallel — see TestCreateUserCommand_MissingRequiredFlagErrors (goose globals).
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "console.db"))
-	handler := usercmd.NewCreateUserHandler(fx.Users, fx.Hasher)
+	handler := usercmd.NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	cmd := NewCreateUserCommand(handler, nil, nil, &config.Config{}, fx.NewSystemBus()).Command()
 	cmd.SilenceUsage = true
 
@@ -145,7 +145,7 @@ func TestCreateUserCommand_DefaultsRoleToAdmin(t *testing.T) {
 func TestCreateUserCommand_RoleFlagCreatesUserRole(t *testing.T) {
 	// No t.Parallel — see TestCreateUserCommand_MissingRequiredFlagErrors (goose globals).
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "console.db"))
-	handler := usercmd.NewCreateUserHandler(fx.Users, fx.Hasher)
+	handler := usercmd.NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	cmd := NewCreateUserCommand(handler, nil, nil, &config.Config{}, fx.NewSystemBus()).Command()
 	cmd.SilenceUsage = true
 

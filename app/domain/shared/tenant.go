@@ -1,6 +1,14 @@
 package shared
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
+
+// Multitenancy is the configured enforcement mode (APP_MULTITENANCY) as a
+// Wire-distinct type, so it can be injected into application-layer constructors
+// (which may not import infrastructure) without a bare-bool ambiguity.
+type Multitenancy bool
 
 // DefaultTenantID is the well-known id of the single "default" tenant used when
 // multitenancy is off (single-tenant mode). A migration creates the matching
@@ -34,4 +42,25 @@ func ContextWithTenantID(ctx context.Context, tenantID string) context.Context {
 func TenantIDFromContext(ctx context.Context) string {
 	id, _ := ctx.Value(tenantIDKey).(string)
 	return id
+}
+
+// RequireTenant resolves the tenant to stamp on a NEW tenant-owned row (a job, a
+// run, a user). It is the write-side mirror of BaseRepository.Tenant: a non-empty
+// tenantID is kept; an empty one yields DefaultTenantID in single-tenant mode but a
+// FAIL-CLOSED error in multitenant mode — so a tenant-owned row is never silently
+// born in the default tenant just because it was created outside a tenant context
+// (a non-bus path that forgot to resolve the tenant). The bus path always carries a
+// tenant (TenantMiddleware), so this error only fires on a genuine bug. Pass either
+// TenantIDFromContext(ctx) (ctx-based callers) or the row's own TenantID (repos).
+func RequireTenant(tenantID string, multitenant Multitenancy) (string, error) {
+	if tenantID != "" {
+		return tenantID, nil
+	}
+	if multitenant {
+		return "", fmt.Errorf(
+			"shared: tenant required but absent (APP_MULTITENANCY=true) — a tenant-owned row " +
+				"must be created within a tenant context",
+		)
+	}
+	return DefaultTenantID, nil
 }

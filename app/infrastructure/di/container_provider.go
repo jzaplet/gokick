@@ -211,6 +211,13 @@ func provideMultitenant(cfg *config.Config) sqliteseeder.Multitenant {
 	return sqliteseeder.Multitenant(cfg.Multitenancy)
 }
 
+// provideMultitenancy surfaces APP_MULTITENANCY to application-layer constructors
+// (the create-user handler) that fail-close tenant resolution but cannot import
+// infrastructure. shared.Multitenancy is the Wire-distinct domain type.
+func provideMultitenancy(cfg *config.Config) shared.Multitenancy {
+	return shared.Multitenancy(cfg.Multitenancy)
+}
+
 // provideSchedulerJobs is the single source of truth for periodic in-process
 // jobs — mirrors providePermissionsRegistry / provideJobHandlerRegistry. Add
 // a new Job here; provideScheduler stays decoupled from job business.
@@ -338,6 +345,7 @@ func CreateApplication(
 		provideSeedSuperAdminPassword,
 		provideSeedAdminTenant,
 		provideMultitenant,
+		provideMultitenancy,
 		provideSchedulerJobs,
 		provideScheduler,
 		provideJobHandlerRegistry,
