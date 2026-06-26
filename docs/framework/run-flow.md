@@ -11,7 +11,7 @@ description: 'Cesta durable runu — dlouho běžící práce (velký import, ge
 
 # Run flow
 
-Engine pro **dlouho běžící práci, která umí pokračovat po pádu**. Hodí se na věci, co trvají dlouho — velký import nebo export dat, generování velkého reportu/PDF, dávkové zpracování mnoha položek. Taková práce běží **mimo transakci**, po každém kroku si **uloží, kde skončila** (checkpoint), a když proces mezitím spadne, jiný worker ji převezme a **pokračuje od posledního uloženého kroku**.
+Engine pro práci, která běží **mimo transakci** — protože buď **trvá dlouho**, nebo **volá ven** (a obojí by v transakci zamklo databázi). Hodí se na velký import/export dat, generování velkého reportu/PDF, dávkové zpracování mnoha položek — a stejně tak na **volání pomalých nebo nespolehlivých cizích služeb** (e-mail/SMTP, webhook, cizí API). Taková práce po každém kroku **uloží, kde skončila** (checkpoint), a když proces mezitím spadne, jiný worker ji převezme a **pokračuje od posledního uloženého kroku**.
 
 ![Run flow — dlouhá práce, co po pádu pokračuje od posledně](files/run-flow.svg)
 
@@ -22,7 +22,7 @@ Engine pro **dlouho běžící práci, která umí pokračovat po pádu**. Hodí
 
 Když práce **trvá dlouho a nesmí začít od nuly**, kdyby proces spadl. Obyčejný [job](/framework/job-flow) by nestačil ze dvou důvodů:
 
-1. **Job běží v transakci.** Dlouhá práce v transakci drží zámek na zápis do databáze celou tu dobu → **zamkne celou databázi** pro všechny ostatní. Run proto běží mimo transakci.
+1. **Job běží v transakci.** Dlouhá práce — nebo **jakékoli volání ven** (e-mail/SMTP, cizí API) — drží zámek na zápis do databáze celou tu dobu (SMTP může viset, API request 5 minut) → **zamkne celou databázi** pro všechny ostatní. Run proto běží mimo transakci.
 2. **Job si nepamatuje postup.** Když spadne, začne příště od začátku. Run si po každém kroku ukládá, kde je, takže pokračuje.
 
 

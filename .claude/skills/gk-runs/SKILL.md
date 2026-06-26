@@ -20,9 +20,11 @@ resumne z posledního checkpointu**. Viz ADR-0001.
 
 ## What & when
 
-- Sáhni sem pro **dlouho běžící, resumovatelnou** práci: velký import/export,
-  generování velkého reportu/PDF, dávkové zpracování mnoha položek, dlouhá
-  synchronizace. Cokoli, co běží dlouho a kde restart uprostřed nesmí začít od nuly.
+- Sáhni sem pro práci, co musí běžet **mimo transakci** — buď protože **trvá dlouho**
+  (velký import/export, generování velkého reportu/PDF, dávkové zpracování, dlouhá
+  synchronizace), nebo protože **volá ven** (e-mail/SMTP, webhook, cizí API). Volání ven
+  nesmí být v transakci (drželo by zámek po dobu volání) — i krátký e-mail proto patří sem,
+  ne do jobu.
 - NEtýká se: krátké flaky práce (poslat mail, jedno API volání) → to je `/gk-jobs`
   (in-tx, atomický complete, levnější). Synchronní side-effect po commitu →
   `/gk-domain-events`. Periodická úloha na čase → `/gk-scheduler`.

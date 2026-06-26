@@ -24,10 +24,10 @@
   <!-- Job -->
   <rect x="498" y="124" width="358" height="140" rx="12" fill="#ecfdf5" stroke="#10b981" stroke-width="1.5"/>
   <text x="518" y="150" font-size="15" font-weight="700" fill="#065f46">Job</text>
-  <text x="518" y="174" font-size="12" fill="#047857">KRÁTKÁ práce, co se může nepovést a má se zopakovat</text>
-  <text x="518" y="194" font-size="12" fill="#047857">poslat e-mail, zavolat cizí API</text>
+  <text x="518" y="174" font-size="12" fill="#047857">KRÁTKÁ práce JEN nad vlastní databází</text>
+  <text x="518" y="194" font-size="12" fill="#047857">přepočítat agregaci, kaskádní update</text>
   <text x="518" y="226" font-size="11.5" fill="#059669">přežije i restart/pád · sám to zkusí znovu</text>
-  <text x="518" y="250" font-size="10.5" fill="#10b981">může proběhnout víckrát → musí to nevadit</text>
+  <text x="518" y="250" font-size="10.5" fill="#dc2626">pozor: NIC ven (mail/API) — drželo by zámek → to je run</text>
 
   <!-- Event -->
   <rect x="138" y="300" width="316" height="140" rx="12" fill="#fffbeb" stroke="#f59e0b" stroke-width="1.5"/>
@@ -40,8 +40,8 @@
   <!-- Run -->
   <rect x="498" y="300" width="358" height="86" rx="12" fill="#fef2f2" stroke="#ef4444" stroke-width="2"/>
   <text x="518" y="326" font-size="15" font-weight="700" fill="#b91c1c">Durable run</text>
-  <text x="518" y="348" font-size="12" fill="#dc2626">DLOUHÁ práce (velký import, velký report) — po pádu pokračuje</text>
-  <text x="518" y="368" font-size="11" fill="#ef4444">v transakci NESMÍ — zamkla by celou databázi (framework to hlídá)</text>
+  <text x="518" y="348" font-size="12" fill="#dc2626">volání ven (e-mail, API, webhook) NEBO dlouhá práce (import, report)</text>
+  <text x="518" y="368" font-size="11" fill="#ef4444">běží mimo transakci → nezamkne DB · po pádu pokračuje (framework to hlídá)</text>
 
   <!-- Scheduler -->
   <rect x="498" y="396" width="358" height="44" rx="12" fill="#fffbeb" stroke="#f59e0b" stroke-width="1.5"/>

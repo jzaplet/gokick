@@ -99,12 +99,13 @@ Nebo prostě popiš problém a AI sáhne po správném skillu sama (řídí se p
 |---|---|---|---|
 | Atomická write op. během requestu | **command** | `/gk-commands` | ✅ ano |
 | „Stalo se X" → reakce, co command nezná | **doménový event** | `/gk-domain-events` | ❌ po commitu, sync |
-| Krátká nespolehlivá práce, přežije restart (mail, API) | **job** | `/gk-jobs` | ✅ krátká |
-| Dlouhá práce (import, report), pokračuje po pádu | **durable run** | `/gk-runs` | ❌ **NE (vynuceno)** |
+| Krátká práce JEN nad vlastní DB (přepočet), přežije restart | **job** | `/gk-jobs` | ✅ krátká |
+| Volání ven (mail/API/webhook) NEBO dlouhá práce, pokračuje po pádu | **durable run** | `/gk-runs` | ❌ **NE (vynuceno)** |
 | Periodicky (cron-like) | **scheduler** | `/gk-scheduler` | ❌ inline |
 
-**Klíč:** jen **runy běží mimo transakci** (vynuceno — dlouhý handler v tx by zamkl celou
-SQLite). Detail + diagram → `docs/framework/background-work.md` (+ per-flow `*-flow.md`).
+**Klíč:** **uvnitř transakce nikdy nevolej ven** (SMTP/cizí API drží zámek po dobu volání →
+zamkne SQLite). Volání ven nebo dlouhé → **run** (mimo tx, vynuceno). Detail + diagram →
+`docs/framework/background-work.md` (+ per-flow `*-flow.md`).
 
 ## Přidání nového gk skillu
 Drž se vzoru v `_TEMPLATE.md` (vedle tohohle souboru) — definuje
