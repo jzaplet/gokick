@@ -1,10 +1,36 @@
 package shared_test
 
 import (
+	"context"
 	"testing"
 
 	"gokick/app/domain/shared"
 )
+
+// AssertTenantScope rejects a write that places a row in a tenant other than the
+// active ctx scope (multitenant). No scope (system/seed) is trusted; single-tenant
+// never restricts.
+func TestAssertTenantScope(t *testing.T) {
+	t.Parallel()
+	scopedA := shared.ContextWithTenantID(context.Background(), "tenant-a")
+
+	// Single-tenant never restricts, even a mismatched row tenant.
+	if err := shared.AssertTenantScope(scopedA, "tenant-b", false); err != nil {
+		t.Fatalf("single-tenant must not restrict, got %v", err)
+	}
+	// Multitenant, row matches the active scope → ok.
+	if err := shared.AssertTenantScope(scopedA, "tenant-a", true); err != nil {
+		t.Fatalf("matching tenant must pass, got %v", err)
+	}
+	// Multitenant, row in a different tenant → cross-tenant write rejected.
+	if err := shared.AssertTenantScope(scopedA, "tenant-b", true); err == nil {
+		t.Fatal("cross-tenant write must be rejected")
+	}
+	// Multitenant, NO active scope (system/seed) → trusted, no error.
+	if err := shared.AssertTenantScope(context.Background(), "tenant-b", true); err != nil {
+		t.Fatalf("no active scope must be trusted (seed/system path), got %v", err)
+	}
+}
 
 // RequireTenant is the write-side fail-closed resolver: a non-empty tenant is kept
 // in either mode; an empty one defaults in single-tenant mode but errors in

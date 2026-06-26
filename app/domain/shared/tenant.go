@@ -64,3 +64,25 @@ func RequireTenant(tenantID string, multitenant Multitenancy) (string, error) {
 	}
 	return DefaultTenantID, nil
 }
+
+// AssertTenantScope guards a tenant-scoped write against placing a row in a tenant
+// OTHER than the active one. In multitenant mode, when ctx carries a tenant scope,
+// the row's tenant must equal it — otherwise it is a cross-tenant write (a bug or an
+// attack: a handler running in tenant A persisting a row stamped tenant B). When ctx
+// carries NO scope (system/seed paths that never went through TenantMiddleware), the
+// row's explicit tenant is trusted — there is no active scope to violate. Single-
+// tenant mode never restricts. It is the write-side complement of RequireTenant:
+// RequireTenant guarantees a row HAS a tenant; this guarantees it is the RIGHT one.
+func AssertTenantScope(ctx context.Context, rowTenant string, multitenant Multitenancy) error {
+	if !multitenant {
+		return nil
+	}
+	if scope := TenantIDFromContext(ctx); scope != "" && rowTenant != scope {
+		return fmt.Errorf(
+			"shared: cross-tenant write rejected — row tenant %q does not match the active tenant %q",
+			rowTenant,
+			scope,
+		)
+	}
+	return nil
+}
