@@ -79,6 +79,7 @@ Největší (a jediný zásadní) strop: single-node SQLite (single-writer) + sc
 - **B) Skutečný write-scale (Postgres):**
   - Přidat `infrastructure/postgres/*` + `wire.Bind` na stávající doménové interface (adapter swap).
   - Job frontu nahradit **River** (Postgres-native, battle-tested) místo custom SQLite queue.
+  - **Durable runs (`runs` tabulka):** `ClaimDue` na Postgresu přepsat na `SELECT … FOR UPDATE SKIP LOCKED` místo SQLite single-writer + `UPDATE … RETURNING`. **Vedlejší benefit:** současný SQLite `ClaimDue` obaluje indexovaný `run_at` do `julianday()` (kvůli ms-precision korektnosti proti `strftime('%f')` round-half-up skew), takže parciální index `idx_runs_claim` neslouží range-seeku ani ORDER BY → `SCAN` + `TEMP B-TREE` na každém pollu (na cíli ~500 agentů ≈ 6 % stropu, vrací LIMIT 1, takže zatím neřešené). Postgresí seek na nativním `timestamptz` tohle odstraní bez kompromisu na přesnosti. (Nález z xhigh code-review PR #21.)
   - Scheduler ošetřit **leader election** (Postgres advisory locks) — konec double-runů na víc instancích.
   - Rate-limit stav externalizovat (Redis), aby instance byly stateless.
 
