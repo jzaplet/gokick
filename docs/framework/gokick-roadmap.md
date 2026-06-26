@@ -52,9 +52,11 @@ Recovery(→Sentry) → Logging → Audit → DispatchEvents → Transaction    
 - [x] **Audit záznamy** doplněny: `create-superadmin`/seed superadmin → `user.created`, `create-tenant`/seed tenant → `tenant.created` (bez ActorUserID — systémová akce). Ověřeno end-to-end přes reálný system bus.
 - [x] **Sentry = jen neočekávané** — paniky reportuje `RecoveryMiddleware` zadarmo; očekávané validační chyby do trackeru nejdou (invariant „error reporting is for the unexpected only").
 
-### Krok — Konfigurovatelný job lease + heartbeat (paralelní)
+### Krok — Sloučit job + durable run do jednoho primitiva
 
-- [ ] Nahradit zadrátovaný `defaultLockFor = 5min` **per-kind konfigurovatelným lease** + **heartbeat/renewal**, ať dlouhé joby (agentická práce) neztratí lock uprostřed běhu. Renewal přes raw pool (`r.DB.DB()`), mimo job tx — obnova uvnitř `runWithinTx` je pro ostatní workery neviditelná až do commitu.
+> Nahrazuje původní „konfigurovatelný job lease + heartbeat" — ten cíl (lease + heartbeat pro dlouhou práci) splnil **durable run** ([PR #21](https://github.com/jzaplet/gokick/pull/21)). Zůstal ale dvojí mechanismus: job (handler v transakci → drží write-lock celou dobu, takže „volání ven v jobu" zamrzne DB a nejde to vynutit) a run (mimo tx, vynutitelně). Po opravě toho footgunu se job a run skoro slejou.
+
+- [ ] **Sloučit do jednoho `durable task`** — mimo tx, idempotentní/at-least-once, **volitelný** checkpoint (s checkpointem = dnešní run, bez = dnešní job), **timeout** per task. „Job" = „task, který necheckpointuješ". Plán + varianty: [Plán: sloučit job + run](/briefs/0001-durable-task-convergence). Samostatný PR **po** PR #21.
 
 ### Krok — OpenTelemetry (až na finálním tvaru)
 
