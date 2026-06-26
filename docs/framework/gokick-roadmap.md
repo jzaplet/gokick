@@ -59,7 +59,7 @@ Recovery(→Sentry) → Logging → Audit → DispatchEvents → Transaction    
 ### Krok — OpenTelemetry (až na finálním tvaru)
 
 - [ ] **OTel HTTP middleware + propagace přes bus** — `trace_id` v ctx přejde na `trace.SpanContext`, sladit s `shared.LogKeyTraceID` (traces ↔ logy korelují).
-- [ ] **Span per job** (worker) + **SQL viditelnost přes `otelsql`** (span per dotaz) — proto se vědomě nestaví vlastní SQL→breadcrumb most.
+- [ ] **Span per job** (worker, obaluje `runWithinTx`) + **span per durable run** (run worker, `process()` — ale **bez** transakce: handler běží outside-tx, takže span obaluje běh handleru, ne tx; checkpointy/heartbeaty jako child-spany nebo span-events) + **SQL viditelnost přes `otelsql`** (span per dotaz) — proto se vědomě nestaví vlastní SQL→breadcrumb most. Workery dnes trace_id nemají (logy korelují přes `run_id`/`job_id`); OTEL je nasadí přes `shared.LogAttrs(ctx)`.
 - [ ] **FE↔BE distributed tracing — full** — light verze hotová ([PR #11](https://github.com/jzaplet/gokick/pull/11)); full přidá `tracesSampleRate > 0` → spany + waterfall (FE klik → API → handler → DB).
 - [ ] **Hardening:** `otelsql` + OTEL SDK do depguard allow-listu (`.golangci.yml`); collector endpoint do CSP `connect-src` + `traceparent` přes CORS.
 
