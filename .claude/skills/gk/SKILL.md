@@ -51,7 +51,7 @@ Nebo prostě popiš problém a AI sáhne po správném skillu sama (řídí se p
 | `/gk-repositories` | Datová vrstva nad SQLite — tx-aware `r.Conn(ctx)`, raw-pool výjimky, tuning |
 | `/gk-migrations` | Goose migrace — embedované, automaticky aplikované při startu |
 | `/gk-jobs` | Perzistentní background fronta + worker (přežije restart/crash) |
-| `/gk-runs` | Durable runs — long-running „agenti" mimo tx, checkpoint + resume po pádu |
+| `/gk-runs` | Durable runs — dlouhá práce mimo tx, checkpoint + resume po pádu |
 | `/gk-scheduler` | Periodické úlohy uvnitř serveru (cron-like, bez OS cronu) |
 | `/gk-di` | Wire compile-time DI — providery, `wire.Bind`, `make di` |
 
@@ -100,7 +100,7 @@ Nebo prostě popiš problém a AI sáhne po správném skillu sama (řídí se p
 | Atomická write op. během requestu | **command** | `/gk-commands` | ✅ ano |
 | „Stalo se X" → reakce, co command nezná | **doménový event** | `/gk-domain-events` | ❌ po commitu, sync |
 | Krátká nespolehlivá práce, přežije restart (mail, API) | **job** | `/gk-jobs` | ✅ krátká |
-| Dlouho běžící „agent", resume po pádu | **durable run** | `/gk-runs` | ❌ **NE (vynuceno)** |
+| Dlouhá práce (import, report), pokračuje po pádu | **durable run** | `/gk-runs` | ❌ **NE (vynuceno)** |
 | Periodicky (cron-like) | **scheduler** | `/gk-scheduler` | ❌ inline |
 
 **Klíč:** jen **runy běží mimo transakci** (vynuceno — dlouhý handler v tx by zamkl celou

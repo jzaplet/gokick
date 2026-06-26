@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 440" font-family="-apple-system, Segoe UI, Roboto, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 460" font-family="-apple-system, Segoe UI, Roboto, sans-serif">
   <defs>
     <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0 0L10 5L0 10z" fill="#475569"/>
@@ -7,53 +7,51 @@
       <path d="M0 0L10 5L0 10z" fill="#b45309"/>
     </marker>
   </defs>
-  <rect width="880" height="440" fill="#ffffff"/>
-  <text x="24" y="34" font-size="20" font-weight="700" fill="#0f172a">Run flow — durable run (mimo transakci)</text>
-  <text x="24" y="56" font-size="13" fill="#64748b">enqueue v tx commandu · běh + checkpoint + heartbeat MIMO tx · po pádu reclaim + resume z checkpointu</text>
+  <rect width="880" height="460" fill="#ffffff"/>
+  <text x="24" y="34" font-size="20" font-weight="700" fill="#0f172a">Run flow — dlouhá práce, co umí pokračovat po pádu</text>
+  <text x="24" y="56" font-size="13" fill="#64748b">např. velký import, generování velkého reportu, dávkové zpracování — běží dlouho a po pádu pokračuje od posledně</text>
 
-  <!-- Enqueue (in tx) -->
-  <rect x="24" y="84" width="150" height="66" rx="10" fill="#ecfdf5" stroke="#10b981" stroke-width="1.5"/>
-  <text x="99" y="112" font-size="14" font-weight="600" fill="#065f46" text-anchor="middle">Enqueue</text>
-  <text x="99" y="131" font-size="11.5" fill="#047857" text-anchor="middle">v tx commandu (outbox)</text>
+  <!-- 1. enqueue -->
+  <rect x="24" y="88" width="160" height="64" rx="10" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="104" y="114" font-size="14" font-weight="600" fill="#1e40af" text-anchor="middle">1. Zařadíš práci</text>
+  <text x="104" y="134" font-size="11" fill="#1d4ed8" text-anchor="middle">do fronty (v transakci)</text>
 
-  <!-- Claim -->
-  <rect x="206" y="84" width="150" height="66" rx="10" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5"/>
-  <text x="281" y="108" font-size="14" font-weight="600" fill="#1e40af" text-anchor="middle">Claim</text>
-  <text x="281" y="126" font-size="11" fill="#1d4ed8" text-anchor="middle">owner token +</text>
-  <text x="281" y="140" font-size="11" fill="#1d4ed8" text-anchor="middle">locked_until = now+lease</text>
+  <!-- 2. claim -->
+  <rect x="216" y="88" width="160" height="64" rx="10" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="296" y="114" font-size="14" font-weight="600" fill="#1e40af" text-anchor="middle">2. Worker si ji vezme</text>
+  <text x="296" y="134" font-size="11" fill="#1d4ed8" text-anchor="middle">označí „dělám na tom"</text>
 
-  <line x1="174" y1="117" x2="206" y2="117" stroke="#475569" stroke-width="1.6" marker-end="url(#arr)"/>
+  <line x1="184" y1="120" x2="216" y2="120" stroke="#475569" stroke-width="1.6" marker-end="url(#arr)"/>
+  <line x1="376" y1="120" x2="404" y2="140" stroke="#475569" stroke-width="1.6" marker-end="url(#arr)"/>
 
-  <!-- No-tx region -->
-  <rect x="388" y="74" width="318" height="252" rx="14" fill="#fffbeb" stroke="#f59e0b" stroke-width="2" stroke-dasharray="7 5"/>
-  <text x="547" y="96" font-size="12.5" font-weight="700" fill="#b45309" text-anchor="middle">MIMO TRANSAKCI — BeginTx fail-closed</text>
+  <!-- 3. running region (no tx) -->
+  <rect x="406" y="80" width="450" height="180" rx="14" fill="#fffbeb" stroke="#f59e0b" stroke-width="2" stroke-dasharray="7 5"/>
+  <text x="631" y="104" font-size="13" font-weight="700" fill="#b45309" text-anchor="middle">3. BĚŽÍ DLOUHO — BEZ TRANSAKCE</text>
 
-  <!-- Handler -->
-  <rect x="410" y="112" width="274" height="58" rx="10" fill="#ffffff" stroke="#f59e0b" stroke-width="1.5"/>
-  <text x="547" y="136" font-size="14" font-weight="600" fill="#92400e" text-anchor="middle">Handler (resume z r.State)</text>
-  <text x="547" y="154" font-size="11" fill="#b45309" text-anchor="middle">LLM smyčka / kroky — minuty až hodiny, ctx-aware</text>
+  <rect x="426" y="118" width="410" height="40" rx="9" fill="#ffffff" stroke="#f59e0b" stroke-width="1.4"/>
+  <text x="631" y="143" font-size="13" fill="#92400e" text-anchor="middle">Dělá práci krok po kroku (klidně minuty až hodiny)</text>
 
-  <!-- Checkpoint -->
-  <rect x="410" y="186" width="130" height="58" rx="10" fill="#ffffff" stroke="#f59e0b" stroke-width="1.5"/>
-  <text x="475" y="210" font-size="13" font-weight="600" fill="#92400e" text-anchor="middle">Checkpoint</text>
-  <text x="475" y="227" font-size="10.5" fill="#b45309" text-anchor="middle">ck.Save — krátký</text>
+  <rect x="426" y="166" width="200" height="44" rx="9" fill="#ffffff" stroke="#f59e0b" stroke-width="1.4"/>
+  <text x="526" y="186" font-size="12.5" font-weight="600" fill="#92400e" text-anchor="middle">Uloží, kde skončil</text>
+  <text x="526" y="202" font-size="10.5" fill="#b45309" text-anchor="middle">po každém kroku (checkpoint)</text>
 
-  <!-- Heartbeat -->
-  <rect x="554" y="186" width="130" height="58" rx="10" fill="#ffffff" stroke="#f59e0b" stroke-width="1.5"/>
-  <text x="619" y="210" font-size="13" font-weight="600" fill="#92400e" text-anchor="middle">Heartbeat</text>
-  <text x="619" y="227" font-size="10.5" fill="#b45309" text-anchor="middle">renew lease/3</text>
+  <rect x="636" y="166" width="200" height="44" rx="9" fill="#ffffff" stroke="#f59e0b" stroke-width="1.4"/>
+  <text x="736" y="186" font-size="12.5" font-weight="600" fill="#92400e" text-anchor="middle">Dá vědět, že žije</text>
+  <text x="736" y="202" font-size="10.5" fill="#b45309" text-anchor="middle">občas (heartbeat)</text>
 
-  <text x="547" y="270" font-size="10.5" fill="#b45309" text-anchor="middle">stav přes Checkpointer · transakční side-work → enqueue command/job</text>
+  <text x="631" y="234" font-size="11" fill="#b45309" text-anchor="middle">Proč bez transakce? Dlouhá práce v transakci by zamkla celou databázi pro všechny ostatní.</text>
+  <text x="631" y="250" font-size="10.5" fill="#d97706" text-anchor="middle">(framework to navíc hlídá: otevřít tu transakci prostě nejde)</text>
 
-  <!-- Finalize -->
-  <rect x="410" y="284" width="274" height="32" rx="8" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.3"/>
-  <text x="547" y="305" font-size="11.5" fill="#334155" text-anchor="middle">Finalize: MarkComplete · Reschedule(backoff) · MarkFailed</text>
+  <!-- 4. done -->
+  <rect x="216" y="300" width="430" height="44" rx="10" fill="#ecfdf5" stroke="#10b981" stroke-width="1.5"/>
+  <text x="431" y="320" font-size="13" font-weight="600" fill="#065f46" text-anchor="middle">4. Hotovo ✓   ·   Chyba → zkusí to znovu (s odstupem)</text>
+  <text x="431" y="337" font-size="10.5" fill="#047857" text-anchor="middle">stav se odvodí ze sloupců v DB — žádný „status" sloupec</text>
 
-  <line x1="356" y1="117" x2="406" y2="135" stroke="#475569" stroke-width="1.6" marker-end="url(#arr)"/>
+  <line x1="631" y1="260" x2="500" y2="298" stroke="#475569" stroke-width="1.6" marker-end="url(#arr)"/>
 
-  <!-- Reclaim loop -->
-  <path d="M410 300 C 250 360, 250 360, 281 152" fill="none" stroke="#b45309" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrR)"/>
-  <rect x="300" y="350" width="300" height="40" rx="8" fill="#fef2f2" stroke="#ef4444" stroke-width="1.3"/>
-  <text x="450" y="367" font-size="11.5" font-weight="600" fill="#b91c1c" text-anchor="middle">Worker spadl → lease vyprší</text>
-  <text x="450" y="382" font-size="11" fill="#dc2626" text-anchor="middle">jiný worker: Reclaim (reclaims++) + resume z r.State</text>
+  <!-- 5. crash loop -->
+  <path d="M216 322 C 90 322, 90 120, 214 120" fill="none" stroke="#b45309" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrR)"/>
+  <rect x="220" y="376" width="440" height="44" rx="10" fill="#fef2f2" stroke="#ef4444" stroke-width="1.4"/>
+  <text x="440" y="396" font-size="12.5" font-weight="600" fill="#b91c1c" text-anchor="middle">Worker spadl uprostřed?</text>
+  <text x="440" y="412" font-size="11" fill="#dc2626" text-anchor="middle">Jiný worker práci převezme a pokračuje od posledního uloženého kroku.</text>
 </svg>
