@@ -56,7 +56,7 @@ Recovery(→Sentry) → Logging → Audit → DispatchEvents → Transaction    
 
 > Nahrazuje původní „konfigurovatelný job lease + heartbeat" — ten cíl (lease + heartbeat pro dlouhou práci) splnil **durable run** ([PR #21](https://github.com/jzaplet/gokick/pull/21)). Zůstal ale dvojí mechanismus: job (handler v transakci → drží write-lock celou dobu, takže „volání ven v jobu" zamrzne DB a nejde to vynutit) a run (mimo tx, vynutitelně). Po opravě toho footgunu se job a run skoro slejou.
 
-- [ ] **Sloučit do jednoho `durable task`** — mimo tx, idempotentní/at-least-once, **volitelný** checkpoint (s checkpointem = dnešní run, bez = dnešní job), **timeout** per task. „Job" = „task, který necheckpointuješ". Plán + varianty: [Plán: sloučit job + run](/briefs/0001-durable-task-convergence). Samostatný PR **po** PR #21.
+- [ ] **Sloučit do jednoho `durable task`** — mimo tx, idempotentní/at-least-once, **volitelný** checkpoint (s checkpointem = dnešní run, bez = dnešní job), **timeout** per task. „Job" = „task, který necheckpointuješ". Důvod: job handler běží celý v transakci (`runWithinTx`) → drží SQLite write-lock po celou dobu, takže „volání ven v jobu" (SMTP/cizí API) zamrzne DB a nejde to vynutit; runové „mimo tx" vynutitelné je. Samostatný PR **po** PR #21.
 
 ### Krok — OpenTelemetry (až na finálním tvaru)
 
