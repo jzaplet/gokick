@@ -11,11 +11,39 @@ import (
 	"gokick/app/internal/testfx"
 )
 
+// In multitenant mode, creating a user with no tenant in ctx (a non-bus path that
+// forgot to resolve it) must fail closed — a user is never silently born in the
+// default tenant. Through the bus, TenantMiddleware always supplies the tenant, so
+// this only fires on a genuine bug.
+func TestCreateUserHandler_Multitenant_NoTenantInCtx_FailsClosed(t *testing.T) {
+	fx := testfx.NewMultitenant(t, filepath.Join(t.TempDir(), "create_mt_notenant.db"))
+	h := NewCreateUserHandler(fx.Users, fx.Hasher, true)
+
+	err := h.Handle(context.Background(), CreateUserCommand{
+		Nickname: "alice",
+		Password: "secret12",
+		Role:     "user",
+	})
+	if err == nil {
+		t.Fatal("multitenant create-user with no tenant in ctx must fail closed")
+	}
+
+	// Nothing persisted (the resolve fails before NewUser/Save). Raw count — a
+	// tenant-scoped read would panic without a tenant in ctx.
+	var n int
+	if e := fx.DB.DB().Get(&n, `SELECT COUNT(*) FROM users WHERE nickname = 'alice'`); e != nil {
+		t.Fatalf("count: %v", e)
+	}
+	if n != 0 {
+		t.Fatalf("no user must be persisted on fail-closed, got %d", n)
+	}
+}
+
 func TestCreateUserHandler_Success(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_success.db"))
 	ctx, collector := shared.ContextWithEventCollector(context.Background())
 
-	h := NewCreateUserHandler(fx.Users, fx.Hasher)
+	h := NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	err := h.Handle(ctx, CreateUserCommand{
 		Nickname: "bob",
 		Password: "secret12",
@@ -63,7 +91,7 @@ func TestCreateUserHandler_DuplicateNickname(t *testing.T) {
 	fx.SeedUser(t, "alice", "existing", "user")
 
 	ctx, collector := shared.ContextWithEventCollector(context.Background())
-	h := NewCreateUserHandler(fx.Users, fx.Hasher)
+	h := NewCreateUserHandler(fx.Users, fx.Hasher, false)
 
 	err := h.Handle(ctx, CreateUserCommand{
 		Nickname: "alice",
@@ -87,7 +115,7 @@ func TestCreateUserHandler_DuplicateNickname(t *testing.T) {
 func TestCreateUserHandler_EmptyNickname(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_empty_nick.db"))
 
-	h := NewCreateUserHandler(fx.Users, fx.Hasher)
+	h := NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	err := h.Handle(context.Background(), CreateUserCommand{
 		Nickname: "",
 		Password: "secret12",
@@ -107,7 +135,7 @@ func TestCreateUserHandler_EmptyNickname(t *testing.T) {
 func TestCreateUserHandler_InvalidRole(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_invalid_role.db"))
 
-	h := NewCreateUserHandler(fx.Users, fx.Hasher)
+	h := NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	err := h.Handle(context.Background(), CreateUserCommand{
 		Nickname: "bob",
 		Password: "secret12",
@@ -127,7 +155,7 @@ func TestCreateUserHandler_InvalidRole(t *testing.T) {
 func TestCreateUserHandler_EmptyPassword(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_empty_pwd.db"))
 
-	h := NewCreateUserHandler(fx.Users, fx.Hasher)
+	h := NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	err := h.Handle(context.Background(), CreateUserCommand{
 		Nickname: "bob",
 		Password: "",
@@ -148,7 +176,7 @@ func TestCreateUserHandler_OptionalEmail(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_optional_email.db"))
 
-	h := NewCreateUserHandler(fx.Users, fx.Hasher)
+	h := NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	err := h.Handle(ctx, CreateUserCommand{
 		Nickname: "bob",
 		Password: "secret12",
@@ -174,7 +202,7 @@ func TestCreateUserHandler_OptionalEmail(t *testing.T) {
 func TestCreateUserHandler_InvalidEmail(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_invalid_email.db"))
 
-	h := NewCreateUserHandler(fx.Users, fx.Hasher)
+	h := NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	err := h.Handle(context.Background(), CreateUserCommand{
 		Nickname: "bob",
 		Password: "secret12",
@@ -208,7 +236,7 @@ func TestCreateUserHandler_StampsCallerTenant(t *testing.T) {
 	ctx, _ := shared.ContextWithEventCollector(context.Background())
 	ctx = shared.ContextWithTenantID(ctx, tenantB.ID)
 
-	h := NewCreateUserHandler(fx.Users, fx.Hasher)
+	h := NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	if err := h.Handle(ctx, CreateUserCommand{
 		Nickname: "bob",
 		Password: "secret12",
@@ -241,7 +269,7 @@ func TestCreateUserHandler_DefaultsTenantWithoutContext(t *testing.T) {
 
 	ctx, _ := shared.ContextWithEventCollector(context.Background())
 
-	h := NewCreateUserHandler(fx.Users, fx.Hasher)
+	h := NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	if err := h.Handle(ctx, CreateUserCommand{
 		Nickname: "cli",
 		Password: "secret12",

@@ -13,6 +13,7 @@ import (
 	"gokick/app/application/bus"
 	busmw "gokick/app/application/bus/middleware"
 	"gokick/app/domain/job"
+	"gokick/app/domain/run"
 	"gokick/app/domain/shared"
 	"gokick/app/domain/tenant"
 	"gokick/app/domain/token"
@@ -22,6 +23,7 @@ import (
 	"gokick/app/infrastructure/security"
 	sqliteaudit "gokick/app/infrastructure/sqlite/audit"
 	sqlitejob "gokick/app/infrastructure/sqlite/job"
+	sqliterun "gokick/app/infrastructure/sqlite/run"
 	sqlitetenant "gokick/app/infrastructure/sqlite/tenant"
 	sqlitetoken "gokick/app/infrastructure/sqlite/token"
 	sqliteuser "gokick/app/infrastructure/sqlite/user"
@@ -35,6 +37,7 @@ type Fixture struct {
 	PlatformUsers user.PlatformRepository // same concrete repo; the cross-tenant port for platform handler tests
 	Tokens        token.TokenRepository
 	Jobs          job.Repository
+	Runs          run.Repository
 	Tenants       tenant.Repository
 	Hasher        *security.PasswordHasher
 	Jwt           *security.JwtService
@@ -88,6 +91,7 @@ func newFixture(t *testing.T, dbPath string, multitenant bool) *Fixture {
 		PlatformUsers: usersRepo,
 		Tokens:        sqlitetoken.NewRepository(db),
 		Jobs:          sqlitejob.NewRepository(db),
+		Runs:          sqliterun.NewRepository(db),
 		Tenants:       sqlitetenant.NewRepository(db),
 		Hasher:        security.NewPasswordHasher(),
 		Jwt:           jwt,
@@ -119,6 +123,7 @@ func (f *Fixture) NewBuses() (*bus.CommandBus, *bus.QueryBus, *bus.EventBus) {
 	// invoked. Importing the real application/job dispatcher here would cycle
 	// (its test imports testfx). The chain itself stays faithful via CommandChain.
 	dispatcher := shared.JobDispatcherFromContext(context.Background())
+	runDispatcher := shared.RunDispatcherFromContext(context.Background())
 	audit := sqliteaudit.NewRepository(f.DB)
 
 	// Same chain as provideCommandBus (busmw.CommandChain is the single source),
@@ -131,6 +136,7 @@ func (f *Fixture) NewBuses() (*bus.CommandBus, *bus.QueryBus, *bus.EventBus) {
 				resolver,
 				audit,
 				dispatcher,
+				runDispatcher,
 				eventBus,
 				f.DB,
 			)...,

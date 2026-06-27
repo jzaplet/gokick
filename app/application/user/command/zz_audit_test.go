@@ -31,7 +31,7 @@ func TestCreateUserHandler_RecordsUserCreatedAudit(t *testing.T) {
 	// but it returns a throwaway when absent, so only the audit collector is wired.
 	ctx := shared.ContextWithAuditCollector(context.Background(), collector)
 
-	h := NewCreateUserHandler(fx.Users, fx.Hasher)
+	h := NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	if err := h.Handle(ctx, CreateUserCommand{
 		Nickname: "bob",
 		Password: "secret12",
@@ -170,7 +170,7 @@ func TestDeleteUserHandler_RecordsUserDeletedAudit(t *testing.T) {
 func TestCreateUserHandler_FirstValidationErrorWins(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "audit_first_error.db"))
 
-	h := NewCreateUserHandler(fx.Users, fx.Hasher)
+	h := NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	err := h.Handle(context.Background(), CreateUserCommand{
 		Nickname: "", // invalid: nickname required
 		Password: "secret12",
@@ -194,7 +194,7 @@ func TestCreateUserHandler_DuplicateNicknameMessage(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "audit_dup_msg.db"))
 	fx.SeedUser(t, "alice", "secret12", "user")
 
-	h := NewCreateUserHandler(fx.Users, fx.Hasher)
+	h := NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	err := h.Handle(context.Background(), CreateUserCommand{
 		Nickname: "alice",
 		Password: "secret12",

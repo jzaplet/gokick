@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -61,6 +62,16 @@ type Config struct {
 	// Empty disables that limit entirely.
 	RateLimitLogin   string
 	RateLimitRefresh string
+
+	// Durable run worker (the "agent" engine, ADR-0001). Lease is the crash-reclaim
+	// window; Heartbeat must be << Lease (0 → the worker uses Lease/3); MaxInFlight
+	// is the backpressure cap; MaxReclaims bounds a poison crash-loop.
+	RunWorkerLease        time.Duration
+	RunWorkerHeartbeat    time.Duration
+	RunWorkerPoll         time.Duration
+	RunWorkerDrainTimeout time.Duration
+	RunWorkerMaxInFlight  int
+	RunWorkerMaxReclaims  int
 }
 
 func LoadConfig() (*Config, error) {
@@ -99,6 +110,28 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("invalid APP_JWT_REFRESH_EXPIRATION: %w", err)
 	}
 
+	for _, d := range []struct {
+		dst *time.Duration
+		key string
+		def string
+	}{
+		{&config.RunWorkerLease, "APP_RUN_WORKER_LEASE", "5m"},
+		{&config.RunWorkerHeartbeat, "APP_RUN_WORKER_HEARTBEAT", "0s"}, // 0 → worker uses Lease/3
+		{&config.RunWorkerPoll, "APP_RUN_WORKER_POLL", "1s"},
+		{&config.RunWorkerDrainTimeout, "APP_RUN_WORKER_DRAIN_TIMEOUT", "10s"},
+	} {
+		if *d.dst, err = time.ParseDuration(getEnv(d.key, d.def)); err != nil {
+			return nil, fmt.Errorf("invalid %s: %w", d.key, err)
+		}
+	}
+
+	if config.RunWorkerMaxInFlight, err = getEnvInt("APP_RUN_WORKER_MAX_IN_FLIGHT", 8); err != nil {
+		return nil, fmt.Errorf("invalid APP_RUN_WORKER_MAX_IN_FLIGHT: %w", err)
+	}
+	if config.RunWorkerMaxReclaims, err = getEnvInt("APP_RUN_WORKER_MAX_RECLAIMS", 20); err != nil {
+		return nil, fmt.Errorf("invalid APP_RUN_WORKER_MAX_RECLAIMS: %w", err)
+	}
+
 	return config, nil
 }
 
@@ -135,4 +168,13 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// getEnvInt reads an integer env var, falling back when unset/empty.
+func getEnvInt(key string, fallback int) (int, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback, nil
+	}
+	return strconv.Atoi(v)
 }

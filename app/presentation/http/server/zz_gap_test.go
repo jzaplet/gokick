@@ -156,7 +156,7 @@ func boundServer(t *testing.T) (*Server, *testfx.Fixture) {
 		cmdBus,
 		qryBus,
 		userqry.NewListUsersHandler(fx.Users),
-		usercmd.NewCreateUserHandler(fx.Users, fx.Hasher),
+		usercmd.NewCreateUserHandler(fx.Users, fx.Hasher, false),
 		usercmd.NewUpdateUserHandler(fx.Users, fx.Hasher),
 		usercmd.NewDeleteUserHandler(fx.Users),
 	)

@@ -22,6 +22,13 @@ func NewRepository(db *database.SqliteManager) *Repository {
 }
 
 func (r *Repository) Save(ctx context.Context, u *user.User) error {
+	// Cross-tenant write guard: Save writes u.TenantID verbatim, so in multitenant
+	// mode a row must not be placed in a tenant other than the active scope (the
+	// platform plane uses the separate *AcrossTenants methods). System/seed paths
+	// carry no scope and are trusted (AssertTenantScope skips them).
+	if err := shared.AssertTenantScope(ctx, u.TenantID, r.Multitenancy()); err != nil {
+		return err
+	}
 	const q = `INSERT INTO users (id, nickname, password_hash, email, role, tenant_id, active, created_at, updated_at)
 		VALUES (:id, :nickname, :password_hash, :email, :role, :tenant_id, :active, :created_at, :updated_at)`
 	_, err := r.Conn(ctx).NamedExecContext(ctx, q, u)

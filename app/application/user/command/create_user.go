@@ -18,17 +18,20 @@ type CreateUserCommand struct {
 func (CreateUserCommand) RequiredPermission() string { return "admin:users:create" }
 
 type CreateUserHandler struct {
-	users    user.Repository
-	password shared.PasswordHasher
+	users       user.Repository
+	password    shared.PasswordHasher
+	multitenant shared.Multitenancy
 }
 
 func NewCreateUserHandler(
 	users user.Repository,
 	password shared.PasswordHasher,
+	multitenant shared.Multitenancy,
 ) *CreateUserHandler {
 	return &CreateUserHandler{
-		users:    users,
-		password: password,
+		users:       users,
+		password:    password,
+		multitenant: multitenant,
 	}
 }
 
@@ -76,13 +79,14 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
 	}
 
 	// Resolve the tenant the user lands in: the bus's TenantMiddleware always puts
-	// the caller's resolved tenant in ctx (HTTP), so an admin creates users in
-	// their OWN tenant; an empty value means the handler ran outside the bus (the
-	// CLI create-user), where the single-tenant default is correct. NewUser
-	// requires the tenant explicitly (born scoped). Mirrors the dispatcher guard.
-	tenantID := shared.TenantIDFromContext(ctx)
-	if tenantID == "" {
-		tenantID = shared.DefaultTenantID
+	// the caller's resolved tenant in ctx (HTTP), so an admin creates users in their
+	// OWN tenant. An empty value means the handler ran outside the bus (the CLI
+	// create-user) — RequireTenant resolves it fail-closed: the single-tenant default
+	// when off, an error when multitenancy is on (a user must not be silently born in
+	// the default tenant). NewUser requires the tenant explicitly (born scoped).
+	tenantID, err := shared.RequireTenant(shared.TenantIDFromContext(ctx), h.multitenant)
+	if err != nil {
+		return err
 	}
 	u := user.NewUser(nickname, hash, email, role, tenantID)
 

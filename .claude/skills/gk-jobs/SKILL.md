@@ -17,11 +17,19 @@ zapíše job **ve stejné transakci** jako business write, worker si ho atomicky
 vyzvedne, spustí v transakci a při selhání naplánuje retry s exponenciálním
 backoffem. Když spadne celý proces, po restartu se pokračuje.
 
+> ⚠️ **Pozor — handler běží CELÝ v transakci (`runWithinTx`), takže drží zámek na zápis
+> SQLite po celou dobu.** V job handleru proto **nevolej ven** (e-mail/SMTP, cizí API) —
+> drželo by to zámek po dobu toho volání (SMTP visí, API i minuty) → zamrzne celá DB.
+> Job je na **rychlou práci JEN nad vlastní DB** (přepočet agregace, kaskádní update).
+> Volání ven nebo dlouhé → **[[gk-runs]]** (mimo tx). Příklady níže (`welcome:send` mail)
+> se proto revidují — rozhodnutí job-vs-run je rozpracované; viz `docs/framework/background-work.md`.
+
 ## What & when
 
-- Sáhni sem pro **pomalou nebo selhávající práci**, co musí přežít restart/crash:
-  mail přes SMTP, volání externího API, cokoli retry-prone. Job se uloží do DB a
-  nezávisí na životě HTTP requestu.
+- Sáhni sem pro **rychlou práci JEN nad vlastní databází**, co musí přežít restart/crash
+  a běžet mimo request: přepočítat a uložit agregaci, zpracovat zařazený záznam, kaskádní
+  update. Job se uloží do DB a nezávisí na životě HTTP requestu. **Žádné volání ven** (mail,
+  cizí API) — to drží zámek; patří do [[gk-runs]].
 - NEtýká se: synchronního side-efektu v request goroutině (rychlá reakce na
   „stalo se X") → to je `/gk-domain-events`. Periodické úlohy na čase (každou
   hodinu cleanup) → `/gk-scheduler`. Audit log má vlastní cestu (`AuditCollector`).
@@ -126,6 +134,10 @@ Přidání nového job kindu (vzorově `welcome:send` — pošli mail po `Create
 - **Atomicita business write + enqueue.** Enqueue z command handleru běží přes
   `Conn(ctx)` a `JobDispatcherMiddleware` je vně transakce — INSERT padne do téže
   transakce. Buď se uloží obojí, nebo nic.
+- **Handler běží V transakci** (`runWithinTx`): handler + `MarkComplete` v jedné **krátké**
+  tx → atomicky. To je správně pro krátký job. **Dlouhá práce (minuty/hodiny) sem NEpatří** —
+  držela by globální SQLite write-lock → freeze; na to je **durable run** ([[gk-runs]], běží
+  mimo tx). Rozhodovací matice job/run/scheduler/event → `docs/framework/background-work.md`.
 - **At-least-once.** Job proběhne **minimálně** jednou. Handler musí být
   **idempotentní pro externí side effects** — poslat dva maily je bug. DB writes
   se vrátí zpět (rollback) společně s mark-complete flagem, takže o jejich idempotenci

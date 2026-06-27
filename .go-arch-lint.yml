@@ -23,6 +23,9 @@ excludeFiles:
   # Same self-import quirk: sqlite_manager_test.go is `package database_test`
   # importing the database package to drive *SqliteManager from a black-box test.
   - infrastructure/database/sqlite_manager_test.go
+  # Same quirk: sqlite_loadtest_test.go (build-tag `loadtest`) is `package
+  # database_test` self-importing to characterize the driver under write load.
+  - infrastructure/database/sqlite_loadtest_test.go
   # Integration tests that wire real fixtures (testfx) / black-box self-import to
   # exercise production behavior end-to-end. Same sanctioned test-only exception
   # as the entries above — these files are tests, never imported by production.
@@ -67,6 +70,8 @@ components:
     in: domain/job/**
   domain_tenant:
     in: domain/tenant/**
+  domain_run:
+    in: domain/run/**
 
   # Layer 2: Application
   bus:
@@ -93,6 +98,7 @@ components:
     in:
       - infrastructure/sqlite/audit/**
       - infrastructure/sqlite/job/**
+      - infrastructure/sqlite/run/**
       - infrastructure/sqlite/tenant/**
       - infrastructure/sqlite/token/**
       - infrastructure/sqlite/user/**
@@ -140,6 +146,8 @@ deps:
     anyVendorDeps: true
   domain_tenant:
     anyVendorDeps: true
+  domain_run:
+    anyVendorDeps: true
 
   # Application — depends on domain only
   bus:
@@ -154,6 +162,7 @@ deps:
       - domain_token
       - domain_job
       - domain_tenant
+      - domain_run
     anyVendorDeps: true
 
   # Test fixtures — may wire real infrastructure for integration tests.
@@ -171,6 +180,7 @@ deps:
       - domain_token
       - domain_job
       - domain_tenant
+      - domain_run
     anyVendorDeps: true
 
   # Infrastructure — depends on domain
@@ -194,6 +204,7 @@ deps:
       - domain_token
       - domain_job
       - domain_tenant
+      - domain_run
   sqlite_seeder:
     mayDependOn:
       - database
@@ -208,6 +219,7 @@ deps:
       - testfx
       - domain_user
       - domain_job
+      - domain_run
     anyVendorDeps: true
 
   # Presentation — depends on application + infrastructure

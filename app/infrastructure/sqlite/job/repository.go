@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gokick/app/domain/job"
+	"gokick/app/domain/shared"
 	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/sqlite"
 )
@@ -24,23 +25,19 @@ func (r *Repository) Enqueue(ctx context.Context, j *job.Job) error {
 	const q = `INSERT INTO jobs (id, kind, tenant_id, payload, run_at, attempts, max_retries, locked_until, last_error, failed_at, completed_at, created_at)
 		VALUES (:id, :kind, :tenant_id, :payload, :run_at, :attempts, :max_retries, :locked_until, :last_error, :failed_at, :completed_at, :created_at)`
 	row := *j
-	row.RunAt = msPrecisionUTC(row.RunAt)
-	row.CreatedAt = msPrecisionUTC(row.CreatedAt)
-	_, err := r.Conn(ctx).NamedExecContext(ctx, q, &row)
+	// Resolve the tenant fail-closed (mirrors the run repo): the dispatcher stamps it
+	// from ctx; an empty tenant (a non-bus direct Enqueue) becomes the default in
+	// single-tenant mode but an ERROR in multitenant mode — a job is never silently
+	// born in the default tenant.
+	tenantID, err := shared.RequireTenant(row.TenantID, r.Multitenancy())
+	if err != nil {
+		return err
+	}
+	row.TenantID = tenantID
+	row.RunAt = sqlite.MsPrecisionUTC(row.RunAt)
+	row.CreatedAt = sqlite.MsPrecisionUTC(row.CreatedAt)
+	_, err = r.Conn(ctx).NamedExecContext(ctx, q, &row)
 	return err
-}
-
-// msPrecisionUTC normalizes a Go time.Time to UTC + millisecond precision
-// before it crosses into SQLite. Required because ncruces' WASM SQLite
-// returns 'now' from a clock that ticks at ~1 ms granularity and trails
-// Go's time.Now() by up to ~1 ms on the same wall clock. A job written
-// with µs precision (e.g. .467806) can therefore beat 'now' in the
-// julianday(run_at) <= julianday('now') check despite being "in the
-// past" on the real clock — ClaimDue then misses a freshly-enqueued row
-// at random. Truncating writes to the lowest common precision removes
-// the race; downstream reads round-trip the exact same ms value.
-func msPrecisionUTC(t time.Time) time.Time {
-	return t.UTC().Truncate(time.Millisecond)
 }
 
 // ClaimDue atomically locks the next due row in a single UPDATE … RETURNING.
@@ -103,7 +100,7 @@ func (r *Repository) Reschedule(
 ) error {
 	_, err := r.Conn(ctx).ExecContext(ctx,
 		`UPDATE jobs SET run_at = ?, last_error = ?, locked_until = NULL WHERE id = ?`,
-		msPrecisionUTC(runAt), lastErr, id)
+		sqlite.MsPrecisionUTC(runAt), lastErr, id)
 	return err
 }
 

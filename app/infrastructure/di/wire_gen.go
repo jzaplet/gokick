@@ -18,11 +18,13 @@ import (
 	query4 "gokick/app/application/platform/query"
 	command2 "gokick/app/application/profile/command"
 	"gokick/app/application/profile/query"
+	run2 "gokick/app/application/run"
 	command5 "gokick/app/application/tenant/command"
 	query5 "gokick/app/application/tenant/query"
 	command3 "gokick/app/application/user/command"
 	query2 "gokick/app/application/user/query"
 	job3 "gokick/app/domain/job"
+	run3 "gokick/app/domain/run"
 	"gokick/app/domain/shared"
 	token2 "gokick/app/domain/token"
 	"gokick/app/infrastructure/config"
@@ -31,6 +33,7 @@ import (
 	"gokick/app/infrastructure/security"
 	"gokick/app/infrastructure/sqlite/audit"
 	"gokick/app/infrastructure/sqlite/job"
+	"gokick/app/infrastructure/sqlite/run"
 	"gokick/app/infrastructure/sqlite/seeder"
 	"gokick/app/infrastructure/sqlite/tenant"
 	"gokick/app/infrastructure/sqlite/token"
@@ -80,9 +83,15 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 		return nil, err
 	}
 	jobDispatcher := provideJobDispatcher(repository, handlerRegistry)
+	runRepository := run.NewRepository(sqliteManager)
+	runHandlerRegistry, err := provideRunHandlerRegistry(configConfig)
+	if err != nil {
+		return nil, err
+	}
+	runDispatcher := provideRunDispatcher(runRepository, runHandlerRegistry)
 	auditRepository := audit.NewRepository(sqliteManager)
 	tenantResolver := provideTenantResolver()
-	commandBus := provideCommandBus(logger, sqliteManager, permissionChecker, eventBus, jobDispatcher, auditRepository, reporter, tenantResolver)
+	commandBus := provideCommandBus(logger, sqliteManager, permissionChecker, eventBus, jobDispatcher, runDispatcher, auditRepository, reporter, tenantResolver)
 	userRepository := user.NewRepository(sqliteManager)
 	tokenRepository := token.NewRepository(sqliteManager)
 	passwordHasher := providePasswordHasher()
@@ -96,7 +105,8 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	changePasswordHandler := command2.NewChangePasswordHandler(userRepository, passwordHasher)
 	profileHandler := handler.NewProfileHandler(commandBus, queryBus, getProfileHandler, changePasswordHandler, permissionsRegistry)
 	listUsersHandler := query2.NewListUsersHandler(userRepository)
-	createUserHandler := command3.NewCreateUserHandler(userRepository, passwordHasher)
+	multitenancy := provideMultitenancy(configConfig)
+	createUserHandler := command3.NewCreateUserHandler(userRepository, passwordHasher, multitenancy)
 	updateUserHandler := command3.NewUpdateUserHandler(userRepository, passwordHasher)
 	deleteUserHandler := command3.NewDeleteUserHandler(userRepository)
 	adminUsersHandler := handler.NewAdminUsersHandler(commandBus, queryBus, listUsersHandler, createUserHandler, updateUserHandler, deleteUserHandler)
@@ -117,7 +127,8 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 		return nil, err
 	}
 	worker := provideWorker(logger, reporter, repository, handlerRegistry, sqliteManager, jobDispatcher)
-	serveCommand := console.NewServeCommand(serverServer, scheduler, worker)
+	runWorker := provideRunWorker(logger, reporter, runRepository, runHandlerRegistry, jobDispatcher, runDispatcher, configConfig)
+	serveCommand := console.NewServeCommand(serverServer, scheduler, worker, runWorker)
 	seedAdminPassword := provideSeedAdminPassword(configConfig)
 	seedSuperAdminPassword := provideSeedSuperAdminPassword(configConfig)
 	seedAdminTenant := provideSeedAdminTenant(configConfig)
@@ -131,7 +142,7 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	createSuperAdminHandler := command4.NewCreateSuperAdminHandler(userRepository, passwordHasher)
 	createSuperAdminCommand := console.NewCreateSuperAdminCommand(createSuperAdminHandler, systemCommandBus)
 	createTenantCommand := console.NewCreateTenantCommand(createTenantHandler, systemCommandBus)
-	workerCommand := console.NewWorkerCommand(worker)
+	workerCommand := console.NewWorkerCommand(worker, runWorker)
 	rootCommand := console.NewRootCommand(serveCommand, seedCommand, createUserCommand, createSuperAdminCommand, createTenantCommand, workerCommand)
 	migrationManager := database.NewMigrationManager(sqliteManager, logger)
 	application := app.NewApplication(rootCommand, migrationManager)
@@ -162,12 +173,21 @@ func provideCommandBus(
 	db *database.SqliteManager,
 	checker shared.PermissionChecker,
 	eventBus *bus.EventBus,
-	dispatcher shared.JobDispatcher, audit2 shared.AuditLogger,
+	dispatcher shared.JobDispatcher,
+	runDispatcher shared.RunDispatcher, audit2 shared.AuditLogger,
 
 	reporter shared.ErrorReporter,
 	tenantResolver shared.TenantResolver,
 ) *bus.CommandBus {
-	return bus.NewCommandBus(middleware.CommandChain(logger, checker, reporter, tenantResolver, audit2, dispatcher, eventBus, db)...,
+	return bus.NewCommandBus(middleware.CommandChain(
+		logger,
+		checker,
+		reporter,
+		tenantResolver, audit2, dispatcher,
+		runDispatcher,
+		eventBus,
+		db,
+	)...,
 	)
 }
 
@@ -285,6 +305,13 @@ func provideMultitenant(cfg *config.Config) seeder.Multitenant {
 	return seeder.Multitenant(cfg.Multitenancy)
 }
 
+// provideMultitenancy surfaces APP_MULTITENANCY to application-layer constructors
+// (the create-user handler) that fail-close tenant resolution but cannot import
+// infrastructure. shared.Multitenancy is the Wire-distinct domain type.
+func provideMultitenancy(cfg *config.Config) shared.Multitenancy {
+	return shared.Multitenancy(cfg.Multitenancy)
+}
+
 // provideSchedulerJobs is the single source of truth for periodic in-process
 // jobs — mirrors providePermissionsRegistry / provideJobHandlerRegistry. Add
 // a new Job here; provideScheduler stays decoupled from job business.
@@ -331,6 +358,44 @@ func provideWorker(
 	dispatcher shared.JobDispatcher,
 ) *worker.Worker {
 	return worker.NewWorker(logger, reporter, repo, registry, db, dispatcher, 1)
+}
+
+// provideRunHandlerRegistry collects every kind → durable-run handler the binary
+// can process. Empty for now — agent handlers are registered here as they appear.
+// The default lease comes from config so an unset per-kind lease stays consistent.
+func provideRunHandlerRegistry(cfg *config.Config) (*run2.HandlerRegistry, error) {
+	return run2.NewHandlerRegistry(map[string]run2.Registration{}, cfg.RunWorkerLease)
+}
+
+// provideRunDispatcher returns the durable-run dispatcher as a domain interface so
+// command/event handlers depend on shared.RunDispatcher, not the concrete type.
+func provideRunDispatcher(
+	repo run3.Repository,
+	registry *run2.HandlerRegistry,
+) shared.RunDispatcher {
+	return run2.NewDispatcher(repo, registry)
+}
+
+// provideRunWorker wires the durable run worker (the agent engine) from config. It
+// injects the job + run dispatchers so a run handler can offload transactional
+// side-work — the worker bypasses the bus, which is where they are normally injected.
+func provideRunWorker(
+	logger *slog.Logger,
+	reporter shared.ErrorReporter,
+	repo run3.Repository,
+	registry *run2.HandlerRegistry,
+	jobDispatcher shared.JobDispatcher,
+	runDispatcher shared.RunDispatcher,
+	cfg *config.Config,
+) *worker.RunWorker {
+	return worker.NewRunWorker(logger, reporter, repo, registry, jobDispatcher, runDispatcher, worker.RunWorkerConfig{
+		DefaultLease:      cfg.RunWorkerLease,
+		HeartbeatInterval: cfg.RunWorkerHeartbeat,
+		PollInterval:      cfg.RunWorkerPoll,
+		DrainTimeout:      cfg.RunWorkerDrainTimeout,
+		MaxInFlight:       cfg.RunWorkerMaxInFlight,
+		MaxReclaims:       cfg.RunWorkerMaxReclaims,
+	})
 }
 
 func providePermissionsRegistry() *shared.PermissionsRegistry {

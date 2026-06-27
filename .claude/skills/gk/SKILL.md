@@ -51,6 +51,7 @@ Nebo prostě popiš problém a AI sáhne po správném skillu sama (řídí se p
 | `/gk-repositories` | Datová vrstva nad SQLite — tx-aware `r.Conn(ctx)`, raw-pool výjimky, tuning |
 | `/gk-migrations` | Goose migrace — embedované, automaticky aplikované při startu |
 | `/gk-jobs` | Perzistentní background fronta + worker (přežije restart/crash) |
+| `/gk-runs` | Durable runs — dlouhá práce mimo tx, checkpoint + resume po pádu |
 | `/gk-scheduler` | Periodické úlohy uvnitř serveru (cron-like, bez OS cronu) |
 | `/gk-di` | Wire compile-time DI — providery, `wire.Bind`, `make di` |
 
@@ -89,8 +90,22 @@ Nebo prostě popiš problém a AI sáhne po správném skillu sama (řídí se p
 - **„Chci přidat endpoint / CRUD"** → `/gk-feature` (provede tě a odkáže na detail).
 - **„Padá mi to / nevím proč"** → podle vrstvy: `/gk-errors`, `/gk-permissions`,
   `/gk-repositories`, `/gk-config`.
-- **„Background práce"** → `/gk-jobs` (musí přežít restart) nebo `/gk-scheduler` (periodicky).
+- **„Background práce"** → viz matice níže.
 - **„Vydat / nasadit"** → `/gk-deploy`.
+
+## Background práce — co kdy (job / run / scheduler / event)
+
+| Potřeba | Mechanismus | Skill | V transakci? |
+|---|---|---|---|
+| Atomická write op. během requestu | **command** | `/gk-commands` | ✅ ano |
+| „Stalo se X" → reakce, co command nezná | **doménový event** | `/gk-domain-events` | ❌ po commitu, sync |
+| Krátká práce JEN nad vlastní DB (přepočet), přežije restart | **job** | `/gk-jobs` | ✅ krátká |
+| Volání ven (mail/API/webhook) NEBO dlouhá práce, pokračuje po pádu | **durable run** | `/gk-runs` | ❌ **NE (vynuceno)** |
+| Periodicky (cron-like) | **scheduler** | `/gk-scheduler` | ❌ inline |
+
+**Klíč:** **uvnitř transakce nikdy nevolej ven** (SMTP/cizí API drží zámek po dobu volání →
+zamkne SQLite). Volání ven nebo dlouhé → **run** (mimo tx, vynuceno). Detail + diagram →
+`docs/framework/background-work.md` (+ per-flow `*-flow.md`).
 
 ## Přidání nového gk skillu
 Drž se vzoru v `_TEMPLATE.md` (vedle tohohle souboru) — definuje

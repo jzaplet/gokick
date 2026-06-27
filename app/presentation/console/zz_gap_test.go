@@ -11,6 +11,7 @@ import (
 
 	jobapp "gokick/app/application/job"
 	platformcmd "gokick/app/application/platform/command"
+	runapp "gokick/app/application/run"
 	tenantcmd "gokick/app/application/tenant/command"
 	tenantqry "gokick/app/application/tenant/query"
 	usercmd "gokick/app/application/user/command"
@@ -114,7 +115,7 @@ func serveTestServer(logger *slog.Logger) *server.Server {
 
 // serveTestWorker builds a real Worker (empty handler registry, throwaway
 // dispatcher) the same cheap way newTestWorker does, but routed through the
-// supplied logger so its "worker: starting" / "worker: stopped" lifecycle
+// supplied logger so its "job worker: starting" / "job worker: stopped" lifecycle
 // lines land in the capture buffer. Its Run drains promptly on ctx cancel.
 func serveTestWorker(t *testing.T, fx *testfx.Fixture, logger *slog.Logger) *worker.Worker {
 	t.Helper()
@@ -124,6 +125,27 @@ func serveTestWorker(t *testing.T, fx *testfx.Fixture, logger *slog.Logger) *wor
 	}
 	dispatcher := shared.JobDispatcherFromContext(context.Background())
 	return worker.NewWorker(logger, shared.NopReporter{}, fx.Jobs, registry, fx.DB, dispatcher, 1)
+}
+
+func serveTestRunWorker(
+	t *testing.T,
+	fx *testfx.Fixture,
+	logger *slog.Logger,
+) *worker.RunWorker {
+	t.Helper()
+	registry, err := runapp.NewHandlerRegistry(map[string]runapp.Registration{}, time.Second)
+	if err != nil {
+		t.Fatalf("run registry: %v", err)
+	}
+	return worker.NewRunWorker(
+		logger,
+		shared.NopReporter{},
+		fx.Runs,
+		registry,
+		nil,
+		nil,
+		worker.RunWorkerConfig{},
+	)
 }
 
 // TestServeCommand_SchedulerDoneGatesReturnAndSharesCtx is the load-bearing
@@ -173,7 +195,7 @@ func TestServeCommand_SchedulerDoneGatesReturnAndSharesCtx(t *testing.T) {
 	w := serveTestWorker(t, fx, logger)
 	srv := serveTestServer(logger)
 
-	cmd := NewServeCommand(srv, sched, w).Command()
+	cmd := NewServeCommand(srv, sched, w, serveTestRunWorker(t, fx, logger)).Command()
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true
 
@@ -225,8 +247,10 @@ func TestServeCommand_SchedulerDoneGatesReturnAndSharesCtx(t *testing.T) {
 	for _, want := range []string{
 		"scheduler: starting",
 		"scheduler: stopped",
-		"worker: starting",
-		"worker: stopped",
+		"job worker: starting",
+		"job worker: stopped",
+		"run worker: starting",
+		"run worker: stopped",
 	} {
 		if !contains(msgs, want) {
 			t.Fatalf("missing %q in lifecycle logs — co-run/drain not observed; saw %v", want, msgs)
@@ -288,7 +312,11 @@ func TestCreateSuperAdminCommand_MissingPasswordErrors(t *testing.T) {
 // newCreateUserCmd builds the create-user CLI command wired to a real fixture,
 // with multitenancy on/off, for the tenant-flag matrix tests.
 func newCreateUserCmd(fx *testfx.Fixture, multitenant bool) *cobra.Command {
-	createUser := usercmd.NewCreateUserHandler(fx.Users, fx.Hasher)
+	createUser := usercmd.NewCreateUserHandler(
+		fx.Users,
+		fx.Hasher,
+		shared.Multitenancy(multitenant),
+	)
 	createTenant := tenantcmd.NewCreateTenantHandler(fx.Tenants)
 	getTenant := tenantqry.NewGetTenantHandler(fx.Tenants)
 	cmd := NewCreateUserCommand(

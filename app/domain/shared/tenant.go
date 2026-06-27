@@ -1,6 +1,14 @@
 package shared
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
+
+// Multitenancy is the configured enforcement mode (APP_MULTITENANCY) as a
+// Wire-distinct type, so it can be injected into application-layer constructors
+// (which may not import infrastructure) without a bare-bool ambiguity.
+type Multitenancy bool
 
 // DefaultTenantID is the well-known id of the single "default" tenant used when
 // multitenancy is off (single-tenant mode). A migration creates the matching
@@ -34,4 +42,51 @@ func ContextWithTenantID(ctx context.Context, tenantID string) context.Context {
 func TenantIDFromContext(ctx context.Context) string {
 	id, _ := ctx.Value(tenantIDKey).(string)
 	return id
+}
+
+// RequireTenant resolves the tenant to stamp on a NEW tenant-owned row (a job, a
+// run, a user): a non-empty tenantID is kept; an empty one yields DefaultTenantID in
+// single-tenant mode but a FAIL-CLOSED error in multitenant mode — so a tenant-owned
+// row is never silently born in the default tenant just because it was created
+// outside a tenant context (a non-bus path that forgot to resolve the tenant). The
+// bus path always carries a tenant (TenantMiddleware), so this error only fires on a
+// genuine bug. Pass either TenantIDFromContext(ctx) (ctx-based callers) or the row's
+// own TenantID (repos).
+//
+// It is the shared tenant resolver for BOTH sides: BaseRepository.Tenant (the read
+// side) delegates here too, converting the error into a panic — a missing tenant on
+// a read is a middleware bug, not a caller contract.
+func RequireTenant(tenantID string, multitenant Multitenancy) (string, error) {
+	if tenantID != "" {
+		return tenantID, nil
+	}
+	if multitenant {
+		return "", fmt.Errorf(
+			"shared: tenant required but absent (APP_MULTITENANCY=true) — a tenant-owned row " +
+				"must be created within a tenant context",
+		)
+	}
+	return DefaultTenantID, nil
+}
+
+// AssertTenantScope guards a tenant-scoped write against placing a row in a tenant
+// OTHER than the active one. In multitenant mode, when ctx carries a tenant scope,
+// the row's tenant must equal it — otherwise it is a cross-tenant write (a bug or an
+// attack: a handler running in tenant A persisting a row stamped tenant B). When ctx
+// carries NO scope (system/seed paths that never went through TenantMiddleware), the
+// row's explicit tenant is trusted — there is no active scope to violate. Single-
+// tenant mode never restricts. It is the write-side complement of RequireTenant:
+// RequireTenant guarantees a row HAS a tenant; this guarantees it is the RIGHT one.
+func AssertTenantScope(ctx context.Context, rowTenant string, multitenant Multitenancy) error {
+	if !multitenant {
+		return nil
+	}
+	if scope := TenantIDFromContext(ctx); scope != "" && rowTenant != scope {
+		return fmt.Errorf(
+			"shared: cross-tenant write rejected — row tenant %q does not match the active tenant %q",
+			rowTenant,
+			scope,
+		)
+	}
+	return nil
 }

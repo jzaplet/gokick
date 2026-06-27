@@ -11,7 +11,9 @@ description: 'Cesta perzistentního background jobu — zápis do fronty v trans
 
 # Job flow
 
-Perzistentní fronta pro práci, která musí proběhnout i po pádu procesu (poslat mail, volat externí API). Job se zapíše do tabulky `jobs` **uvnitř transakce commandu** (outbox), worker si ho atomicky převezme, spustí handler a označí dokončení **ve stejné transakci**. Selhání se přeplánuje s backoffem, po vyčerpání pokusů job skončí terminálně.
+Perzistentní fronta pro **krátkou práci nad vlastní databází**, která musí proběhnout i po pádu procesu. Job se zapíše do tabulky `jobs` **uvnitř transakce commandu** (outbox), worker si ho atomicky převezme, spustí handler a označí dokončení **ve stejné transakci**. Selhání se přeplánuje s backoffem, po vyčerpání pokusů job skončí terminálně.
+
+> ⚠️ **Pozor:** job handler běží **celý uvnitř transakce**, takže drží zámek na zápis databáze po celou dobu. **Nevolej v něm ven** (e-mail/SMTP, cizí API) — drželo by to zámek po dobu toho volání (SMTP visí, API i minuty) → zamrzne celá DB. Volání ven nebo dlouhá práce patří do **durable runu** ([Run flow](/framework/run-flow)). Viz [Background work](/framework/background-work).
 
 > Přehled toku. Návod (job kind, handler, retry policy) → `/gk-jobs`; periodické úlohy → `/gk-scheduler`.
 

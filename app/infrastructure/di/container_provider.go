@@ -14,11 +14,13 @@ import (
 	platformqry "gokick/app/application/platform/query"
 	profilecmd "gokick/app/application/profile/command"
 	profileqry "gokick/app/application/profile/query"
+	runapp "gokick/app/application/run"
 	tenantcmd "gokick/app/application/tenant/command"
 	tenantqry "gokick/app/application/tenant/query"
 	usercmd "gokick/app/application/user/command"
 	userqry "gokick/app/application/user/query"
 	"gokick/app/domain/job"
+	"gokick/app/domain/run"
 	"gokick/app/domain/shared"
 	"gokick/app/domain/tenant"
 	"gokick/app/domain/token"
@@ -29,6 +31,7 @@ import (
 	"gokick/app/infrastructure/security"
 	sqliteaudit "gokick/app/infrastructure/sqlite/audit"
 	sqlitejob "gokick/app/infrastructure/sqlite/job"
+	sqliterun "gokick/app/infrastructure/sqlite/run"
 	sqliteseeder "gokick/app/infrastructure/sqlite/seeder"
 	sqlitetenant "gokick/app/infrastructure/sqlite/tenant"
 	sqlitetoken "gokick/app/infrastructure/sqlite/token"
@@ -69,6 +72,7 @@ func provideCommandBus(
 	checker shared.PermissionChecker,
 	eventBus *bus.EventBus,
 	dispatcher shared.JobDispatcher,
+	runDispatcher shared.RunDispatcher,
 	audit shared.AuditLogger,
 	reporter shared.ErrorReporter,
 	tenantResolver shared.TenantResolver,
@@ -81,6 +85,7 @@ func provideCommandBus(
 			tenantResolver,
 			audit,
 			dispatcher,
+			runDispatcher,
 			eventBus,
 			db,
 		)...,
@@ -206,6 +211,13 @@ func provideMultitenant(cfg *config.Config) sqliteseeder.Multitenant {
 	return sqliteseeder.Multitenant(cfg.Multitenancy)
 }
 
+// provideMultitenancy surfaces APP_MULTITENANCY to application-layer constructors
+// (the create-user handler) that fail-close tenant resolution but cannot import
+// infrastructure. shared.Multitenancy is the Wire-distinct domain type.
+func provideMultitenancy(cfg *config.Config) shared.Multitenancy {
+	return shared.Multitenancy(cfg.Multitenancy)
+}
+
 // provideSchedulerJobs is the single source of truth for periodic in-process
 // jobs — mirrors providePermissionsRegistry / provideJobHandlerRegistry. Add
 // a new Job here; provideScheduler stays decoupled from job business.
@@ -254,6 +266,52 @@ func provideWorker(
 	return worker.NewWorker(logger, reporter, repo, registry, db, dispatcher, 1)
 }
 
+// provideRunHandlerRegistry collects every kind → durable-run handler the binary
+// can process. Empty for now — agent handlers are registered here as they appear.
+// The default lease comes from config so an unset per-kind lease stays consistent.
+func provideRunHandlerRegistry(cfg *config.Config) (*runapp.HandlerRegistry, error) {
+	return runapp.NewHandlerRegistry(map[string]runapp.Registration{}, cfg.RunWorkerLease)
+}
+
+// provideRunDispatcher returns the durable-run dispatcher as a domain interface so
+// command/event handlers depend on shared.RunDispatcher, not the concrete type.
+func provideRunDispatcher(
+	repo run.Repository,
+	registry *runapp.HandlerRegistry,
+) shared.RunDispatcher {
+	return runapp.NewDispatcher(repo, registry)
+}
+
+// provideRunWorker wires the durable run worker (the agent engine) from config. It
+// injects the job + run dispatchers so a run handler can offload transactional
+// side-work — the worker bypasses the bus, which is where they are normally injected.
+func provideRunWorker(
+	logger *slog.Logger,
+	reporter shared.ErrorReporter,
+	repo run.Repository,
+	registry *runapp.HandlerRegistry,
+	jobDispatcher shared.JobDispatcher,
+	runDispatcher shared.RunDispatcher,
+	cfg *config.Config,
+) *worker.RunWorker {
+	return worker.NewRunWorker(
+		logger,
+		reporter,
+		repo,
+		registry,
+		jobDispatcher,
+		runDispatcher,
+		worker.RunWorkerConfig{
+			DefaultLease:      cfg.RunWorkerLease,
+			HeartbeatInterval: cfg.RunWorkerHeartbeat,
+			PollInterval:      cfg.RunWorkerPoll,
+			DrainTimeout:      cfg.RunWorkerDrainTimeout,
+			MaxInFlight:       cfg.RunWorkerMaxInFlight,
+			MaxReclaims:       cfg.RunWorkerMaxReclaims,
+		},
+	)
+}
+
 func providePermissionsRegistry() *shared.PermissionsRegistry {
 	return shared.NewPermissionsRegistry([]shared.Permissioned{
 		authcmd.LogoutCommand{},
@@ -299,11 +357,15 @@ func CreateApplication(
 		provideSeedSuperAdminPassword,
 		provideSeedAdminTenant,
 		provideMultitenant,
+		provideMultitenancy,
 		provideSchedulerJobs,
 		provideScheduler,
 		provideJobHandlerRegistry,
 		provideJobDispatcher,
 		provideWorker,
+		provideRunHandlerRegistry,
+		provideRunDispatcher,
+		provideRunWorker,
 		providePermissionsRegistry,
 		security.NewJwtService,
 		wire.Bind(new(shared.JwtService), new(*security.JwtService)),
@@ -311,12 +373,14 @@ func CreateApplication(
 		wire.Bind(new(user.PlatformRepository), new(*sqliteuser.Repository)),
 		wire.Bind(new(token.TokenRepository), new(*sqlitetoken.Repository)),
 		wire.Bind(new(job.Repository), new(*sqlitejob.Repository)),
+		wire.Bind(new(run.Repository), new(*sqliterun.Repository)),
 		wire.Bind(new(tenant.Repository), new(*sqlitetenant.Repository)),
 		wire.Bind(new(shared.Seeder), new(*sqliteseeder.Seeder)),
 		wire.Bind(new(shared.AuditLogger), new(*sqliteaudit.Repository)),
 		sqliteuser.NewRepository,
 		sqlitetoken.NewRepository,
 		sqlitejob.NewRepository,
+		sqliterun.NewRepository,
 		sqlitetenant.NewRepository,
 		sqliteseeder.NewSeeder,
 		sqliteaudit.NewRepository,

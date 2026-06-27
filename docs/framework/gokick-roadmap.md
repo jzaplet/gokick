@@ -52,14 +52,16 @@ Recovery(→Sentry) → Logging → Audit → DispatchEvents → Transaction    
 - [x] **Audit záznamy** doplněny: `create-superadmin`/seed superadmin → `user.created`, `create-tenant`/seed tenant → `tenant.created` (bez ActorUserID — systémová akce). Ověřeno end-to-end přes reálný system bus.
 - [x] **Sentry = jen neočekávané** — paniky reportuje `RecoveryMiddleware` zadarmo; očekávané validační chyby do trackeru nejdou (invariant „error reporting is for the unexpected only").
 
-### Krok — Konfigurovatelný job lease + heartbeat (paralelní)
+### Krok — Sloučit job + durable run do jednoho primitiva
 
-- [ ] Nahradit zadrátovaný `defaultLockFor = 5min` **per-kind konfigurovatelným lease** + **heartbeat/renewal**, ať dlouhé joby (agentická práce) neztratí lock uprostřed běhu. Renewal přes raw pool (`r.DB.DB()`), mimo job tx — obnova uvnitř `runWithinTx` je pro ostatní workery neviditelná až do commitu.
+> Nahrazuje původní „konfigurovatelný job lease + heartbeat" — ten cíl (lease + heartbeat pro dlouhou práci) splnil **durable run** ([PR #21](https://github.com/jzaplet/gokick/pull/21)). Zůstal ale dvojí mechanismus: job (handler v transakci → drží write-lock celou dobu, takže „volání ven v jobu" zamrzne DB a nejde to vynutit) a run (mimo tx, vynutitelně). Po opravě toho footgunu se job a run skoro slejou.
+
+- [ ] **Sloučit do jednoho `durable task`** — mimo tx, idempotentní/at-least-once, **volitelný** checkpoint (s checkpointem = dnešní run, bez = dnešní job), **timeout** per task. „Job" = „task, který necheckpointuješ". Důvod: job handler běží celý v transakci (`runWithinTx`) → drží SQLite write-lock po celou dobu, takže „volání ven v jobu" (SMTP/cizí API) zamrzne DB a nejde to vynutit; runové „mimo tx" vynutitelné je. Samostatný PR **po** PR #21.
 
 ### Krok — OpenTelemetry (až na finálním tvaru)
 
 - [ ] **OTel HTTP middleware + propagace přes bus** — `trace_id` v ctx přejde na `trace.SpanContext`, sladit s `shared.LogKeyTraceID` (traces ↔ logy korelují).
-- [ ] **Span per job** (worker) + **SQL viditelnost přes `otelsql`** (span per dotaz) — proto se vědomě nestaví vlastní SQL→breadcrumb most.
+- [ ] **Span per job** (worker, obaluje `runWithinTx`) + **span per durable run** (run worker, `process()` — ale **bez** transakce: handler běží outside-tx, takže span obaluje běh handleru, ne tx; checkpointy/heartbeaty jako child-spany nebo span-events) + **SQL viditelnost přes `otelsql`** (span per dotaz) — proto se vědomě nestaví vlastní SQL→breadcrumb most. Workery dnes trace_id nemají (logy korelují přes `run_id`/`job_id`); OTEL je nasadí přes `shared.LogAttrs(ctx)`.
 - [ ] **FE↔BE distributed tracing — full** — light verze hotová ([PR #11](https://github.com/jzaplet/gokick/pull/11)); full přidá `tracesSampleRate > 0` → spany + waterfall (FE klik → API → handler → DB).
 - [ ] **Hardening:** `otelsql` + OTEL SDK do depguard allow-listu (`.golangci.yml`); collector endpoint do CSP `connect-src` + `traceparent` přes CORS.
 
@@ -79,6 +81,7 @@ Největší (a jediný zásadní) strop: single-node SQLite (single-writer) + sc
 - **B) Skutečný write-scale (Postgres):**
   - Přidat `infrastructure/postgres/*` + `wire.Bind` na stávající doménové interface (adapter swap).
   - Job frontu nahradit **River** (Postgres-native, battle-tested) místo custom SQLite queue.
+  - **Durable runs (`runs` tabulka):** `ClaimDue` na Postgresu přepsat na `SELECT … FOR UPDATE SKIP LOCKED` místo SQLite single-writer + `UPDATE … RETURNING`. **Vedlejší benefit:** současný SQLite `ClaimDue` obaluje indexovaný `run_at` do `julianday()` (kvůli ms-precision korektnosti proti `strftime('%f')` round-half-up skew), takže parciální index `idx_runs_claim` neslouží range-seeku ani ORDER BY → `SCAN` + `TEMP B-TREE` na každém pollu (na cíli ~500 agentů ≈ 6 % stropu, vrací LIMIT 1, takže zatím neřešené). Postgresí seek na nativním `timestamptz` tohle odstraní bez kompromisu na přesnosti. (Nález z xhigh code-review PR #21.)
   - Scheduler ošetřit **leader election** (Postgres advisory locks) — konec double-runů na víc instancích.
   - Rate-limit stav externalizovat (Redis), aby instance byly stateless.
 
