@@ -45,13 +45,17 @@ func TenantIDFromContext(ctx context.Context) string {
 }
 
 // RequireTenant resolves the tenant to stamp on a NEW tenant-owned row (a job, a
-// run, a user). It is the write-side mirror of BaseRepository.Tenant: a non-empty
-// tenantID is kept; an empty one yields DefaultTenantID in single-tenant mode but a
-// FAIL-CLOSED error in multitenant mode — so a tenant-owned row is never silently
-// born in the default tenant just because it was created outside a tenant context
-// (a non-bus path that forgot to resolve the tenant). The bus path always carries a
-// tenant (TenantMiddleware), so this error only fires on a genuine bug. Pass either
-// TenantIDFromContext(ctx) (ctx-based callers) or the row's own TenantID (repos).
+// run, a user): a non-empty tenantID is kept; an empty one yields DefaultTenantID in
+// single-tenant mode but a FAIL-CLOSED error in multitenant mode — so a tenant-owned
+// row is never silently born in the default tenant just because it was created
+// outside a tenant context (a non-bus path that forgot to resolve the tenant). The
+// bus path always carries a tenant (TenantMiddleware), so this error only fires on a
+// genuine bug. Pass either TenantIDFromContext(ctx) (ctx-based callers) or the row's
+// own TenantID (repos).
+//
+// It is the shared tenant resolver for BOTH sides: BaseRepository.Tenant (the read
+// side) delegates here too, converting the error into a panic — a missing tenant on
+// a read is a middleware bug, not a caller contract.
 func RequireTenant(tenantID string, multitenant Multitenancy) (string, error) {
 	if tenantID != "" {
 		return tenantID, nil
