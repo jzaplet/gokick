@@ -31,7 +31,9 @@ type Checkpointer interface {
 // from r.State (nil/empty = from scratch) and r.Payload; never mutate r (the
 // worker's finalize reads r.Attempts/r.Reclaims). Persist progress via ck.Save.
 // ctx is cancelled on lease loss, an operator cancel, or worker shutdown — the
-// handler must be ctx-aware and return promptly when it fires.
+// handler must be ctx-aware and return promptly when it fires. A run cancelled
+// mid-flight is recorded Cancelled regardless of the handler's return value, so a
+// handler need not distinguish a clean-stop nil from a ctx.Err() on cancellation.
 type HandlerFunc func(ctx context.Context, r *run.Run, ck Checkpointer) error
 
 // Registration binds a kind to its handler and an optional per-kind lease (the

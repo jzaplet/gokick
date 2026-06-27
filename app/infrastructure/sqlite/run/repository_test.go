@@ -350,11 +350,11 @@ func TestRenewLease_OriginalOwner_RescuesExpiredUnreclaimedLease(t *testing.T) {
 	claimAs(t, fx, owner)
 	forceExpire(t, fx, r.ID)
 
-	ok, err := fx.Runs.RenewLease(ctx, r.ID, owner, testLease)
-	if err != nil || !ok {
+	alive, _, err := fx.Runs.RenewLease(ctx, r.ID, owner, testLease)
+	if err != nil || !alive {
 		t.Fatalf(
-			"original owner must rescue an expired-but-unreclaimed lease: ok=%v err=%v",
-			ok,
+			"original owner must rescue an expired-but-unreclaimed lease: alive=%v err=%v",
+			alive,
 			err,
 		)
 	}
@@ -374,9 +374,9 @@ func TestRenewLease_ExtendsAbsolute_KeepsUnclaimable(t *testing.T) {
 	if err != nil || claimed == nil {
 		t.Fatalf("claim: %v / %v", claimed, err)
 	}
-	ok, err := fx.Runs.RenewLease(context.Background(), r.ID, owner, 30*time.Second)
-	if err != nil || !ok {
-		t.Fatalf("renew by owner must succeed: ok=%v err=%v", ok, err)
+	alive, _, err := fx.Runs.RenewLease(context.Background(), r.ID, owner, 30*time.Second)
+	if err != nil || !alive {
+		t.Fatalf("renew by owner must succeed: alive=%v err=%v", alive, err)
 	}
 	got := mustFind(t, fx, r.ID)
 	now := time.Now()
@@ -430,9 +430,9 @@ func TestRenewLease_LeaseZeroOrNegative_Rejected_RunStaysHeld(t *testing.T) {
 	before := mustFind(t, fx, r.ID)
 
 	for _, lease := range []time.Duration{0, -time.Second} {
-		ok, err := fx.Runs.RenewLease(context.Background(), r.ID, owner, lease)
-		if err == nil || ok {
-			t.Fatalf("renew lease %s must be rejected: ok=%v err=%v", lease, ok, err)
+		alive, _, err := fx.Runs.RenewLease(context.Background(), r.ID, owner, lease)
+		if err == nil || alive {
+			t.Fatalf("renew lease %s must be rejected: alive=%v err=%v", lease, alive, err)
 		}
 	}
 	after := mustFind(t, fx, r.ID)

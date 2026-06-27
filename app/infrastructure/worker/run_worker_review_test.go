@@ -17,15 +17,15 @@ import (
 // checkpoint that reports ownership lost) that timing alone can't reliably force.
 type flakyRepo struct {
 	run.Repository
-	failRenewAfter  atomic.Int32 // RenewLease calls past this index return an error (0 = never)
-	failRenewFrom   atomic.Int32 // RenewLease calls at/after this index error (1 = even the initial re-lease)
-	renewOkFalse    atomic.Bool  // RenewLease returns (false, nil) — lease lost, no error
-	panicCancelRead atomic.Bool  // IsCancelRequested panics (heartbeat-goroutine-only path)
-	failCheckpoint  atomic.Bool  // Checkpoint returns (false, nil)
-	failComplete    atomic.Bool  // MarkComplete returns (false, nil)
-	panicComplete   atomic.Bool  // MarkComplete panics (process()-level, non-handler path)
-	renewCalls      atomic.Int32
-	completeCalls   atomic.Int32
+	failRenewAfter atomic.Int32 // RenewLease calls past this index return an error (0 = never)
+	failRenewFrom  atomic.Int32 // RenewLease calls at/after this index error (1 = even the initial re-lease)
+	renewOkFalse   atomic.Bool  // RenewLease returns (false, false, nil) — lease lost, no error
+	panicRenewFrom atomic.Int32 // RenewLease calls at/after this index panic (heartbeat path; >1 skips the initial re-lease)
+	failCheckpoint atomic.Bool  // Checkpoint returns (false, nil)
+	failComplete   atomic.Bool  // MarkComplete returns (false, nil)
+	panicComplete  atomic.Bool  // MarkComplete panics (process()-level, non-handler path)
+	renewCalls     atomic.Int32
+	completeCalls  atomic.Int32
 }
 
 var _ run.Repository = (*flakyRepo)(nil)
@@ -34,27 +34,24 @@ func (f *flakyRepo) RenewLease(
 	ctx context.Context,
 	id, owner string,
 	lease time.Duration,
-) (bool, error) {
+) (bool, bool, error) {
 	n := f.renewCalls.Add(1)
+	// A panic here (heartbeat or initial re-lease, per panicRenewFrom) exercises the
+	// heartbeat-goroutine recover; >1 skips the initial re-lease so only the heartbeat
+	// panics. RenewLease now carries the cancel flag, so it is the heartbeat's repo call.
+	if p := f.panicRenewFrom.Load(); p > 0 && n >= p {
+		panic("injected RenewLease panic")
+	}
 	if f.renewOkFalse.Load() {
-		return false, nil
+		return false, false, nil
 	}
 	if from := f.failRenewFrom.Load(); from > 0 && n >= from {
-		return false, errors.New("injected renew error")
+		return false, false, errors.New("injected renew error")
 	}
 	if after := f.failRenewAfter.Load(); after > 0 && n > after {
-		return false, errors.New("injected renew error")
+		return false, false, errors.New("injected renew error")
 	}
 	return f.Repository.RenewLease(ctx, id, owner, lease)
-}
-
-// IsCancelRequested is invoked ONLY from the heartbeat goroutine, so a panic here
-// exercises the heartbeat-goroutine recover (distinct from the process() recover).
-func (f *flakyRepo) IsCancelRequested(ctx context.Context, id string) (bool, error) {
-	if f.panicCancelRead.Load() {
-		panic("injected IsCancelRequested panic")
-	}
-	return f.Repository.IsCancelRequested(ctx, id)
 }
 
 func (f *flakyRepo) Checkpoint(
@@ -94,7 +91,7 @@ func newRunWorkerWithRepo(
 		t.Fatalf("registry: %v", err)
 	}
 	reporter := &countingReporter{}
-	return NewRunWorker(silentLogger(), reporter, repo, reg, cfg), reporter
+	return NewRunWorker(silentLogger(), reporter, repo, reg, nil, nil, cfg), reporter
 }
 
 // #1 — the headline invariant for the handler shape that can violate it: a
@@ -128,9 +125,9 @@ func TestRunWorker_CancelNilReturn_MarksCancelledNotCompleted(t *testing.T) {
 }
 
 // #1b — a cancel requested AFTER the run is already executing must be observed by
-// the heartbeat's cancel-read and end the run cancelled. The sibling above requests
-// the cancel BEFORE start (caught at claim time, run_worker.go:262); this exercises
-// the mid-run cancel-read path (the IsCancelRequested call inside heartbeat()).
+// the heartbeat and end the run cancelled. The sibling above requests the cancel
+// BEFORE start (caught at claim time); this exercises the mid-run cancel-read path —
+// the cancel flag folded into the heartbeat's RenewLease.
 func TestRunWorker_MidRunCancel_Observed(t *testing.T) {
 	fx := testfx.New(t, t.TempDir()+"/rwr_midcancel.db")
 	started := make(chan struct{})
@@ -172,17 +169,20 @@ func TestRunWorker_UnknownKind_WithRetries_Parks(t *testing.T) {
 		map[string]runapp.Registration{"known": {Handler: handler}},
 		fastCfg(),
 	)
-	r := enqueueRunW(t, fx, "ghost", 2) // retries available → park, don't fail
+	r := enqueueRunW(t, fx, "ghost", 2) // unknown kind → park, don't fail
 
 	stop := startWorker(w)
 	defer stop()
-	waitFor(t, "parked (attempts bumped)", func() bool {
+	waitFor(t, "parked (parks bumped)", func() bool {
 		g := findW(t, fx, r.ID)
-		return g != nil && g.Attempts == 1
+		return g != nil && g.Parks == 1
 	})
 	got := findW(t, fx, r.ID)
 	if got.FailedAt != nil || got.CompletedAt != nil || got.CancelledAt != nil {
-		t.Fatal("an unknown kind with retries must be parked, not terminal")
+		t.Fatal("an unknown kind within the park budget must be parked, not terminal")
+	}
+	if got.Attempts != 0 {
+		t.Fatal("parking must NOT bump attempts (the logic-retry counter)")
 	}
 	if got.LockedBy != nil {
 		t.Fatal("park must clear the lock")
@@ -571,13 +571,13 @@ func TestRunWorker_InitialReleaseLost_AbandonsWithoutRunningHandler(t *testing.T
 }
 
 // #18 — a panic inside the HEARTBEAT goroutine (a repo call panicking, here
-// IsCancelRequested) must be recovered there (run_worker.go:240) and must NOT
-// crash the pool: a second healthy run on a single-slot pool still completes,
-// proving the panic recovered AND the backpressure slot was released.
+// RenewLease — which now also carries the cancel flag) must be recovered there and
+// must NOT crash the pool: a second healthy run on a single-slot pool still
+// completes, proving the panic recovered AND the backpressure slot was released.
 func TestRunWorker_HeartbeatPanic_DoesNotCrashPool(t *testing.T) {
 	fx := testfx.New(t, t.TempDir()+"/rwr_hbpanic.db")
 	repo := &flakyRepo{Repository: fx.Runs}
-	repo.panicCancelRead.Store(true) // the heartbeat's cancel-read panics
+	repo.panicRenewFrom.Store(2) // heartbeat renew panics; 2 skips the initial re-lease
 	blocking := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		<-ctx.Done() // unblocks when the heartbeat recover cancels the handler
 		return ctx.Err()
@@ -599,7 +599,7 @@ func TestRunWorker_HeartbeatPanic_DoesNotCrashPool(t *testing.T) {
 	stop := startWorker(w)
 	defer stop()
 	waitFor(t, "heartbeat panic captured", func() bool { return reporter.Count() >= 1 })
-	repo.panicCancelRead.Store(false) // stop panicking so the healthy run can heartbeat normally
+	repo.panicRenewFrom.Store(0) // stop panicking so the healthy run can heartbeat normally
 	healthyRun := enqueueRunW(t, fx, "healthy", 0)
 	waitFor(t, "healthy run completes after the heartbeat panic", func() bool {
 		g := findW(t, fx, healthyRun.ID)

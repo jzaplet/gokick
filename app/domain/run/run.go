@@ -23,13 +23,17 @@ import (
 //   - locked_until > now  → currently running under a lease held by locked_by
 //   - otherwise           → pending / reclaimable
 //
-// Two distinct counters, deliberately NOT merged (unlike jobs, where a claim ==
+// Three distinct counters, deliberately NOT merged (unlike jobs, where a claim ==
 // an attempt):
 //   - Attempts: LOGIC retries — bumped only when Reschedule runs (the handler
 //     returned a retryable error). max_retries governs this counter.
 //   - Reclaims: CRASH reclaims — bumped when ClaimDue reclaims an EXPIRED lease
 //     (a worker died mid-run). A long run that merely straddles a deploy/OOM must
 //     not burn its logic-retry budget, so reclaims are counted and bounded apart.
+//   - Parks: REGISTRY-SKEW parks — bumped when Park reschedules an unknown-kind run
+//     during a rolling deploy (a binary without the handler claimed it). Bounded by
+//     the worker INDEPENDENTLY of max_retries, so deploy timing never consumes the
+//     handler's logic-retry budget.
 type Run struct {
 	ID   string `db:"id"`
 	Kind string `db:"kind"`
@@ -42,7 +46,8 @@ type Run struct {
 	RunAt       time.Time  `db:"run_at"`       // when eligible to claim
 	Attempts    int        `db:"attempts"`     // logic retries (bumped on Reschedule)
 	Reclaims    int        `db:"reclaims"`     // crash reclaims (bumped on ClaimDue of an expired lease)
-	MaxRetries  int        `db:"max_retries"`  // caps Attempts only, never Reclaims
+	Parks       int        `db:"parks"`        // registry-skew parks (bumped on Park); bounded independently of MaxRetries
+	MaxRetries  int        `db:"max_retries"`  // caps Attempts only, never Reclaims/Parks
 	LockedBy    *string    `db:"locked_by"`    // owner token of the worker holding the lease (a per-claim nonce)
 	LockedUntil *time.Time `db:"locked_until"` // lease expiry; the heartbeat renews it
 	LastError   *string    `db:"last_error"`

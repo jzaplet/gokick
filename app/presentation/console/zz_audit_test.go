@@ -263,6 +263,8 @@ func newTestRunWorker(t *testing.T, fx *testfx.Fixture) *worker.RunWorker {
 		shared.NopReporter{},
 		fx.Runs,
 		registry,
+		nil,
+		nil,
 		worker.RunWorkerConfig{},
 	)
 }

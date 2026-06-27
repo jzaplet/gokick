@@ -51,7 +51,7 @@ func newRunWorker(
 		t.Fatalf("registry: %v", err)
 	}
 	reporter := &countingReporter{}
-	return NewRunWorker(silentLogger(), reporter, fx.Runs, reg, cfg), reporter
+	return NewRunWorker(silentLogger(), reporter, fx.Runs, reg, nil, nil, cfg), reporter
 }
 
 func enqueueRunW(t *testing.T, fx *testfx.Fixture, kind string, maxRetries int) *run.Run {
@@ -491,8 +491,12 @@ func TestRunWorker_HandlerPanic_DoesNotCrashPool_FailsRun(t *testing.T) {
 
 // ─── Unknown kind ─────────────────────────────────────────────────────────────
 
-func TestRunWorker_UnknownKind_ParksThenFails(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_unknown.db")
+// A run-once (max_retries=0) unknown kind must be PARKED for the rolling-deploy
+// registry-skew window, NOT failed on the first skewed claim — otherwise a long run
+// with checkpointed state is discarded just because an old binary (no handler)
+// claimed it. The park budget (minUnknownKindParks) is independent of max_retries.
+func TestRunWorker_UnknownKind_RunOnce_ParksNotFailed(t *testing.T) {
+	fx := testfx.New(t, t.TempDir()+"/rw_unknown_park.db")
 	// Registry has "known" but the enqueued run is "ghost".
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error { return nil }
 	w, _ := newRunWorker(
@@ -501,14 +505,119 @@ func TestRunWorker_UnknownKind_ParksThenFails(t *testing.T) {
 		map[string]runapp.Registration{"known": {Handler: handler}},
 		fastCfg(),
 	)
-	r := enqueueRunW(t, fx, "ghost", 0) // no retries → unknown kind fails terminally
+	r := enqueueRunW(t, fx, "ghost", 0) // run-once, but unknown → parked, not failed
 
 	stop := startWorker(w)
 	defer stop()
-	waitFor(t, "unknown-kind run failed", func() bool {
+	// Parked = rescheduled: parks bumped (NOT attempts), lock cleared, never failed_at.
+	waitFor(t, "unknown-kind run parked", func() bool {
+		g := findW(t, fx, r.ID)
+		return g != nil && g.Parks >= 1 && g.FailedAt == nil
+	})
+	if g := findW(t, fx, r.ID); g.FailedAt != nil || g.Attempts != 0 {
+		t.Fatal(
+			"a run-once unknown kind must be parked via the parks counter, not failed and not on attempts",
+		)
+	}
+}
+
+// Once the deploy-window park budget is spent, a genuinely-removed kind fails
+// terminally. Pre-setting attempts to the budget exercises the terminal path
+// without waiting out minUnknownKindParks exponential backoffs.
+func TestRunWorker_UnknownKind_ExhaustedBudget_Fails(t *testing.T) {
+	fx := testfx.New(t, t.TempDir()+"/rw_unknown_fail.db")
+	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error { return nil }
+	w, _ := newRunWorker(
+		t,
+		fx,
+		map[string]runapp.Registration{"known": {Handler: handler}},
+		fastCfg(),
+	)
+	r := enqueueRunW(t, fx, "ghost", 0)
+	if _, err := fx.DB.DB().ExecContext(context.Background(),
+		`UPDATE runs SET parks = ? WHERE id = ?`, minUnknownKindParks, r.ID); err != nil {
+		t.Fatalf("pre-bump parks: %v", err)
+	}
+
+	stop := startWorker(w)
+	defer stop()
+	waitFor(t, "unknown-kind run failed after budget", func() bool {
 		g := findW(t, fx, r.ID)
 		return g != nil && g.FailedAt != nil
 	})
+}
+
+// Regression for the deploy-skew/retry-budget coupling the re-review caught: parking
+// an unknown kind must NOT consume the handler's logic-retry budget. A run whose
+// parks counter is already maxed (as if parked through a long rolling deploy) must,
+// once a handler-bearing binary runs it, still get its full max_retries — its first
+// failure reschedules, it is not terminal-failed.
+func TestRunWorker_ParkingDoesNotConsumeRetryBudget(t *testing.T) {
+	fx := testfx.New(t, t.TempDir()+"/rw_park_budget.db")
+	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
+		return errors.New("transient")
+	}
+	w, _ := newRunWorker(
+		t,
+		fx,
+		map[string]runapp.Registration{"agent": {Handler: handler}},
+		fastCfg(),
+	)
+	r := enqueueRunW(t, fx, "agent", 2) // 2 logic retries
+	if _, err := fx.DB.DB().ExecContext(context.Background(),
+		`UPDATE runs SET parks = ? WHERE id = ?`, minUnknownKindParks, r.ID); err != nil {
+		t.Fatalf("pre-set parks: %v", err)
+	}
+
+	stop := startWorker(w)
+	defer stop()
+	// Despite parks being maxed, the handler's first failure RESCHEDULES (attempts→1)
+	// rather than terminal-failing — parks never touched the logic-retry budget.
+	waitFor(t, "first failure rescheduled (retry budget intact)", func() bool {
+		g := findW(t, fx, r.ID)
+		return g != nil && g.Attempts == 1
+	})
+	if g := findW(t, fx, r.ID); g.FailedAt != nil {
+		t.Fatal(
+			"parking must not consume the logic-retry budget: the run must reschedule, not fail",
+		)
+	}
+}
+
+// A run handler runs OUTSIDE a tx and offloads transactional side-work by enqueuing
+// a job or a child run. The worker bypasses the bus, so it must inject the
+// dispatchers into the handler ctx — without that shared.RunDispatcherFromContext
+// returns the silent no-op and the enqueue vanishes. Here a parent handler enqueues a
+// child run and we prove the child row actually lands and runs.
+func TestRunWorker_HandlerCanEnqueueChildRun(t *testing.T) {
+	fx := testfx.New(t, t.TempDir()+"/rw_enqueue_child.db")
+	childRan := make(chan struct{}, 1)
+	parent := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
+		return shared.RunDispatcherFromContext(ctx).
+			Enqueue(ctx, "child", 0, map[string]string{"k": "v"})
+	}
+	child := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
+		childRan <- struct{}{}
+		return nil
+	}
+	reg, err := runapp.NewHandlerRegistry(map[string]runapp.Registration{
+		"parent": {Handler: parent},
+		"child":  {Handler: child},
+	}, time.Second)
+	if err != nil {
+		t.Fatalf("registry: %v", err)
+	}
+	dispatcher := runapp.NewDispatcher(fx.Runs, reg)
+	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, dispatcher, fastCfg())
+
+	enqueueRunW(t, fx, "parent", 0)
+	stop := startWorker(w)
+	defer stop()
+	select {
+	case <-childRan:
+	case <-time.After(3 * time.Second):
+		t.Fatal("child run enqueued by the parent handler never ran — dispatcher not injected")
+	}
 }
 
 // The run worker bypasses the bus, so it must restore the tenant the run was

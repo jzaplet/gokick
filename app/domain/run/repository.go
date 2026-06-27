@@ -53,9 +53,18 @@ type Repository interface {
 	ClaimDue(ctx context.Context, owner string, lease time.Duration) (*Run, error)
 
 	// RenewLease extends the lease (locked_until = now + lease) iff the run is
-	// still owned by owner and not terminal — the heartbeat. (false, nil) = lease
-	// lost. lease must be > 0.
-	RenewLease(ctx context.Context, id, owner string, lease time.Duration) (bool, error)
+	// still owned by owner and not terminal — the heartbeat. It also reports the
+	// operator cancel signal in the SAME owner-checked write (RETURNING
+	// cancel_requested), so the heartbeat observes a mid-run cancel without a
+	// second round-trip and without ever transferring the payload/state BLOB.
+	// Returns (alive, cancelRequested, err): alive=false (cancelRequested=false) =
+	// lease lost or terminal — the only case that needs no cancel signal. lease
+	// must be > 0.
+	RenewLease(
+		ctx context.Context,
+		id, owner string,
+		lease time.Duration,
+	) (alive, cancelRequested bool, err error)
 
 	// Checkpoint persists resumable state AND renews the lease (a successful
 	// checkpoint proves liveness) iff still owned and not terminal. state is stored
@@ -80,6 +89,13 @@ type Repository interface {
 	// owned and not terminal. (false, nil) = lease lost.
 	Reschedule(ctx context.Context, id, owner string, runAt time.Time, lastErr string) (bool, error)
 
+	// Park requeues an unknown-kind run (rolling-deploy registry skew) the SAME way
+	// as Reschedule but bumps `parks`, NOT `attempts` — so deploy-window parking is
+	// bounded separately and never consumes the handler's logic-retry budget. Sets
+	// run_at + last_error and clears the lock, iff still owned and not terminal.
+	// (false, nil) = lease lost.
+	Park(ctx context.Context, id, owner string, runAt time.Time, reason string) (bool, error)
+
 	// MarkFailed records terminal failure (failed_at = now, last_error) and clears
 	// the lock, iff still owned and not already terminal. The last checkpoint state
 	// is preserved for postmortem. (false, nil) = lease lost or already terminal.
@@ -98,13 +114,6 @@ type Repository interface {
 	// the cancel signal. The last checkpoint state is preserved. (false, nil) =
 	// lease lost or already terminal.
 	MarkCancelled(ctx context.Context, id, owner string) (bool, error)
-
-	// IsCancelRequested reports whether the operator cancel signal is set on the run
-	// — the worker's heartbeat polls it to observe a mid-run cancel. It reads only
-	// the cancel_requested flag, NOT the whole row, so it never transfers the payload
-	// or the (potentially large, growing) state BLOB on every heartbeat tick. Returns
-	// (false, nil) when the run is absent.
-	IsCancelRequested(ctx context.Context, id string) (bool, error)
 
 	// FindByID returns the run, or (nil, nil) when absent.
 	FindByID(ctx context.Context, id string) (*Run, error)

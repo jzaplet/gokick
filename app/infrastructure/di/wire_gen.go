@@ -127,7 +127,7 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 		return nil, err
 	}
 	worker := provideWorker(logger, reporter, repository, handlerRegistry, sqliteManager, jobDispatcher)
-	runWorker := provideRunWorker(logger, reporter, runRepository, runHandlerRegistry, configConfig)
+	runWorker := provideRunWorker(logger, reporter, runRepository, runHandlerRegistry, jobDispatcher, runDispatcher, configConfig)
 	serveCommand := console.NewServeCommand(serverServer, scheduler, worker, runWorker)
 	seedAdminPassword := provideSeedAdminPassword(configConfig)
 	seedSuperAdminPassword := provideSeedSuperAdminPassword(configConfig)
@@ -376,15 +376,19 @@ func provideRunDispatcher(
 	return run2.NewDispatcher(repo, registry)
 }
 
-// provideRunWorker wires the durable run worker (the agent engine) from config.
+// provideRunWorker wires the durable run worker (the agent engine) from config. It
+// injects the job + run dispatchers so a run handler can offload transactional
+// side-work — the worker bypasses the bus, which is where they are normally injected.
 func provideRunWorker(
 	logger *slog.Logger,
 	reporter shared.ErrorReporter,
 	repo run3.Repository,
 	registry *run2.HandlerRegistry,
+	jobDispatcher shared.JobDispatcher,
+	runDispatcher shared.RunDispatcher,
 	cfg *config.Config,
 ) *worker.RunWorker {
-	return worker.NewRunWorker(logger, reporter, repo, registry, worker.RunWorkerConfig{
+	return worker.NewRunWorker(logger, reporter, repo, registry, jobDispatcher, runDispatcher, worker.RunWorkerConfig{
 		DefaultLease:      cfg.RunWorkerLease,
 		HeartbeatInterval: cfg.RunWorkerHeartbeat,
 		PollInterval:      cfg.RunWorkerPoll,

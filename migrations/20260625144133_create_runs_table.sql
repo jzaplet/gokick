@@ -23,11 +23,13 @@ CREATE TABLE IF NOT EXISTS runs (
     payload      BLOB NOT NULL,             -- immutable initial input
     state        BLOB,                      -- latest checkpoint (resumable state); NULL until first checkpoint
     run_at       DATETIME NOT NULL,         -- when eligible to claim (delay / retry backoff)
-    -- Two distinct counters, deliberately NOT merged (unlike jobs, where a claim
+    -- Three distinct counters, deliberately NOT merged (unlike jobs, where a claim
     -- IS an attempt). A long run that merely straddles a deploy/OOM must not burn
-    -- its logic-retry budget, so crash-reclaims are counted separately.
+    -- its logic-retry budget, so crash-reclaims and registry-skew parks are counted
+    -- separately and each bounded independently of max_retries.
     attempts     INTEGER NOT NULL DEFAULT 0,  -- LOGIC retries: bumped on Reschedule; gated by max_retries
     reclaims     INTEGER NOT NULL DEFAULT 0,  -- CRASH reclaims: bumped when ClaimDue reclaims an EXPIRED lease; bounded by the worker, not by max_retries
+    parks        INTEGER NOT NULL DEFAULT 0,  -- REGISTRY-SKEW parks: bumped when an unknown-kind run is parked during a rolling deploy; bounded by the worker, INDEPENDENT of max_retries (never consumes the logic-retry budget)
     max_retries  INTEGER NOT NULL DEFAULT 0,
     locked_by    TEXT,                      -- owner token of the worker holding the lease (a per-claim nonce)
     locked_until DATETIME,                  -- lease expiry; the heartbeat renews it
@@ -47,7 +49,14 @@ CREATE TABLE IF NOT EXISTS runs (
 -- Claim scans pending rows ordered by run_at; locked_until disambiguates
 -- in-progress vs free (an expired lease is reclaimable). Completed/failed rows
 -- are kept for audit but excluded via the partial-index predicate.
-CREATE INDEX idx_runs_claim ON runs(run_at, locked_until)
+--
+-- The index keys the julianday() EXPRESSIONS, not the raw columns, because
+-- ClaimDue compares and orders by julianday(run_at)/julianday(locked_until) (full
+-- double precision — dodges strftime('%f') round-half-up skew). A raw-column index
+-- would not match those expressions, forcing a full scan + a temp B-tree sort;
+-- keying the expressions lets the claim do a bounded range seek on julianday(run_at)
+-- and read it already ordered.
+CREATE INDEX idx_runs_claim ON runs(julianday(run_at), julianday(locked_until))
     WHERE completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL;
 
 CREATE INDEX idx_runs_kind ON runs(kind, created_at);

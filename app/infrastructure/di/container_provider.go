@@ -282,22 +282,34 @@ func provideRunDispatcher(
 	return runapp.NewDispatcher(repo, registry)
 }
 
-// provideRunWorker wires the durable run worker (the agent engine) from config.
+// provideRunWorker wires the durable run worker (the agent engine) from config. It
+// injects the job + run dispatchers so a run handler can offload transactional
+// side-work — the worker bypasses the bus, which is where they are normally injected.
 func provideRunWorker(
 	logger *slog.Logger,
 	reporter shared.ErrorReporter,
 	repo run.Repository,
 	registry *runapp.HandlerRegistry,
+	jobDispatcher shared.JobDispatcher,
+	runDispatcher shared.RunDispatcher,
 	cfg *config.Config,
 ) *worker.RunWorker {
-	return worker.NewRunWorker(logger, reporter, repo, registry, worker.RunWorkerConfig{
-		DefaultLease:      cfg.RunWorkerLease,
-		HeartbeatInterval: cfg.RunWorkerHeartbeat,
-		PollInterval:      cfg.RunWorkerPoll,
-		DrainTimeout:      cfg.RunWorkerDrainTimeout,
-		MaxInFlight:       cfg.RunWorkerMaxInFlight,
-		MaxReclaims:       cfg.RunWorkerMaxReclaims,
-	})
+	return worker.NewRunWorker(
+		logger,
+		reporter,
+		repo,
+		registry,
+		jobDispatcher,
+		runDispatcher,
+		worker.RunWorkerConfig{
+			DefaultLease:      cfg.RunWorkerLease,
+			HeartbeatInterval: cfg.RunWorkerHeartbeat,
+			PollInterval:      cfg.RunWorkerPoll,
+			DrainTimeout:      cfg.RunWorkerDrainTimeout,
+			MaxInFlight:       cfg.RunWorkerMaxInFlight,
+			MaxReclaims:       cfg.RunWorkerMaxReclaims,
+		},
+	)
 }
 
 func providePermissionsRegistry() *shared.PermissionsRegistry {

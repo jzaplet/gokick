@@ -30,6 +30,22 @@ const (
 // tolerates before treating the lease as untrustworthy and abandoning the run.
 const maxHeartbeatErrors = 3
 
+// minUnknownKindParks bounds how many times a run whose kind this binary has no
+// handler for is parked (via Park, bumping the dedicated `parks` counter) before
+// failing terminally — a rolling-deploy registry-skew budget gated INDEPENDENTLY of
+// the handler's max_retries (parking never touches `attempts`). Without it a
+// run-once run (max_retries=0) would fail on the first skewed claim, discarding a
+// long run that a binary WITH the handler could still resume.
+const minUnknownKindParks = 5
+
+// cancelGraceLeaseMultiple bounds, as a multiple of the lease, how long the
+// heartbeat keeps renewing for a cancelled run whose handler has not yet returned.
+// A ctx-aware handler returns promptly on cancel and never reaches this; the bound
+// only fires for a handler that ignores ctx cancellation (a contract violation) —
+// past it the worker abandons, the lease lapses, and reclaim + the poison-reclaim
+// cap terminate the run instead of renewing it forever.
+const cancelGraceLeaseMultiple = 4
+
 // RunWorkerConfig tunes the durable run worker. Zero fields take safe defaults.
 type RunWorkerConfig struct {
 	DefaultLease      time.Duration // initial claim lease; per-kind leases (registry) override it via an immediate re-lease
@@ -44,12 +60,11 @@ func (c RunWorkerConfig) withDefaults() RunWorkerConfig {
 	if c.DefaultLease <= 0 {
 		c.DefaultLease = 5 * time.Minute
 	}
-	if c.HeartbeatInterval <= 0 {
-		c.HeartbeatInterval = c.DefaultLease / 3
-	}
-	// A heartbeat not comfortably shorter than the lease can't keep it renewed;
-	// clamp a misconfigured interval. Per-kind leases must likewise stay >> this.
-	if c.HeartbeatInterval > c.DefaultLease/2 {
+	// A heartbeat must stay comfortably shorter than the lease it renews, else it
+	// can't keep it alive. Both an unset (<=0) interval and a misconfigured too-large
+	// one (> Lease/2) fall back to the same Lease/3; per-kind leases must likewise
+	// stay >> this.
+	if c.HeartbeatInterval <= 0 || c.HeartbeatInterval > c.DefaultLease/2 {
 		c.HeartbeatInterval = c.DefaultLease / 3
 	}
 	if c.PollInterval <= 0 {
@@ -77,7 +92,17 @@ type RunWorker struct {
 	reporter shared.ErrorReporter
 	repo     run.Repository
 	registry *runapp.HandlerRegistry
-	cfg      RunWorkerConfig
+	// Dispatchers a run handler may use for transactional side-work: a run handler
+	// runs OUTSIDE a tx (ContextForbidTx), so it persists progress via the
+	// Checkpointer and offloads anything that needs a transaction by enqueuing a
+	// short job or a child run. The worker bypasses the bus, so it injects these
+	// into the handler ctx itself (mirroring the job worker) — otherwise
+	// shared.*DispatcherFromContext would return the silent no-op and drop the
+	// enqueue. Either may be nil (a worker built without dispatchers); the inject
+	// then falls through to the no-op, same as before.
+	jobDispatcher shared.JobDispatcher
+	runDispatcher shared.RunDispatcher
+	cfg           RunWorkerConfig
 }
 
 func NewRunWorker(
@@ -85,15 +110,19 @@ func NewRunWorker(
 	reporter shared.ErrorReporter,
 	repo run.Repository,
 	registry *runapp.HandlerRegistry,
+	jobDispatcher shared.JobDispatcher,
+	runDispatcher shared.RunDispatcher,
 	cfg RunWorkerConfig,
 ) *RunWorker {
 	return &RunWorker{
-		id:       uuid.NewString(),
-		logger:   logger,
-		reporter: reporter,
-		repo:     repo,
-		registry: registry,
-		cfg:      cfg.withDefaults(),
+		id:            uuid.NewString(),
+		logger:        logger,
+		reporter:      reporter,
+		repo:          repo,
+		registry:      registry,
+		jobDispatcher: jobDispatcher,
+		runDispatcher: runDispatcher,
+		cfg:           cfg.withDefaults(),
 	}
 }
 
@@ -163,6 +192,12 @@ func (w *RunWorker) idleWait(ctx context.Context, ticker *time.Ticker) bool {
 // drain waits for in-flight runs to finish, bounded by DrainTimeout. Stragglers
 // past the deadline are left running; they are owner-fenced, their leases lapse,
 // and another process reclaims + resumes them.
+//
+// The monitor goroutine below is the canonical WaitGroup-with-timeout: on a
+// DrainTimeout it outlives drain() and self-reaps the instant the last straggler's
+// process() returns (every process() is bounded — workerCtx is cancelled, so
+// ctx-aware handlers return promptly). It holds only the WaitGroup + a channel, so
+// the lingering is a brief, bounded tail, not a leak.
 func (w *RunWorker) drain(wg *sync.WaitGroup) {
 	done := make(chan struct{})
 	go func() { wg.Wait(); close(done) }()
@@ -210,22 +245,36 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 		return
 	}
 
-	// Close the claim gap: re-lease to the kind's lease before running, so a short
-	// DefaultLease can't let another worker reclaim before the first heartbeat. The
-	// heartbeat interval is kept sound against kindLease by deriving it from the lease
-	// inside heartbeat() (not here). False = already lost.
-	if ok, err := w.repo.RenewLease(workerCtx, r.ID, owner, kindLease); err != nil {
-		log.Error("run worker: initial re-lease errored, abandoning", shared.LogKeyError, err)
-		return
-	} else if !ok {
-		log.Warn("run worker: lost lease immediately after claim, abandoning")
-		return
+	// Close the claim gap: ClaimDue already stamped DefaultLease, so re-lease to the
+	// kind's lease ONLY when it differs — a per-kind lease (shorter or longer) must
+	// take effect before the first heartbeat tick, but for the common default-lease
+	// kind the claim's lease is already correct and a second write is wasted. The
+	// heartbeat keeps its interval sound against kindLease by deriving it from the
+	// lease inside heartbeat() (not here). alive=false = already lost.
+	if kindLease != w.cfg.DefaultLease {
+		if alive, _, err := w.repo.RenewLease(workerCtx, r.ID, owner, kindLease); err != nil {
+			log.Error("run worker: initial re-lease errored, abandoning", shared.LogKeyError, err)
+			return
+		} else if !alive {
+			log.Warn("run worker: lost lease immediately after claim, abandoning")
+			return
+		}
 	}
 
 	// Restore the tenant the run was enqueued for (the worker bypasses the bus) and
 	// mark the ctx no-transaction: a durable run runs OUTSIDE a tx, so an accidental
 	// BeginTx in the handler must fail closed, not freeze the DB (shared.ContextForbidTx).
 	runCtx := shared.ContextForbidTx(shared.ContextWithTenantID(workerCtx, r.TenantID))
+	// Inject the dispatchers the handler needs for transactional side-work (enqueue a
+	// short job or a child run). The worker bypasses the bus, so without this
+	// shared.*DispatcherFromContext would return the silent no-op and drop the
+	// enqueue. Skip a nil dispatcher so the ctx falls through to the no-op cleanly.
+	if w.jobDispatcher != nil {
+		runCtx = shared.ContextWithJobDispatcher(runCtx, w.jobDispatcher)
+	}
+	if w.runDispatcher != nil {
+		runCtx = shared.ContextWithRunDispatcher(runCtx, w.runDispatcher)
+	}
 
 	handlerCtx, cancelHandler := context.WithCancel(runCtx)
 	defer cancelHandler()
@@ -279,7 +328,6 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 		r,
 		owner,
 		hErr,
-		handlerCtx,
 		abandon.Load(),
 		cancelled.Load(),
 		time.Since(start),
@@ -309,7 +357,10 @@ func (w *RunWorker) runHandler(
 // heartbeat renews the lease until ctx is cancelled (shutdown or main's stop). On
 // a lost or untrustworthy lease it sets abandon + cancels the handler and exits;
 // on an observed cancel it sets cancelled + cancels the handler but KEEPS renewing
-// so the lease holds while the handler winds down (until MarkCancelled).
+// so the lease holds while the handler winds down — bounded by a grace deadline so
+// a handler that ignores ctx cannot pin the lease forever (it is then abandoned for
+// reclaim). The cancel signal rides back on the renew write itself (RETURNING
+// cancel_requested), so there is no separate poll.
 func (w *RunWorker) heartbeat(
 	ctx context.Context,
 	id, owner string,
@@ -335,6 +386,10 @@ func (w *RunWorker) heartbeat(
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	errs := 0
+	// cancelDeadline bounds the post-cancel winddown for a handler that ignores ctx:
+	// zero until a cancel is observed, then now + grace. It is a LOCAL safety timer
+	// (single goroutine), not a lease decision — those stay DB-clock sourced.
+	var cancelDeadline time.Time
 
 	for {
 		select {
@@ -343,7 +398,7 @@ func (w *RunWorker) heartbeat(
 		case <-ticker.C:
 		}
 
-		alive, err := w.repo.RenewLease(ctx, id, owner, lease)
+		alive, cancelRequested, err := w.repo.RenewLease(ctx, id, owner, lease)
 		if err != nil {
 			if ctx.Err() != nil { // shutdown / stop racing the write — leave it to the select
 				return
@@ -365,13 +420,31 @@ func (w *RunWorker) heartbeat(
 			return
 		}
 
-		// Observe a cancel requested after claim. Once seen, stop checking (cancel
-		// latency is loose) but keep renewing through the winddown. A flag-only read —
-		// never the full row + state BLOB — on every tick.
-		if !cancelled.Load() {
-			if want, ferr := w.repo.IsCancelRequested(ctx, id); ferr == nil && want {
-				cancelled.Store(true)
+		// Observe an operator cancel — carried back by the same owner-checked renew, so
+		// no extra round-trip and never the payload/state BLOB. Once seen (here, or
+		// already by process() at claim time) cancel the handler and KEEP renewing so
+		// the lease holds while it winds down.
+		if cancelRequested && !cancelled.Load() {
+			cancelled.Store(true)
+			cancelHandler()
+		}
+		// Bound the winddown. A ctx-aware handler returns promptly and the heartbeat
+		// exits via ctx.Done() long before this fires; the deadline only catches a
+		// handler that IGNORES ctx — past it abandon, so the lease lapses for reclaim
+		// (and the poison-reclaim cap) rather than renewing forever.
+		if cancelled.Load() {
+			switch {
+			case cancelDeadline.IsZero():
+				cancelDeadline = time.Now().Add(cancelGraceLeaseMultiple * lease)
+			case time.Now().After(cancelDeadline):
+				w.logger.Warn(
+					"run worker: cancelled handler exceeded grace, abandoning for reclaim",
+					logKeyRunID,
+					id,
+				)
+				abandon.Store(true)
 				cancelHandler()
+				return
 			}
 		}
 	}
@@ -379,15 +452,17 @@ func (w *RunWorker) heartbeat(
 
 // finalize records the run's terminal state exactly once. Order matters: a run we
 // abandoned or that shut down mid-flight must NEVER be completed/failed (it is
-// owner-fenced and will be reclaimed + resumed). Every finalizer is owner-checked;
-// a false return means the lease was lost at the last moment → abandon.
+// owner-fenced and will be reclaimed + resumed). cancelled is ranked ABOVE success
+// on purpose — a handler whose ctx was cancelled and returns nil cannot be trusted
+// to have finished (it may have stopped early), so it is recorded Cancelled, not
+// Complete. Every finalizer is owner-checked; a false return means the lease was
+// lost at the last moment → abandon.
 func (w *RunWorker) finalize(
 	workerCtx context.Context,
 	log *slog.Logger,
 	r *run.Run,
 	owner string,
 	hErr error,
-	handlerCtx context.Context,
 	abandon, cancelled bool,
 	dur time.Duration,
 ) {
@@ -415,10 +490,6 @@ func (w *RunWorker) finalize(
 		default:
 			log.Info("run worker: run cancelled", shared.DurationMsAttr(dur))
 		}
-	case handlerCtx.Err() != nil:
-		// Defensive: the handler ctx was cancelled but via no path we recorded.
-		// Never complete or fail a cancelled handler.
-		log.Warn("run worker: handler ctx cancelled by unknown path, abandoning")
 	case hErr == nil:
 		ok, err := w.repo.MarkComplete(workerCtx, r.ID, owner)
 		switch {
@@ -479,9 +550,13 @@ func (w *RunWorker) handleFailure(
 }
 
 // handleUnknownKind parks a run whose kind this binary has no handler for (a
-// rolling-deploy registry skew) by rescheduling it, rather than discarding a long
-// run's checkpointed state — a binary WITH the handler picks it up. Bounded by
-// max_retries so a genuinely-removed kind eventually fails terminally.
+// rolling-deploy registry skew) via Park, rather than discarding a long run's
+// checkpointed state — a binary WITH the handler picks it up. Parking is gated by
+// the dedicated `parks` counter (NOT attempts) against minUnknownKindParks, so the
+// budget is INDEPENDENT of the handler's max_retries: a run-once run (max_retries=0)
+// survives the deploy window, and parking never consumes the handler's logic-retry
+// budget. A genuinely-removed kind still fails terminally once the parks budget is
+// spent.
 func (w *RunWorker) handleUnknownKind(
 	ctx context.Context,
 	log *slog.Logger,
@@ -489,18 +564,18 @@ func (w *RunWorker) handleUnknownKind(
 	owner string,
 ) {
 	reason := fmt.Sprintf("no handler registered for kind %q (registry skew)", r.Kind)
-	if r.Attempts >= r.MaxRetries {
+	if r.Parks >= minUnknownKindParks {
 		if ok, err := w.repo.MarkFailed(ctx, r.ID, owner, reason); err != nil {
 			log.Error("run worker: unknown-kind mark-failed errored", shared.LogKeyError, err)
 		} else if ok {
-			log.Error("run worker: unknown kind exhausted retries, failed", logKeyRunKind, r.Kind)
+			log.Error("run worker: unknown kind exhausted park budget, failed", logKeyRunKind, r.Kind)
 			w.reporter.Capture(ctx, fmt.Errorf("run worker: %s", reason), slog.String(logKeyRunID, r.ID))
 		}
 		return
 	}
-	delay := backoff(r.Attempts + 1)
-	if ok, err := w.repo.Reschedule(ctx, r.ID, owner, time.Now().Add(delay), reason); err != nil {
-		log.Error("run worker: unknown-kind reschedule errored", shared.LogKeyError, err)
+	delay := backoff(r.Parks + 1)
+	if ok, err := w.repo.Park(ctx, r.ID, owner, time.Now().Add(delay), reason); err != nil {
+		log.Error("run worker: unknown-kind park errored", shared.LogKeyError, err)
 	} else if ok {
 		log.Warn("run worker: unknown kind, parked for retry (registry skew)", logKeyRunKind, r.Kind)
 	}

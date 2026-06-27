@@ -254,9 +254,9 @@ func TestMutators_AllBumpUpdatedAt(t *testing.T) {
 			}
 		}},
 		{"RenewLease", func(t *testing.T, fx *testfx.Fixture, id, owner string) {
-			if ok, err := fx.Runs.RenewLease(context.Background(), id, owner, testLease); err != nil ||
-				!ok {
-				t.Fatalf("renew: ok=%v err=%v", ok, err)
+			if alive, _, err := fx.Runs.RenewLease(context.Background(), id, owner, testLease); err != nil ||
+				!alive {
+				t.Fatalf("renew: alive=%v err=%v", alive, err)
 			}
 		}},
 		{"Checkpoint", func(t *testing.T, fx *testfx.Fixture, id, owner string) {

@@ -142,6 +142,8 @@ func serveTestRunWorker(
 		shared.NopReporter{},
 		fx.Runs,
 		registry,
+		nil,
+		nil,
 		worker.RunWorkerConfig{},
 	)
 }

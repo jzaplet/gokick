@@ -59,7 +59,8 @@ type ownerCheckedCall struct {
 
 var ownerCheckedCalls = []ownerCheckedCall{
 	{"RenewLease", func(ctx context.Context, fx *testfx.Fixture, id, owner string) (bool, error) {
-		return fx.Runs.RenewLease(ctx, id, owner, testLease)
+		alive, _, err := fx.Runs.RenewLease(ctx, id, owner, testLease)
+		return alive, err
 	}},
 	{"Checkpoint", func(ctx context.Context, fx *testfx.Fixture, id, owner string) (bool, error) {
 		return fx.Runs.Checkpoint(ctx, id, owner, []byte(`{"x":1}`), testLease)
@@ -242,9 +243,9 @@ func TestFence_StaleRenewLease_RejectedAndLeaseUntouched(t *testing.T) {
 	id, ownerA, ownerB := reclaimedByB(t, fx)
 	before := mustFind(t, fx, id) // B's lease
 
-	ok, err := fx.Runs.RenewLease(ctx, id, ownerA, 10*time.Hour)
-	if err != nil || ok {
-		t.Fatalf("stale renew: ok=%v err=%v want false,nil", ok, err)
+	alive, _, err := fx.Runs.RenewLease(ctx, id, ownerA, 10*time.Hour)
+	if err != nil || alive {
+		t.Fatalf("stale renew: alive=%v err=%v want false,nil", alive, err)
 	}
 	after := mustFind(t, fx, id)
 	if after.LockedBy == nil || *after.LockedBy != ownerB {

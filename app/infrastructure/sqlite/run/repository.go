@@ -26,19 +26,13 @@ func NewRepository(db *database.SqliteManager) *Repository {
 	return &Repository{BaseRepository: sqlite.BaseRepository{DB: db}}
 }
 
-// nowExpr writes the DB clock at ms precision (for completed_at/failed_at/updated_at).
-const nowExpr = `strftime('%Y-%m-%d %H:%M:%f', 'now')`
-
-// leaseExpr computes locked_until = now + lease entirely in SQLite, sub-second
-// precise: julianday('now') is a double (days), + lease_seconds/86400 adds the
-// lease as a fraction of a day, strftime formats it back at ms precision. Unlike
-// the jobs '+%d seconds' form it does NOT truncate a sub-second lease to +0s. The
-// bound parameter is lease.Seconds() (a float64).
-const leaseExpr = `strftime('%Y-%m-%d %H:%M:%f', julianday('now') + ? / 86400.0)`
+// The DB-clock (sqlite.NowExpr) and lease (sqlite.LeaseExpr) SQL, and the fencing
+// rows-affected helper (sqlite.RowsAffectedBool), live in the shared sqlite package
+// so the durable-queue time discipline and fence contract cannot drift per-repo.
 
 func (r *Repository) Enqueue(ctx context.Context, rn *run.Run) error {
-	const q = `INSERT INTO runs (id, kind, tenant_id, payload, state, run_at, attempts, reclaims, max_retries, locked_by, locked_until, last_error, failed_at, completed_at, cancel_requested, cancelled_at, created_at, updated_at)
-		VALUES (:id, :kind, :tenant_id, :payload, :state, :run_at, :attempts, :reclaims, :max_retries, :locked_by, :locked_until, :last_error, :failed_at, :completed_at, :cancel_requested, :cancelled_at, :created_at, :updated_at)`
+	const q = `INSERT INTO runs (id, kind, tenant_id, payload, state, run_at, attempts, reclaims, parks, max_retries, locked_by, locked_until, last_error, failed_at, completed_at, cancel_requested, cancelled_at, created_at, updated_at)
+		VALUES (:id, :kind, :tenant_id, :payload, :state, :run_at, :attempts, :reclaims, :parks, :max_retries, :locked_by, :locked_until, :last_error, :failed_at, :completed_at, :cancel_requested, :cancelled_at, :created_at, :updated_at)`
 	row := *rn
 	// Resolve the tenant fail-closed (RequireTenant): the dispatcher stamps it from
 	// ctx; an empty tenant (a non-bus direct Enqueue) becomes the default in
@@ -75,9 +69,9 @@ func (r *Repository) ClaimDue(
 	const q = `
 		UPDATE runs
 		SET locked_by = ?,
-		    locked_until = ` + leaseExpr + `,
+		    locked_until = ` + sqlite.LeaseExpr + `,
 		    reclaims = reclaims + (locked_until IS NOT NULL),
-		    updated_at = ` + nowExpr + `
+		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = (
 		    SELECT id FROM runs
 		    WHERE completed_at IS NULL
@@ -103,23 +97,37 @@ func (r *Repository) ClaimDue(
 // RenewLease extends the lease iff still owned and not terminal — the heartbeat.
 // Owner-only (it does NOT check locked_until), so the original owner can rescue
 // an expired-but-not-yet-reclaimed lease; once another worker reclaims (locked_by
-// flips), this matches zero rows and returns false. Fence is the token, not the clock.
+// flips), this matches zero rows and returns alive=false. Fence is the token, not
+// the clock.
+//
+// It RETURNS cancel_requested from the very row it just renewed, so the heartbeat
+// observes a mid-run operator cancel in this one owner-checked write instead of a
+// second IsCancelRequested round-trip — and the RETURNING projects only the flag,
+// never the payload/state BLOB. A matched row → (true, flag, nil); zero rows
+// (lease lost / terminal) → (false, false, nil).
 func (r *Repository) RenewLease(
 	ctx context.Context,
 	id, owner string,
 	lease time.Duration,
-) (bool, error) {
+) (alive, cancelRequested bool, err error) {
 	if lease <= 0 {
-		return false, fmt.Errorf("run: RenewLease requires lease > 0 (got %s)", lease)
+		return false, false, fmt.Errorf("run: RenewLease requires lease > 0 (got %s)", lease)
 	}
 	const q = `
 		UPDATE runs
-		SET locked_until = ` + leaseExpr + `,
-		    updated_at = ` + nowExpr + `
+		SET locked_until = ` + sqlite.LeaseExpr + `,
+		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = ? AND locked_by = ?
-		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL`
-	res, err := r.Conn(ctx).ExecContext(ctx, q, lease.Seconds(), id, owner)
-	return rowsAffectedBool(res, err)
+		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL
+		RETURNING cancel_requested`
+	err = r.Conn(ctx).GetContext(ctx, &cancelRequested, q, lease.Seconds(), id, owner)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, err
+	}
+	return true, cancelRequested, nil
 }
 
 // Checkpoint persists state AND renews the lease iff still owned and not terminal.
@@ -136,12 +144,12 @@ func (r *Repository) Checkpoint(
 	const q = `
 		UPDATE runs
 		SET state = ?,
-		    locked_until = ` + leaseExpr + `,
-		    updated_at = ` + nowExpr + `
+		    locked_until = ` + sqlite.LeaseExpr + `,
+		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = ? AND locked_by = ?
 		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL`
 	res, err := r.Conn(ctx).ExecContext(ctx, q, state, lease.Seconds(), id, owner)
-	return rowsAffectedBool(res, err)
+	return sqlite.RowsAffectedBool(res, err)
 }
 
 // MarkComplete records terminal success and clears the lock, iff still owned and
@@ -149,14 +157,14 @@ func (r *Repository) Checkpoint(
 func (r *Repository) MarkComplete(ctx context.Context, id, owner string) (bool, error) {
 	const q = `
 		UPDATE runs
-		SET completed_at = ` + nowExpr + `,
+		SET completed_at = ` + sqlite.NowExpr + `,
 		    locked_until = NULL,
 		    locked_by = NULL,
-		    updated_at = ` + nowExpr + `
+		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = ? AND locked_by = ?
 		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL`
 	res, err := r.Conn(ctx).ExecContext(ctx, q, id, owner)
-	return rowsAffectedBool(res, err)
+	return sqlite.RowsAffectedBool(res, err)
 }
 
 // Reschedule requeues a retryable failure: sets run_at + last_error, bumps
@@ -175,11 +183,34 @@ func (r *Repository) Reschedule(
 		    attempts = attempts + 1,
 		    locked_until = NULL,
 		    locked_by = NULL,
-		    updated_at = ` + nowExpr + `
+		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = ? AND locked_by = ?
 		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL`
 	res, err := r.Conn(ctx).ExecContext(ctx, q, sqlite.MsPrecisionUTC(runAt), lastErr, id, owner)
-	return rowsAffectedBool(res, err)
+	return sqlite.RowsAffectedBool(res, err)
+}
+
+// Park requeues an unknown-kind run (registry skew) exactly like Reschedule but
+// bumps parks, NOT attempts — so deploy-window parking is bounded separately and
+// never consumes the handler's logic-retry budget.
+func (r *Repository) Park(
+	ctx context.Context,
+	id, owner string,
+	runAt time.Time,
+	reason string,
+) (bool, error) {
+	const q = `
+		UPDATE runs
+		SET run_at = ?,
+		    last_error = ?,
+		    parks = parks + 1,
+		    locked_until = NULL,
+		    locked_by = NULL,
+		    updated_at = ` + sqlite.NowExpr + `
+		WHERE id = ? AND locked_by = ?
+		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL`
+	res, err := r.Conn(ctx).ExecContext(ctx, q, sqlite.MsPrecisionUTC(runAt), reason, id, owner)
+	return sqlite.RowsAffectedBool(res, err)
 }
 
 // MarkFailed records terminal failure and clears the lock, iff still owned and
@@ -192,15 +223,15 @@ func (r *Repository) MarkFailed(
 ) (bool, error) {
 	const q = `
 		UPDATE runs
-		SET failed_at = ` + nowExpr + `,
+		SET failed_at = ` + sqlite.NowExpr + `,
 		    last_error = ?,
 		    locked_until = NULL,
 		    locked_by = NULL,
-		    updated_at = ` + nowExpr + `
+		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = ? AND locked_by = ?
 		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL`
 	res, err := r.Conn(ctx).ExecContext(ctx, q, lastErr, id, owner)
-	return rowsAffectedBool(res, err)
+	return sqlite.RowsAffectedBool(res, err)
 }
 
 // RequestCancel sets the operator cancel signal on a non-terminal run. NOT
@@ -210,7 +241,7 @@ func (r *Repository) RequestCancel(ctx context.Context, id string) error {
 	const q = `
 		UPDATE runs
 		SET cancel_requested = 1,
-		    updated_at = ` + nowExpr + `
+		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = ?
 		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL`
 	_, err := r.Conn(ctx).ExecContext(ctx, q, id)
@@ -223,48 +254,26 @@ func (r *Repository) RequestCancel(ctx context.Context, id string) error {
 func (r *Repository) MarkCancelled(ctx context.Context, id, owner string) (bool, error) {
 	const q = `
 		UPDATE runs
-		SET cancelled_at = ` + nowExpr + `,
+		SET cancelled_at = ` + sqlite.NowExpr + `,
 		    locked_until = NULL,
 		    locked_by = NULL,
-		    updated_at = ` + nowExpr + `
+		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = ? AND locked_by = ?
 		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL`
 	res, err := r.Conn(ctx).ExecContext(ctx, q, id, owner)
-	return rowsAffectedBool(res, err)
+	return sqlite.RowsAffectedBool(res, err)
 }
 
+// FindByID returns the run, or (nil, nil) when absent. On a real read error it
+// returns (nil, err) — never a half-scanned row alongside the error.
 func (r *Repository) FindByID(ctx context.Context, id string) (*run.Run, error) {
 	var rn run.Run
 	err := r.Conn(ctx).GetContext(ctx, &rn, `SELECT * FROM runs WHERE id = ?`, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
-	return &rn, err
-}
-
-// IsCancelRequested reads only the cancel_requested flag — the heartbeat's cheap
-// cancel poll, avoiding a full-row FindByID (and its payload/state BLOBs) on every
-// tick. Absent run → (false, nil).
-func (r *Repository) IsCancelRequested(ctx context.Context, id string) (bool, error) {
-	var cancel bool
-	err := r.Conn(ctx).
-		GetContext(ctx, &cancel, `SELECT cancel_requested FROM runs WHERE id = ?`, id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
-	return cancel, err
-}
-
-// rowsAffectedBool turns an owner-checked UPDATE result into the fencing bool:
-// (true, nil) iff exactly one row was affected, (false, nil) when zero rows
-// matched (ownership lost / terminal — NOT an error), (false, err) on a real
-// write failure. This is the contract the whole fence rests on — the job repo
-// finalizers ignore sql.Result, which would silently return success on a zero-row
-// stale write; runs must not.
-func rowsAffectedBool(res sql.Result, err error) (bool, error) {
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	n, err := res.RowsAffected()
-	return n == 1, err
+	return &rn, nil
 }

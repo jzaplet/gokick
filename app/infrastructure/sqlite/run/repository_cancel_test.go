@@ -161,8 +161,8 @@ func TestCancelled_IsTerminal_GuardsAndClaim(t *testing.T) {
 	if ok, err := fx.Runs.MarkComplete(ctx, r.ID, owner); err != nil || ok {
 		t.Fatalf("complete after cancel: ok=%v err=%v want false,nil", ok, err)
 	}
-	if ok, err := fx.Runs.RenewLease(ctx, r.ID, owner, testLease); err != nil || ok {
-		t.Fatalf("renew after cancel: ok=%v err=%v want false,nil", ok, err)
+	if alive, _, err := fx.Runs.RenewLease(ctx, r.ID, owner, testLease); err != nil || alive {
+		t.Fatalf("renew after cancel: alive=%v err=%v want false,nil", alive, err)
 	}
 	if ok, err := fx.Runs.MarkCancelled(ctx, r.ID, owner); err != nil || ok {
 		t.Fatalf("double-cancel: ok=%v err=%v want false,nil", ok, err)
@@ -172,29 +172,47 @@ func TestCancelled_IsTerminal_GuardsAndClaim(t *testing.T) {
 	}
 }
 
-// IsCancelRequested reads only the cancel flag, across all three branches: false
-// before any request, true after RequestCancel, and (false, nil) for an absent run
-// — the heartbeat polls by id, and a row that vanished (reclaimed elsewhere then
-// finalized) must read as "no cancel", never error out and break the renew loop.
-func TestIsCancelRequested_AllBranches(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "iscancel.db"))
+// RenewLease folds the operator cancel flag into the heartbeat's owner-checked
+// write, across the branches the heartbeat relies on: not-cancelled before a
+// request, cancelled after RequestCancel, and alive=false (never an error) once
+// ownership is lost — so a vanished/reclaimed row reads as "no live cancel" and the
+// renew loop abandons instead of breaking.
+func TestRenewLease_ReportsCancelFlag(t *testing.T) {
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "renew_cancelflag.db"))
 	ctx := context.Background()
-	r := enqueueRun(t, fx, "agent")
+	enqueueRun(t, fx, "agent")
+	owner := newOwner("wA")
+	r := claimAs(t, fx, owner)
 
-	// Before any request → false.
-	if got, err := fx.Runs.IsCancelRequested(ctx, r.ID); err != nil || got {
-		t.Fatalf("before RequestCancel: got=%v err=%v, want false/nil", got, err)
+	// Before any request → alive, not cancelled.
+	if alive, cancel, err := fx.Runs.RenewLease(ctx, r.ID, owner, testLease); err != nil ||
+		!alive ||
+		cancel {
+		t.Fatalf(
+			"before RequestCancel: alive=%v cancel=%v err=%v, want true/false/nil",
+			alive,
+			cancel,
+			err,
+		)
 	}
-	// After RequestCancel → true.
+	// After RequestCancel → alive, cancelled.
 	if err := fx.Runs.RequestCancel(ctx, r.ID); err != nil {
 		t.Fatalf("request cancel: %v", err)
 	}
-	if got, err := fx.Runs.IsCancelRequested(ctx, r.ID); err != nil || !got {
-		t.Fatalf("after RequestCancel: got=%v err=%v, want true/nil", got, err)
+	if alive, cancel, err := fx.Runs.RenewLease(ctx, r.ID, owner, testLease); err != nil ||
+		!alive ||
+		!cancel {
+		t.Fatalf(
+			"after RequestCancel: alive=%v cancel=%v err=%v, want true/true/nil",
+			alive,
+			cancel,
+			err,
+		)
 	}
-	// Absent run → (false, nil), NOT an error. newOwner yields an arbitrary
-	// uuid-suffixed string that matches no row.
-	if got, err := fx.Runs.IsCancelRequested(ctx, newOwner("ghost")); err != nil || got {
-		t.Fatalf("absent run: got=%v err=%v, want (false, nil)", got, err)
+	// Lost ownership (wrong owner) → (false, false, nil), NOT an error.
+	if alive, cancel, err := fx.Runs.RenewLease(ctx, r.ID, newOwner("ghost"), testLease); err != nil ||
+		alive ||
+		cancel {
+		t.Fatalf("wrong owner: alive=%v cancel=%v err=%v, want false/false/nil", alive, cancel, err)
 	}
 }
