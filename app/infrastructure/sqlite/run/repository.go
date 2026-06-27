@@ -45,7 +45,7 @@ func (r *Repository) Enqueue(ctx context.Context, rn *run.Run) error {
 	// single-tenant mode but an ERROR in multitenant mode — a run is never silently
 	// born in the default tenant. An explicit "" would also override the column's
 	// NOT NULL DEFAULT and break scoping.
-	tenantID, err := shared.RequireTenant(row.TenantID, shared.Multitenancy(r.DB.Multitenant()))
+	tenantID, err := shared.RequireTenant(row.TenantID, r.Multitenancy())
 	if err != nil {
 		return err
 	}

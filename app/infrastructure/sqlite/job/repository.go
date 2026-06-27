@@ -29,7 +29,7 @@ func (r *Repository) Enqueue(ctx context.Context, j *job.Job) error {
 	// from ctx; an empty tenant (a non-bus direct Enqueue) becomes the default in
 	// single-tenant mode but an ERROR in multitenant mode — a job is never silently
 	// born in the default tenant.
-	tenantID, err := shared.RequireTenant(row.TenantID, shared.Multitenancy(r.DB.Multitenant()))
+	tenantID, err := shared.RequireTenant(row.TenantID, r.Multitenancy())
 	if err != nil {
 		return err
 	}

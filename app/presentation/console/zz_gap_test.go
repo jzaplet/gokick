@@ -310,7 +310,11 @@ func TestCreateSuperAdminCommand_MissingPasswordErrors(t *testing.T) {
 // newCreateUserCmd builds the create-user CLI command wired to a real fixture,
 // with multitenancy on/off, for the tenant-flag matrix tests.
 func newCreateUserCmd(fx *testfx.Fixture, multitenant bool) *cobra.Command {
-	createUser := usercmd.NewCreateUserHandler(fx.Users, fx.Hasher, false)
+	createUser := usercmd.NewCreateUserHandler(
+		fx.Users,
+		fx.Hasher,
+		shared.Multitenancy(multitenant),
+	)
 	createTenant := tenantcmd.NewCreateTenantHandler(fx.Tenants)
 	getTenant := tenantqry.NewGetTenantHandler(fx.Tenants)
 	cmd := NewCreateUserCommand(

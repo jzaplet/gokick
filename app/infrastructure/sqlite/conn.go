@@ -55,3 +55,10 @@ func (b *BaseRepository) Tenant(ctx context.Context) string {
 	}
 	return shared.DefaultTenantID
 }
+
+// Multitenancy reports the configured enforcement mode as the Wire-distinct shared
+// type, for the repo write guards (shared.RequireTenant / shared.AssertTenantScope) —
+// so they don't each restate shared.Multitenancy(r.DB.Multitenant()).
+func (b *BaseRepository) Multitenancy() shared.Multitenancy {
+	return shared.Multitenancy(b.DB.Multitenant())
+}
