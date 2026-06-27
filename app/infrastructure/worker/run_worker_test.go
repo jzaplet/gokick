@@ -80,6 +80,20 @@ func forceExpireW(t *testing.T, fx *testfx.Fixture, id string) {
 	}
 }
 
+// stealLeaseW atomically reassigns a run's lease to newOwner with a fresh future
+// expiry — simulating another worker reclaiming it. Unlike expire-then-ClaimDue it
+// is a SINGLE write, so it cannot be interleaved by a live incumbent's heartbeat
+// (RenewLease), which makes the steal deterministic even under load. The incumbent's
+// next owner-checked write then matches zero rows (locked_by no longer matches).
+func stealLeaseW(t *testing.T, fx *testfx.Fixture, id, newOwner string) {
+	t.Helper()
+	if _, err := fx.DB.DB().ExecContext(context.Background(),
+		`UPDATE runs SET locked_by = ?, locked_until = strftime('%Y-%m-%d %H:%M:%f','now','+1 hour') WHERE id = ?`,
+		newOwner, id); err != nil {
+		t.Fatalf("steal lease: %v", err)
+	}
+}
+
 // startWorker runs w in the background and returns a stop func that cancels it
 // and waits for Run to return.
 func startWorker(w *RunWorker) func() {
@@ -349,13 +363,16 @@ func TestRunWorker_LeaseLost_Abandons(t *testing.T) {
 	stop := startWorker(w)
 	defer stop()
 	<-started
-	// A different worker steals the run: expire the lease, then claim it.
-	forceExpireW(t, fx, r.ID)
+	// A different worker steals the run by atomically reassigning ownership. We flip
+	// locked_by in one UPDATE rather than expire-then-ClaimDue because the incumbent
+	// is still alive and heartbeating: RenewLease is owner-only and ignores
+	// locked_until by design (so an owner can rescue a not-yet-stolen lease), so an
+	// expire+claim races that renew on SQLite's single write lock — and under load the
+	// incumbent's heartbeat wins that race every time. A single ownership flip cannot
+	// be interleaved, so the incumbent's next RenewLease matches zero rows (owner
+	// mismatch), detects the loss, and abandons the run.
 	stealer := "stealer-" + uuid.NewString()
-	stolen, err := fx.Runs.ClaimDue(context.Background(), stealer, time.Minute)
-	if err != nil || stolen == nil || stolen.ID != r.ID {
-		t.Fatalf("steal claim: %v / %v", stolen, err)
-	}
+	stealLeaseW(t, fx, r.ID, stealer)
 	<-returned // the original worker's heartbeat detected loss and cancelled the handler
 
 	got := findW(t, fx, r.ID)
