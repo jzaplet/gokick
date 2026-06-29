@@ -76,6 +76,19 @@ func Durable(handler HandlerFunc, lease, timeout time.Duration) Registration {
 // e.g. Lease: 1 (1ns) intending time.Millisecond. Surfaces the mistake loudly at boot.
 const minKindLease = time.Millisecond
 
+// rejectSubMs flags a positive but implausibly small (< minKindLease) per-kind
+// duration as a units typo — shared by the lease and timeout validation, which would
+// otherwise repeat the same message. A zero value is "use default / none" (handled by
+// Lookup) and passes; the negative case differs per field and stays at the call site.
+func rejectSubMs(kind, label string, d time.Duration) error {
+	if d > 0 && d < minKindLease {
+		return fmt.Errorf(
+			"run: kind %q %s %s is implausibly small (min %s) — likely a units typo",
+			kind, label, d, minKindLease)
+	}
+	return nil
+}
+
 // HandlerRegistry maps run Kind → Registration. Populated once at DI; read-only
 // at runtime.
 type HandlerRegistry struct {
@@ -98,24 +111,18 @@ func NewHandlerRegistry(
 		if reg.Handler == nil {
 			return nil, fmt.Errorf("run: nil handler for kind %q", kind)
 		}
-		// A set-but-tiny per-kind lease is a typo (Lease <= 0 means "use default" and
-		// is handled by Lookup; only a positive sub-ms value is rejected here).
-		if reg.Lease > 0 && reg.Lease < minKindLease {
-			return nil, fmt.Errorf(
-				"run: kind %q lease %s is implausibly small (min %s) — likely a units typo",
-				kind, reg.Lease, minKindLease)
+		// A set-but-tiny lease/timeout is a units typo (0 = "use default / none", handled
+		// by Lookup; only a positive sub-ms value is rejected). A negative Timeout is a
+		// distinct hard error — it would silently disable the timeout the author asked
+		// for — so it is checked separately (a negative Lease just means "use default").
+		if err := rejectSubMs(kind, "lease", reg.Lease); err != nil {
+			return nil, err
 		}
-		// Timeout gets the same scrutiny as Lease (0 = none, handled by Lookup): a
-		// NEGATIVE value would silently disable the timeout the author asked for, and a
-		// positive sub-ms value would instant-expire every attempt into a reschedule
-		// thrash — both units typos, surfaced loudly at boot rather than at runtime.
 		if reg.Timeout < 0 {
 			return nil, fmt.Errorf("run: kind %q timeout %s is negative", kind, reg.Timeout)
 		}
-		if reg.Timeout > 0 && reg.Timeout < minKindLease {
-			return nil, fmt.Errorf(
-				"run: kind %q timeout %s is implausibly small (min %s) — likely a units typo",
-				kind, reg.Timeout, minKindLease)
+		if err := rejectSubMs(kind, "timeout", reg.Timeout); err != nil {
+			return nil, err
 		}
 		dup[kind] = reg
 	}

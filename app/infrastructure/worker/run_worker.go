@@ -38,13 +38,13 @@ const maxHeartbeatErrors = 3
 // long run that a binary WITH the handler could still resume.
 const minUnknownKindParks = 5
 
-// cancelGraceLeaseMultiple bounds, as a multiple of the lease, how long the
-// heartbeat keeps renewing for a cancelled or timed-out run whose handler has not returned.
-// A ctx-aware handler returns promptly on cancel and never reaches this; the bound
-// only fires for a handler that ignores ctx cancellation (a contract violation) —
-// past it the worker abandons, the lease lapses, and reclaim + the poison-reclaim
-// cap terminate the run instead of renewing it forever.
-const cancelGraceLeaseMultiple = 4
+// winddownGraceLeaseMultiple bounds, as a multiple of the lease, how long the heartbeat
+// keeps renewing for a run whose handler should have stopped but hasn't — cancelled, or
+// past its per-attempt timeout. A ctx-aware handler returns promptly and never reaches
+// this; the bound only fires for a handler that IGNORES ctx (a contract violation) —
+// past it the worker abandons, the lease lapses, and reclaim + the poison-reclaim cap
+// terminate the run instead of renewing it forever.
+const winddownGraceLeaseMultiple = 4
 
 // RunWorkerConfig tunes the durable run worker. Zero fields take safe defaults.
 type RunWorkerConfig struct {
@@ -210,7 +210,7 @@ func (w *RunWorker) drain(wg *sync.WaitGroup) {
 // abandoned (no finalize) and left for lease-lapse reclaim.
 func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string) {
 	// Per-run reporting scope so a terminal-failure Capture carries the run's log lines
-	// as breadcrumbs (mirrors the job worker's processOne + the bus/HTTP recovery path).
+	// as breadcrumbs (as the bus/HTTP RecoveryMiddleware does per request).
 	workerCtx = w.reporter.WithRequestScope(workerCtx)
 	log := w.logger.With(logKeyRunID, r.ID, logKeyRunKind, r.Kind, logKeyOwner, owner)
 	defer func() {
@@ -279,7 +279,7 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 	// A run handler has no event collector (the bus installs one per request; the worker
 	// bypasses the bus). Install the forbidden-marker collector so a handler that calls
 	// Collect fails LOUD instead of silently dropping the event — domain events belong to
-	// the command/bus path, not a run handler (mirrors the deleted job worker).
+	// the command/bus path, not a run handler.
 	runCtx = shared.ContextWithoutEventCollector(runCtx)
 
 	handlerCtx, cancelHandler := context.WithCancel(runCtx)
@@ -463,7 +463,7 @@ func (w *RunWorker) heartbeat(
 		if cancelled.Load() || execCtx.Err() != nil {
 			switch {
 			case graceDeadline.IsZero():
-				graceDeadline = time.Now().Add(cancelGraceLeaseMultiple * lease)
+				graceDeadline = time.Now().Add(winddownGraceLeaseMultiple * lease)
 			case time.Now().After(graceDeadline):
 				w.logger.Warn(
 					"run worker: handler exceeded winddown grace, abandoning for reclaim",
