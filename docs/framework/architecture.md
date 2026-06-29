@@ -13,7 +13,7 @@ description: 'DDD vrstvy s CQRS, pravidla závislostí, lifecycle, cross-domain 
 
 Architektura stojí na DDD s CQRS a bus patternem: čtyři vrstvy s přísnými pravidly závislostí. Komunikace přes CommandBus/QueryBus/EventBus drží vrstvy volně provázané (loose coupling) — command handlery neznají HTTP ani databázi.
 
-> Tahle stránka je **mentální model**. Detailní návody („jak přidat repo / command / handler / job …") jsou ve skillech `/gk-*` — napiš `/gk` pro přehled, nebo rovnou `/gk-architecture`, `/gk-feature`.
+> Tahle stránka je **mentální model**. Detailní návody („jak přidat repo / command / handler / run …") jsou ve skillech `/gk-*` — napiš `/gk` pro přehled, nebo rovnou `/gk-architecture`, `/gk-feature`.
 
 ## Čtyři vrstvy
 

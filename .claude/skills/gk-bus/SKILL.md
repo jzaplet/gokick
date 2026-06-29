@@ -80,7 +80,7 @@ Co která stanice dělá (`app/application/bus/middleware/`):
   nikdy nepropaguje volajícímu.
 - **RunDispatcher** (`run_dispatcher.go`) — vloží `RunDispatcher` do `ctx`.
   Enqueue z handleru se pak přes `Conn(ctx)` připojí k business transakci (atomický
-  zápis + enqueue jobu/runu; samotný handler pak běží mimo transakci).
+  zápis + enqueue runu; samotný handler pak běží mimo transakci).
 - **DispatchEvents** (`events.go`) — vytvoří **per-request** `EventCollector`
   v `ctx`. Obaluje Transaction (je vně). Až po **úspěšném commitu** vyprázdní
   sebrané eventy a rozešle je přes `EventBus` synchronně. Při chybě/rollbacku
@@ -142,7 +142,7 @@ err := bus.ExecVoid(
 
 ## Related
 - Skills: `/gk-commands`, `/gk-queries` (psaní handlerů), `/gk-events`
-  (domain eventy), `/gk-audit` (audit trail), `/gk-runs` (durable runs / jobs),
+  (domain eventy), `/gk-audit` (audit trail), `/gk-runs` (durable runs),
   `/gk-wire` (DI registrace busů)
 - Kód: `app/application/bus/` (`bus.go`, `command.go`, `query.go`, `event.go`,
   `exec.go`, `void.go`), `app/application/bus/middleware/` (`base.go`,

@@ -6,7 +6,7 @@ slug: 'skills-gk-sentry'
 parent: 'skills-observability'
 navTitle: 'gk-sentry'
 title: 'GK — Sentry error tracking'
-description: 'Error tracking (Sentry) na BE i FE — hlásí jen neočekávaná selhání (paniky, terminálně padlé joby, Vue chyby), obohacuje event o uživatele/request/breadcrumbs, je vypnuté bez DSN. Use when zapínáš Sentry, řešíš proč nepřišel/přišel event, nastavuješ FE DSN nebo source mapy, nebo nevíš, co se vlastně reportuje.'
+description: 'Error tracking (Sentry) na BE i FE — hlásí jen neočekávaná selhání (paniky, terminálně padlé runy, Vue chyby), obohacuje event o uživatele/request/breadcrumbs, je vypnuté bez DSN. Use when zapínáš Sentry, řešíš proč nepřišel/přišel event, nastavuješ FE DSN nebo source mapy, nebo nevíš, co se vlastně reportuje.'
 name: 'gk-sentry'
 ---
 
@@ -35,7 +35,7 @@ A bez „adresy" (DSN — veřejný odkaz na tvůj Sentry projekt) je všechno v
 **Kdo volá `Capture` (jen 3 místa — recovery + terminal):**
 - bus `RecoveryMiddleware` (`app/application/bus/middleware/recovery.go`) — panika v command/query handleru,
 - HTTP `RecoveryMiddleware` (`app/presentation/http/middleware/recovery.go`) — panika v requestu → log + report + 500,
-- run worker (`app/infrastructure/worker/run_worker.go`) — durable run/job s **vyčerpanými retries** (terminálně padlý) nebo neznámý kind.
+- run worker (`app/infrastructure/worker/run_worker.go`) — run s **vyčerpanými retries** (terminálně padlý) nebo neznámý kind.
 
 Běžné návratové chyby se nehlásí — proto je `Capture` jen na těchto cestách.
 
@@ -75,7 +75,7 @@ Bez nich jsou FE stack traces minifikované. `@sentry/vite-plugin` mapy nahraje 
 
 ## Invariants & pitfalls
 
-- **Sentry NENÍ logovací cesta.** Hlásí se jen recovery (bus + HTTP `RecoveryMiddleware`) a terminálně padlé joby (worker). Validace / auth / 4xx **nikdy** — jinak tracker utone v šumu. Pro chyby s HTTP statusem viz `/gk-errors`.
+- **Sentry NENÍ logovací cesta.** Hlásí se jen recovery (bus + HTTP `RecoveryMiddleware`) a terminálně padlé runy (worker). Validace / auth / 4xx **nikdy** — jinak tracker utone v šumu. Pro chyby s HTTP statusem viz `/gk-errors`.
 - **Nikdy nepiš ruční `reporter.Capture` do command/query handleru.** Reporting je jen na recovery/terminal cestách; handler vrací chybu, mapování řeší vrstva výš.
 - **Bez DSN = no-op.** BE → `NopReporter`, FE → `initSentry` se hned vrátí. Aplikace běží beze změny.
 - **`sentry-go` je jediný depguard-allow-listed non-slog sink.** Import smí být **jen v `cmd/`**, ne ve vrstveném `app/` stromu — proto je reporter doménový port (viz `/gk-architecture`).

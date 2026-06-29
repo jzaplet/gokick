@@ -18,7 +18,7 @@ description: 'Aktuální priorita F6 — zapínatelný row-level multitenancy (h
 
 <a href="../gokick-hodnoceni.pdf"><img src="../go-vue-cqrs-ddd.png" alt="Hodnocení stacku gokick — PDF report" width="200"></a>
 
-Boilerplate je **production-ready end-to-end**: DDD/CQRS backend, Vue 3 SPA, JWT auth s HttpOnly refresh cookie a detekcí krádeže, admin user CRUD, perzistentní job queue + scheduler, rate limiting, audit log, brute-force lock, security headers, Sentry (BE i FE), single-binary deploy. Fáze 1–5 jsou hotové; z F6 je **multitenancy + system bus pro CLI + job↔run konvergence hotové** (OTEL zbývá) — rekapitulace v sekci **Hotovo** níže.
+Boilerplate je **production-ready end-to-end**: DDD/CQRS backend, Vue 3 SPA, JWT auth s HttpOnly refresh cookie a detekcí krádeže, admin user CRUD, perzistentní durable engine + scheduler, rate limiting, audit log, brute-force lock, security headers, Sentry (BE i FE), single-binary deploy. Fáze 1–5 jsou hotové; z F6 je **multitenancy + system bus pro CLI + job↔run konvergence hotové** (OTEL zbývá) — rekapitulace v sekci **Hotovo** níže.
 
 Tenhle dokument je **forward-looking**: co zbývá jako aktuální priorita a co konkrétně chybí do plné desítky v každé disciplíně.
 
@@ -32,7 +32,7 @@ gokick dostává **zapínatelný multitenancy** a **OpenTelemetry** — obojí j
 Zapínatelný **row-level** multitenancy jedním přepínačem (`APP_MULTITENANCY`, default vypnuto = dnešní single-tenant chování) + platformní rovina pro autory aplikace. Detail v **`/gk-multitenancy`** skillu.
 
 - **Izolace:** `tenant_id` (NOT NULL FK) na owned tabulkách; resolver tenant **dodá** (z JWT), repo ho **aplikuje** (`r.Tenant(ctx)`). Bez ORM = žádné transparentní `WHERE`, proto izolaci hlídá **per-dotaz conformance gate** (`zz_tenant_test.go`, padá v CI). Flag vybírá fail-open (chybějící tenant → default) vs fail-closed (panika).
-- **Worker propagace:** worker obchází bus, takže tenant jede na `jobs` řádku a worker ho obnoví do ctx před handlerem.
+- **Worker propagace:** worker obchází bus, takže tenant jede na `runs` řádku a worker ho obnoví do ctx před handlerem.
 - **Platformní rovina:** role `superadmin` + `platform:*` (nad admin/user) — cross-tenant dashboard (počty tenantů/uživatelů), přehled tenantů a uživatelů s cross-tenant správou. Superadmin admin sekci nevidí.
 - **Operator tooling:** seed s multitenancy on založí adminovi vlastní tenant; CLI `create-tenant`, `create-superadmin`, `create-user --tenant-id/--tenant-name` (s MT on je tenant povinný).
 - **Vědomý strop:** transparentní vynucení (tichý read-leak na slepém místě scanneru) dá až **Postgres RLS** — viz disciplína **Škálovatelnost** níže.
@@ -80,7 +80,7 @@ Největší (a jediný zásadní) strop: single-node SQLite (single-writer) + sc
   - LiteFS funguje, ale je pre-1.0 a Fly.io ho deprioritizoval → pro nové projekty spíš Turso.
 - **B) Skutečný write-scale (Postgres):**
   - Přidat `infrastructure/postgres/*` + `wire.Bind` na stávající doménové interface (adapter swap).
-  - Job frontu nahradit **River** (Postgres-native, battle-tested) místo custom SQLite queue.
+  - Frontu durable runů nahradit **River** (Postgres-native, battle-tested) místo custom SQLite queue.
   - **Durable runs (`runs` tabulka):** `ClaimDue` na Postgresu přepsat na `SELECT … FOR UPDATE SKIP LOCKED` místo SQLite single-writer + `UPDATE … RETURNING`. **Vedlejší benefit:** současný SQLite `ClaimDue` obaluje indexovaný `run_at` do `julianday()` (kvůli ms-precision korektnosti proti `strftime('%f')` round-half-up skew), takže parciální index `idx_runs_claim` neslouží range-seeku ani ORDER BY → `SCAN` + `TEMP B-TREE` na každém pollu (na cíli ~500 agentů ≈ 6 % stropu, vrací LIMIT 1, takže zatím neřešené). Postgresí seek na nativním `timestamptz` tohle odstraní bez kompromisu na přesnosti. (Nález z xhigh code-review PR #21.)
   - Scheduler ošetřit **leader election** (Postgres advisory locks) — konec double-runů na víc instancích.
   - Rate-limit stav externalizovat (Redis), aby instance byly stateless.
@@ -99,7 +99,7 @@ Největší (a jediný zásadní) strop: single-node SQLite (single-writer) + sc
 
 ### 🟢 Architektura `9 → 10`
 
-- Zapojit dnes prázdné **event/job handler registry** reálnými handlery (vzorové příklady).
+- Zapojit dnes prázdné **event/run handler registry** reálnými handlery (vzorové příklady).
 - Druhý **bounded context** jako referenční vzor (dnes je doména hlavně auth + users).
 
 ### 🟢 Výkon `8,5 → 10`

@@ -18,7 +18,7 @@ Doménový event je primitivní fakt „stalo se X" (`user.created`), na který 
 
 ## K čemu to je
 
-Když chceš na změnu stavu **navázat vedlejší efekt** (uvítací mail, synchronizace, navazující akce), ale nechceš jím zatěžovat command handler. Záruka: **event = potvrzená skutečnost** — rozešle se jen to, co se opravdu zapsalo. Pro pomalou práci nebo práci odolnou vůči pádu procesu event handler nedělá nic sám, ale zařadí job/run (`RunDispatcher`).
+Když chceš na změnu stavu **navázat vedlejší efekt** (uvítací mail, synchronizace, navazující akce), ale nechceš jím zatěžovat command handler. Záruka: **event = potvrzená skutečnost** — rozešle se jen to, co se opravdu zapsalo. Pro pomalou práci nebo práci odolnou vůči pádu procesu event handler nedělá nic sám, ale zařadí run (`RunDispatcher`).
 
 
 ## Jak to teče

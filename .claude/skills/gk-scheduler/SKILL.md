@@ -17,7 +17,7 @@ Spouštění periodických úloh přímo v `serve` procesu, bez externího cronu
 ## What & when
 
 - Sáhni sem, když potřebuješ něco dělat **opakovaně sám od sebe** — typicky maintenance: smazat expirované tokeny, warmnout cache, emitnout metriku.
-- NEtýká se práce, která **musí přežít restart/crash** (welcome maily, volání externího API). To je perzistentní fronta — viz `Related` (Job Queue). Scheduler nic neperzistuje; když proces spí, job neběží.
+- NEtýká se práce, která **musí přežít restart/crash** (welcome maily, volání externího API). To je perzistentní fronta — viz `Related` (durable engine). Scheduler nic neperzistuje; když proces spí, job neběží.
 
 ## For non-tech / juniors
 
@@ -33,7 +33,7 @@ Balíček `app/infrastructure/scheduler/scheduler.go`:
 - **`NewScheduler(logger, jobs) (*Scheduler, error)`** — konstruktor **validuje fail-fast**: prázdné jméno, `Interval <= 0`, nil `Fn` nebo duplicitní jméno → vrátí error a proces ani nenastartuje.
 - **`Run(ctx)`** — spustí každý job ve **vlastní goroutině** (přes `sync.WaitGroup`) a blokuje, dokud se `ctx` nezruší a všechny joby nedoběhnou. Prázdný seznam → jen zaloguje `scheduler: no jobs registered` a vrátí se.
 - **`runJob`** — **run-once-then-tick**: zavolá `tick` rovnou jednou, pak založí `time.NewTicker(Interval)` a tiká dokola; `ctx.Done()` smyčku ukončí.
-- **`tick`** — jedna invokace `Fn` s **panic recovery**: panika se jen zaloguje na Error úrovni a **NEhlásí se do error trackeru** (na rozdíl od job worker fronty — komentář to v kódu vysvětluje: job re-tiká donekonečna, deterministická panika by jinak generovala nekonečný proud stejných eventů). Vrácený `error` z `Fn` se taky zaloguje a **ticker tiká dál** — předpokládá se idempotence.
+- **`tick`** — jedna invokace `Fn` s **panic recovery**: panika se jen zaloguje na Error úrovni a **NEhlásí se do error trackeru** (na rozdíl od durable-task worker fronty — komentář to v kódu vysvětluje: job re-tiká donekonečna, deterministická panika by jinak generovala nekonečný proud stejných eventů). Vrácený `error` z `Fn` se taky zaloguje a **ticker tiká dál** — předpokládá se idempotence.
 
 **Registrace** (jediné místo) je `provideSchedulerJobs` v `app/infrastructure/di/container_provider.go`. Dnes obsahuje jediný job:
 
@@ -49,7 +49,7 @@ func provideSchedulerJobs(tokens token.TokenRepository) []scheduler.Job {
 }
 ```
 
-**Spuštění**: `app/presentation/console/serve.go` pustí `scheduler.Run(ctx)` v goroutině, sdílí jeden `ctx` se serverem i job workerem; po pádu/SIGTERM zavolá `cancel()` a počká na `schedulerDone` — drain bez osamělých goroutin.
+**Spuštění**: `app/presentation/console/serve.go` pustí `scheduler.Run(ctx)` v goroutině, sdílí jeden `ctx` se serverem i durable-task workerem; po pádu/SIGTERM zavolá `cancel()` a počká na `schedulerDone` — drain bez osamělých goroutin.
 
 ## Recipe: přidat periodický job
 
@@ -60,7 +60,7 @@ func provideSchedulerJobs(tokens token.TokenRepository) []scheduler.Job {
 
 ## Invariants & pitfalls
 
-- **Fn běží inline, v žádné transakci.** Nikdo Fn do transakce neobaluje — případnou si musíš otevřít sám. Lehký cleanup v krátké transakci je OK; **těžkou periodickou práci zařaď jako durable run** ([[gk-runs]] — job i run), ne ji dělej inline — dlouhá transakce by zamkla SQLite. Kdy co → `docs/framework/background-work.md`.
+- **Fn běží inline, v žádné transakci.** Nikdo Fn do transakce neobaluje — případnou si musíš otevřít sám. Lehký cleanup v krátké transakci je OK; **těžkou periodickou práci zařaď jako durable run** ([[gk-runs]] — fire-and-forget i durable run), ne ji dělej inline — dlouhá transakce by zamkla SQLite. Kdy co → `docs/framework/background-work.md`.
 - **Jméno unikátní, interval kladný, Fn nenilové.** Jinak `NewScheduler` vrátí error a proces nenastartuje (fail-fast) — chyba se chytí při startu, ne za běhu.
 - **Fn musí být idempotentní.** Kvůli run-once-then-tick se job spustí hned a může proběhnout vícekrát; nepředpokládej „přesně jednou".
 - **Job nesmí volat vlastní HTTP API přes localhost** — server běží paralelně, vznikl by závod (race). DB volání jsou OK (Wire je v té chvíli hotový).
@@ -72,5 +72,5 @@ func provideSchedulerJobs(tokens token.TokenRepository) []scheduler.Job {
 
 - `/gk-config` — DI registrace providerů a `make di` workflow.
 - `/gk-architecture` — proč `scheduler` žije v `infrastructure/` a kdo na něm smí záviset.
-- `/gk-runs` — perzistentní durable engine (job i run) pro práci, co musí přežít restart/crash.
+- `/gk-runs` — perzistentní durable engine (fire-and-forget i durable run) pro práci, co musí přežít restart/crash.
 - Kód: `app/infrastructure/scheduler/scheduler.go`, registrace `app/infrastructure/di/container_provider.go` (`provideSchedulerJobs`/`provideScheduler`), spuštění `app/presentation/console/serve.go`.

@@ -50,7 +50,7 @@ Nebo prostě popiš problém a AI sáhne po správném skillu sama (řídí se p
 |-------|---------|
 | `/gk-repositories` | Datová vrstva nad SQLite — tx-aware `r.Conn(ctx)`, raw-pool výjimky, tuning |
 | `/gk-migrations` | Goose migrace — embedované, automaticky aplikované při startu |
-| `/gk-runs` | Durable engine pro background práci mimo tx (přežije restart/crash) — fire-and-forget **job** (FireAndForget) i dlouhý **run** s checkpoint + resume (Durable) |
+| `/gk-runs` | Durable engine pro background práci mimo tx (přežije restart/crash) — fire-and-forget run (FireAndForget) i dlouhý **run** s checkpoint + resume (Durable) |
 | `/gk-scheduler` | Periodické úlohy uvnitř serveru (cron-like, bez OS cronu) |
 | `/gk-di` | Wire compile-time DI — providery, `wire.Bind`, `make di` |
 
@@ -92,20 +92,20 @@ Nebo prostě popiš problém a AI sáhne po správném skillu sama (řídí se p
 - **„Background práce"** → viz matice níže.
 - **„Vydat / nasadit"** → `/gk-deploy`.
 
-## Background práce — co kdy (job / run / scheduler / event)
+## Background práce — co kdy (run / scheduler / event)
 
 | Potřeba | Mechanismus | Skill | V transakci? |
 |---|---|---|---|
 | Atomická write op. během requestu | **command** | `/gk-commands` | ✅ ano |
 | „Stalo se X" → reakce, co command nezná | **doménový event** | `/gk-domain-events` | ❌ po commitu, sync |
-| Krátká fire-and-forget práce, přežije restart (mail/API/webhook, přepočet) | **job** = `FireAndForget` | `/gk-runs` | ❌ **NE (vynuceno)** |
-| Dlouhá práce, co pokračuje po pádu od posledního kroku (import, report) | **run** = `Durable` | `/gk-runs` | ❌ **NE (vynuceno)** |
+| Krátká fire-and-forget práce, přežije restart (mail/API/webhook, přepočet) | **fire-and-forget run** = `FireAndForget` | `/gk-runs` | ❌ **NE (vynuceno)** |
+| Dlouhá práce, co pokračuje po pádu od posledního kroku (import, report) | **durable run** = `Durable` | `/gk-runs` | ❌ **NE (vynuceno)** |
 | Periodicky (cron-like) | **scheduler** | `/gk-scheduler` | ❌ inline |
 
-**Klíč:** job i run jsou **jeden engine** (`/gk-runs`), oba běží **mimo transakci** (vynuceno) —
+**Klíč:** oba tvary jsou **jeden engine** (`/gk-runs`), oba běží **mimo transakci** (vynuceno) —
 **uvnitř transakce nikdy nevolej ven** (SMTP/cizí API drží zámek po dobu volání → zamkne SQLite).
-Job vs run rozlišuje jediná otázka: **potřebuje to po pádu pokračovat od posledního kroku?**
-(ano → run s checkpointem, ne → fire-and-forget job). Detail + diagram →
+Tvary rozlišuje jediná otázka: **potřebuje to po pádu pokračovat od posledního kroku?**
+(ano → run s checkpointem, ne → fire-and-forget run). Detail + diagram →
 `docs/framework/background-work.md` (+ per-flow `*-flow.md`).
 
 ## Přidání nového gk skillu

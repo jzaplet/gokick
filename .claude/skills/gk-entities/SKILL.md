@@ -6,7 +6,7 @@ slug: 'skills-gk-entities'
 parent: 'skills-domain'
 navTitle: 'gk-entities'
 title: 'GK — Entities & Value Objects'
-description: 'Doménové modelování — entity (db tagy pro sqlx) a value objects, které brání vzniku nevalidního objektu. Use when přidáváš nový doménový typ (User, Token, Job…), value object s validací nebo factory funkci, nebo řešíš „kam patří validace".'
+description: 'Doménové modelování — entity (db tagy pro sqlx) a value objects, které brání vzniku nevalidního objektu. Use when přidáváš nový doménový typ (User, Token, Run…), value object s validací nebo factory funkci, nebo řešíš „kam patří validace".'
 name: 'gk-entities'
 ---
 
@@ -16,7 +16,7 @@ Jak se v gokicku modeluje doména: **entity** (objekty s identitou, mapované na
 a **value objects** (typy, které se nedají vyrobit v nevalidním stavu).
 
 ## What & when
-- Sáhni sem, když přidáváš nový doménový typ (entitu jako `User`/`Job`, nebo
+- Sáhni sem, když přidáváš nový doménový typ (entitu jako `User`/`Run`, nebo
   value object jako `Nickname`), píšeš factory funkci (`NewUser`), nebo řešíš
   „kde má žít validace formátu vs. business pravidlo".
 - NEtýká se: repozitářů (to je infrastruktura — `/gk-database`), command/query
@@ -47,14 +47,14 @@ importovat** (`user/` nesmí znát `token/`); sdílené typy žijí v `domain/sh
 - Struct má `db:"..."` tagy — `sqlx` podle nich automaticky scanuje řádky DB do
   struktury. Příklad: `Nickname string \`db:"nickname"\``.
 - ID je `string` (UUID). `User`/`RefreshToken` používají `uuid.New().String()`,
-  `Job` `uuid.NewString()` (UUIDv7).
+  `Run` `uuid.NewString()` (UUIDv7).
 - Entita nemá metody se side-effecty (žádné `Save`/`Load`) — to dělá repository.
-- Nullable sloupce: `Job.CompletedAt *time.Time` (nil = nehotovo),
+- Nullable sloupce: `Run.CompletedAt *time.Time` (nil = nehotovo),
   `RefreshToken.UsedAt *time.Time` (marker theft detection). U `User` jsou
   brute-force pole `sql.NullTime` schválně — SQLite je píše jako TEXT a stdlib
   scanner `sql.NullTime` zvládne i string-z-DB i NULL.
 
-**Factory funkce** (`NewUser`, `NewJob`):
+**Factory funkce** (`NewUser`, `NewRun`):
 - Přijímají **value objects, ne raw stringy** — `NewUser(nickname Nickname,
   passwordHash string, email Email, role Role)`. Když se caller dostal až k
   factory, data jsou validní.
@@ -107,7 +107,7 @@ importovat** (`user/` nesmí znát `token/`); sdílené typy žijí v `domain/sh
   pravidel. `Password` se používá v `CreateUserCommand` a `ChangePasswordCommand`.
 - **Pozor na not-found konvenci repozitáře:** `FindByNickname` vrací `nil, nil`
   (nenalezeno není chyba), ale `user.Repository.FindByID` vrací `*shared.ValidationError`
-  (`user not found`) — pozor, není to univerzální pravidlo: `job.Repository.FindByID`
+  (`user not found`) — pozor, není to univerzální pravidlo: `run.Repository.FindByID`
   naopak vrací `nil, nil`. Detail je v implementaci, ale ovlivňuje, jak entitu
   konzumuješ.
 

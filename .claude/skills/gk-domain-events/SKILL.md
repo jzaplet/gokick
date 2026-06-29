@@ -22,7 +22,7 @@ reaguje. Eventy se sesbírají v rámci jednoho commandu a rozešlou se **až po
   efekt — poslat welcome mail, zaindexovat, upozornit jiný kontext — a nechceš,
   aby command handler znal mailer/indexer/notifier.
 - NEtýká se: práce, co musí přežít restart/crash nebo trvá dlouho (externí API,
-  mail) → patří do durable enginu (fire-and-forget job / run), ne do synchronního
+  mail) → patří do durable enginu (fire-and-forget run nebo durable run), ne do synchronního
   event handleru (viz `/gk-runs`).
   Audit logu — ten má vlastní cestu (`AuditCollector`), ne eventy.
 
@@ -84,7 +84,7 @@ podporovaná.
 
 **Registrace** je jediné místo — `provideEventHandlers()` v
 `app/infrastructure/di/container_provider.go` (stejný slice-list pattern jako
-permissions / scheduler joby / job handlery). Dnes vrací prázdný slice; složka
+permissions / scheduler joby / run handlery). Dnes vrací prázdný slice; složka
 `app/application/user/event/` je zatím prázdná (`.gitkeep`) — **žádný event
 handler ještě není nasazený**, jen se eventy sbírají a logují.
 
@@ -112,7 +112,7 @@ Cíl: po `CreateUser` spustit nový vedlejší efekt na event `user.created`.
   než event handler dostane slovo, transakce commandu je už uzavřená (commitnutá a z ctx pryč) —
   handler tedy v žádné transakci neběží a jeho případné zápisy jsou samostatné (každý sám za sebe).
   Běží synchronně v request goroutině, takže pro těžkou návaznou práci **zařaď durable run**
-  ([[gk-runs]] — fire-and-forget job nebo dlouhý run), ať neblokuješ response. Kdy co →
+  ([[gk-runs]] — fire-and-forget run nebo dlouhý run), ať neblokuješ response. Kdy co →
   `docs/framework/background-work.md`.
 - **Eventy = jen primitivy.** Nikdy nedávej do eventu entity ani value objects —
   musí jít serializovat a číst z cizího kontextu bez importu.
@@ -137,7 +137,7 @@ Cíl: po `CreateUser` spustit nový vedlejší efekt na event `user.created`.
 ## Related
 
 - Sousední skills: `/gk-runs` (perzistentní durable engine — sem patří mail/externí
-  volání jako fire-and-forget job), `/gk-config` (Wire DI registrace handlerů)
+  volání jako fire-and-forget run), `/gk-config` (Wire DI registrace handlerů)
 - Kód: `app/domain/shared/event.go` (interface + collector),
   `app/application/bus/middleware/events.go` (dispatch po commitu),
   `app/application/bus/event.go` (`EventBus`, `Register`, `Dispatch`),

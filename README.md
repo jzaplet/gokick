@@ -43,7 +43,7 @@ Běží bez Redisu, brokeru či jiné externí infrastruktury a nasazuje se jako
 - **JWT** access + refresh token autentizace
 - **Wire** compile-time dependency injection
 - **go-arch-lint** vynucení závislostí mezi vrstvami
-- **Sentry** – error tracking BE i FE (paniky, terminální selhání jobů, Vue chyby), gated na DSN; maskování credential hlaviček + FE↔BE trace linking
+- **Sentry** – error tracking BE i FE (paniky, terminálně padlé background úlohy, Vue chyby), gated na DSN; maskování credential hlaviček + FE↔BE trace linking
 - **Strukturované logování** – `slog` s konstantními klíči a korelací přes `trace_id`/`user_id`, jediná logovací cesta staticky vynucená lintem (depguard/forbidigo/sloglint)
 - **Audit log** – append-only záznam security-relevantních akcí (login failed, account locked, theft detected, role changed); persistuje i při rollbacku business transakce
 - **Rate limiting** – per-IP token bucket na `/auth/login` (default 10/min) a `/auth/refresh` (60/min), konfigurovatelné přes `.env`
@@ -51,7 +51,7 @@ Běží bez Redisu, brokeru či jiné externí infrastruktury a nasazuje se jako
 - **CSRF** – `http.CrossOriginProtection` (Go 1.25 stdlib) přes `Sec-Fetch-Site`, plus `SameSite=Strict` na refresh cookie
 - **Security headers** – CSP, HSTS (gated na HTTPS), `X-Frame-Options: DENY`, Permissions-Policy, COOP/CORP — cíl A+ na securityheaders.com
 - **In-process scheduler** – cron-like periodické úlohy (goroutiny + ticker, run-once-then-tick, panic recovery per-tick); první uživatel: cleanup expirovaných refresh tokenů
-- **Perzistentní job queue** – SQLite-backed background work s workerem (at-least-once, atomický claim, exponenciální backoff); přežije restart i crash procesu
+- **Perzistentní durable engine** (fire-and-forget + durable run) – SQLite-backed background work s durable-task workerem (at-least-once, atomický claim, exponenciální backoff); přežije restart i crash procesu
 
 
 ## Rychlý start
@@ -78,7 +78,7 @@ Na vše ostatní stačí **`/gk`** — rozcestník, který sám rozhodne, jaké 
 | Sekce | Popis                                                |
 |-------|------------------------------------------------------|
 | [Skills](/skills) | **gk-* skills** — přesné koncepty + how-to pro AI i vývojáře (napiš `/gk`) |
-| [Framework](/framework) | Architektura, instalace, konfigurace, request/command/job flow |
+| [Framework](/framework) | Architektura, instalace, konfigurace, request/command/run flow |
 | [ADRs](/adrs) | Architecture Decision Records — zafixovaná rozhodnutí **(template pro tvůj projekt)** |
 | [Roadmap](/roadmap) | Fázovaný plán **(template pro tvůj projekt)** |
 | [Issues](/issues) | Features / Bugs / Chores **(template pro tvůj projekt)** |

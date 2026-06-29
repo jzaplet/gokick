@@ -24,11 +24,11 @@
   <text x="158" y="350" font-size="12" fill="#b45309">„něco se stalo" → ať na to někdo zareaguje,</text>
   <text x="158" y="368" font-size="12" fill="#b45309">aniž to ten command musí vědět</text>
   <text x="158" y="398" font-size="11.5" fill="#d97706">po uložení dat (po commitu), mimo transakci</text>
-  <text x="158" y="422" font-size="10.5" fill="#f59e0b">pomalý event brzdí odpověď → radši zařaď job</text>
+  <text x="158" y="422" font-size="10.5" fill="#f59e0b">pomalý event brzdí odpověď → radši zařaď run</text>
 
-  <!-- Job (pozadí, fire-and-forget, mimo tx) -->
+  <!-- Fire-and-forget run (pozadí, fire-and-forget, mimo tx) -->
   <rect x="498" y="124" width="358" height="96" rx="12" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5"/>
-  <text x="518" y="150" font-size="15" font-weight="700" fill="#1e40af">Job <tspan font-size="11" font-weight="400" fill="#3b82f6">(FireAndForget — bez checkpointu)</tspan></text>
+  <text x="518" y="150" font-size="15" font-weight="700" fill="#1e40af">Fire-and-forget run <tspan font-size="11" font-weight="400" fill="#3b82f6">(FireAndForget — bez checkpointu)</tspan></text>
   <text x="518" y="174" font-size="12" fill="#1d4ed8">krátká práce: mail/API/webhook, přepočet</text>
   <text x="518" y="192" font-size="11" fill="#2563eb">mimo transakci · sám to zkusí znovu (backoff)</text>
   <text x="518" y="210" font-size="10.5" fill="#dc2626">at-least-once → musí být idempotentní</text>
@@ -43,8 +43,8 @@
   <!-- Scheduler -->
   <rect x="498" y="354" width="358" height="86" rx="12" fill="#fffbeb" stroke="#f59e0b" stroke-width="1.5"/>
   <text x="518" y="380" font-size="14" font-weight="700" fill="#92400e">Scheduler</text>
-  <text x="518" y="402" font-size="11" fill="#b45309">opakovaně po čase (úklid) · velkou práci → job/run</text>
+  <text x="518" y="402" font-size="11" fill="#b45309">opakovaně po čase (úklid) · velkou práci → run</text>
   <text x="518" y="424" font-size="10.5" fill="#f59e0b">in-memory, bez retry — nepřežije pád procesu</text>
 
-  <text x="24" y="480" font-size="11.5" fill="#64748b">Jednoduše: jen Command běží v transakci; job, run i scheduler mimo ni. Job vs run = potřebuje po pádu pokračovat od posledního kroku?</text>
+  <text x="24" y="480" font-size="11.5" fill="#64748b">Jednoduše: jen Command běží v transakci; run i scheduler mimo ni. Fire-and-forget vs durable run = potřebuje po pádu pokračovat od posledního kroku?</text>
 </svg>

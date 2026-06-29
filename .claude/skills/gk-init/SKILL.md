@@ -23,7 +23,7 @@ naseedovat admin účet, a vědět, jak točit dev loop.
   seed admina, a **základ CLI** (`serve` / `seed` / `create-user` / `worker`).
 - NEtýká se: konfigurace a env (`/gk-config`), přidávání featur end-to-end
   (`/gk-feature`), ani celkového mentálního modelu vrstev (`/gk-architecture`).
-  Hloubku scheduleru / job queue tu jen zmíníme — patří do samostatného skillu.
+  Hloubku scheduleru / durable enginu tu jen zmíníme — patří do samostatného skillu.
 
 ## For non-tech / juniors
 
@@ -51,10 +51,10 @@ DB server. **Seed** je jednorázové naplnění DB výchozími daty (admin úče
 
   | Příkaz | Co dělá |
   |---|---|
-  | `./bin/app serve` | HTTP server **+ in-process scheduler + job worker** v jednom procesu (sdílí jeden `ctx`, SIGTERM nechá vše korektně dobíhat — `console/serve.go`) |
+  | `./bin/app serve` | HTTP server **+ in-process scheduler + durable-task worker** v jednom procesu (sdílí jeden `ctx`, SIGTERM nechá vše korektně dobíhat — `console/serve.go`) |
   | `./bin/app seed` | Vytvoří admin účet (pokud chybí), heslo z `APP_SEED_ADMIN_PASSWORD` (`console/seed.go`) |
   | `./bin/app create-user -n <nick> -p <pass> [-e <email>] [-r <role>]` | Vytvoří uživatele; role default `admin`, alternativa `user` (`console/create_user.go`) |
-  | `./bin/app worker` | Jen persistentní job worker, bez HTTP serveru — pro škálování workerů zvlášť (`console/worker.go`) |
+  | `./bin/app worker` | Jen persistentní durable-task worker, bez HTTP serveru — pro škálování workerů zvlášť (`console/worker.go`) |
 
 - **`create-user` bypassuje bus** a volá přímo `*usercmd.CreateUserHandler.Handle()` —
   recykluje stejnou validaci, hashing a unique-nickname check jako HTTP API.

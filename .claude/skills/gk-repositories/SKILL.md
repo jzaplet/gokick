@@ -73,7 +73,7 @@ file:<path>?_txlock=immediate&_pragma=busy_timeout(5000)&_pragma=foreign_keys(on
 1. Vytvoř `app/infrastructure/sqlite/<context>/repository.go` se `type Repository struct { sqlite.BaseRepository }`.
 2. Constructor: `NewRepository(db *database.SqliteManager) *Repository { return &Repository{BaseRepository: sqlite.BaseRepository{DB: db}} }`.
 3. Implementuj metody doménového interface (`<context>.Repository` z `app/domain/<context>/`). SQL vždy přes `r.Conn(ctx)`.
-4. Konvence not-found: lookupy vracejí `nil, nil` (výjimkou je `user.Repository.FindByID`, který na not-found vrací `*shared.ValidationError`; `job.Repository.FindByID` naopak vrací `nil, nil`).
+4. Konvence not-found: lookupy vracejí `nil, nil` (výjimkou je `user.Repository.FindByID`, který na not-found vrací `*shared.ValidationError`; `run.Repository.FindByID` naopak vrací `nil, nil`).
 5. Wire binding v `app/infrastructure/di/container_provider.go`: `wire.Bind(new(<context>.Repository), new(*sqlite<context>.Repository))`, pak `make di`.
 6. Pokud je to **nový bounded context**, přidej adresář do `sqlite_repos` v `.go-arch-lint.yml` a spusť `make arch-check` (viz `/gk-feature`).
 
