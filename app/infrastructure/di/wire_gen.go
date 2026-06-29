@@ -13,7 +13,6 @@ import (
 	"gokick/app/application/bus"
 	"gokick/app/application/bus/middleware"
 	query3 "gokick/app/application/dashboard/query"
-	job2 "gokick/app/application/job"
 	command4 "gokick/app/application/platform/command"
 	query4 "gokick/app/application/platform/query"
 	command2 "gokick/app/application/profile/command"
@@ -23,7 +22,6 @@ import (
 	query5 "gokick/app/application/tenant/query"
 	command3 "gokick/app/application/user/command"
 	query2 "gokick/app/application/user/query"
-	job3 "gokick/app/domain/job"
 	run3 "gokick/app/domain/run"
 	"gokick/app/domain/shared"
 	token2 "gokick/app/domain/token"
@@ -32,7 +30,6 @@ import (
 	"gokick/app/infrastructure/scheduler"
 	"gokick/app/infrastructure/security"
 	"gokick/app/infrastructure/sqlite/audit"
-	"gokick/app/infrastructure/sqlite/job"
 	"gokick/app/infrastructure/sqlite/run"
 	"gokick/app/infrastructure/sqlite/seeder"
 	"gokick/app/infrastructure/sqlite/tenant"
@@ -77,21 +74,15 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	permissionChecker := providePermissionChecker()
 	v := provideEventHandlers()
 	eventBus := provideEventBus(logger, v, reporter)
-	repository := job.NewRepository(sqliteManager)
-	handlerRegistry, err := provideJobHandlerRegistry()
+	repository := run.NewRepository(sqliteManager)
+	handlerRegistry, err := provideRunHandlerRegistry(configConfig)
 	if err != nil {
 		return nil, err
 	}
-	jobDispatcher := provideJobDispatcher(repository, handlerRegistry)
-	runRepository := run.NewRepository(sqliteManager)
-	runHandlerRegistry, err := provideRunHandlerRegistry(configConfig)
-	if err != nil {
-		return nil, err
-	}
-	runDispatcher := provideRunDispatcher(runRepository, runHandlerRegistry)
+	runDispatcher := provideRunDispatcher(repository, handlerRegistry)
 	auditRepository := audit.NewRepository(sqliteManager)
 	tenantResolver := provideTenantResolver()
-	commandBus := provideCommandBus(logger, sqliteManager, permissionChecker, eventBus, jobDispatcher, runDispatcher, auditRepository, reporter, tenantResolver)
+	commandBus := provideCommandBus(logger, sqliteManager, permissionChecker, eventBus, runDispatcher, auditRepository, reporter, tenantResolver)
 	userRepository := user.NewRepository(sqliteManager)
 	tokenRepository := token.NewRepository(sqliteManager)
 	passwordHasher := providePasswordHasher()
@@ -126,9 +117,8 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	if err != nil {
 		return nil, err
 	}
-	worker := provideWorker(logger, reporter, repository, handlerRegistry, sqliteManager, jobDispatcher)
-	runWorker := provideRunWorker(logger, reporter, runRepository, runHandlerRegistry, jobDispatcher, runDispatcher, configConfig)
-	serveCommand := console.NewServeCommand(serverServer, scheduler, worker, runWorker)
+	runWorker := provideRunWorker(logger, reporter, repository, handlerRegistry, runDispatcher, sqliteManager, configConfig)
+	serveCommand := console.NewServeCommand(serverServer, scheduler, runWorker)
 	seedAdminPassword := provideSeedAdminPassword(configConfig)
 	seedSuperAdminPassword := provideSeedSuperAdminPassword(configConfig)
 	seedAdminTenant := provideSeedAdminTenant(configConfig)
@@ -142,7 +132,7 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	createSuperAdminHandler := command4.NewCreateSuperAdminHandler(userRepository, passwordHasher)
 	createSuperAdminCommand := console.NewCreateSuperAdminCommand(createSuperAdminHandler, systemCommandBus)
 	createTenantCommand := console.NewCreateTenantCommand(createTenantHandler, systemCommandBus)
-	workerCommand := console.NewWorkerCommand(worker, runWorker)
+	workerCommand := console.NewWorkerCommand(runWorker)
 	rootCommand := console.NewRootCommand(serveCommand, seedCommand, createUserCommand, createSuperAdminCommand, createTenantCommand, workerCommand)
 	migrationManager := database.NewMigrationManager(sqliteManager, logger)
 	application := app.NewApplication(rootCommand, migrationManager)
@@ -173,7 +163,6 @@ func provideCommandBus(
 	db *database.SqliteManager,
 	checker shared.PermissionChecker,
 	eventBus *bus.EventBus,
-	dispatcher shared.JobDispatcher,
 	runDispatcher shared.RunDispatcher, audit2 shared.AuditLogger,
 
 	reporter shared.ErrorReporter,
@@ -183,8 +172,7 @@ func provideCommandBus(
 		logger,
 		checker,
 		reporter,
-		tenantResolver, audit2, dispatcher,
-		runDispatcher,
+		tenantResolver, audit2, runDispatcher,
 		eventBus,
 		db,
 	)...,
@@ -313,7 +301,7 @@ func provideMultitenancy(cfg *config.Config) shared.Multitenancy {
 }
 
 // provideSchedulerJobs is the single source of truth for periodic in-process
-// jobs — mirrors providePermissionsRegistry / provideJobHandlerRegistry. Add
+// jobs — mirrors providePermissionsRegistry. Add
 // a new Job here; provideScheduler stays decoupled from job business.
 func provideSchedulerJobs(tokens token2.TokenRepository) []scheduler.Job {
 	return []scheduler.Job{
@@ -327,37 +315,6 @@ func provideSchedulerJobs(tokens token2.TokenRepository) []scheduler.Job {
 
 func provideScheduler(logger *slog.Logger, jobs []scheduler.Job) (*scheduler.Scheduler, error) {
 	return scheduler.NewScheduler(logger, jobs)
-}
-
-// provideJobHandlerRegistry collects every kind → handler the binary can
-// process. Empty for now — handlers will be added in subsequent phases as
-// real background work appears.
-func provideJobHandlerRegistry() (*job2.HandlerRegistry, error) {
-	return job2.NewHandlerRegistry(map[string]job2.HandlerFunc{})
-}
-
-// provideJobDispatcher returns the dispatcher as a domain interface so command
-// handlers and event handlers depend on shared.JobDispatcher, not on the
-// concrete application-layer type.
-func provideJobDispatcher(
-	repo job3.Repository,
-	registry *job2.HandlerRegistry,
-) shared.JobDispatcher {
-	return job2.NewDispatcher(repo, registry)
-}
-
-// provideWorker wires the persistent job worker. Concurrency stays at 1 by
-// default because SQLite serializes writers (WAL: one writer at a time);
-// more goroutines don't increase throughput for DB-bound handlers.
-func provideWorker(
-	logger *slog.Logger,
-	reporter shared.ErrorReporter,
-	repo job3.Repository,
-	registry *job2.HandlerRegistry,
-	db *database.SqliteManager,
-	dispatcher shared.JobDispatcher,
-) *worker.Worker {
-	return worker.NewWorker(logger, reporter, repo, registry, db, dispatcher, 1)
 }
 
 // provideRunHandlerRegistry collects every kind → durable-run handler the binary
@@ -376,26 +333,34 @@ func provideRunDispatcher(
 	return run2.NewDispatcher(repo, registry)
 }
 
-// provideRunWorker wires the durable run worker (the agent engine) from config. It
-// injects the job + run dispatchers so a run handler can offload transactional
-// side-work — the worker bypasses the bus, which is where they are normally injected.
+// provideRunWorker wires the durable run worker (the one background-work engine) from
+// config. It injects the run dispatcher (so a handler can enqueue a child task) and the
+// SqliteManager as the Transactor backing shared.WithTx (short atomic writes the handler
+// scopes itself) — the worker bypasses the bus, where these are normally injected.
 func provideRunWorker(
 	logger *slog.Logger,
 	reporter shared.ErrorReporter,
 	repo run3.Repository,
 	registry *run2.HandlerRegistry,
-	jobDispatcher shared.JobDispatcher,
 	runDispatcher shared.RunDispatcher,
+	db *database.SqliteManager,
 	cfg *config.Config,
 ) *worker.RunWorker {
-	return worker.NewRunWorker(logger, reporter, repo, registry, jobDispatcher, runDispatcher, worker.RunWorkerConfig{
-		DefaultLease:      cfg.RunWorkerLease,
-		HeartbeatInterval: cfg.RunWorkerHeartbeat,
-		PollInterval:      cfg.RunWorkerPoll,
-		DrainTimeout:      cfg.RunWorkerDrainTimeout,
-		MaxInFlight:       cfg.RunWorkerMaxInFlight,
-		MaxReclaims:       cfg.RunWorkerMaxReclaims,
-	})
+	return worker.NewRunWorker(
+		logger,
+		reporter,
+		repo,
+		registry,
+		runDispatcher,
+		db, worker.RunWorkerConfig{
+			DefaultLease:      cfg.RunWorkerLease,
+			HeartbeatInterval: cfg.RunWorkerHeartbeat,
+			PollInterval:      cfg.RunWorkerPoll,
+			DrainTimeout:      cfg.RunWorkerDrainTimeout,
+			MaxInFlight:       cfg.RunWorkerMaxInFlight,
+			MaxReclaims:       cfg.RunWorkerMaxReclaims,
+		},
+	)
 }
 
 func providePermissionsRegistry() *shared.PermissionsRegistry {

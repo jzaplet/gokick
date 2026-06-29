@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"gokick/app/application/bus"
-	jobapp "gokick/app/application/job"
 	runapp "gokick/app/application/run"
 	"gokick/app/domain/run"
 	"gokick/app/domain/shared"
@@ -34,11 +33,10 @@ func (noopDispatcher) Enqueue(context.Context, string, int, any, ...shared.Enque
 // newProductionCommandBus builds the CommandBus through the SAME provider the
 // binary uses (provideCommandBus), so the middleware chain under test cannot
 // drift from production the way a hand-assembled chain (or testfx.NewBuses,
-// which omits Audit + JobDispatcher) silently can.
+// which omits Audit) silently can.
 func newProductionCommandBus(
 	t *testing.T,
 	fx *testfx.Fixture,
-	dispatcher shared.JobDispatcher,
 	runDispatcher shared.RunDispatcher,
 ) *bus.CommandBus {
 	t.Helper()
@@ -51,7 +49,6 @@ func newProductionCommandBus(
 		fx.DB,
 		checker,
 		eventBus,
-		dispatcher,
 		runDispatcher,
 		audit,
 		shared.NopReporter{},
@@ -70,7 +67,7 @@ func TestCommandBus_AuditSurvivesBusinessRollback(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "audit_rollback.db"))
 	u := fx.SeedUser(t, "victim", "password123", "user")
 
-	cmdBus := newProductionCommandBus(t, fx, noopDispatcher{}, noopDispatcher{})
+	cmdBus := newProductionCommandBus(t, fx, noopDispatcher{})
 
 	err := bus.ExecVoid(
 		ctx,
@@ -118,69 +115,13 @@ func TestCommandBus_AuditSurvivesBusinessRollback(t *testing.T) {
 	}
 }
 
-// job-queue.md / shared.JobDispatcher promise: a job enqueued from a command
-// handler joins the SAME transaction as the business write — they commit or
-// roll back atomically. Proven through the real provider chain (JobDispatcher
-// middleware injects a dispatcher whose Enqueue uses Conn(ctx)). Closes the
-// untested infra-sched-job-16.
-func TestCommandBus_JobEnqueueJoinsBusinessTransaction(t *testing.T) {
-	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "job_tx.db"))
-
-	registry, err := jobapp.NewHandlerRegistry(map[string]jobapp.HandlerFunc{
-		"test.kind": func(context.Context, []byte) error { return nil },
-	})
-	if err != nil {
-		t.Fatalf("registry: %v", err)
-	}
-	dispatcher := jobapp.NewDispatcher(fx.Jobs, registry)
-	cmdBus := newProductionCommandBus(t, fx, dispatcher, noopDispatcher{})
-
-	jobCount := func() int {
-		var n int
-		if e := fx.DB.DB().GetContext(ctx, &n, `SELECT COUNT(*) FROM jobs`); e != nil {
-			t.Fatalf("count jobs: %v", e)
-		}
-		return n
-	}
-
-	// Rollback case: enqueue a job then fail → the job row must NOT persist,
-	// proving the enqueue joined the rolled-back business tx.
-	_ = bus.ExecVoid(
-		ctx,
-		cmdBus.Bus,
-		"EnqueueThenFail",
-		skipPermCmd{},
-		func(ctx context.Context) error {
-			if e := shared.JobDispatcherFromContext(ctx).Enqueue(ctx, "test.kind", 0, map[string]any{"x": 1}); e != nil {
-				return e
-			}
-			return errors.New("boom")
-		},
-	)
-	if n := jobCount(); n != 0 {
-		t.Fatalf("job enqueue must roll back with the business tx, got %d job rows", n)
-	}
-
-	// Commit case: enqueue a job then succeed → the job row persists.
-	if e := bus.ExecVoid(ctx, cmdBus.Bus, "EnqueueThenCommit", skipPermCmd{}, func(ctx context.Context) error {
-		return shared.JobDispatcherFromContext(ctx).Enqueue(ctx, "test.kind", 0, map[string]any{"x": 2})
-	}); e != nil {
-		t.Fatalf("enqueue+commit: %v", e)
-	}
-	if n := jobCount(); n != 1 {
-		t.Fatalf("job enqueue must commit with the business tx, got %d job rows", n)
-	}
-}
-
 // The run dispatcher carries the SAME promise as the job dispatcher: a durable
 // run enqueued from a command handler joins that handler's transaction — the
 // INSERT into runs commits or rolls back atomically with the business write.
 // Proven through the real provider chain (RunDispatcherMiddleware injects a
 // dispatcher whose repo.Enqueue uses Conn(ctx)), so a missing or misordered
-// RunDispatcherMiddleware relative to TransactionMiddleware fails here. This is
-// the run-side mirror of TestCommandBus_JobEnqueueJoinsBusinessTransaction; with
-// a noop run dispatcher (as the other tests use) the guarantee was untested.
+// RunDispatcherMiddleware relative to TransactionMiddleware fails here. With a
+// noop run dispatcher (as the other tests use) the guarantee would be untested.
 func TestCommandBus_RunEnqueueJoinsBusinessTransaction(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "run_tx.db"))
@@ -194,7 +135,7 @@ func TestCommandBus_RunEnqueueJoinsBusinessTransaction(t *testing.T) {
 		t.Fatalf("registry: %v", err)
 	}
 	dispatcher := runapp.NewDispatcher(fx.Runs, registry)
-	cmdBus := newProductionCommandBus(t, fx, noopDispatcher{}, dispatcher)
+	cmdBus := newProductionCommandBus(t, fx, dispatcher)
 
 	runCount := func() int {
 		var n int
@@ -240,7 +181,7 @@ func TestCommandBus_RunEnqueueJoinsBusinessTransaction(t *testing.T) {
 func TestCommandBus_InjectsTenantIntoHandlerContext(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_ctx.db"))
-	cmdBus := newProductionCommandBus(t, fx, noopDispatcher{}, noopDispatcher{})
+	cmdBus := newProductionCommandBus(t, fx, noopDispatcher{})
 
 	var seen string
 	err := bus.ExecVoid(

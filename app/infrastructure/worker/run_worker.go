@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"runtime/debug"
@@ -16,8 +17,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Run-worker-local log keys (logKeyKinds/logKeyPanic/logKeyStack are shared with
-// the job worker in this package).
+// Run-worker-local log keys (logKeyKinds/logKeyPanic/logKeyStack live in common.go).
 const (
 	logKeyRunID       = "run_id"
 	logKeyRunKind     = "run_kind"
@@ -92,16 +92,13 @@ type RunWorker struct {
 	reporter shared.ErrorReporter
 	repo     run.Repository
 	registry *runapp.HandlerRegistry
-	// Dispatchers a run handler may use for transactional side-work: a run handler
-	// runs OUTSIDE a tx (ContextForbidTx), so it persists progress via the
-	// Checkpointer and offloads anything that needs a transaction by enqueuing a
-	// short job or a child run. The worker bypasses the bus, so it injects these
-	// into the handler ctx itself (mirroring the job worker) — otherwise
-	// shared.*DispatcherFromContext would return the silent no-op and drop the
-	// enqueue. Either may be nil (a worker built without dispatchers); the inject
-	// then falls through to the no-op, same as before.
-	jobDispatcher shared.JobDispatcher
+	// Capabilities the worker injects into the handler ctx (it bypasses the bus, where
+	// these are normally injected): runDispatcher lets a handler enqueue a child task;
+	// transactor backs shared.WithTx so a handler can make a few writes atomically in a
+	// SHORT transaction it scopes itself. Both may be nil (a worker built without them);
+	// the handler-side helpers then fall through to a no-op / an error.
 	runDispatcher shared.RunDispatcher
+	transactor    shared.Transactor
 	cfg           RunWorkerConfig
 }
 
@@ -110,8 +107,8 @@ func NewRunWorker(
 	reporter shared.ErrorReporter,
 	repo run.Repository,
 	registry *runapp.HandlerRegistry,
-	jobDispatcher shared.JobDispatcher,
 	runDispatcher shared.RunDispatcher,
+	transactor shared.Transactor,
 	cfg RunWorkerConfig,
 ) *RunWorker {
 	return &RunWorker{
@@ -120,8 +117,8 @@ func NewRunWorker(
 		reporter:      reporter,
 		repo:          repo,
 		registry:      registry,
-		jobDispatcher: jobDispatcher,
 		runDispatcher: runDispatcher,
+		transactor:    transactor,
 		cfg:           cfg.withDefaults(),
 	}
 }
@@ -239,7 +236,7 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 		return
 	}
 
-	handler, kindLease, known := w.registry.Lookup(r.Kind)
+	handler, kindLease, kindTimeout, known := w.registry.Lookup(r.Kind)
 	if !known {
 		w.handleUnknownKind(workerCtx, log, r, owner)
 		return
@@ -265,15 +262,16 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 	// mark the ctx no-transaction: a durable run runs OUTSIDE a tx, so an accidental
 	// BeginTx in the handler must fail closed, not freeze the DB (shared.ContextForbidTx).
 	runCtx := shared.ContextForbidTx(shared.ContextWithTenantID(workerCtx, r.TenantID))
-	// Inject the dispatchers the handler needs for transactional side-work (enqueue a
-	// short job or a child run). The worker bypasses the bus, so without this
-	// shared.*DispatcherFromContext would return the silent no-op and drop the
-	// enqueue. Skip a nil dispatcher so the ctx falls through to the no-op cleanly.
-	if w.jobDispatcher != nil {
-		runCtx = shared.ContextWithJobDispatcher(runCtx, w.jobDispatcher)
-	}
+	// Inject the capabilities the handler can use (the worker bypasses the bus, where
+	// these are normally injected): a RunDispatcher to enqueue a child task, and a
+	// Transactor backing shared.WithTx for short atomic writes the handler scopes
+	// itself. Skip a nil one so the ctx falls through cleanly (no-op enqueue / WithTx
+	// returns ErrTxUnavailable).
 	if w.runDispatcher != nil {
 		runCtx = shared.ContextWithRunDispatcher(runCtx, w.runDispatcher)
+	}
+	if w.transactor != nil {
+		runCtx = shared.ContextWithTransactor(runCtx, w.transactor)
 	}
 
 	handlerCtx, cancelHandler := context.WithCancel(runCtx)
@@ -316,11 +314,26 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 		cancelHandler()
 	}
 
+	// Per-attempt timeout (0 = none): execCtx is a child of handlerCtx, so a deadline
+	// OR a lease-loss/cancel (cancelHandler) both stop the handler. A deadline that
+	// fires on an otherwise-healthy handler is detected after it returns (execCtx.Err).
+	execCtx := handlerCtx
+	if kindTimeout > 0 {
+		var cancelTimeout context.CancelFunc
+		execCtx, cancelTimeout = context.WithTimeout(handlerCtx, kindTimeout)
+		defer cancelTimeout()
+	}
+
 	start := time.Now()
-	hErr := w.runHandler(handlerCtx, r, owner, kindLease, handler)
+	hErr := w.runHandler(execCtx, r, owner, kindLease, handler)
 
 	cancelHeartbeat() // stop the heartbeat
 	<-hbDone          // JOIN: establishes happens-before before reading the atomics
+
+	// A fired deadline (not merely a propagated cancel/abandon) means the attempt timed
+	// out. finalize ranks abandon/shutdown/cancelled above it, so this only decides an
+	// otherwise-healthy over-running attempt.
+	timedOut := kindTimeout > 0 && errors.Is(execCtx.Err(), context.DeadlineExceeded)
 
 	w.finalize(
 		workerCtx,
@@ -330,6 +343,7 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 		hErr,
 		abandon.Load(),
 		cancelled.Load(),
+		timedOut,
 		time.Since(start),
 	)
 }
@@ -455,15 +469,17 @@ func (w *RunWorker) heartbeat(
 // owner-fenced and will be reclaimed + resumed). cancelled is ranked ABOVE success
 // on purpose — a handler whose ctx was cancelled and returns nil cannot be trusted
 // to have finished (it may have stopped early), so it is recorded Cancelled, not
-// Complete. Every finalizer is owner-checked; a false return means the lease was
-// lost at the last moment → abandon.
+// Complete. timedOut ranks below cancelled but above success — an attempt that blew
+// its deadline is a retryable failure (handleFailure), not a completion, even if the
+// handler returned nil. Every finalizer is owner-checked; a false return means the
+// lease was lost at the last moment → abandon.
 func (w *RunWorker) finalize(
 	workerCtx context.Context,
 	log *slog.Logger,
 	r *run.Run,
 	owner string,
 	hErr error,
-	abandon, cancelled bool,
+	abandon, cancelled, timedOut bool,
 	dur time.Duration,
 ) {
 	switch {
@@ -490,6 +506,21 @@ func (w *RunWorker) finalize(
 		default:
 			log.Info("run worker: run cancelled", shared.DurationMsAttr(dur))
 		}
+	case timedOut:
+		// A blown per-attempt deadline → retryable failure (reschedule with backoff, or
+		// terminal once the retry budget is spent). Ranked above success so a handler
+		// that returned nil exactly as the deadline fired is still treated as timed out.
+		w.handleFailure(
+			workerCtx,
+			log,
+			r,
+			owner,
+			fmt.Errorf(
+				"run timed out (exceeded per-attempt deadline) after %s",
+				dur.Round(time.Millisecond),
+			),
+			dur,
+		)
 	case hErr == nil:
 		ok, err := w.repo.MarkComplete(workerCtx, r.ID, owner)
 		switch {

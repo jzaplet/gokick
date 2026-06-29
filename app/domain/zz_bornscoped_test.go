@@ -17,7 +17,7 @@ package domain_test
 //
 // Scope: only factories that SET a TenantID field are constrained. A factory
 // that leaves the field zero and has the tenant stamped later by an explicit,
-// reviewed path (job.NewJob → dispatcher) is out of scope precisely because it
+// reviewed path (run.NewRun → dispatcher) is out of scope precisely because it
 // makes no hidden default choice here.
 
 import (

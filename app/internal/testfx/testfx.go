@@ -12,7 +12,6 @@ import (
 
 	"gokick/app/application/bus"
 	busmw "gokick/app/application/bus/middleware"
-	"gokick/app/domain/job"
 	"gokick/app/domain/run"
 	"gokick/app/domain/shared"
 	"gokick/app/domain/tenant"
@@ -22,7 +21,6 @@ import (
 	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/security"
 	sqliteaudit "gokick/app/infrastructure/sqlite/audit"
-	sqlitejob "gokick/app/infrastructure/sqlite/job"
 	sqliterun "gokick/app/infrastructure/sqlite/run"
 	sqlitetenant "gokick/app/infrastructure/sqlite/tenant"
 	sqlitetoken "gokick/app/infrastructure/sqlite/token"
@@ -36,7 +34,6 @@ type Fixture struct {
 	Users         user.Repository
 	PlatformUsers user.PlatformRepository // same concrete repo; the cross-tenant port for platform handler tests
 	Tokens        token.TokenRepository
-	Jobs          job.Repository
 	Runs          run.Repository
 	Tenants       tenant.Repository
 	Hasher        *security.PasswordHasher
@@ -90,7 +87,6 @@ func newFixture(t *testing.T, dbPath string, multitenant bool) *Fixture {
 		Users:         usersRepo,
 		PlatformUsers: usersRepo,
 		Tokens:        sqlitetoken.NewRepository(db),
-		Jobs:          sqlitejob.NewRepository(db),
 		Runs:          sqliterun.NewRepository(db),
 		Tenants:       sqlitetenant.NewRepository(db),
 		Hasher:        security.NewPasswordHasher(),
@@ -118,16 +114,15 @@ func (f *Fixture) NewBuses() (*bus.CommandBus, *bus.QueryBus, *bus.EventBus) {
 		busmw.LoggingMiddleware(logger),
 	)
 
-	// Throwaway dispatcher (the no-op the worker tests use) — no command handler
-	// enqueues today, so JobDispatcherMiddleware injects it but it is never
-	// invoked. Importing the real application/job dispatcher here would cycle
-	// (its test imports testfx). The chain itself stays faithful via CommandChain.
-	dispatcher := shared.JobDispatcherFromContext(context.Background())
+	// Throwaway run dispatcher (the no-op) — no command handler enqueues today, so
+	// RunDispatcherMiddleware injects it but it is never invoked. Importing the real
+	// application/run dispatcher here would cycle (its test imports testfx). The chain
+	// stays faithful via CommandChain.
 	runDispatcher := shared.RunDispatcherFromContext(context.Background())
 	audit := sqliteaudit.NewRepository(f.DB)
 
 	// Same chain as provideCommandBus (busmw.CommandChain is the single source),
-	// so the test CommandBus can't drift from production — incl. Audit + JobDispatcher.
+	// so the test CommandBus can't drift from production — incl. Audit + RunDispatcher.
 	return bus.NewCommandBus(
 			busmw.CommandChain(
 				logger,
@@ -135,7 +130,6 @@ func (f *Fixture) NewBuses() (*bus.CommandBus, *bus.QueryBus, *bus.EventBus) {
 				reporter,
 				resolver,
 				audit,
-				dispatcher,
 				runDispatcher,
 				eventBus,
 				f.DB,

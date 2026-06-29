@@ -26,27 +26,24 @@ func BaseChain(
 }
 
 // CommandChain is the full write-side chain for the CommandBus:
-// Recovery → Logging → Authorize → Tenant → Audit → JobDispatcher → RunDispatcher
-// → DispatchEvents → Transaction. Single source so the DI provider
-// (provideCommandBus) and testfx (NewBuses) can't drift. Audit wraps OUTSIDE
-// Transaction (failure events survive rollback); DispatchEvents wraps Transaction
-// (events fire post-commit); the Job/Run dispatchers sit outside Transaction (a
-// handler's Enqueue joins the tx via Conn(ctx)). Interfaces only, so both the
-// infrastructure and test layers can build it.
+// Recovery → Logging → Authorize → Tenant → Audit → RunDispatcher → DispatchEvents
+// → Transaction. Single source so the DI provider (provideCommandBus) and testfx
+// (NewBuses) can't drift. Audit wraps OUTSIDE Transaction (failure events survive
+// rollback); DispatchEvents wraps Transaction (events fire post-commit); the Run
+// dispatcher sits outside Transaction (a handler's Enqueue joins the tx via
+// Conn(ctx)). Interfaces only, so both the infrastructure and test layers can build it.
 func CommandChain(
 	logger *slog.Logger,
 	checker shared.PermissionChecker,
 	reporter shared.ErrorReporter,
 	tenantResolver shared.TenantResolver,
 	audit shared.AuditLogger,
-	jobDispatcher shared.JobDispatcher,
 	runDispatcher shared.RunDispatcher,
 	eventBus *bus.EventBus,
 	tx shared.Transactor,
 ) []bus.Middleware {
 	return append(BaseChain(logger, checker, reporter, tenantResolver),
 		AuditMiddleware(logger, audit),
-		JobDispatcherMiddleware(jobDispatcher),
 		RunDispatcherMiddleware(runDispatcher),
 		DispatchEventsMiddleware(logger, eventBus),
 		TransactionMiddleware(tx),
@@ -56,7 +53,7 @@ func CommandChain(
 // SystemChain is the middleware chain for the SystemCommandBus — the
 // operator-trusted CLI commands (create-*, seed). It is the CommandBus chain
 // MINUS Authorize and Tenant (no principal, no JWT-resolved tenant) and minus
-// JobDispatcher (these commands enqueue nothing):
+// the RunDispatcher (these commands enqueue nothing):
 //
 //	Recovery → Logging → Audit → DispatchEvents → Transaction
 //

@@ -608,7 +608,7 @@ func TestRunWorker_HandlerCanEnqueueChildRun(t *testing.T) {
 		t.Fatalf("registry: %v", err)
 	}
 	dispatcher := runapp.NewDispatcher(fx.Runs, reg)
-	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, dispatcher, fastCfg())
+	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, dispatcher, nil, fastCfg())
 
 	enqueueRunW(t, fx, "parent", 0)
 	stop := startWorker(w)

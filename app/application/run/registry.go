@@ -36,11 +36,26 @@ type Checkpointer interface {
 // handler need not distinguish a clean-stop nil from a ctx.Err() on cancellation.
 type HandlerFunc func(ctx context.Context, r *run.Run, ck Checkpointer) error
 
-// Registration binds a kind to its handler and an optional per-kind lease (the
-// crash-reclaim window / heartbeat target). A zero Lease uses the registry default.
+// Registration binds a kind to its handler, an optional per-kind lease (the
+// crash-reclaim window / heartbeat target; zero = registry default), and an optional
+// per-attempt Timeout (zero = no timeout). Build one with FireAndForget (a job-like
+// task) or Durable (a long, resumable task) rather than the struct literal.
 type Registration struct {
 	Handler HandlerFunc
 	Lease   time.Duration
+	Timeout time.Duration
+}
+
+// FireAndForget registers a short, non-resumable task — the "job" shape: the default
+// lease, an optional per-attempt timeout, and a handler that need not checkpoint.
+func FireAndForget(handler HandlerFunc, timeout time.Duration) Registration {
+	return Registration{Handler: handler, Timeout: timeout}
+}
+
+// Durable registers a long, resumable task — the "run" shape: an explicit crash-reclaim
+// lease and an optional per-attempt timeout. The handler checkpoints via ck.Save.
+func Durable(handler HandlerFunc, lease, timeout time.Duration) Registration {
+	return Registration{Handler: handler, Lease: lease, Timeout: timeout}
 }
 
 // minKindLease rejects an implausibly small explicit per-kind lease at registration
@@ -84,18 +99,18 @@ func NewHandlerRegistry(
 	return &HandlerRegistry{regs: dup, defaultLease: defaultLease}, nil
 }
 
-// Lookup returns the handler and the effective lease (the kind's, or the default)
-// for a kind, and whether it is registered.
-func (r *HandlerRegistry) Lookup(kind string) (HandlerFunc, time.Duration, bool) {
+// Lookup returns the handler, the effective lease (the kind's, or the default), the
+// per-attempt timeout (0 = none), and whether the kind is registered.
+func (r *HandlerRegistry) Lookup(kind string) (HandlerFunc, time.Duration, time.Duration, bool) {
 	reg, ok := r.regs[kind]
 	if !ok {
-		return nil, 0, false
+		return nil, 0, 0, false
 	}
 	lease := reg.Lease
 	if lease <= 0 {
 		lease = r.defaultLease
 	}
-	return reg.Handler, lease, true
+	return reg.Handler, lease, reg.Timeout, true
 }
 
 func (r *HandlerRegistry) Has(kind string) bool {

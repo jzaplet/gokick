@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	jobapp "gokick/app/application/job"
 	runapp "gokick/app/application/run"
 	usercmd "gokick/app/application/user/command"
 	"gokick/app/domain/shared"
@@ -21,27 +20,6 @@ import (
 
 func silentLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
-}
-
-// newTestWorker builds a real Worker the cheap way the worker package's own
-// tests do — an empty handler registry plus the throwaway dispatcher returned
-// for a bare context. Its Run drains promptly once ctx is cancelled.
-func newTestWorker(t *testing.T, fx *testfx.Fixture) *worker.Worker {
-	t.Helper()
-	registry, err := jobapp.NewHandlerRegistry(map[string]jobapp.HandlerFunc{})
-	if err != nil {
-		t.Fatalf("registry: %v", err)
-	}
-	dispatcher := shared.JobDispatcherFromContext(context.Background())
-	return worker.NewWorker(
-		silentLogger(),
-		shared.NopReporter{},
-		fx.Jobs,
-		registry,
-		fx.DB,
-		dispatcher,
-		1,
-	)
 }
 
 // ---------------------------------------------------------------------------
@@ -181,12 +159,12 @@ func TestRootCommand_RegistersSubcommands(t *testing.T) {
 	// .Command() builds the cobra tree without dereferencing the injected
 	// dependencies, so nil deps are safe for inspecting the command set.
 	root := NewRootCommand(
-		NewServeCommand(nil, nil, nil, nil),
+		NewServeCommand(nil, nil, nil),
 		NewSeedCommand(nil, nil),
 		NewCreateUserCommand(nil, nil, nil, nil, nil),
 		NewCreateSuperAdminCommand(nil, nil),
 		NewCreateTenantCommand(nil, nil),
-		NewWorkerCommand(nil, nil),
+		NewWorkerCommand(nil),
 	)
 
 	names := map[string]bool{}
@@ -272,9 +250,7 @@ func newTestRunWorker(t *testing.T, fx *testfx.Fixture) *worker.RunWorker {
 func TestWorkerCommand_RunDrainsOnContextCancel(t *testing.T) {
 	// No t.Parallel — see TestCreateUserCommand_MissingRequiredFlagErrors (goose globals).
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "console.db"))
-	w := newTestWorker(t, fx)
-
-	cmd := NewWorkerCommand(w, newTestRunWorker(t, fx)).Command()
+	cmd := NewWorkerCommand(newTestRunWorker(t, fx)).Command()
 	cmd.SilenceUsage = true
 
 	ctx, cancel := context.WithCancel(context.Background())

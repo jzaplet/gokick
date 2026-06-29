@@ -27,7 +27,7 @@ func NewEventCollector() *EventCollector {
 func (c *EventCollector) Collect(event DomainEvent) {
 	if c.forbidden {
 		panic("shared.EventCollector: Collect called from an event/job handler — " +
-			"cascading events is not supported. Use shared.JobDispatcherFromContext(ctx).Enqueue(...) " +
+			"cascading events is not supported. Use shared.RunDispatcherFromContext(ctx).Enqueue(...) " +
 			"for follow-up async work.")
 	}
 	c.mu.Lock()
@@ -59,7 +59,7 @@ func ContextWithEventCollector(ctx context.Context) (context.Context, *EventColl
 
 // ContextWithoutEventCollector installs a forbidden-marker collector that
 // panics on Collect. Call it before invoking any event handler or job
-// handler — they must use JobDispatcher for follow-up async work, not
+// handler — they must use the RunDispatcher for follow-up async work, not
 // re-emit events through a collector that no one will flush.
 func ContextWithoutEventCollector(ctx context.Context) context.Context {
 	return context.WithValue(ctx, eventCollectorKey, forbiddenCollector)

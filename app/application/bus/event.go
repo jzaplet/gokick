@@ -33,7 +33,7 @@ func (eb *EventBus) Register(eventName string, handler EventHandler) {
 
 func (eb *EventBus) Dispatch(ctx context.Context, event shared.DomainEvent) {
 	// Block cascading Collect from inside event handlers — they must use
-	// JobDispatcher for follow-up async work.
+	// the RunDispatcher for follow-up async work.
 	ctx = shared.ContextWithoutEventCollector(ctx)
 
 	handlers := eb.handlers[event.EventName()]

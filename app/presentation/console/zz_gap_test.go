@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	jobapp "gokick/app/application/job"
 	platformcmd "gokick/app/application/platform/command"
 	runapp "gokick/app/application/run"
 	tenantcmd "gokick/app/application/tenant/command"
@@ -113,20 +112,6 @@ func serveTestServer(logger *slog.Logger) *server.Server {
 	)
 }
 
-// serveTestWorker builds a real Worker (empty handler registry, throwaway
-// dispatcher) the same cheap way newTestWorker does, but routed through the
-// supplied logger so its "job worker: starting" / "job worker: stopped" lifecycle
-// lines land in the capture buffer. Its Run drains promptly on ctx cancel.
-func serveTestWorker(t *testing.T, fx *testfx.Fixture, logger *slog.Logger) *worker.Worker {
-	t.Helper()
-	registry, err := jobapp.NewHandlerRegistry(map[string]jobapp.HandlerFunc{})
-	if err != nil {
-		t.Fatalf("registry: %v", err)
-	}
-	dispatcher := shared.JobDispatcherFromContext(context.Background())
-	return worker.NewWorker(logger, shared.NopReporter{}, fx.Jobs, registry, fx.DB, dispatcher, 1)
-}
-
 func serveTestRunWorker(
 	t *testing.T,
 	fx *testfx.Fixture,
@@ -192,10 +177,9 @@ func TestServeCommand_SchedulerDoneGatesReturnAndSharesCtx(t *testing.T) {
 		t.Fatalf("new scheduler: %v", err)
 	}
 
-	w := serveTestWorker(t, fx, logger)
 	srv := serveTestServer(logger)
 
-	cmd := NewServeCommand(srv, sched, w, serveTestRunWorker(t, fx, logger)).Command()
+	cmd := NewServeCommand(srv, sched, serveTestRunWorker(t, fx, logger)).Command()
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true
 
@@ -247,8 +231,6 @@ func TestServeCommand_SchedulerDoneGatesReturnAndSharesCtx(t *testing.T) {
 	for _, want := range []string{
 		"scheduler: starting",
 		"scheduler: stopped",
-		"job worker: starting",
-		"job worker: stopped",
 		"run worker: starting",
 		"run worker: stopped",
 	} {
