@@ -99,5 +99,5 @@ Jedno číslo verze teče do binárky i do SPA, aby Sentry grupoval chyby podle 
 
 ## Related
 
-- Skills: `/gk-init` (lokální build & rozjetí), `/gk-migrations` (embedované + auto-apply migrace), `/gk-config` (`APP_HTTP_PORT`, `APP_DB_PATH`, `APP_COOKIE_SECURE`, `APP_JWT_SECRET`, `APP_SENTRY_*`), `/gk-jobs` + `/gk-scheduler` (co `serve` / `worker` co-spouští), `/gk-sentry` (co se reportuje a jak verze grupuje chyby)
+- Skills: `/gk-init` (lokální build & rozjetí), `/gk-migrations` (embedované + auto-apply migrace), `/gk-config` (`APP_HTTP_PORT`, `APP_DB_PATH`, `APP_COOKIE_SECURE`, `APP_JWT_SECRET`, `APP_SENTRY_*`), `/gk-runs` + `/gk-scheduler` (co `serve` / `worker` co-spouští), `/gk-sentry` (co se reportuje a jak verze grupuje chyby)
 - Kód: `docker/production/Dockerfile`, `.github/workflows/release.yml`, `.github/workflows/validate.yml`, `Makefile`, `cmd/version.go`, `app/presentation/console/`, `public/embed.go`, `migrations/embed.go`

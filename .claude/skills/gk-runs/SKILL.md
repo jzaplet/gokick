@@ -5,46 +5,64 @@ position: 31
 slug: 'skills-gk-runs'
 parent: 'skills-data'
 navTitle: 'gk-runs'
-title: 'GK — Durable runs'
-description: 'Perzistentní engine pro dlouho běžící práci, která běží minuty/hodiny — běh MIMO transakci, checkpoint stavu, heartbeat lease, reclaim+resume z posledního checkpointu po pádu workeru, owner-fencing a cancel. Use when stavíš dlouho běžící background práci (velký import/export, generování velkého reportu, dávkové zpracování) co musí přežít restart/crash a pokračovat tam, kde skončila — na rozdíl od krátkého fire-and-forget jobu.'
+title: 'GK — Durable runs (jobs + runs)'
+description: 'Jeden perzistentní engine pro background práci, co běží MIMO transakci a musí přežít restart/crash — ve dvou tvarech. Fire-and-forget „job" (FireAndForget: krátké, at-least-once, idempotentní — poslat mail/SMTP, webhook, jedno volání cizího API) a dlouhý „run" (Durable: checkpoint stavu + resume z posledního kroku po pádu — velký import/export, generování velkého reportu, dávkové zpracování). Use when stavíš jakoukoli background práci mimo HTTP request — od krátkého fire-and-forget jobu po dlouhý běh na minuty/hodiny — nebo řešíš retry/backoff, lease/heartbeat, owner-fencing nebo cancel.'
 name: 'gk-runs'
 ---
 
-# GK — Durable runs
+# GK — Durable runs (jobs + runs)
 
-Engine pro **dlouho běžící** background práci, která běží minuty až hodiny a musí
-přežít pád procesu **bez ztráty postupu**. Na rozdíl od `/gk-jobs` (krátký job
-obalený jednou transakcí) běží handler **MIMO transakci**, průběžně si **checkpointuje
-stav**, heartbeat mu drží lease, a když worker umře, jiný worker job **převezme a
-resumne z posledního checkpointu**. Viz ADR-0001.
+**Jeden** engine pro perzistentní background práci, která běží **mimo transakci**
+a musí přežít pád procesu. Má **dva tvary**, lišící se jen registrací:
+
+- **fire-and-forget „job"** (`FireAndForget`) — krátká práce, co **nečekpointuje**:
+  pošli mail/SMTP, zavolej webhook nebo cizí API, přepočítej agregaci. Default lease,
+  doručení **at-least-once** → handler musí být idempotentní.
+- **dlouhý „run"** (`Durable`) — práce na minuty až hodiny, co si **checkpointuje
+  stav** a po pádu workeru se **resumne z posledního checkpointu**: velký import/export,
+  generování velkého reportu/PDF, dávkové zpracování.
+
+Oba tvary jedou přes stejnou tabulku `runs`, stejný worker, stejné lease/heartbeat,
+owner-fencing a cancel. Job je prostě run bez checkpointu. Viz ADR-0001.
 
 ## What & when
 
-- Sáhni sem pro práci, co musí běžet **mimo transakci** — buď protože **trvá dlouho**
-  (velký import/export, generování velkého reportu/PDF, dávkové zpracování, dlouhá
-  synchronizace), nebo protože **volá ven** (e-mail/SMTP, webhook, cizí API). Volání ven
-  nesmí být v transakci (drželo by zámek po dobu volání) — i krátký e-mail proto patří sem,
-  ne do jobu.
-- NEtýká se: krátké flaky práce (poslat mail, jedno API volání) → to je `/gk-jobs`
-  (in-tx, atomický complete, levnější). Synchronní side-effect po commitu →
-  `/gk-domain-events`. Periodická úloha na čase → `/gk-scheduler`.
-- **Proč NE v jedné transakci:** dlouhý handler v `BEGIN IMMEDIATE` by držel
-  globální SQLite write-lock celou dobu → zamrznou všechny zápisy appky (a na
-  Postgresu je to idle-in-transaction anti-pattern). Proto outside-tx + checkpoint.
+- Sáhni sem pro **jakoukoli práci mimo HTTP request**, co musí přežít restart/crash:
+  - **krátká, flaky, volá ven** (mail/SMTP, webhook, jedno API volání) nebo rychlá
+    práce nad vlastní DB → **fire-and-forget job** (`FireAndForget`).
+  - **dlouhá a nesmí začít od nuly**, kdyby proces spadl (import, report, dávka)
+    → **durable run** (`Durable`, checkpoint + resume).
+- NEtýká se: synchronního side-effectu po commitu v request goroutině (rychlá reakce
+  na „stalo se X") → `/gk-domain-events`. Periodická úloha na čase (každou hodinu
+  cleanup) → `/gk-scheduler`. Audit log má vlastní cestu (`AuditCollector`).
+- **Proč VŠECHNO běží mimo transakci:** dlouhý handler v `BEGIN IMMEDIATE` by držel
+  globální SQLite write-lock celou dobu → zamrznou všechny zápisy appky (a na Postgresu
+  je to idle-in-transaction anti-pattern). A i **krátké volání ven** (SMTP visí, API
+  i minuty) v transakci drží zámek po dobu toho volání. Proto je outside-tx vynucené pro
+  oba tvary — atomicitu „práce + complete" nahrazuje idempotence (job) / checkpoint (run).
 
 ## For non-tech / juniors
 
-Job (`/gk-jobs`) je **lísteček v krabici** — rychlá práce, buď celá projde, nebo
-nic. Durable run je **dlouhá výprava s deníkem**: práce jde krok po kroku a po
-každém kroku si do deníku (DB) zapíše, kde je. Když cestou umře baterka (spadne
-proces), jiný průvodce vezme jeho deník a **pokračuje od posledního zápisu** — ne
-od začátku. Aby se dva průvodci nehádali o stejnou výpravu, každý má **žeton**
-(owner token): kdo žeton ztratí, ztratí právo do deníku zapisovat.
+Představ si **krabici úkolů**, kterou hlídá zvlášť běžící pracant (`worker`).
+
+- **Job = lísteček „udělej a zapomeň".** Pošli welcome mail tomuhle uživateli. Pracant
+  lísteček vezme, udělá práci, a když se povede, škrtne ho. Když se nepovede (SMTP
+  nedostupný), počká a zkusí znovu, s každým pokusem déle. Lísteček je v databázi, takže
+  **přežije i pád aplikace**. Protože škrtnutí „hotovo" je **samostatný zápis až po práci**,
+  může se po pádu práce ve vzácném okně zopakovat — proto musí být **idempotentní** (poslat
+  dva maily je bug).
+- **Run = dlouhá výprava s deníkem.** Práce jde krok po kroku a po každém kroku si do
+  deníku (DB) zapíše, kde je. Když cestou umře baterka (spadne proces), jiný průvodce
+  vezme jeho deník a **pokračuje od posledního zápisu** — ne od začátku. Aby se dva
+  průvodci nehádali o stejnou výpravu, každý má **žeton** (owner token): kdo žeton ztratí,
+  ztratí právo do deníku zapisovat.
+
+Job je výprava bez deníku (jeden krok, žádný checkpoint). Pod kapotou je to ten samý engine.
 
 ## How it works
 
-**Schéma `runs`** (`migrations/…_create_runs_table.sql`) = jako `jobs` +
-`state` (checkpoint BLOB), `locked_by` (owner token), `reclaims`, `updated_at`,
+**Schéma `runs`** (`migrations/…_create_runs_table.sql`) = fronta + `state`
+(checkpoint BLOB), `locked_by` (owner token), `reclaims`, `updated_at`,
 `cancel_requested`/`cancelled_at`. Stav se odvozuje ze sloupců (`completed_at` /
 `failed_at` / `cancelled_at` != NULL → terminal; `locked_until > now` → běží).
 
@@ -57,7 +75,9 @@ ztracen → caller se vzdá (fencing). `ClaimDue`/`RenewLease`/`Checkpoint`/`Mar
 flag-only poll pro heartbeat, netáhne state BLOB)/`FindByID`. Čas: `julianday()` na
 porovnání, ms-precizní zápisy, sub-second lease — viz `/gk-repositories`.
 
-**Kontrakt** (`app/application/run/registry.go`): handler píše aplikace, ne gokick:
+**Kontrakt + registrace** (`app/application/run/registry.go`): handler píše aplikace,
+ne gokick. Stejná signatura pro oba tvary; liší se jen **registrace**:
+
 ```go
 func RunMyWork(ctx context.Context, r *run.Run, ck run.Checkpointer) error {
     state := decode(r.State)         // resume z posledního checkpointu (len==0 = od začátku)
@@ -71,69 +91,99 @@ func RunMyWork(ctx context.Context, r *run.Run, ck run.Checkpointer) error {
     return nil
 }
 ```
-`r` je **read-only** (resume z `r.State`/`r.Payload`, nemutuj ho). `ctx` se zruší
-při ztrátě leasu / operátorském cancelu / shutdownu — handler musí být **ctx-aware**.
+
+```go
+// registrace (provideRunHandlerRegistry, container_provider.go):
+"welcome:send": runapp.FireAndForget(h.SendWelcome, 30*time.Second),   // job: bez leasu, jen timeout
+"import:bulk":  runapp.Durable(h.RunImport, 5*time.Minute, time.Hour), // run: lease + timeout
+```
+
+`FireAndForget(handler, timeout)` = default lease, **handler nemusí volat `ck.Save`**.
+`Durable(handler, lease, timeout)` = explicitní crash-reclaim lease, handler checkpointuje.
+`r` je **read-only** (resume z `r.State`/`r.Payload`, nemutuj ho). `ctx` se zruší při
+ztrátě leasu / operátorském cancelu / shutdownu — handler musí být **ctx-aware**.
 
 **Worker** (`app/infrastructure/worker/run_worker.go`, `RunWorker`): claim (per-claim
-owner nonce) → handler v goroutině MIMO tx → vedle běží **heartbeat** (renew lease +
-sleduje cancel) → finalize. **Backpressure** = `MaxInFlight` semafor. Při ztrátě
-leasu / shutdownu se handler-ctx zruší a run se **abandonuje** (nikdy necompletuje
-napůl hotovou práci) → lease vyprší → reclaim. Co-runs v `serve` i `worker` CLI vedle
-job workeru.
+owner nonce) → handler v goroutině MIMO tx (`shared.ContextForbidTx`) → vedle běží
+**heartbeat** (renew lease + sleduje cancel) → finalize. Worker nevětví podle tvaru:
+job i run jdou stejnou cestou, jen job typicky nezavolá `ck.Save` a doběhne na jeden
+průchod. **Backpressure** = `MaxInFlight` semafor. Při ztrátě leasu / shutdownu se
+handler-ctx zruší a run se **abandonuje** (nikdy necompletuje napůl hotovou práci) →
+lease vyprší → reclaim. Co-runs v `serve` i `worker` CLI (`./bin/app worker` bez HTTP
+serveru pro split deploy: 1× serve + N× worker, sdílená SQLite).
 
-**Dispatcher** (`app/application/run/dispatcher.go`, `shared.RunDispatcher`):
-`RunDispatcherMiddleware` ho vloží do ctx; `Enqueue` z command handleru padne do
-**stejné transakce** jako business write (atomický enqueue přes `Conn(ctx)`).
+**Dispatch** (`app/application/run/dispatcher.go`, `shared.RunDispatcher`) — **stejný
+pro oba tvary**: `RunDispatcherMiddleware` ho vloží do ctx; `Enqueue` z command handleru
+padne do **stejné transakce** jako business write (atomický enqueue přes `Conn(ctx)`).
+Neznámý `kind` (bez registrovaného handleru) i `maxRetries < 0` selžou už při enqueue.
+Mimo bus (CLI, testy) vrací no-op dispatcher — enqueue se tiše zahodí, handler nenil-checkuje.
 
 ## Recipe
 
-Přidání nového run kindu (vzorově `import:bulk`):
+Přidání nového kindu (vyber tvar podle „potřebuje checkpoint/resume?"):
 
 1. **Handler** — `func(ctx, r *run.Run, ck run.Checkpointer) error` v
-   `application/<context>/run/`. Resumuj z `r.State`, checkpointuj přes `ck.Save`,
-   respektuj `ctx`. Musí být **idempotentní** (krok se po pádu může zopakovat).
+   `application/<context>/run/`. Musí být **idempotentní** (po pádu se zopakuje).
+   - *Job* (fire-and-forget): udělej práci, `return nil`/`err`. `ck.Save` nepotřebuješ.
+   - *Run* (durable): resumuj z `r.State`, checkpointuj přes `ck.Save`, respektuj `ctx`.
 2. **Registruj kind** v `provideRunHandlerRegistry` (`container_provider.go`):
-   `"import:bulk": {Handler: h.Handle}` (volitelně `Lease:` pro per-kind lease).
-3. **Enqueue z command handleru** — po business write:
+   ```go
+   "welcome:send": runapp.FireAndForget(h.SendWelcome, 30*time.Second), // job
+   "import:bulk":  runapp.Durable(h.RunImport, 5*time.Minute, time.Hour), // run
+   ```
+3. **Enqueue z command handleru** — po business write (identické pro job i run):
    ```go
    return shared.RunDispatcherFromContext(ctx).
-       Enqueue(ctx, "import:bulk", 3, BulkImportPayload{FileID: id})
+       Enqueue(ctx, "welcome:send", 0, WelcomePayload{UserID: u.ID, Email: u.Email})
    ```
-   `maxRetries` je povinný (per-kind rozhodnutí). Odložení: `shared.WithDelay(...)`.
+   `maxRetries` je povinný poziční parametr (per-kind rozhodnutí, dispatcher odmítne
+   záporný): `0` = jednou bez retry, `3` = až 3 retry po prvním selhání. Odložení:
+   `shared.WithDelay(time.Hour)` jako další arg.
 4. **`make di`** — přegeneruj Wire. Hotovo.
 
 ## Invariants & pitfalls
 
-- **Run handler NESMÍ otevřít transakci — vynuceno.** Dlouhý handler v `BEGIN IMMEDIATE`
-  by držel globální SQLite write-lock celou dobu běhu → freeze všech zápisů. Worker proto
-  označí handler ctx `shared.ContextForbidTx`; `Transactor.BeginTx` v té zóně **fail-closed
-  selže** (+ statická `zz_notx_test.go` brána skenuje run path). Stav perzistuj přes
-  `Checkpointer`; transakční side-work **zařaď jako command/job** (poběží ve vlastní krátké
-  tx mimo run). Kdy run vs job vs scheduler vs event → [[gk-jobs]] / `docs/framework/background-work.md`.
-- **Resumovatelnost je na tobě.** Mimo tx zaniká atomicita „handler-writes + complete"
-  — handler musí být idempotentní a resumovatelný z `r.State`. Akce s vedlejším efektem
-  (platba, e-mail, zápis do cizího systému) zaznamenej před efektem nebo udělej
-  idempotentní (at-least-once + okno zdvojení během handoffu).
-- **`lease ≫ heartbeat interval`.** Jinak ve špičce hrozí falešná expirace → run
-  poběží dvakrát. Defaulty: lease 5 min, heartbeat = lease/3 (config `APP_RUN_WORKER_*`).
-- **`attempts` ≠ `reclaims`.** Crash (deploy/OOM) nesmí spálit retry budget dlouhého
-  runu — proto se počítají zvlášť; `MaxReclaims` chrání před poison-crash-loopem
-  (kontrola hned po claimu, před handlerem).
-- **Cancel je dvoufázový.** `RequestCancel` jen nastaví signal (run běží dál, jede na
-  řádku → **přežije reclaim**); worker ho zachytí, ukončí handler a zapíše `cancelled_at`.
+- **Handler NESMÍ otevřít transakci — vynuceno pro oba tvary.** Worker označí handler
+  ctx `shared.ContextForbidTx`; `Transactor.BeginTx` v té zóně **fail-closed selže**
+  (+ statická `zz_notx_test.go` brána skenuje run path). Dlouhý handler v `BEGIN IMMEDIATE`
+  by držel globální SQLite write-lock → freeze; i krátké volání ven by drželo zámek po dobu
+  volání. Stav perzistuj přes `Checkpointer`; transakční side-work **zařaď jako command**
+  (poběží ve vlastní krátké tx mimo run). Kdy run vs job vs scheduler vs event →
+  `docs/framework/background-work.md`.
+- **At-least-once → idempotence VŠEHO.** Mimo tx zaniká atomicita „handler-writes +
+  complete" — `MarkComplete` je **samostatný zápis až po návratu handleru**, takže crash
+  v okně mezi nimi handler na reclaimu **zopakuje**. Idempotentní musí být nejen externí
+  efekty (poslat dva maily je bug), ale **i DB writes** handleru (žádný in-tx rollback je
+  už neochrání). U runu navíc resumuj z `r.State`.
+- **`lease ≫ heartbeat interval`.** Jinak ve špičce hrozí falešná expirace → práce poběží
+  dvakrát. Defaulty: lease 5 min, heartbeat = lease/3 (config `APP_RUN_WORKER_*`). Per-kind
+  lease přes `Durable(...)`; sub-ms lease/timeout je odmítnut už při bootu (units typo).
+- **`attempts` ≠ `reclaims`.** Crash (deploy/OOM) nesmí spálit retry budget — počítají se
+  zvlášť; `MaxReclaims` chrání před poison-crash-loopem (kontrola hned po claimu, před
+  handlerem). Vyčerpané retry/reclaim → `MarkFailed` + **report do Sentry**.
+- **Cancel je dvoufázový.** `RequestCancel` jen nastaví signal (run běží dál, jede na řádku
+  → **přežije reclaim**); worker ho zachytí, ukončí handler a zapíše `cancelled_at`.
 - **Backpressure + paměť.** `MaxInFlight` limituje souběh (paměť na jeden běh!) — zbytek
   čeká ve frontě. Go zvládne hodně goroutin; strop je paměť + SQLite jeden writer.
 - **SQLite je dev/malý provoz.** Strop ≈ ~8000 owner-checked zápisů/s (viz load test
   `sqlite_loadtest_test.go`). Na desítky tisíc souběžných běhů / častý velký checkpoint →
   Postgres (roadmap krok 7), stejné porty → výměna adaptéru, bez přepisu handleru.
-- **Z handleru NEvolat `EventCollector.Collect`** (jako u jobů) — pro navazující async
-  práci zařaď další run/job.
+- **Z handleru NEvolat `EventCollector.Collect`.** Sběrač eventů se vyprazdňuje jen v
+  command request goroutině; ve workeru je zablokovaný a Collect je runtime panic. Pro
+  navazující async práci zařaď další run (`RunDispatcher` je v ctx).
+- **Neznámý kind = terminal failure.** Worker dostane kind bez handleru (deploy/registry-skew)
+  → `MarkFailed` + report do Sentry, žádný retry.
 
 ## Related
 
-- Sousední skills: `/gk-jobs` (krátký in-tx job), `/gk-domain-events`,
-  `/gk-repositories` (owner-fence, julianday, ms-precision), `/gk-feature`, `/gk-config`.
+- Sousední skills: `/gk-domain-events` (synchronní side-effect po commitu),
+  `/gk-scheduler` (periodicky na čase), `/gk-repositories` (owner-fence, julianday,
+  ms-precision), `/gk-bus` (middleware chain — kam padá enqueue), `/gk-feature`,
+  `/gk-config` (DI registrace).
+- Docs: [Run flow](/framework/run-flow), [Job flow](/framework/job-flow) (fire-and-forget
+  tvar), [Background work](/framework/background-work) (co kdy + proč vše mimo tx).
 - ADR: durable execution model (outside-tx + lease/heartbeat/checkpoint), škála SQLite vs Postgres.
-- Kód: `app/domain/run/`, `app/application/run/`,
-  `app/infrastructure/sqlite/run/repository.go`, `app/infrastructure/worker/run_worker.go`,
-  `app/domain/shared/run_dispatcher.go`, `app/presentation/console/serve.go`.
+- Kód: `app/domain/run/`, `app/application/run/` (`registry.go` = `FireAndForget`/`Durable`,
+  `dispatcher.go`), `app/infrastructure/sqlite/run/repository.go`,
+  `app/infrastructure/worker/run_worker.go`, `app/domain/shared/run_dispatcher.go`,
+  `app/presentation/console/serve.go`.

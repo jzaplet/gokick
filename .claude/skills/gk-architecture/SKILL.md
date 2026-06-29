@@ -64,7 +64,7 @@ jen ty pod sebou. Plná matice závislostí je v `.go-arch-lint.yml` (`mayDepend
 | Presentation | `app/presentation/` | HTTP handlery + middleware, Cobra CLI |
 
 **Bounded kontexty** = samostatné balíčky uvnitř `domain/` (`app/domain/user/`,
-`app/domain/token/`, `app/domain/job/`). Sdílené typy žijí v `app/domain/shared/`
+`app/domain/token/`, `app/domain/run/`). Sdílené typy žijí v `app/domain/shared/`
 (`AuthClaims`, error typy, service interfaces). Jeden kontext **nesmí** importovat
 druhý — komunikace jde přes QueryBus nebo domain eventy.
 
@@ -75,7 +75,7 @@ v `app/infrastructure/di/container_provider.go` (`provideCommandBus`,
 
 | Bus | Řetězec | K čemu |
 |---|---|---|
-| `CommandBus` | Recovery → Logging → Authorize → **Audit → JobDispatcher → DispatchEvents → Transaction** | zápisy |
+| `CommandBus` | Recovery → Logging → Authorize → Tenant → **Audit → RunDispatcher → DispatchEvents → Transaction** | zápisy |
 | `QueryBus` | Recovery → Logging → Authorize | čtení |
 | `EventBus` | Recovery → Logging | side-effects po commitu |
 
@@ -83,7 +83,7 @@ Audit je **vně** transakce (`provideCommandBus`), aby bezpečnostní eventy
 (login_failed, account_locked) přežily i rollback business transakce.
 
 **Vynucení lintem** (`.go-arch-lint.yml`, `workdir: app`): doména je rozdělená na
-komponenty `domain_shared`, `domain_user`, `domain_token`, `domain_job`. Jen
+komponenty `domain_shared`, `domain_user`, `domain_token`, `domain_run`, `domain_tenant`. Jen
 `domain_shared` je v `commonComponents` (dostupná všem). Ostatní kontexty common
 **nejsou**, takže import jednoho z druhého je porušení pravidla komponenty — přesně
 to vynucuje „no cross-context imports". Broad-glob komponenty (`application/**`,

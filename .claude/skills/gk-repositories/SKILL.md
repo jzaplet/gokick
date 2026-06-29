@@ -67,7 +67,7 @@ file:<path>?_txlock=immediate&_pragma=busy_timeout(5000)&_pragma=foreign_keys(on
 `journal_mode` se naopak nastavuje **jednorázovým** `PRAGMA journal_mode=...` execem na poolu (ne v DSN), protože WAL se zapisuje do hlavičky souboru a je tedy persistentní. Default je `WAL`, povolené hodnoty `WAL|DELETE|MEMORY` (whitelist přes `APP_DB_JOURNAL_MODE` — chrání proti SQL injection z misconfigurace).
 
 ### Aktuální repozitáře
-`sqlite/user/` (`user.Repository`), `sqlite/token/` (`token.TokenRepository`), `sqlite/job/` (`job.Repository`), `sqlite/audit/` (`shared.AuditLogger`), `sqlite/seeder/` (`shared.Seeder`).
+`sqlite/user/` (`user.Repository`), `sqlite/token/` (`token.TokenRepository`), `sqlite/run/` (`run.Repository`), `sqlite/tenant/` (`tenant.Repository`), `sqlite/audit/` (`shared.AuditLogger`), `sqlite/seeder/` (`shared.Seeder`).
 
 ## Recipe: nový repozitář
 1. Vytvoř `app/infrastructure/sqlite/<context>/repository.go` se `type Repository struct { sqlite.BaseRepository }`.

@@ -13,12 +13,12 @@ description: 'In-process scheduler — periodické joby, každý ve své gorouti
 
 In-process scheduler pro periodickou (cron-like) práci uvnitř běžícího serveru — žádný externí OS cron, žádný samostatný proces. Každý job běží ve vlastní goroutině, poprvé hned po startu a pak každý `Interval`. Implementace je v `app/infrastructure/scheduler/scheduler.go`.
 
-> Přehled toku. Návod „přidat periodický job" → `/gk-scheduler`; perzistentní fronta → `/gk-jobs`.
+> Přehled toku. Návod „přidat periodický job" → `/gk-scheduler`; perzistentní durable engine → `/gk-runs`.
 
 
 ## K čemu to je
 
-Na údržbové úlohy uvnitř procesu — úklid, synchronizace, sběr statistik. **Není** to perzistentní fronta: stav je jen v paměti (in-memory), bez retry, restart úlohy jen znovu rozběhne. Práci, která **musí** proběhnout i po pádu procesu, posílej do [Job flow](/framework/job-flow) (`/gk-jobs`).
+Na údržbové úlohy uvnitř procesu — úklid, synchronizace, sběr statistik. **Není** to perzistentní fronta: stav je jen v paměti (in-memory), bez retry, restart úlohy jen znovu rozběhne. Práci, která **musí** proběhnout i po pádu procesu, posílej do [Job flow](/framework/job-flow) (`/gk-runs`).
 
 
 ## Jak to teče
@@ -47,6 +47,6 @@ Aktuálně jediný job maže prošlé refresh tokeny (`WHERE datetime(expires_at
 
 ## Související
 
-- [Job flow](/framework/job-flow) — perzistentní fronta pro práci, která musí přežít restart.
+- [Job flow](/framework/job-flow) — fire-and-forget tvar durable enginu pro práci, která musí přežít restart.
 - [Architecture](/framework/architecture) — vrstvy a startup sekvence.
-- Skilly: `/gk-scheduler`, `/gk-jobs`, `/gk-logging`.
+- Skilly: `/gk-scheduler`, `/gk-runs`, `/gk-logging`.

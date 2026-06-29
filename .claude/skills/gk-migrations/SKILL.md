@@ -41,8 +41,8 @@ Goose si značí, u kterého kroku jsi skončil, a dorazí jen ty zbývající.
 ## How it works
 Migrace žijí v `migrations/` jako `YYYYMMDDHHMMSS_<name>.sql` (Goose SQL formát).
 Aktuální sada: `20260327000001_init_schema.sql` (tabulky `users`, `refresh_tokens`),
-`20260517000001_create_jobs_table.sql`, `20260517000002_add_user_lock_columns.sql`,
-`20260517000003_create_audit_log.sql`. Vyšší timestamp = běží později.
+`20260517000002_add_user_lock_columns.sql`, `20260517000003_create_audit_log.sql`,
+`20260625144133_create_runs_table.sql` (tabulka `runs` — durable engine). Vyšší timestamp = běží později.
 
 Existují **dvě oddělené cesty**, jak se migrace spustí:
 

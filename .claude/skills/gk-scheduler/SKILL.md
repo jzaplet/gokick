@@ -60,17 +60,17 @@ func provideSchedulerJobs(tokens token.TokenRepository) []scheduler.Job {
 
 ## Invariants & pitfalls
 
-- **Fn běží inline, v žádné transakci.** Nikdo Fn do transakce neobaluje — případnou si musíš otevřít sám. Lehký cleanup v krátké transakci je OK; **těžkou periodickou práci zařaď jako job/run** ([[gk-jobs]] / [[gk-runs]]), ne ji dělej inline — dlouhá transakce by zamkla SQLite. Kdy co → `docs/framework/background-work.md`.
+- **Fn běží inline, v žádné transakci.** Nikdo Fn do transakce neobaluje — případnou si musíš otevřít sám. Lehký cleanup v krátké transakci je OK; **těžkou periodickou práci zařaď jako durable run** ([[gk-runs]] — job i run), ne ji dělej inline — dlouhá transakce by zamkla SQLite. Kdy co → `docs/framework/background-work.md`.
 - **Jméno unikátní, interval kladný, Fn nenilové.** Jinak `NewScheduler` vrátí error a proces nenastartuje (fail-fast) — chyba se chytí při startu, ne za běhu.
 - **Fn musí být idempotentní.** Kvůli run-once-then-tick se job spustí hned a může proběhnout vícekrát; nepředpokládej „přesně jednou".
 - **Job nesmí volat vlastní HTTP API přes localhost** — server běží paralelně, vznikl by závod (race). DB volání jsou OK (Wire je v té chvíli hotový).
 - **Multi-instance: žádná koordinace.** Scheduler je in-process — dvě repliky tikají nezávisle, každá pustí svůj job. Pro single-execution napříč clusterem dej DB lock přímo do `Fn`.
-- **Nedávej sem práci, která musí přežít restart.** Když proces neběží, neběží ani job a nikdo to nedožene. Pro to slouží perzistentní fronta (Job Queue).
+- **Nedávej sem práci, která musí přežít restart.** Když proces neběží, neběží ani job a nikdo to nedožene. Pro to slouží perzistentní durable engine ([[gk-runs]]).
 - **Logování přes injektovaný `*slog.Logger`**, klíče jsou konstanty (`logKeyName`, `logKeyJobs`, `logKeyPanic` + sdílené `shared.DurationMsAttr` / `shared.LogKeyError`) — neporušuj jedinou logovací cestu projektu.
 
 ## Related
 
 - `/gk-config` — DI registrace providerů a `make di` workflow.
 - `/gk-architecture` — proč `scheduler` žije v `infrastructure/` a kdo na něm smí záviset.
-- `/gk-jobs` — perzistentní fronta pro práci, co musí přežít restart/crash.
+- `/gk-runs` — perzistentní durable engine (job i run) pro práci, co musí přežít restart/crash.
 - Kód: `app/infrastructure/scheduler/scheduler.go`, registrace `app/infrastructure/di/container_provider.go` (`provideSchedulerJobs`/`provideScheduler`), spuštění `app/presentation/console/serve.go`.

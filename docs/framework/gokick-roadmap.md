@@ -18,7 +18,7 @@ description: 'Aktuální priorita F6 — zapínatelný row-level multitenancy (h
 
 <a href="../gokick-hodnoceni.pdf"><img src="../go-vue-cqrs-ddd.png" alt="Hodnocení stacku gokick — PDF report" width="200"></a>
 
-Boilerplate je **production-ready end-to-end**: DDD/CQRS backend, Vue 3 SPA, JWT auth s HttpOnly refresh cookie a detekcí krádeže, admin user CRUD, perzistentní job queue + scheduler, rate limiting, audit log, brute-force lock, security headers, Sentry (BE i FE), single-binary deploy. Fáze 1–5 jsou hotové; z F6 je **multitenancy + system bus pro CLI hotové** (OTEL a job lease zbývají) — rekapitulace v sekci **Hotovo** níže.
+Boilerplate je **production-ready end-to-end**: DDD/CQRS backend, Vue 3 SPA, JWT auth s HttpOnly refresh cookie a detekcí krádeže, admin user CRUD, perzistentní job queue + scheduler, rate limiting, audit log, brute-force lock, security headers, Sentry (BE i FE), single-binary deploy. Fáze 1–5 jsou hotové; z F6 je **multitenancy + system bus pro CLI + job↔run konvergence hotové** (OTEL zbývá) — rekapitulace v sekci **Hotovo** níže.
 
 Tenhle dokument je **forward-looking**: co zbývá jako aktuální priorita a co konkrétně chybí do plné desítky v každé disciplíně.
 
@@ -47,21 +47,21 @@ Zapínatelný **row-level** multitenancy jedním přepínačem (`APP_MULTITENANC
 Recovery(→Sentry) → Logging → Audit → DispatchEvents → Transaction      (vynechán Authorize i Tenant)
 ```
 
-- [x] **`provideSystemCommandBus`** — vynechává `Authorize` (operator trust; kontrakt `Permissioned`/`SkipPermission` žije *uvnitř* AuthorizeMiddleware, takže vynechání je čisté) i `Tenant` (resolver by přemázl tenant injectnutý přes `ContextWithTenantID`). Pořadí: **Audit vně Transaction**, **DispatchEvents obaluje Transaction**. JobDispatcher vynechán.
+- [x] **`provideSystemCommandBus`** — vynechává `Authorize` (operator trust; kontrakt `Permissioned`/`SkipPermission` žije *uvnitř* AuthorizeMiddleware, takže vynechání je čisté) i `Tenant` (resolver by přemázl tenant injectnutý přes `ContextWithTenantID`). Pořadí: **Audit vně Transaction**, **DispatchEvents obaluje Transaction**. RunDispatcher vynechán.
 - [x] **4 commandy přepojeny** přes `bus.ExecVoid`/`bus.Exec` skrz system bus; ruční transakce v `create-user` zmizela (dává ji `TransactionMiddleware`) → odpadl bespoke `shared.Transactor` wiring. **seed** je teď taky přes bus → **atomický bootstrap** (all-or-nothing).
 - [x] **Audit záznamy** doplněny: `create-superadmin`/seed superadmin → `user.created`, `create-tenant`/seed tenant → `tenant.created` (bez ActorUserID — systémová akce). Ověřeno end-to-end přes reálný system bus.
 - [x] **Sentry = jen neočekávané** — paniky reportuje `RecoveryMiddleware` zadarmo; očekávané validační chyby do trackeru nejdou (invariant „error reporting is for the unexpected only").
 
 ### Krok — Sloučit job + durable run do jednoho primitiva
 
-> Nahrazuje původní „konfigurovatelný job lease + heartbeat" — ten cíl (lease + heartbeat pro dlouhou práci) splnil **durable run** ([PR #21](https://github.com/jzaplet/gokick/pull/21)). Zůstal ale dvojí mechanismus: job (handler v transakci → drží write-lock celou dobu, takže „volání ven v jobu" zamrzne DB a nejde to vynutit) a run (mimo tx, vynutitelně). Po opravě toho footgunu se job a run skoro slejou.
+> Nahrazuje původní „konfigurovatelný job lease + heartbeat" — ten cíl (lease + heartbeat pro dlouhou práci) splnil **durable run** ([PR #21](https://github.com/jzaplet/gokick/pull/21)). Zůstával ale dvojí mechanismus: job (handler v transakci → držel write-lock celou dobu, takže „volání ven v jobu" zamrzlo DB a nešlo to vynutit) a run (mimo tx, vynutitelně). **PR #22 ten footgun odstranil sloučením** — job teď běží mimo tx jako run (viz `[x]` níže).
 
-- [ ] **Sloučit do jednoho `durable task`** — mimo tx, idempotentní/at-least-once, **volitelný** checkpoint (s checkpointem = dnešní run, bez = dnešní job), **timeout** per task. „Job" = „task, který necheckpointuješ". Důvod: job handler běží celý v transakci (`runWithinTx`) → drží SQLite write-lock po celou dobu, takže „volání ven v jobu" (SMTP/cizí API) zamrzne DB a nejde to vynutit; runové „mimo tx" vynutitelné je. Samostatný PR **po** PR #21.
+- [x] **Sloučeno do jednoho `durable task`** ([PR #22](https://github.com/jzaplet/gokick/pull/22)) — jeden engine (tabulka `runs`, jeden worker), mimo tx, idempotentní/at-least-once, **volitelný** checkpoint (s checkpointem = run/`Durable`, bez = job/`FireAndForget`), **timeout** per task. „Job" = „task, který necheckpointuješ". Starý job běžel celý v transakci → držel SQLite write-lock po celou dobu, takže „volání ven v jobu" (SMTP/cizí API) zamrzlo DB a nešlo to vynutit; teď job běží **mimo tx** jako run a outside-tx je vynucené (`ContextForbidTx` + `zz_notx_test.go`). Tabulka `jobs` zahozena (`20260629000001_drop_jobs_table.sql`).
 
 ### Krok — OpenTelemetry (až na finálním tvaru)
 
 - [ ] **OTel HTTP middleware + propagace přes bus** — `trace_id` v ctx přejde na `trace.SpanContext`, sladit s `shared.LogKeyTraceID` (traces ↔ logy korelují).
-- [ ] **Span per job** (worker, obaluje `runWithinTx`) + **span per durable run** (run worker, `process()` — ale **bez** transakce: handler běží outside-tx, takže span obaluje běh handleru, ne tx; checkpointy/heartbeaty jako child-spany nebo span-events) + **SQL viditelnost přes `otelsql`** (span per dotaz) — proto se vědomě nestaví vlastní SQL→breadcrumb most. Workery dnes trace_id nemají (logy korelují přes `run_id`/`job_id`); OTEL je nasadí přes `shared.LogAttrs(ctx)`.
+- [ ] **Span per durable task** (run worker, `process()` — **bez** transakce: handler běží outside-tx, takže span obaluje běh handleru, ne tx; checkpointy/heartbeaty jako child-spany nebo span-events) + **SQL viditelnost přes `otelsql`** (span per dotaz) — proto se vědomě nestaví vlastní SQL→breadcrumb most. Worker dnes trace_id nemá (logy korelují přes `run_id`); OTEL ho nasadí přes `shared.LogAttrs(ctx)`.
 - [ ] **FE↔BE distributed tracing — full** — light verze hotová ([PR #11](https://github.com/jzaplet/gokick/pull/11)); full přidá `tracesSampleRate > 0` → spany + waterfall (FE klik → API → handler → DB).
 - [ ] **Hardening:** `otelsql` + OTEL SDK do depguard allow-listu (`.golangci.yml`); collector endpoint do CSP `connect-src` + `traceparent` přes CORS.
 
@@ -127,4 +127,4 @@ Rekapitulace — detailní záznam (Definition of Done, regresní testy, klíčo
 - **F3 — Perzistentní job queue (SQLite)** (2026-05-17) — atomický claim přes `UPDATE … RETURNING`, exponenciální backoff, at-least-once, mark-complete v handler tx, worker pool.
 - **F4 — Hardening** (2026-05-17) — 3 kritické fixy z auditu + rate limiting, brute-force lock, audit log mimo transakci, HTTP boundary hardening, SQLite concurrency fix (`_txlock=immediate`).
 - **F5 — Observability** — strukturované slog atributy se statickým lint-enforcementem + Sentry BE/FE s obohacením eventu a maskováním tajemství (2026-06-10 / 06-14). OTel je teď součástí fáze **F6** (viz **Aktuální priorita** výše).
-- **F6 — Multitenancy (částečně)** — zapínatelný row-level multitenancy + platformní rovina (superadmin) v [PR #15](https://github.com/jzaplet/gokick/pull/15) + system bus pro CLI; OTEL a job lease/heartbeat zbývají (viz **Aktuální priorita**). Detail: `/gk-multitenancy`, `/gk-bus`.
+- **F6 — Multitenancy (částečně)** — zapínatelný row-level multitenancy + platformní rovina (superadmin) v [PR #15](https://github.com/jzaplet/gokick/pull/15) + system bus pro CLI + job↔run konvergence ([PR #22](https://github.com/jzaplet/gokick/pull/22)); OTEL zbývá (viz **Aktuální priorita**). Detail: `/gk-multitenancy`, `/gk-bus`, `/gk-runs`.

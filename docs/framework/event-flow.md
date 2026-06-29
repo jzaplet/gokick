@@ -18,7 +18,7 @@ Doménový event je primitivní fakt „stalo se X" (`user.created`), na který 
 
 ## K čemu to je
 
-Když chceš na změnu stavu **navázat vedlejší efekt** (uvítací mail, synchronizace, navazující akce), ale nechceš jím zatěžovat command handler. Záruka: **event = potvrzená skutečnost** — rozešle se jen to, co se opravdu zapsalo. Pro pomalou práci nebo práci odolnou vůči pádu procesu event handler nedělá nic sám, ale zařadí job (`JobDispatcher`).
+Když chceš na změnu stavu **navázat vedlejší efekt** (uvítací mail, synchronizace, navazující akce), ale nechceš jím zatěžovat command handler. Záruka: **event = potvrzená skutečnost** — rozešle se jen to, co se opravdu zapsalo. Pro pomalou práci nebo práci odolnou vůči pádu procesu event handler nedělá nic sám, ale zařadí job/run (`RunDispatcher`).
 
 
 ## Jak to teče
@@ -29,7 +29,7 @@ Když chceš na změnu stavu **navázat vedlejší efekt** (uvítací mail, sync
 4. Po úspěšném **commitu** middleware kolektor vyprázdní (`Flush`) a pro každý event volá `eventBus.Dispatch`.
 5. `EventBus` spustí registrované handlery **synchronně a sekvenčně**, každý přes `ExecVoid` (Recovery + Logging). Chyba handleru původní command neshodí.
 
-`Dispatch` nejdřív z `ctx` odebere kolektor — kdyby se event handler pokusil zavolat `Collect` na další event, **vyvolá to paniku** (kaskádové eventy nejsou podporované; navazující práce patří do `JobDispatcheru`).
+`Dispatch` nejdřív z `ctx` odebere kolektor — kdyby se event handler pokusil zavolat `Collect` na další event, **vyvolá to paniku** (kaskádové eventy nejsou podporované; navazující práce patří do `RunDispatcheru`).
 
 
 ## Příklad
@@ -54,4 +54,4 @@ Handlery se registrují na jednom místě — `provideEventHandlers()` v DI (`eb
 
 - [Command flow](/framework/command-flow) — kde se eventy sbírají a kdy se rozešlou.
 - [Architecture](/framework/architecture) — kam event flow zapadá ve vrstvách.
-- Skilly: `/gk-domain-events`, `/gk-bus`, `/gk-jobs` (navazující asynchronní práce).
+- Skilly: `/gk-domain-events`, `/gk-bus`, `/gk-runs` (navazující asynchronní práce).

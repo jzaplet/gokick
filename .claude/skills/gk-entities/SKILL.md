@@ -39,11 +39,11 @@ nevyplníš správnou hodnotu. Entita je celý vyplněný formulář s razítkem
 
 ## How it works
 **Bounded contexts** — každá entita má vlastní balíček pod `app/domain/`:
-`domain/user/`, `domain/token/`, `domain/job/`. Mezi konteyty se **nesmí
+`domain/user/`, `domain/token/`, `domain/run/`. Mezi konteyty se **nesmí
 importovat** (`user/` nesmí znát `token/`); sdílené typy žijí v `domain/shared/`.
 
 **Entity** (`app/domain/user/user.go`, `domain/token/refresh_token.go`,
-`domain/job/job.go`):
+`domain/run/run.go`):
 - Struct má `db:"..."` tagy — `sqlx` podle nich automaticky scanuje řádky DB do
   struktury. Příklad: `Nickname string \`db:"nickname"\``.
 - ID je `string` (UUID). `User`/`RefreshToken` používají `uuid.New().String()`,
@@ -118,5 +118,5 @@ importovat** (`user/` nesmí znát `token/`); sdílené typy žijí v `domain/sh
   `/gk-events` (doménové události jako `UserCreated`).
 - Kód: `app/domain/user/` (`user.go`, `nickname.go`, `role.go`, `email.go`,
   `password.go`, `user_created.go`, `repository.go`), `app/domain/token/`
-  (`refresh_token.go`, `repository.go`), `app/domain/job/` (`job.go`,
+  (`refresh_token.go`, `repository.go`), `app/domain/run/` (`run.go`,
   `repository.go`), `app/domain/shared/` (`ValidationError`)

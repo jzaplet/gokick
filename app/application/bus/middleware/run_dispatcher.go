@@ -10,7 +10,7 @@ import (
 // RunDispatcherMiddleware injects the durable-run dispatcher into ctx so command/
 // event handlers can call shared.RunDispatcherFromContext(ctx).Enqueue(...).
 //
-// Like JobDispatcherMiddleware it sits OUTSIDE TransactionMiddleware so the
+// It sits OUTSIDE TransactionMiddleware so the
 // dispatcher is available before the transaction begins; the Enqueue call uses
 // Conn(ctx), so inside a handler running under Transaction the INSERT joins that
 // transaction (atomic business write + run enqueue).

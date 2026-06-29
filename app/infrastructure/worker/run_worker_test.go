@@ -622,8 +622,7 @@ func TestRunWorker_HandlerCanEnqueueChildRun(t *testing.T) {
 
 // The run worker bypasses the bus, so it must restore the tenant the run was
 // enqueued for into the handler's context from the claimed row. Uses a non-default
-// tenant so it proves propagation rather than a tautology — the run-side mirror of
-// the job worker's TestWorker_RestoresJobTenantIntoHandlerContext. A handler that
+// tenant so it proves propagation rather than a tautology. A handler that
 // saw the wrong tenant would query another tenant's data (the multitenant-agent
 // correctness this whole engine exists for).
 func TestRunWorker_RestoresRunTenantIntoHandlerContext(t *testing.T) {

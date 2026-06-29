@@ -50,8 +50,7 @@ Nebo prostě popiš problém a AI sáhne po správném skillu sama (řídí se p
 |-------|---------|
 | `/gk-repositories` | Datová vrstva nad SQLite — tx-aware `r.Conn(ctx)`, raw-pool výjimky, tuning |
 | `/gk-migrations` | Goose migrace — embedované, automaticky aplikované při startu |
-| `/gk-jobs` | Perzistentní background fronta + worker (přežije restart/crash) |
-| `/gk-runs` | Durable runs — dlouhá práce mimo tx, checkpoint + resume po pádu |
+| `/gk-runs` | Durable engine pro background práci mimo tx (přežije restart/crash) — fire-and-forget **job** (FireAndForget) i dlouhý **run** s checkpoint + resume (Durable) |
 | `/gk-scheduler` | Periodické úlohy uvnitř serveru (cron-like, bez OS cronu) |
 | `/gk-di` | Wire compile-time DI — providery, `wire.Bind`, `make di` |
 
@@ -99,12 +98,14 @@ Nebo prostě popiš problém a AI sáhne po správném skillu sama (řídí se p
 |---|---|---|---|
 | Atomická write op. během requestu | **command** | `/gk-commands` | ✅ ano |
 | „Stalo se X" → reakce, co command nezná | **doménový event** | `/gk-domain-events` | ❌ po commitu, sync |
-| Krátká práce JEN nad vlastní DB (přepočet), přežije restart | **job** | `/gk-jobs` | ✅ krátká |
-| Volání ven (mail/API/webhook) NEBO dlouhá práce, pokračuje po pádu | **durable run** | `/gk-runs` | ❌ **NE (vynuceno)** |
+| Krátká fire-and-forget práce, přežije restart (mail/API/webhook, přepočet) | **job** = `FireAndForget` | `/gk-runs` | ❌ **NE (vynuceno)** |
+| Dlouhá práce, co pokračuje po pádu od posledního kroku (import, report) | **run** = `Durable` | `/gk-runs` | ❌ **NE (vynuceno)** |
 | Periodicky (cron-like) | **scheduler** | `/gk-scheduler` | ❌ inline |
 
-**Klíč:** **uvnitř transakce nikdy nevolej ven** (SMTP/cizí API drží zámek po dobu volání →
-zamkne SQLite). Volání ven nebo dlouhé → **run** (mimo tx, vynuceno). Detail + diagram →
+**Klíč:** job i run jsou **jeden engine** (`/gk-runs`), oba běží **mimo transakci** (vynuceno) —
+**uvnitř transakce nikdy nevolej ven** (SMTP/cizí API drží zámek po dobu volání → zamkne SQLite).
+Job vs run rozlišuje jediná otázka: **potřebuje to po pádu pokračovat od posledního kroku?**
+(ano → run s checkpointem, ne → fire-and-forget job). Detail + diagram →
 `docs/framework/background-work.md` (+ per-flow `*-flow.md`).
 
 ## Přidání nového gk skillu

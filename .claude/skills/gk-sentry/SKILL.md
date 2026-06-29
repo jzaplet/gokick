@@ -35,7 +35,7 @@ A bez „adresy" (DSN — veřejný odkaz na tvůj Sentry projekt) je všechno v
 **Kdo volá `Capture` (jen 3 místa — recovery + terminal):**
 - bus `RecoveryMiddleware` (`app/application/bus/middleware/recovery.go`) — panika v command/query handleru,
 - HTTP `RecoveryMiddleware` (`app/presentation/http/middleware/recovery.go`) — panika v requestu → log + report + 500,
-- worker (`app/infrastructure/worker/worker.go`) — job s **vyčerpanými retries** (terminálně padlý) nebo neznámý kind.
+- run worker (`app/infrastructure/worker/run_worker.go`) — durable run/job s **vyčerpanými retries** (terminálně padlý) nebo neznámý kind.
 
 Běžné návratové chyby se nehlásí — proto je `Capture` jen na těchto cestách.
 
@@ -87,7 +87,7 @@ Bez nich jsou FE stack traces minifikované. `@sentry/vite-plugin` mapy nahraje 
 ## Related
 
 - `/gk-errors` — kam jdou validace/auth/4xx (kontrast: ty se NEreportují).
-- `/gk-jobs` — worker a terminal-failure reporting (vyčerpané retries → `Capture`).
+- `/gk-runs` — durable worker a terminal-failure reporting (vyčerpané retries → `Capture`).
 - `/gk-bus` — `RecoveryMiddleware` v middleware chainu.
 - `/gk-logging` — strukturované logy, ze kterých se skládají breadcrumbs (`LogAttrs(ctx, …)`).
 - `/gk-hardening` — maskování credential hlaviček/hodnot před odchodem do trackeru.

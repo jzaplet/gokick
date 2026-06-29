@@ -89,7 +89,7 @@ func provideCommandBus(
 
 // provideSystemCommandBus wires the OPERATOR-TRUSTED write bus for the CLI
 // create-* commands. It is the CommandBus chain MINUS Authorize and Tenant (no
-// principal, no JWT-resolved tenant) and minus JobDispatcher (these commands
+// principal, no JWT-resolved tenant) and minus RunDispatcher (these commands
 // enqueue nothing). Audit still wraps OUTSIDE Transaction and DispatchEvents
 // still wraps it, so the ordering invariants hold. See bus.SystemCommandBus.
 func provideSystemCommandBus(

@@ -30,13 +30,13 @@ Chain se sestaví jednou v `provideCommandBus`. Pořadí zvenku dovnitř:
 3. **Authorize** — command musí být `Permissioned` (ověří se permission), nebo `SkipPermission`; jinak chyba.
 4. **Tenant** — resolvuje aktivní tenant do `ctx` (z JWT claimu), aby ho repozitáře viděly (row-level multitenancy; viz `/gk-multitenancy`).
 5. **Audit** — vloží `AuditCollector` do `ctx`, po handleru zapíše záznamy.
-6. **JobDispatcher** — vloží `JobDispatcher` do `ctx` (handler může zařazovat joby do fronty).
+6. **RunDispatcher** — vloží `RunDispatcher` do `ctx` (handler může zařazovat joby/runy do fronty).
 7. **DispatchEvents** — vloží per-request `EventCollector`; po úspěšném commitu eventy synchronně rozešle.
 8. **Transaction** — `BeginTx` → handler → `Commit` při úspěchu, `Rollback` při chybě.
 
 Uvnitř pak běží command handler: validace přes value objects, `repo.Save`, `Collect(event)`, `Record(audit)`.
 
-Dvě věci stojí za zapamatování: **Audit je mimo transakci** (bezpečnostní záznam přežije rollback, zapisuje se přes raw pool) a **DispatchEvents obaluje transakci** — eventy se rozešlou až po commitu, při rollbacku se zahodí. `Enqueue` jobu naopak běží uvnitř transakce: business zápis i job se uloží atomicky.
+Dvě věci stojí za zapamatování: **Audit je mimo transakci** (bezpečnostní záznam přežije rollback, zapisuje se přes raw pool) a **DispatchEvents obaluje transakci** — eventy se rozešlou až po commitu, při rollbacku se zahodí. `Enqueue` jobu/runu naopak běží uvnitř transakce: business zápis i zařazení do fronty se uloží atomicky (samotný handler pak běží mimo transakci).
 
 
 ## Příklad
