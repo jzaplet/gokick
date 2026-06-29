@@ -74,15 +74,15 @@ func TestWithTx_Panic_RollsBack(t *testing.T) {
 	_ = WithTx(ctx, func(context.Context) error { panic("kaboom") })
 }
 
-// WithTx is the blessed escape from a ContextForbidTx zone: it must open the tx on
-// an allow-tx ctx (so the run worker's forbid marker doesn't block a deliberate
-// short tx), while a raw BeginTx on the surrounding ctx still fails closed.
-func TestWithTx_OverridesForbidMarker(t *testing.T) {
+// WithTx opens the tx despite a surrounding ContextForbidTx zone (BeginTx runs on an
+// allow-tx ctx), but RE-FORBIDS implicit tx for fn's scope: fn reaches the live tx via
+// Conn(ctx), yet an accidental raw BeginTx inside fn still fails closed.
+func TestWithTx_ReforbidsInsideFn(t *testing.T) {
 	tr := &fakeTransactor{}
 	ctx := ContextWithTransactor(ContextForbidTx(context.Background()), tr)
-	err := WithTx(ctx, func(txCtx context.Context) error {
-		if IsTxForbidden(txCtx) {
-			t.Fatal("inside WithTx the forbid marker must be cleared")
+	err := WithTx(ctx, func(fnCtx context.Context) error {
+		if !IsTxForbidden(fnCtx) {
+			t.Fatal("inside WithTx the implicit-tx forbid must be re-applied for fn's scope")
 		}
 		return nil
 	})
@@ -91,5 +91,26 @@ func TestWithTx_OverridesForbidMarker(t *testing.T) {
 	}
 	if tr.beganForbidden {
 		t.Fatal("BeginTx must run on an allow-tx ctx, not the forbidden one")
+	}
+}
+
+// Nesting WithTx is refused — a second BEGIN IMMEDIATE on SQLite's single writer is a
+// footgun; the inner call returns ErrNestedTx without opening a second tx.
+func TestWithTx_NestingRefused(t *testing.T) {
+	tr := &fakeTransactor{}
+	ctx := ContextWithTransactor(context.Background(), tr)
+	var innerErr error
+	err := WithTx(ctx, func(fnCtx context.Context) error {
+		innerErr = WithTx(fnCtx, func(context.Context) error { return nil })
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("outer WithTx: %v", err)
+	}
+	if !errors.Is(innerErr, ErrNestedTx) {
+		t.Fatalf("nested WithTx must return ErrNestedTx, got %v", innerErr)
+	}
+	if tr.began != 1 {
+		t.Fatalf("nested WithTx must not open a second tx: began=%d want 1", tr.began)
 	}
 }

@@ -48,12 +48,23 @@ type Registration struct {
 
 // FireAndForget registers a short, non-resumable task — the "job" shape: the default
 // lease, an optional per-attempt timeout, and a handler that need not checkpoint.
+//
+// Unlike the old in-transaction job, the handler runs OUTSIDE a transaction and is
+// marked complete by a SEPARATE write after it returns, so delivery is at-least-once:
+// a crash between the handler returning and that write re-runs the handler on reclaim.
+// The handler MUST therefore be idempotent (or guard its external effects).
 func FireAndForget(handler HandlerFunc, timeout time.Duration) Registration {
 	return Registration{Handler: handler, Timeout: timeout}
 }
 
 // Durable registers a long, resumable task — the "run" shape: an explicit crash-reclaim
-// lease and an optional per-attempt timeout. The handler checkpoints via ck.Save.
+// lease and an optional per-attempt timeout. The handler checkpoints via ck.Save and
+// resumes from the last checkpoint on reclaim.
+//
+// The timeout is PER ATTEMPT and a blown deadline counts as a logic-retry (it bumps
+// attempts and is gated by maxRetries), so set it longer than a single resume-to-next-
+// checkpoint step — a timeout shorter than the work between checkpoints can fail the
+// run terminally after maxRetries even while it is making real progress.
 func Durable(handler HandlerFunc, lease, timeout time.Duration) Registration {
 	return Registration{Handler: handler, Lease: lease, Timeout: timeout}
 }
@@ -93,6 +104,18 @@ func NewHandlerRegistry(
 			return nil, fmt.Errorf(
 				"run: kind %q lease %s is implausibly small (min %s) — likely a units typo",
 				kind, reg.Lease, minKindLease)
+		}
+		// Timeout gets the same scrutiny as Lease (0 = none, handled by Lookup): a
+		// NEGATIVE value would silently disable the timeout the author asked for, and a
+		// positive sub-ms value would instant-expire every attempt into a reschedule
+		// thrash — both units typos, surfaced loudly at boot rather than at runtime.
+		if reg.Timeout < 0 {
+			return nil, fmt.Errorf("run: kind %q timeout %s is negative", kind, reg.Timeout)
+		}
+		if reg.Timeout > 0 && reg.Timeout < minKindLease {
+			return nil, fmt.Errorf(
+				"run: kind %q timeout %s is implausibly small (min %s) — likely a units typo",
+				kind, reg.Timeout, minKindLease)
 		}
 		dup[kind] = reg
 	}

@@ -52,3 +52,23 @@ func TestLookup_LeaseTimeoutAndDefault(t *testing.T) {
 		t.Fatal("unknown kind must report known=false")
 	}
 }
+
+// Timeout gets the same plausibility scrutiny as Lease: a negative value (would
+// silently disable the timeout) and a positive sub-ms value (would instant-expire
+// every attempt) are units typos, rejected loudly at boot.
+func TestNewHandlerRegistry_RejectsImplausibleTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		timeout time.Duration
+	}{
+		{"negative", -time.Second},
+		{"positive sub-ms", time.Microsecond},
+	} {
+		_, err := NewHandlerRegistry(map[string]Registration{
+			"k": {Handler: noopHandler, Timeout: tc.timeout},
+		}, time.Second)
+		if err == nil {
+			t.Fatalf("%s timeout (%s) must be rejected at registry build", tc.name, tc.timeout)
+		}
+	}
+}

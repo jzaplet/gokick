@@ -39,7 +39,7 @@ const maxHeartbeatErrors = 3
 const minUnknownKindParks = 5
 
 // cancelGraceLeaseMultiple bounds, as a multiple of the lease, how long the
-// heartbeat keeps renewing for a cancelled run whose handler has not yet returned.
+// heartbeat keeps renewing for a cancelled or timed-out run whose handler has not returned.
 // A ctx-aware handler returns promptly on cancel and never reaches this; the bound
 // only fires for a handler that ignores ctx cancellation (a contract violation) —
 // past it the worker abandons, the lease lapses, and reclaim + the poison-reclaim
@@ -209,6 +209,9 @@ func (w *RunWorker) drain(wg *sync.WaitGroup) {
 // anywhere (not just the handler) from crashing the pool; on panic the run is
 // abandoned (no finalize) and left for lease-lapse reclaim.
 func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string) {
+	// Per-run reporting scope so a terminal-failure Capture carries the run's log lines
+	// as breadcrumbs (mirrors the job worker's processOne + the bus/HTTP recovery path).
+	workerCtx = w.reporter.WithRequestScope(workerCtx)
 	log := w.logger.With(logKeyRunID, r.ID, logKeyRunKind, r.Kind, logKeyOwner, owner)
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -273,6 +276,11 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 	if w.transactor != nil {
 		runCtx = shared.ContextWithTransactor(runCtx, w.transactor)
 	}
+	// A run handler has no event collector (the bus installs one per request; the worker
+	// bypasses the bus). Install the forbidden-marker collector so a handler that calls
+	// Collect fails LOUD instead of silently dropping the event — domain events belong to
+	// the command/bus path, not a run handler (mirrors the deleted job worker).
+	runCtx = shared.ContextWithoutEventCollector(runCtx)
 
 	handlerCtx, cancelHandler := context.WithCancel(runCtx)
 	defer cancelHandler()
@@ -281,6 +289,17 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 	// heartbeat must keep renewing while a cancelled handler winds down.
 	hbCtx, cancelHeartbeat := context.WithCancel(runCtx)
 	defer cancelHeartbeat()
+
+	// Per-attempt timeout (0 = none): execCtx is a child of handlerCtx, so a deadline OR
+	// a lease-loss/cancel (cancelHandler) both stop the handler. The heartbeat is given
+	// execCtx too, so a blown deadline a NON-ctx-aware handler ignores still engages the
+	// winddown bound (abandon for reclaim) instead of renewing the lease forever.
+	execCtx := handlerCtx
+	if kindTimeout > 0 {
+		var cancelTimeout context.CancelFunc
+		execCtx, cancelTimeout = context.WithTimeout(handlerCtx, kindTimeout)
+		defer cancelTimeout()
+	}
 
 	var abandon, cancelled atomic.Bool
 	hbDone := make(chan struct{})
@@ -304,7 +323,7 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 				cancelHandler()
 			}
 		}()
-		w.heartbeat(hbCtx, r.ID, owner, kindLease, cancelHandler, &abandon, &cancelled)
+		w.heartbeat(hbCtx, r.ID, owner, kindLease, execCtx, cancelHandler, &abandon, &cancelled)
 	}()
 
 	// Honor a cancel already requested at claim time (immutable claimed-row value;
@@ -312,16 +331,6 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 	if r.CancelRequested {
 		cancelled.Store(true)
 		cancelHandler()
-	}
-
-	// Per-attempt timeout (0 = none): execCtx is a child of handlerCtx, so a deadline
-	// OR a lease-loss/cancel (cancelHandler) both stop the handler. A deadline that
-	// fires on an otherwise-healthy handler is detected after it returns (execCtx.Err).
-	execCtx := handlerCtx
-	if kindTimeout > 0 {
-		var cancelTimeout context.CancelFunc
-		execCtx, cancelTimeout = context.WithTimeout(handlerCtx, kindTimeout)
-		defer cancelTimeout()
 	}
 
 	start := time.Now()
@@ -371,14 +380,16 @@ func (w *RunWorker) runHandler(
 // heartbeat renews the lease until ctx is cancelled (shutdown or main's stop). On
 // a lost or untrustworthy lease it sets abandon + cancels the handler and exits;
 // on an observed cancel it sets cancelled + cancels the handler but KEEPS renewing
-// so the lease holds while the handler winds down — bounded by a grace deadline so
-// a handler that ignores ctx cannot pin the lease forever (it is then abandoned for
-// reclaim). The cancel signal rides back on the renew write itself (RETURNING
-// cancel_requested), so there is no separate poll.
+// so the lease holds while the handler winds down. The winddown — for a cancelled
+// handler OR one past its per-attempt deadline (execCtx) — is bounded by a grace
+// deadline so a handler that ignores ctx cannot pin the lease forever (it is then
+// abandoned for reclaim). The cancel signal rides back on the renew write itself
+// (RETURNING cancel_requested), so there is no separate poll.
 func (w *RunWorker) heartbeat(
 	ctx context.Context,
 	id, owner string,
 	lease time.Duration,
+	execCtx context.Context,
 	cancelHandler context.CancelFunc,
 	abandon, cancelled *atomic.Bool,
 ) {
@@ -400,10 +411,11 @@ func (w *RunWorker) heartbeat(
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	errs := 0
-	// cancelDeadline bounds the post-cancel winddown for a handler that ignores ctx:
-	// zero until a cancel is observed, then now + grace. It is a LOCAL safety timer
-	// (single goroutine), not a lease decision — those stay DB-clock sourced.
-	var cancelDeadline time.Time
+	// graceDeadline bounds the winddown for a handler that ignores ctx (cancelled, or
+	// past its per-attempt deadline): zero until winddown begins, then now + grace. It
+	// is a LOCAL safety timer (single goroutine), not a lease decision — those stay
+	// DB-clock sourced.
+	var graceDeadline time.Time
 
 	for {
 		select {
@@ -442,17 +454,19 @@ func (w *RunWorker) heartbeat(
 			cancelled.Store(true)
 			cancelHandler()
 		}
-		// Bound the winddown. A ctx-aware handler returns promptly and the heartbeat
-		// exits via ctx.Done() long before this fires; the deadline only catches a
-		// handler that IGNORES ctx — past it abandon, so the lease lapses for reclaim
-		// (and the poison-reclaim cap) rather than renewing forever.
-		if cancelled.Load() {
+		// Bound the winddown. It begins when the handler should have stopped — a cancel
+		// was observed, OR its per-attempt deadline fired (execCtx). A ctx-aware handler
+		// returns promptly and the heartbeat exits via ctx.Done() long before this fires;
+		// the deadline only catches a handler that IGNORES ctx — past it abandon, so the
+		// lease lapses for reclaim (and the poison-reclaim cap) rather than renewing
+		// forever.
+		if cancelled.Load() || execCtx.Err() != nil {
 			switch {
-			case cancelDeadline.IsZero():
-				cancelDeadline = time.Now().Add(cancelGraceLeaseMultiple * lease)
-			case time.Now().After(cancelDeadline):
+			case graceDeadline.IsZero():
+				graceDeadline = time.Now().Add(cancelGraceLeaseMultiple * lease)
+			case time.Now().After(graceDeadline):
 				w.logger.Warn(
-					"run worker: cancelled handler exceeded grace, abandoning for reclaim",
+					"run worker: handler exceeded winddown grace, abandoning for reclaim",
 					logKeyRunID,
 					id,
 				)

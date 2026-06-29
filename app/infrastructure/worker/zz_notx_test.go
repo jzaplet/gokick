@@ -61,6 +61,10 @@ func TestRunPath_NeverOpensTransaction(t *testing.T) {
 	forbidden := []string{
 		".Begin(", ".BeginTx(", ".Beginx(", ".BeginTxx(", ".MustBegin(", ".MustBeginTx(",
 		".Commit(", ".Rollback(",
+		// WithTx clears the forbid marker for its scope, so it is the one sanctioned
+		// bypass of the runtime guard. It is for app HANDLERS only; the run PLUMBING
+		// wrapping the handler in it would re-introduce a long-held write lock.
+		"shared.WithTx(",
 	}
 	for _, f := range files {
 		src, readErr := os.ReadFile(f)

@@ -57,11 +57,30 @@ func transactorFromContext(ctx context.Context) Transactor {
 	return tr
 }
 
+type txActiveKey struct{}
+
+// markTxActive flags that a WithTx transaction is already open on this ctx, so a
+// nested WithTx (anywhere in the dynamic extent of fn) can refuse rather than open a
+// second BEGIN IMMEDIATE on the single-writer DB. contextAllowTx does NOT clear it.
+func markTxActive(ctx context.Context) context.Context {
+	return context.WithValue(ctx, txActiveKey{}, true)
+}
+
+func isTxActive(ctx context.Context) bool {
+	active, _ := ctx.Value(txActiveKey{}).(bool)
+	return active
+}
+
 // ErrTxUnavailable is returned by WithTx when no Transactor was injected — it fails
 // loud rather than silently skipping the atomicity the caller asked for.
 var ErrTxUnavailable = errors.New(
 	"shared: WithTx requires a Transactor in context (only available inside a run handler)",
 )
+
+// ErrNestedTx is returned when WithTx is called inside another WithTx — nesting a
+// second BEGIN IMMEDIATE on SQLite's single writer is a deadlock-shaped footgun, so
+// it fails loud instead.
+var ErrNestedTx = errors.New("shared: WithTx must not be nested inside another WithTx")
 
 // WithTx runs fn inside a single SHORT database transaction — the developer-controlled
 // way for a run handler to make several writes atomically (all-or-nothing). Repos
@@ -69,9 +88,14 @@ var ErrTxUnavailable = errors.New(
 // nil commits, a non-nil error or a panic rolls back. Keep fn short and free of
 // slow/external I/O — it holds the global SQLite write lock until it returns.
 //
-// It is available wherever a Transactor was injected (the run worker injects it for
-// handlers). Do NOT nest WithTx calls.
+// The ctx fn receives RE-FORBIDS opening a transaction: only the live tx (via
+// Conn(ctx)) is reachable, so a nested WithTx returns ErrNestedTx and an accidental
+// raw BeginTx fails closed exactly as it would outside WithTx. Available wherever a
+// Transactor was injected (the run worker injects it for handlers).
 func WithTx(ctx context.Context, fn func(ctx context.Context) error) (err error) {
+	if isTxActive(ctx) {
+		return ErrNestedTx
+	}
 	tr := transactorFromContext(ctx)
 	if tr == nil {
 		return ErrTxUnavailable
@@ -86,7 +110,11 @@ func WithTx(ctx context.Context, fn func(ctx context.Context) error) (err error)
 			_ = tr.Rollback(txCtx)
 		}
 	}()
-	if err = fn(txCtx); err != nil {
+	// fn sees the live tx (Conn resolves it) but with implicit-tx forbidden again and a
+	// nesting marker — so an accidental raw BeginTx or a nested WithTx inside fn fails
+	// instead of silently opening a second transaction.
+	fnCtx := markTxActive(ContextForbidTx(txCtx))
+	if err = fn(fnCtx); err != nil {
 		return err
 	}
 	if err = tr.Commit(txCtx); err != nil {

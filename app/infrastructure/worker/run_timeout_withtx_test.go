@@ -111,3 +111,74 @@ func TestRunWorker_HandlerWithTx_RollsBackOnError(t *testing.T) {
 		t.Fatalf("WithTx error must roll back the child enqueue, found %d rows", n)
 	}
 }
+
+// timedOut is ranked ABOVE success in finalize: a handler that returns NIL exactly as
+// its deadline fires must still be treated as a (retryable) timeout, not Completed.
+// The sibling test above uses a handler returning ctx.Err(), which would route to
+// handleFailure via the `default` case even if the timedOut flag were broken — this
+// one returns nil, so only correct timedOut detection + ranking keeps it off Complete.
+func TestRunWorker_Timeout_NilReturn_NotCompleted(t *testing.T) {
+	fx := testfx.New(t, t.TempDir()+"/rw_timeout_nil.db")
+	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
+		<-ctx.Done() // deadline fires
+		return nil   // clean-stop nil, NOT ctx.Err()
+	}
+	reg, err := runapp.NewHandlerRegistry(map[string]runapp.Registration{
+		"slownil": runapp.FireAndForget(handler, 100*time.Millisecond),
+	}, time.Second)
+	if err != nil {
+		t.Fatalf("registry: %v", err)
+	}
+	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, nil, fastCfg())
+	r := enqueueRunW(t, fx, "slownil", 1)
+
+	stop := startWorker(w)
+	defer stop()
+	waitFor(t, "timed-out nil-return rescheduled (not completed)", func() bool {
+		g := findW(t, fx, r.ID)
+		return g != nil && g.Attempts == 1
+	})
+	if g := findW(t, fx, r.ID); g.CompletedAt != nil {
+		t.Fatal(
+			"a nil return AT the deadline must be treated as timed-out (retryable), not completed",
+		)
+	}
+}
+
+// Backstop: a NON-ctx-aware handler that blows its per-attempt timeout must not pin
+// the lease forever. After the deadline the heartbeat keeps renewing only for the
+// grace window, then ABANDONS — the lease lapses so another worker can reclaim (and
+// the poison cap eventually terminates a persistent offender). Uses a short per-kind
+// lease so the grace (cancelGraceLeaseMultiple*lease) is small. The handler ignores
+// ctx on purpose and leaks until release is closed at test end.
+func TestRunWorker_Timeout_NonCtxAwareHandler_AbandonsForReclaim(t *testing.T) {
+	fx := testfx.New(t, t.TempDir()+"/rw_timeout_stuck.db")
+	release := make(chan struct{})
+	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
+		<-release // IGNORES ctx — only the test can free it
+		return nil
+	}
+	reg, err := runapp.NewHandlerRegistry(map[string]runapp.Registration{
+		// short lease → small grace; timeout << lease so it fires well before the lease.
+		"stuck": runapp.Durable(handler, 120*time.Millisecond, 40*time.Millisecond),
+	}, time.Second)
+	if err != nil {
+		t.Fatalf("registry: %v", err)
+	}
+	cfg := fastCfg()
+	cfg.MaxInFlight = 1 // the stuck handler pins the only slot, so the worker can't reclaim
+	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, nil, cfg)
+	r := enqueueRunW(t, fx, "stuck", 0)
+
+	stop := startWorker(w)
+	defer stop()
+	defer close(release) // free the stuck handler so the worker can drain (LIFO: before stop)
+
+	// The heartbeat abandons after the grace window; once it stops renewing, the lease
+	// lapses (locked_until falls into the past) — the run is reclaimable, not pinned.
+	waitFor(t, "timed-out non-ctx-aware run abandoned (lease lapses)", func() bool {
+		g := findW(t, fx, r.ID)
+		return g != nil && g.CompletedAt == nil && g.FailedAt == nil &&
+			g.LockedUntil != nil && g.LockedUntil.Before(time.Now())
+	})
+}
