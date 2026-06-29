@@ -23,7 +23,7 @@ a musí přežít pád procesu. Má **dva tvary**, lišící se jen registrací:
   generování velkého reportu/PDF, dávkové zpracování.
 
 Oba tvary jedou přes stejnou tabulku `runs`, stejný worker, stejné lease/heartbeat,
-owner-fencing a cancel. Job je prostě run bez checkpointu. Viz ADR-0001.
+owner-fencing a cancel. Job je prostě run bez checkpointu.
 
 ## What & when
 
@@ -182,7 +182,6 @@ Přidání nového kindu (vyber tvar podle „potřebuje checkpoint/resume?"):
   `/gk-config` (DI registrace).
 - Docs: [Run flow](/framework/run-flow), [Job flow](/framework/job-flow) (fire-and-forget
   tvar), [Background work](/framework/background-work) (co kdy + proč vše mimo tx).
-- ADR: durable execution model (outside-tx + lease/heartbeat/checkpoint), škála SQLite vs Postgres.
 - Kód: `app/domain/run/`, `app/application/run/` (`registry.go` = `FireAndForget`/`Durable`,
   `dispatcher.go`), `app/infrastructure/sqlite/run/repository.go`,
   `app/infrastructure/worker/run_worker.go`, `app/domain/shared/run_dispatcher.go`,
