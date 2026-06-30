@@ -9,7 +9,7 @@ type EventHandler func(ctx context.Context, event shared.DomainEvent) error
 
 // EventHandlerEntry is one (event-name → handler) pair collected by the DI
 // provider and applied during EventBus construction. Mirrors the slice-list
-// pattern used by PermissionsRegistry and JobHandlerRegistry.
+// pattern used by PermissionsRegistry and RunHandlerRegistry.
 type EventHandlerEntry struct {
 	Event   string
 	Handler EventHandler

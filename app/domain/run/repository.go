@@ -5,9 +5,8 @@ import (
 	"time"
 )
 
-// Repository is the domain port for the durable run queue — the long-running
-// sibling of job.Repository, with the additions the outside-transaction model
-// requires (see ADR-0001):
+// Repository is the domain port for the durable run queue, with the additions
+// the outside-transaction model requires:
 //
 //   - Owner token (locked_by): every claim stamps a fresh per-claim nonce. The
 //     mutating methods are owner-checked (WHERE locked_by = ?) so a worker that

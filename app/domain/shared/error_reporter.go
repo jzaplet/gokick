@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// ErrorReporter ships unexpected failures — recovered panics and terminal job
+// ErrorReporter ships unexpected failures — recovered panics and terminal run
 // failures — to an external error tracker (Sentry). It is deliberately NOT a
 // logging path: ordinary returned errors (validation, auth, 4xx) must never
 // flow here, only the recovery/terminal paths, or the tracker drowns in noise.
@@ -19,9 +19,9 @@ type ErrorReporter interface {
 	Capture(ctx context.Context, err error, attrs ...slog.Attr)
 	// WithRequestScope returns a context carrying a fresh per-request reporting
 	// scope. Breadcrumbs (the structured-log lines emitted while handling the
-	// request or job) then accumulate on that scope, so a later Capture on the
+	// request or run) then accumulate on that scope, so a later Capture on the
 	// same context includes the trail leading up to the failure. Call it once at
-	// the start of each request/job. The no-op reporter returns ctx unchanged.
+	// the start of each request/run. The no-op reporter returns ctx unchanged.
 	WithRequestScope(ctx context.Context) context.Context
 	// ContinueTrace adopts a distributed-trace id propagated from the frontend
 	// (the sentry-trace + baggage request headers the browser SDK sets) onto the
@@ -54,7 +54,7 @@ func (NopReporter) Flush(time.Duration) bool { return true }
 // in the tracker; carrying the original value lets the Sentry adapter set a
 // meaningful exception type ("panic") and tag the concrete Go type of the panic
 // (string vs runtime.Error, …). The two recovery middlewares (bus, HTTP) wrap
-// recovered panics in this; ordinary returned errors and terminal job failures
+// recovered panics in this; ordinary returned errors and terminal run failures
 // do NOT — they are not panics. This is a plain domain type, no Sentry import.
 type PanicError struct {
 	Value   any    // the recovered panic value (preserves the concrete type)

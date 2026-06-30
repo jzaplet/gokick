@@ -2,12 +2,12 @@
 // primitive for "agents": background work that runs for minutes/hours, persists
 // resumable state, and survives a worker crash by being reclaimed and resumed.
 //
-// It is the long-running sibling of the job context. The crucial difference is
-// the execution model (see ADR-0001): a job handler runs INSIDE one transaction
-// (atomic, but it holds SQLite's single write lock for its whole duration — fine
-// only for short work); a run handler runs OUTSIDE any transaction and persists
-// progress via short owner-checked Checkpoint writes, while a heartbeat renews a
-// lease. gokick supplies these primitives; the agent's own loop lives in the app.
+// The crucial property is the execution model: a run handler runs OUTSIDE any
+// transaction. A transaction would hold SQLite's single write lock for the
+// handler's whole duration — fine only for the short, own-DB-only work a command
+// does. A run instead persists progress via short owner-checked Checkpoint
+// writes, while a heartbeat renews a lease. gokick supplies these primitives;
+// the agent's own loop lives in the app.
 package run
 
 import (
@@ -17,14 +17,13 @@ import (
 )
 
 // Run is a persisted unit of durable long-running work. State is DERIVED from
-// columns, mirroring job.Job:
+// columns:
 //   - completed_at != nil → succeeded
 //   - failed_at != nil    → permanently failed
 //   - locked_until > now  → currently running under a lease held by locked_by
 //   - otherwise           → pending / reclaimable
 //
-// Three distinct counters, deliberately NOT merged (unlike jobs, where a claim ==
-// an attempt):
+// Three distinct counters, deliberately NOT merged (a claim is NOT an attempt):
 //   - Attempts: LOGIC retries — bumped only when Reschedule runs (the handler
 //     returned a retryable error). max_retries governs this counter.
 //   - Reclaims: CRASH reclaims — bumped when ClaimDue reclaims an EXPIRED lease

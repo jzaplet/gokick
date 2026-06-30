@@ -38,18 +38,18 @@ type HandlerFunc func(ctx context.Context, r *run.Run, ck Checkpointer) error
 
 // Registration binds a kind to its handler, an optional per-kind lease (the
 // crash-reclaim window / heartbeat target; zero = registry default), and an optional
-// per-attempt Timeout (zero = no timeout). Build one with FireAndForget (a job-like
-// task) or Durable (a long, resumable task) rather than the struct literal.
+// per-attempt Timeout (zero = no timeout). Build one with FireAndForget (a
+// fire-and-forget task) or Durable (a long, resumable task) rather than the struct literal.
 type Registration struct {
 	Handler HandlerFunc
 	Lease   time.Duration
 	Timeout time.Duration
 }
 
-// FireAndForget registers a short, non-resumable task — the "job" shape: the default
+// FireAndForget registers a short, non-resumable task — the fire-and-forget shape: the default
 // lease, an optional per-attempt timeout, and a handler that need not checkpoint.
 //
-// Unlike the old in-transaction job, the handler runs OUTSIDE a transaction and is
+// The handler runs OUTSIDE a transaction and is
 // marked complete by a SEPARATE write after it returns, so delivery is at-least-once:
 // a crash between the handler returning and that write re-runs the handler on reclaim.
 // The handler MUST therefore be idempotent (or guard its external effects).

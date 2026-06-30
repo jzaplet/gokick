@@ -13,7 +13,7 @@ import (
 )
 
 // newRegistry builds a registry whose listed kinds map to no-op handlers, with a
-// 1s default lease. Mirrors the job dispatcher test helper.
+// 1s default lease. Mirrors the run dispatcher test helper.
 func newRegistry(t *testing.T, kinds ...string) *HandlerRegistry {
 	t.Helper()
 	regs := map[string]Registration{}

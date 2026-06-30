@@ -9,7 +9,7 @@ import (
 )
 
 // CreateTenantCommand creates a tenant. Operator-facing (CLI / superadmin plane);
-// the in-app signup that provisions a tenant per workspace is the product's job.
+// the in-app signup that provisions a tenant per workspace is the product's responsibility.
 type CreateTenantCommand struct {
 	Name string
 }

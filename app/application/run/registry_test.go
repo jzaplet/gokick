@@ -10,8 +10,8 @@ import (
 
 func noopHandler(context.Context, *run.Run, Checkpointer) error { return nil }
 
-// FireAndForget is the "job" shape (default lease, no checkpoint expected); Durable
-// is the "run" shape (explicit lease). Both carry an optional per-attempt timeout.
+// FireAndForget is the fire-and-forget shape (default lease, no checkpoint expected);
+// Durable is the durable shape (explicit lease). Both carry an optional per-attempt timeout.
 func TestRegistrationHelpers(t *testing.T) {
 	ff := FireAndForget(noopHandler, 30*time.Second)
 	if ff.Lease != 0 || ff.Timeout != 30*time.Second {

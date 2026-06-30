@@ -81,7 +81,7 @@ func (c RunWorkerConfig) withDefaults() RunWorkerConfig {
 	return c
 }
 
-// RunWorker executes durable runs OUTSIDE a transaction (ADR-0001): it claims a
+// RunWorker executes durable runs OUTSIDE a transaction: it claims a
 // run with a per-claim owner nonce, runs the registered handler in a goroutine
 // while a heartbeat renews the lease, and on worker death the lease lapses so
 // another worker reclaims and resumes from the last checkpoint.

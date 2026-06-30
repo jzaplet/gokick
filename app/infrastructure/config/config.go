@@ -63,7 +63,7 @@ type Config struct {
 	RateLimitLogin   string
 	RateLimitRefresh string
 
-	// Durable run worker (the "agent" engine, ADR-0001). Lease is the crash-reclaim
+	// Durable run worker (the "agent" engine). Lease is the crash-reclaim
 	// window; Heartbeat must be << Lease (0 → the worker uses Lease/3); MaxInFlight
 	// is the backpressure cap; MaxReclaims bounds a poison crash-loop.
 	RunWorkerLease        time.Duration

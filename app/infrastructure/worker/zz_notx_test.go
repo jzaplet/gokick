@@ -75,7 +75,7 @@ func TestRunPath_NeverOpensTransaction(t *testing.T) {
 			if strings.Contains(string(src), sym) {
 				t.Errorf(
 					"%s references %q — the durable-run path must not open a transaction "+
-						"(it runs outside-tx; persist via the Checkpointer or enqueue a command/job)",
+						"(it runs outside-tx; persist via the Checkpointer or enqueue a command/run)",
 					filepath.Base(f), sym,
 				)
 			}

@@ -267,7 +267,7 @@ func TestSentryUser_AnonymousWithIP(t *testing.T) {
 	}
 }
 
-// No claims and no IP (e.g. a job-worker capture) yields no user rather than an
+// No claims and no IP (e.g. a run-worker capture) yields no user rather than an
 // empty husk.
 func TestSentryUser_NoneWhenAnonymousAndNoIP(t *testing.T) {
 	t.Parallel()

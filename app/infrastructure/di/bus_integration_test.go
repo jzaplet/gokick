@@ -115,7 +115,7 @@ func TestCommandBus_AuditSurvivesBusinessRollback(t *testing.T) {
 	}
 }
 
-// The run dispatcher carries the SAME promise as the job dispatcher: a durable
+// The run dispatcher's promise: a durable
 // run enqueued from a command handler joins that handler's transaction — the
 // INSERT into runs commits or rolls back atomically with the business write.
 // Proven through the real provider chain (RunDispatcherMiddleware injects a

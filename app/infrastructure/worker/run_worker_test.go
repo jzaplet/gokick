@@ -585,7 +585,7 @@ func TestRunWorker_ParkingDoesNotConsumeRetryBudget(t *testing.T) {
 }
 
 // A run handler runs OUTSIDE a tx and offloads transactional side-work by enqueuing
-// a job or a child run. The worker bypasses the bus, so it must inject the
+// a fire-and-forget run or a child run. The worker bypasses the bus, so it must inject the
 // dispatchers into the handler ctx — without that shared.RunDispatcherFromContext
 // returns the silent no-op and the enqueue vanishes. Here a parent handler enqueues a
 // child run and we prove the child row actually lands and runs.
