@@ -43,7 +43,7 @@ func newLogger(format string, level slog.Level, sentryEnabled bool) *slog.Logger
 // groups/attrs mirror what logger.With / WithGroup bind: the wrapped handler
 // applies them to the text log, but the breadcrumb is built here from the
 // record, so without mirroring them a derived logger's bound fields (e.g. the
-// worker's job_id / kind / attempts) would be absent from the breadcrumb trail.
+// worker's run_id / kind / attempts) would be absent from the breadcrumb trail.
 type breadcrumbHandler struct {
 	slog.Handler
 	groups []string    // open groups, for namespacing keys in the flat Data map

@@ -20,7 +20,6 @@ import (
 // Run-worker-local log keys (logKeyKinds/logKeyPanic/logKeyStack live in common.go).
 const (
 	logKeyRunID       = "run_id"
-	logKeyRunKind     = "run_kind"
 	logKeyOwner       = "owner"
 	logKeyReclaims    = "reclaims"
 	logKeyMaxInflight = "max_in_flight"
@@ -212,14 +211,14 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 	// Per-run reporting scope so a terminal-failure Capture carries the run's log lines
 	// as breadcrumbs (as the bus/HTTP RecoveryMiddleware does per request).
 	workerCtx = w.reporter.WithRequestScope(workerCtx)
-	log := w.logger.With(logKeyRunID, r.ID, logKeyRunKind, r.Kind, logKeyOwner, owner)
+	log := w.logger.With(logKeyRunID, r.ID, shared.LogKeyRunKind, r.Kind, logKeyOwner, owner)
 	defer func() {
 		if rec := recover(); rec != nil {
 			log.LogAttrs(workerCtx, slog.LevelError, "run worker: process panicked",
 				slog.Any(logKeyPanic, rec), slog.String(logKeyStack, string(debug.Stack())))
 			w.reporter.Capture(workerCtx,
 				&shared.PanicError{Value: rec, Message: fmt.Sprintf("run process panic: %v", rec)},
-				slog.String(logKeyRunID, r.ID), slog.String(logKeyRunKind, r.Kind))
+				slog.String(logKeyRunID, r.ID), slog.String(shared.LogKeyRunKind, r.Kind))
 		}
 	}()
 
@@ -573,7 +572,7 @@ func (w *RunWorker) handleFailure(
 			log.Error("run worker: run exhausted retries, failed",
 				shared.DurationMsAttr(dur), slog.Any(shared.LogKeyError, hErr))
 			w.reporter.Capture(ctx, fmt.Errorf("run %q exhausted retries: %w", r.Kind, hErr),
-				slog.String(logKeyRunID, r.ID), slog.String(logKeyRunKind, r.Kind))
+				slog.String(logKeyRunID, r.ID), slog.String(shared.LogKeyRunKind, r.Kind))
 		}
 		return
 	}
@@ -613,7 +612,7 @@ func (w *RunWorker) handleUnknownKind(
 		if ok, err := w.repo.MarkFailed(ctx, r.ID, owner, reason); err != nil {
 			log.Error("run worker: unknown-kind mark-failed errored", shared.LogKeyError, err)
 		} else if ok {
-			log.Error("run worker: unknown kind exhausted park budget, failed", logKeyRunKind, r.Kind)
+			log.Error("run worker: unknown kind exhausted park budget, failed", shared.LogKeyRunKind, r.Kind)
 			w.reporter.Capture(ctx, fmt.Errorf("run worker: %s", reason), slog.String(logKeyRunID, r.ID))
 		}
 		return
@@ -622,7 +621,7 @@ func (w *RunWorker) handleUnknownKind(
 	if ok, err := w.repo.Park(ctx, r.ID, owner, time.Now().Add(delay), reason); err != nil {
 		log.Error("run worker: unknown-kind park errored", shared.LogKeyError, err)
 	} else if ok {
-		log.Warn("run worker: unknown kind, parked for retry (registry skew)", logKeyRunKind, r.Kind)
+		log.Warn("run worker: unknown kind, parked for retry (registry skew)", shared.LogKeyRunKind, r.Kind)
 	}
 }
 

@@ -20,7 +20,7 @@ const (
 	LogKeyRetryInMs  = "retry_in_ms"
 	LogKeyError      = "error"
 	LogKeyEvent      = "event"
-	LogKeyJobKind    = "job_kind"
+	LogKeyRunKind    = "run_kind"
 )
 
 // HTTP request keys. Cross-cutting because they travel from the presentation

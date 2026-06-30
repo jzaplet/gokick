@@ -111,7 +111,7 @@ func TestLogKeyConstants_WireValues(t *testing.T) {
 		{LogKeyRetryInMs, "retry_in_ms"},
 		{LogKeyError, "error"},
 		{LogKeyEvent, "event"},
-		{LogKeyJobKind, "job_kind"},
+		{LogKeyRunKind, "run_kind"},
 		{LogKeyMethod, "method"},
 		{LogKeyPath, "path"},
 		{LogKeyURL, "url"},

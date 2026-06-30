@@ -68,7 +68,7 @@ func newErrorReporter(dsn, environment, release string) (shared.ErrorReporter, e
 type sentryReporter struct{}
 
 // WithRequestScope binds a fresh per-request hub to ctx so breadcrumbs (the
-// log lines emitted while handling the request/job, via the breadcrumb slog
+// log lines emitted while handling the request/run, via the breadcrumb slog
 // handler) accumulate on it and ride along on a later Capture from the same
 // ctx. A clone keeps each request's trail isolated from concurrent requests.
 func (sentryReporter) WithRequestScope(ctx context.Context) context.Context {
@@ -110,8 +110,8 @@ func (sentryReporter) ContinueTrace(
 //   - Request: method / URL / User-Agent plus the credential headers
 //     (Authorization, Cookie) when present — masked, so an operator sees they
 //     arrived without the secret leaking. Only for HTTP-originated captures; a
-//     job-worker capture has no method and gets no Request.
-//   - Fingerprint: for a job-worker capture, split by job kind so each failing
+//     run-worker capture has no method and gets no Request.
+//   - Fingerprint: for a run-worker capture, split by run kind so each failing
 //     handler is its own Sentry issue (its unwound stack is otherwise identical).
 //
 // A cloned hub per call keeps scopes isolated across concurrent requests.
@@ -134,7 +134,7 @@ func (sentryReporter) Capture(ctx context.Context, err error, attrs ...slog.Attr
 	// accumulated breadcrumbs are included — without leaking this request's
 	// tags/processor onto the shared hub across captures.
 	hub.WithScope(func(scope *sentry.Scope) {
-		var jobKind string
+		var runKind string
 		for _, a := range all {
 			// Authorization/Cookie are represented (masked) in event.Request
 			// below, not as a tag. Every other attr becomes a searchable tag —
@@ -143,8 +143,10 @@ func (sentryReporter) Capture(ctx context.Context, err error, attrs ...slog.Attr
 			if a.Key == shared.LogKeyAuthorization || a.Key == shared.LogKeyCookie {
 				continue
 			}
-			if a.Key == shared.LogKeyJobKind {
-				jobKind = a.Value.String()
+			// The worker binds LogKeyRunKind on every capture; reading the SAME
+			// shared constant keeps the per-kind fingerprint from silently drifting.
+			if a.Key == shared.LogKeyRunKind {
+				runKind = a.Value.String()
 			}
 			scope.SetTag(a.Key, shared.MaskLogValue(a.Key, a.Value.String()))
 		}
@@ -164,8 +166,8 @@ func (sentryReporter) Capture(ctx context.Context, err error, attrs ...slog.Attr
 			if req != nil {
 				event.Request = req
 			}
-			if jobKind != "" {
-				event.Fingerprint = []string{"{{ default }}", "job:" + jobKind}
+			if runKind != "" {
+				event.Fingerprint = []string{"{{ default }}", "run:" + runKind}
 			}
 			setFrameInApp(event)
 			if isPanic {
@@ -215,7 +217,7 @@ func setExceptionType(event *sentry.Event, typ string) {
 
 // sentryUser builds the Sentry user from the auth claims in ctx (when the
 // request is authenticated) plus the resolved client IP. Returns ok=false only
-// for an anonymous capture with no IP at all (e.g. a job worker), so the event
+// for an anonymous capture with no IP at all (e.g. a run worker), so the event
 // carries no user rather than an empty one.
 func sentryUser(ctx context.Context, ip string) (sentry.User, bool) {
 	claims := shared.ClaimsFromContext(ctx)
