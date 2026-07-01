@@ -1,4 +1,5 @@
-.PHONY: install build serve dev di install-tools go-deps lint format format-check test arch-check e2e-crash-recovery \
+.PHONY: install build serve dev di install-tools go-deps lint format format-check test arch-check \
+        e2e e2e-crash-recovery e2e-at-least-once e2e-sigterm-drain e2e-terminal-failure \
         fe-deps fe-dev fe-build fe-clean \
         migrate-create migrate-up migrate-down migrate-status \
         docker-build \
@@ -130,11 +131,20 @@ test:
 	yarn test
 	go test ./app/... ./cmd/... 2>&1 | grep -v '\[no test files\]'
 
-# Local durable-run crash-recovery E2E: builds bin/app, kills a serve process
-# mid-run, and asserts a cold restart resumes from the checkpoint. Needs jq. Not
-# part of `test` (spawns real processes) — run on demand.
-e2e-crash-recovery:
+# Local durable-run E2E — process-lifecycle guarantees an in-process test can't reach
+# (kill -9 / SIGTERM + persistent SQLite). Each builds bin/app and spawns real serve
+# processes; needs jq (at-least-once also sqlite3). NOT part of `test` — run on demand.
+# See test/e2e/README.md.
+e2e: e2e-crash-recovery e2e-at-least-once e2e-sigterm-drain e2e-terminal-failure
+
+e2e-crash-recovery:      ## kill -9 mid-run → cold restart resumes from checkpoint
 	./test/e2e/run_crash_recovery.sh
+e2e-at-least-once:       ## crash after a side-effect, before complete → effect re-fires
+	./test/e2e/at_least_once.sh
+e2e-sigterm-drain:       ## graceful stop abandons cleanly (attempts=0) → reclaim + resume
+	./test/e2e/sigterm_drain.sh
+e2e-terminal-failure:    ## a failed run fires the Sentry terminal path (local half only)
+	./test/e2e/terminal_failure.sh
 
 arch-check:
 	$(GO_ARCH_LINT) check

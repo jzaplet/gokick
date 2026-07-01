@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gokick/app/domain/run"
+	"gokick/app/domain/shared"
 )
 
 // recordingCheckpointer records each Save, or returns a preset error (e.g.
@@ -124,5 +125,52 @@ func TestE2EDebug_Sleep_ReturnsOnCancel(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("sleep did not return after cancel")
+	}
+}
+
+// recordingDispatcher records the kinds a handler enqueues (the effect handler's
+// observable side-effect).
+type recordingDispatcher struct{ kinds []string }
+
+func (d *recordingDispatcher) Enqueue(
+	_ context.Context, kind string, _ int, _ any, _ ...shared.EnqueueOption,
+) error {
+	d.kinds = append(d.kinds, kind)
+	return nil
+}
+
+// The effect handler fires its side-effect (enqueue a marker) BEFORE the sleep, so a
+// crash in the sleep window still leaves the effect done — the at-least-once window.
+func TestE2EDebug_Effect_EnqueuesMarkerBeforeSleep(t *testing.T) {
+	t.Parallel()
+	disp := &recordingDispatcher{}
+	ctx := shared.ContextWithRunDispatcher(context.Background(), disp)
+	rn := &run.Run{Payload: mustJSON(t, map[string]int{"sleep_ms": 0})}
+	if err := e2eHandler(t, E2EKindEffect)(ctx, rn, &recordingCheckpointer{}); err != nil {
+		t.Fatalf("effect handler: %v", err)
+	}
+	if len(disp.kinds) != 1 || disp.kinds[0] != E2EKindSucceed {
+		t.Fatalf("effect must enqueue exactly one %q marker, got %v", E2EKindSucceed, disp.kinds)
+	}
+}
+
+func TestE2EDebug_Effect_ReturnsOnCancelAfterEffect(t *testing.T) {
+	t.Parallel()
+	disp := &recordingDispatcher{}
+	ctx, cancel := context.WithCancel(shared.ContextWithRunDispatcher(context.Background(), disp))
+	rn := &run.Run{Payload: mustJSON(t, map[string]int{"sleep_ms": 60000})}
+	done := make(chan error, 1)
+	go func() { done <- e2eHandler(t, E2EKindEffect)(ctx, rn, &recordingCheckpointer{}) }()
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("effect must return ctx.Err() on cancel, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("effect did not return on cancel")
+	}
+	if len(disp.kinds) != 1 {
+		t.Fatalf("marker must be enqueued before the sleep, got %v", disp.kinds)
 	}
 }

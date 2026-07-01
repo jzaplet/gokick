@@ -1,30 +1,31 @@
 # Durable-run E2E (local)
 
 End-to-end checks for the things in-process tests **structurally cannot** prove —
-they need a real OS-process boundary / lifecycle, not a simulated one.
+they need a real OS-process boundary / lifecycle (kill -9, SIGTERM) + a persistent
+SQLite file, not a simulated one. No Docker, no srv3.
 
-All of this is driven by the `APP_RUN_DEBUG` affordance (off by default, never in
+All of it is driven by the `APP_RUN_DEBUG` affordance (off by default, never in
 production): the `e2e:*` run kinds + the `/debug/runs` enqueue/observe/cancel
 endpoints. See `app/application/run/e2edebug.go` and
-`app/presentation/http/handler/debug_run.go`.
+`app/presentation/http/handler/debug_run.go`. `make e2e` runs all four; each also
+has its own target. Needs `jq` (at-least-once also `sqlite3`).
 
-## `run_crash_recovery.sh` — the crown jewel
-
-```
-make e2e-crash-recovery
-```
-
-Enqueues a checkpointing run, `kill -9`s the `serve` process **mid-run**, starts a
-fresh **cold** process on the **same SQLite file**, and asserts the orphaned run is
-reclaimed and **resumed from its last checkpoint** to completion — not restarted
-from zero (`reclaims ≥ 1`, final `state.step` == total). No Docker, no srv3.
+| Test | `make` | Proves |
+|------|--------|--------|
+| **Crash recovery** ⭐ | `e2e-crash-recovery` | kill -9 mid-run → a cold process reclaims the orphaned run and **resumes from its last checkpoint** to completion (`reclaims≥1`, final `step`==total). |
+| **At-least-once** | `e2e-at-least-once` | A fire-and-forget run's side-effect fires, then kill -9 **before** the separate complete-write. No checkpoint → the reclaim **re-runs the whole handler** → the effect fires **twice**. Handlers must be idempotent. |
+| **SIGTERM drain** | `e2e-sigterm-drain` | A graceful stop (redeploy) **abandons** the in-flight run cleanly (`attempts==0`, not failed/rescheduled) → a fresh instance reclaims + resumes. Not lost, not duplicated. |
+| **Terminal failure** | `e2e-terminal-failure` | A run that exhausts retries reaches `failed`, firing the worker's `ErrorReporter.Capture` (fingerprint `run:<kind>`). **Local half only** — see note. |
 
 **Recovery latency ≈ lease.** An orphaned run is not reclaimable until the dead
-owner's lease expires, so the harness runs with a short `APP_RUN_WORKER_LEASE`
-(the production default is 5m). This is a real operational property, not a test
-artifact.
+owner's lease expires, so the harness runs with a short `APP_RUN_WORKER_LEASE` (prod
+default 5m). A real operational property, not a test artifact.
 
-Requires `jq`.
+**Terminal-failure is the local half of a Sentry check.** It proves the terminal
+path *fires* in a real process; it does **not** verify the Sentry event or the
+`run:<kind>` fingerprint delivery — that needs a real Sentry project on a live
+deploy (the throwaway `gokick-e2e` env exists for exactly this). The fingerprint
+*logic* is unit-tested: `cmd/sentry_test.go` `TestCapture_WorkerFingerprintByKind`.
 
 ## What is NOT here (covered in-process — no deploy adds value)
 
@@ -33,11 +34,8 @@ fencing · checkpoint encode/decode · cancel signal · poison cap · per-attemp
 timeout · backpressure · tenant propagation. Those live in the Go suite (testfx,
 real SQLite + real worker goroutine).
 
-## Candidate follow-ups (same harness)
+## Remaining candidate (deferred)
 
-- **at-least-once after crash** — a fire-and-forget handler completes, the process
-  dies before the complete write → restart re-runs it (idempotency window).
-- **SIGTERM drain** — an in-flight run during a graceful stop drains or is cleanly
-  reclaimed; never lost, never double-completed.
-- **Sentry `run:<kind>` fingerprint** — a terminal failure surfaces one issue per
-  kind (observability; reuses the throwaway e2e Sentry project on a live deploy).
+- **Multi-process fencing** — two worker containers sharing one SQLite volume,
+  asserting a run is processed exactly once. Low priority: single-node SQLite;
+  split-deploy is a Postgres-era concern (see the roadmap).
