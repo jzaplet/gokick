@@ -108,7 +108,7 @@ func serveTestServer(logger *slog.Logger) *server.Server {
 		limiters,
 		extract,
 		handler.NewHealthHandler(),
-		nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil,
 	)
 }
 

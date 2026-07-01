@@ -111,7 +111,8 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	updatePlatformUserHandler := command4.NewUpdatePlatformUserHandler(userRepository, passwordHasher)
 	deletePlatformUserHandler := command4.NewDeletePlatformUserHandler(userRepository)
 	platformHandler := handler.NewPlatformHandler(queryBus, commandBus, getStatsHandler, listAllUsersHandler, listTenantsHandler, updatePlatformUserHandler, deletePlatformUserHandler)
-	serverServer := server.NewServer(configConfig, logger, reporter, jwtService, rateLimiters, ipExtractor, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler, platformHandler)
+	debugRunHandler := handler.NewDebugRunHandler(repository)
+	serverServer := server.NewServer(configConfig, logger, reporter, jwtService, rateLimiters, ipExtractor, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler, platformHandler, debugRunHandler)
 	v2 := provideSchedulerJobs(tokenRepository)
 	scheduler, err := provideScheduler(logger, v2)
 	if err != nil {
@@ -318,10 +319,18 @@ func provideScheduler(logger *slog.Logger, jobs []scheduler.Job) (*scheduler.Sch
 }
 
 // provideRunHandlerRegistry collects every kind → durable-run handler the binary
-// can process. Empty for now — agent handlers are registered here as they appear.
-// The default lease comes from config so an unset per-kind lease stays consistent.
+// can process. Real handlers are registered here as they appear. When APP_RUN_DEBUG
+// is on it also registers the e2e:* debug kinds (the crash-recovery / drain
+// harness) — never in production. The default lease comes from config so an unset
+// per-kind lease stays consistent.
 func provideRunHandlerRegistry(cfg *config.Config) (*run2.HandlerRegistry, error) {
-	return run2.NewHandlerRegistry(map[string]run2.Registration{}, cfg.RunWorkerLease)
+	kinds := map[string]run2.Registration{}
+	if cfg.RunDebug {
+		for kind, reg := range run2.E2EDebugRegistrations() {
+			kinds[kind] = reg
+		}
+	}
+	return run2.NewHandlerRegistry(kinds, cfg.RunWorkerLease)
 }
 
 // provideRunDispatcher returns the durable-run dispatcher as a domain interface so

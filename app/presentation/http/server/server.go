@@ -65,6 +65,7 @@ type Server struct {
 	adminUsers *handler.AdminUsersHandler
 	dashboard  *handler.DashboardHandler
 	platform   *handler.PlatformHandler
+	debugRun   *handler.DebugRunHandler
 }
 
 func NewServer(
@@ -81,6 +82,7 @@ func NewServer(
 	adminUsers *handler.AdminUsersHandler,
 	dashboard *handler.DashboardHandler,
 	platform *handler.PlatformHandler,
+	debugRun *handler.DebugRunHandler,
 ) *Server {
 	return &Server{
 		config:     config,
@@ -96,6 +98,7 @@ func NewServer(
 		adminUsers: adminUsers,
 		dashboard:  dashboard,
 		platform:   platform,
+		debugRun:   debugRun,
 	}
 }
 
@@ -112,6 +115,13 @@ func (s *Server) Start(ctx context.Context) error {
 		s.logger.Warn(
 			"sentry debug mode ENABLED — GET /debug/sentry panics on demand and " +
 				"the SPA exposes an error trigger; do NOT enable in production",
+		)
+	}
+
+	if s.config.RunDebug {
+		s.logger.Warn(
+			"run debug mode ENABLED — /debug/runs enqueues/cancels durable runs and the " +
+				"e2e:* test kinds are registered; do NOT enable in production",
 		)
 	}
 
@@ -191,6 +201,15 @@ func (s *Server) registerRoutes() *http.ServeMux {
 		mux.HandleFunc("GET /debug/sentry", func(_ http.ResponseWriter, _ *http.Request) {
 			panic("sentry debug: deliberate backend test panic (APP_SENTRY_DEBUG)")
 		})
+	}
+
+	// Durable-run debug triggers — registered only when APP_RUN_DEBUG is on, so a
+	// live/local deploy can enqueue, observe, and cancel the e2e:* run kinds and
+	// verify crash-recovery / drain. Bypasses the bus (test-only). Never in prod.
+	if s.config.RunDebug {
+		mux.HandleFunc("POST /debug/runs/{kind}", s.debugRun.Enqueue)
+		mux.HandleFunc("GET /debug/runs/{id}", s.debugRun.Get)
+		mux.HandleFunc("POST /debug/runs/{id}/cancel", s.debugRun.Cancel)
 	}
 
 	mux.Handle("POST /api/v1/auth/login", loginLimit(http.HandlerFunc(s.auth.Login)))
