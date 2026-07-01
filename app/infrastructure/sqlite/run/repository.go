@@ -1,5 +1,5 @@
-// Package run implements run.Repository on SQLite. It mirrors the job repo's
-// time discipline (julianday comparisons, ms-precision writes) and adds the
+// Package run implements run.Repository on SQLite. It uses the project's
+// julianday/ms-precision time discipline (julianday comparisons, ms-precision writes) and adds the
 // owner-token fencing the durable model needs: every mutating method is
 // owner-checked and returns whether it affected its one row, so a worker that
 // lost its lease cannot stomp a run another worker reclaimed.

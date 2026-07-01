@@ -44,7 +44,7 @@ func TenantIDFromContext(ctx context.Context) string {
 	return id
 }
 
-// RequireTenant resolves the tenant to stamp on a NEW tenant-owned row (a job, a
+// RequireTenant resolves the tenant to stamp on a NEW tenant-owned row (a
 // run, a user): a non-empty tenantID is kept; an empty one yields DefaultTenantID in
 // single-tenant mode but a FAIL-CLOSED error in multitenant mode — so a tenant-owned
 // row is never silently born in the default tenant just because it was created

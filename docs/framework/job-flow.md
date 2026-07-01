@@ -4,48 +4,77 @@ uri: '/framework/job-flow'
 position: 70
 slug: 'framework-job-flow'
 parent: 'framework'
-navTitle: 'Job flow'
-title: 'Job flow'
-description: 'Cesta perzistentního background jobu — zápis do fronty v transakci commandu (outbox), atomické převzetí workerem, retry s backoffem a at-least-once doručení.'
+navTitle: 'Fire-and-forget run'
+title: 'Fire-and-forget run flow'
+description: 'Fire-and-forget tvar durable enginu — krátká background práce, která se zařadí do fronty v transakci commandu (outbox), běží MIMO transakci a doručuje se at-least-once (handler musí být idempotentní). Fire-and-forget run je run bez checkpointu.'
 ---
 
-# Job flow
+# Fire-and-forget run
 
-Perzistentní fronta pro **krátkou práci nad vlastní databází**, která musí proběhnout i po pádu procesu. Job se zapíše do tabulky `jobs` **uvnitř transakce commandu** (outbox), worker si ho atomicky převezme, spustí handler a označí dokončení **ve stejné transakci**. Selhání se přeplánuje s backoffem, po vyčerpání pokusů job skončí terminálně.
+**Fire-and-forget run** je krátký, „udělej a zapomeň" tvar [durable enginu](/framework/run-flow): práce,
+která musí proběhnout i po pádu procesu, ale **nepotřebuje si pamatovat postup** (žádný
+checkpoint). Hodí se na **volání ven** (e-mail/SMTP, webhook, jedno volání cizího API) i na
+rychlý přepočet nad vlastní DB. Fire-and-forget run se zapíše do tabulky `runs` **uvnitř transakce commandu**
+(outbox), worker si ho atomicky převezme a spustí **mimo transakci**. Selhání se přeplánuje
+s backoffem, po vyčerpání pokusů run skončí terminálně.
 
-> ⚠️ **Pozor:** job handler běží **celý uvnitř transakce**, takže drží zámek na zápis databáze po celou dobu. **Nevolej v něm ven** (e-mail/SMTP, cizí API) — drželo by to zámek po dobu toho volání (SMTP visí, API i minuty) → zamrzne celá DB. Volání ven nebo dlouhá práce patří do **durable runu** ([Run flow](/framework/run-flow)). Viz [Background work](/framework/background-work).
+> ℹ️ Fire-and-forget run a [durable run](/framework/run-flow) jsou **jeden engine** (tabulka `runs`, jeden worker,
+> stejné lease/heartbeat). Liší se jen registrací: fire-and-forget run = `FireAndForget` (bez checkpointu),
+> durable run = `Durable` (checkpoint + resume). Fire-and-forget run je run bez deníku. Kdy co → [Background work](/framework/background-work).
 
-> Přehled toku. Návod (job kind, handler, retry policy) → `/gk-jobs`; periodické úlohy → `/gk-scheduler`.
+> ⚠️ **Pozor:** handler běží **MIMO transakci** (jako každý run) — i krátké volání ven v
+> transakci by drželo SQLite write-lock po dobu volání (SMTP visí, API i minuty) → zamrzne
+> celá DB. Atomicitu „práce + hotovo" tu nahrazuje **idempotence**: dokončení se zapisuje
+> **samostatně až po návratu handleru**, takže crash mezi tím handler na reclaimu zopakuje.
+
+> Přehled toku. Návod (run kind, handler, retry policy) → `/gk-runs`; periodické úlohy → `/gk-scheduler`.
 
 
 ## K čemu to je
 
-Když práce **musí přežít restart i pád procesu** a nesmí blokovat request. Zápis do fronty uvnitř transakce commandu (outbox pattern) dá záruku: job se neztratí (commit ho zviditelní) ani neosiří (rollback ho vrátí zpět). Cenou je doručení **at-least-once** — handler musí být idempotentní.
+Když práce **musí přežít restart i pád procesu**, nesmí blokovat request, ale **nepotřebuje
+resumovat** dosavadní postup (na to je [durable run](/framework/run-flow)). Zápis do fronty uvnitř
+transakce commandu (outbox pattern) dá záruku: run se neztratí (commit ho zviditelní) ani
+neosiří (rollback ho vrátí zpět). Cenou je doručení **at-least-once** — handler musí být
+idempotentní, a to **včetně svých DB zápisů** (mimo transakci už je žádný in-tx rollback
+neochrání).
 
 
 ## Jak to teče
 
-1. **Enqueue** — handler volá `JobDispatcher.Enqueue(kind, maxRetries, payload)`; INSERT proběhne přes `r.Conn(ctx)`, takže se připojí ke **stejné transakci** jako business zápis.
-2. **Commit** → job je viditelný pro worker. **Rollback** → žádný osiřelý job.
-3. **Claim** — worker se každou `1s` ptá fronty a atomicky si převezme (claim) job, který je na řadě, jediným `UPDATE … RETURNING` (`attempts++`, `locked_until = now + 5m`). Dva workery nedostanou stejný řádek.
-4. **Execution** — `runWithinTx`: handler dostane payload a při úspěchu `MarkComplete` **ve stejné transakci** → `COMMIT` (zápisy do DB i dokončení jobu atomicky).
-5. **Retry** — chyba nebo panika → rollback. `attempts ≤ maxRetries` → `Reschedule` s exponenciálním backoffem (`2^(n-1)·5s`, cap `1h`); jinak `MarkFailed` + **report do Sentry**.
+1. **Enqueue** — handler volá `RunDispatcher.Enqueue(kind, maxRetries, payload)`; INSERT
+   proběhne přes `r.Conn(ctx)`, takže se připojí ke **stejné transakci** jako business zápis.
+2. **Commit** → run je viditelný pro worker. **Rollback** → žádný osiřelý run.
+3. **Claim** — worker se každou chvíli ptá fronty a atomicky si převezme (claim) run, který
+   je na řadě, jediným `UPDATE … RETURNING` (`attempts++`, nastaví lease). Dva workery
+   nedostanou stejný řádek.
+4. **Execution** — handler dostane payload a běží **MIMO transakci** (worker mu ctx označí
+   `ContextForbidTx`, takže `BeginTx` fail-closed selže). Při úspěchu worker zapíše
+   `MarkComplete` **samostatným zápisem** po návratu handleru.
+5. **Retry** — chyba nebo panika → `attempts ≤ maxRetries` → `Reschedule` s exponenciálním
+   backoffem; jinak `MarkFailed` + **report do Sentry**.
 
-Stav se odvozuje ze sloupců (`completed_at` / `failed_at` / `locked_until`), žádný `status` enum tu není.
+Stav se odvozuje ze sloupců (`completed_at` / `failed_at` / `locked_until`), žádný `status`
+enum tu není.
 
 
 ## Příklad
 
 ```go
+// registrace (provideRunHandlerRegistry, DI) — fire-and-forget run = FireAndForget, bez checkpointu:
+"welcome:send": runapp.FireAndForget(h.SendWelcome, 30*time.Second),
+
 // z command (nebo event) handleru:
-shared.JobDispatcherFromContext(ctx).Enqueue(ctx, kind, maxRetries, payload)
+shared.RunDispatcherFromContext(ctx).Enqueue(ctx, "welcome:send", maxRetries, payload)
 ```
 
-Neznámý `kind` (bez registrovaného handleru) i `maxRetries < 0` selžou už při zařazení do fronty. Mimo bus (CLI, testy) je dispatcher no-op, takže volání je vždy bezpečné.
+Neznámý `kind` (bez registrovaného handleru) i `maxRetries < 0` selžou už při zařazení do
+fronty. Mimo bus (CLI, testy) je dispatcher no-op, takže volání je vždy bezpečné.
 
 
 ## Související
 
+- [Run flow](/framework/run-flow) — durable tvar téhož enginu (checkpoint + resume po pádu).
 - [Command flow](/framework/command-flow) — transakce, ke které se zařazení do fronty připojí.
 - [Event flow](/framework/event-flow) — odkud se často zařazuje navazující práce.
-- Skilly: `/gk-jobs`, `/gk-scheduler`, `/gk-di`.
+- Skilly: `/gk-runs`, `/gk-scheduler`, `/gk-di`.

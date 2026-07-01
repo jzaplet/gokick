@@ -106,7 +106,7 @@ func TestIsSensitiveLogKey(t *testing.T) {
 		"url",
 		"user_id",
 		"trace_id",
-		"job_kind",
+		"run_kind",
 		"slot",
 		"status",
 		"duration_ms",

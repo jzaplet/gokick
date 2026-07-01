@@ -46,8 +46,8 @@ Root command `app` (`root.go`) registruje čtyři subcommandy:
 
 | Příkaz | Co dělá |
 |---|---|
-| `serve` | HTTP server **+** in-process scheduler **+** job worker v jednom procesu (`serve.go`: `scheduler.Run` a `worker.Run` jako goroutiny, sdílí jeden `ctx` ze signal handleru → SIGTERM nechá vše korektně dobíhat) |
-| `worker` | Jen perzistentní job worker, bez HTTP a scheduleru (`worker.go`) — pro škálování workeru zvlášť (1 serve replika + N worker replik) |
+| `serve` | HTTP server **+** in-process scheduler **+** durable-task worker v jednom procesu (`serve.go`: `scheduler.Run` a `worker.Run` jako goroutiny, sdílí jeden `ctx` ze signal handleru → SIGTERM nechá vše korektně dobíhat) |
+| `worker` | Jen perzistentní durable-task worker, bez HTTP a scheduleru (`run_worker.go`) — pro škálování workeru zvlášť (1 serve replika + N worker replik) |
 | `seed` | Vytvoří admin účet (heslo z `APP_SEED_ADMIN_PASSWORD`), pokud ještě není |
 | `create-user` | Vytvoří uživatele (`-n` nickname, `-p` heslo, `-e` email, `-r` role); jede přes `SystemCommandBus` (transakce + audit) |
 
@@ -99,5 +99,5 @@ Jedno číslo verze teče do binárky i do SPA, aby Sentry grupoval chyby podle 
 
 ## Related
 
-- Skills: `/gk-init` (lokální build & rozjetí), `/gk-migrations` (embedované + auto-apply migrace), `/gk-config` (`APP_HTTP_PORT`, `APP_DB_PATH`, `APP_COOKIE_SECURE`, `APP_JWT_SECRET`, `APP_SENTRY_*`), `/gk-jobs` + `/gk-scheduler` (co `serve` / `worker` co-spouští), `/gk-sentry` (co se reportuje a jak verze grupuje chyby)
+- Skills: `/gk-init` (lokální build & rozjetí), `/gk-migrations` (embedované + auto-apply migrace), `/gk-config` (`APP_HTTP_PORT`, `APP_DB_PATH`, `APP_COOKIE_SECURE`, `APP_JWT_SECRET`, `APP_SENTRY_*`), `/gk-runs` + `/gk-scheduler` (co `serve` / `worker` co-spouští), `/gk-sentry` (co se reportuje a jak verze grupuje chyby)
 - Kód: `docker/production/Dockerfile`, `.github/workflows/release.yml`, `.github/workflows/validate.yml`, `Makefile`, `cmd/version.go`, `app/presentation/console/`, `public/embed.go`, `migrations/embed.go`

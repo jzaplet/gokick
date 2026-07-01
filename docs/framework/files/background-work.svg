@@ -1,52 +1,50 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 500" font-family="-apple-system, Segoe UI, Roboto, sans-serif">
   <rect width="880" height="500" fill="#ffffff"/>
   <text x="24" y="34" font-size="20" font-weight="700" fill="#0f172a">Co kdy použít na práci „na pozadí"</text>
-  <text x="24" y="56" font-size="13" fill="#64748b">vyber podle dvou otázek: běží to hned v requestu, nebo zvlášť? · a smí to běžet v transakci?</text>
+  <text x="24" y="56" font-size="13" fill="#64748b">dvě otázky: hned v requestu, nebo zvlášť na pozadí? · a (na pozadí) pokračovat po pádu od posledního kroku?</text>
 
-  <!-- Axis labels -->
+  <!-- Column headers -->
   <text x="300" y="92" font-size="13" font-weight="700" fill="#334155" text-anchor="middle">HNED V REQUESTU</text>
-  <text x="650" y="92" font-size="13" font-weight="700" fill="#334155" text-anchor="middle">ZVLÁŠŤ NA POZADÍ</text>
-  <text x="34" y="200" font-size="12.5" font-weight="700" fill="#065f46" transform="rotate(-90 34 200)" text-anchor="middle">SMÍ V TRANSAKCI</text>
-  <text x="34" y="372" font-size="12.5" font-weight="700" fill="#b45309" transform="rotate(-90 34 372)" text-anchor="middle">BEZ TRANSAKCE</text>
+  <text x="660" y="92" font-size="13" font-weight="700" fill="#b45309" text-anchor="middle">ZVLÁŠŤ NA POZADÍ · VŠE MIMO TRANSAKCI</text>
 
-  <line x1="118" y1="108" x2="118" y2="452" stroke="#e2e8f0" stroke-width="1.5"/>
   <line x1="476" y1="108" x2="476" y2="452" stroke="#cbd5e1" stroke-width="1.5"/>
-  <line x1="118" y1="282" x2="856" y2="282" stroke="#cbd5e1" stroke-width="1.5"/>
+  <line x1="118" y1="282" x2="476" y2="282" stroke="#cbd5e1" stroke-width="1.5"/>
 
-  <!-- Command -->
+  <!-- Command (request, v transakci) -->
   <rect x="138" y="124" width="316" height="140" rx="12" fill="#ecfdf5" stroke="#10b981" stroke-width="1.5"/>
   <text x="158" y="150" font-size="15" font-weight="700" fill="#065f46">Command</text>
   <text x="158" y="174" font-size="12" fill="#047857">ulož/uprav/smaž data — vše naráz, nebo nic</text>
   <text x="158" y="194" font-size="12" fill="#047857">(když něco selže, vrátí se i ten zbytek)</text>
-  <text x="158" y="226" font-size="11.5" fill="#059669">to běžné „udělej akci" z tlačítka ve formuláři</text>
-  <text x="158" y="250" font-size="10.5" fill="#10b981">drží request, dokud nedoběhne</text>
+  <text x="158" y="226" font-size="11.5" fill="#059669">běžné „udělej akci" z tlačítka ve formuláři</text>
+  <text x="158" y="250" font-size="10.5" fill="#10b981">jediný běží V TRANSAKCI · drží request do konce</text>
 
-  <!-- Job -->
-  <rect x="498" y="124" width="358" height="140" rx="12" fill="#ecfdf5" stroke="#10b981" stroke-width="1.5"/>
-  <text x="518" y="150" font-size="15" font-weight="700" fill="#065f46">Job</text>
-  <text x="518" y="174" font-size="12" fill="#047857">KRÁTKÁ práce JEN nad vlastní databází</text>
-  <text x="518" y="194" font-size="12" fill="#047857">přepočítat agregaci, kaskádní update</text>
-  <text x="518" y="226" font-size="11.5" fill="#059669">přežije i restart/pád · sám to zkusí znovu</text>
-  <text x="518" y="250" font-size="10.5" fill="#dc2626">pozor: NIC ven (mail/API) — drželo by zámek → to je run</text>
-
-  <!-- Event -->
+  <!-- Event (request, po commitu) -->
   <rect x="138" y="300" width="316" height="140" rx="12" fill="#fffbeb" stroke="#f59e0b" stroke-width="1.5"/>
   <text x="158" y="326" font-size="15" font-weight="700" fill="#92400e">Doménový event</text>
   <text x="158" y="350" font-size="12" fill="#b45309">„něco se stalo" → ať na to někdo zareaguje,</text>
   <text x="158" y="368" font-size="12" fill="#b45309">aniž to ten command musí vědět</text>
-  <text x="158" y="398" font-size="11.5" fill="#d97706">spustí se až po uložení dat, hned v requestu</text>
-  <text x="158" y="422" font-size="10.5" fill="#f59e0b">když je pomalý, brzdí odpověď → radši zařaď job</text>
+  <text x="158" y="398" font-size="11.5" fill="#d97706">po uložení dat (po commitu), mimo transakci</text>
+  <text x="158" y="422" font-size="10.5" fill="#f59e0b">pomalý event brzdí odpověď → radši zařaď run</text>
 
-  <!-- Run -->
-  <rect x="498" y="300" width="358" height="86" rx="12" fill="#fef2f2" stroke="#ef4444" stroke-width="2"/>
-  <text x="518" y="326" font-size="15" font-weight="700" fill="#b91c1c">Durable run</text>
-  <text x="518" y="348" font-size="12" fill="#dc2626">volání ven (e-mail, API, webhook) NEBO dlouhá práce (import, report)</text>
-  <text x="518" y="368" font-size="11" fill="#ef4444">běží mimo transakci → nezamkne DB · po pádu pokračuje (framework to hlídá)</text>
+  <!-- Fire-and-forget run (pozadí, fire-and-forget, mimo tx) -->
+  <rect x="498" y="124" width="358" height="96" rx="12" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="518" y="150" font-size="15" font-weight="700" fill="#1e40af">Fire-and-forget run <tspan font-size="11" font-weight="400" fill="#3b82f6">(FireAndForget — bez checkpointu)</tspan></text>
+  <text x="518" y="174" font-size="12" fill="#1d4ed8">krátká práce: mail/API/webhook, přepočet</text>
+  <text x="518" y="192" font-size="11" fill="#2563eb">mimo transakci · sám to zkusí znovu (backoff)</text>
+  <text x="518" y="210" font-size="10.5" fill="#dc2626">at-least-once → musí být idempotentní</text>
+
+  <!-- Run (pozadí, dlouhé, checkpoint, mimo tx) -->
+  <rect x="498" y="232" width="358" height="110" rx="12" fill="#fef2f2" stroke="#ef4444" stroke-width="2"/>
+  <text x="518" y="258" font-size="15" font-weight="700" fill="#b91c1c">Durable run <tspan font-size="11" font-weight="400" fill="#ef4444">(Durable — checkpoint)</tspan></text>
+  <text x="518" y="280" font-size="12" fill="#dc2626">dlouhá práce (import, report)</text>
+  <text x="518" y="298" font-size="11" fill="#ef4444">po pádu pokračuje od posledního kroku</text>
+  <text x="518" y="316" font-size="11" fill="#ef4444">mimo transakci → nezamkne DB · framework to hlídá</text>
 
   <!-- Scheduler -->
-  <rect x="498" y="396" width="358" height="44" rx="12" fill="#fffbeb" stroke="#f59e0b" stroke-width="1.5"/>
-  <text x="518" y="418" font-size="14" font-weight="700" fill="#92400e">Scheduler</text>
-  <text x="518" y="434" font-size="11" fill="#b45309">opakovaně po čase (úklid) · velkou práci → zařaď job/run</text>
+  <rect x="498" y="354" width="358" height="86" rx="12" fill="#fffbeb" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="518" y="380" font-size="14" font-weight="700" fill="#92400e">Scheduler</text>
+  <text x="518" y="402" font-size="11" fill="#b45309">opakovaně po čase (úklid) · velkou práci → run</text>
+  <text x="518" y="424" font-size="10.5" fill="#f59e0b">in-memory, bez retry — nepřežije pád procesu</text>
 
-  <text x="24" y="480" font-size="11.5" fill="#64748b">Jednoduše: Command/Job v transakci SMÍ (jsou krátké). Durable run NESMÍ (je dlouhý) — to za tebe hlídá framework.</text>
+  <text x="24" y="480" font-size="11.5" fill="#64748b">Jednoduše: jen Command běží v transakci; run i scheduler mimo ni. Fire-and-forget vs durable run = potřebuje po pádu pokračovat od posledního kroku?</text>
 </svg>

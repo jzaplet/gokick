@@ -53,9 +53,9 @@ wire_gen.go             # vygenerovaný kód (//go:build !wireinject) — NIKDY 
    wire.Bind(new(shared.AuditLogger), new(*sqliteaudit.Repository))
    ```
 
-**Registry-style providery (single source of truth):** některé `provideX` vrací seznam, který je jediným místem registrace dané věci — `providePermissionsRegistry` (seznam command/query s permission), `provideSchedulerJobs` (periodické úlohy), `provideEventHandlers` a `provideJobHandlerRegistry`. Nový záznam přidáš sem, zbytek grafu zůstane beze změny.
+**Registry-style providery (single source of truth):** některé `provideX` vrací seznam, který je jediným místem registrace dané věci — `providePermissionsRegistry` (seznam command/query s permission), `provideSchedulerJobs` (periodické úlohy), `provideEventHandlers` a `provideRunHandlerRegistry`. Nový záznam přidáš sem, zbytek grafu zůstane beze změny.
 
-> Pozn.: `provideEventHandlers` má dnes jen zakomentovaný příklad a `provideJobHandlerRegistry` vrací **prázdnou mapu** — jsou to zatím **prázdné registry** připravené na budoucí handlery, ne hotová funkcionalita.
+> Pozn.: `provideEventHandlers` má dnes jen zakomentovaný příklad a `provideRunHandlerRegistry` vrací **prázdnou mapu** — jsou to zatím **prázdné registry** připravené na budoucí handlery, ne hotová funkcionalita.
 
 ## Recipe
 

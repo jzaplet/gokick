@@ -40,8 +40,7 @@ var tenantOwnedTables = map[string]bool{
 var exemptTables = map[string]bool{
 	"refresh_tokens":   true, // keyed by token hash (a secret); refresh runs without an access token.
 	"audit_log":        true, // control-plane, raw pool, records pre-auth events.
-	"jobs":             true, // ClaimDue is a global drain; the tenant rides on the row, not the claim.
-	"runs":             true, // durable runs: same global-drain claim; tenant rides on the row, not the claim.
+	"runs":             true, // durable tasks: ClaimDue is a global drain; tenant rides on the row, not the claim.
 	"tenants":          true, // the tenant registry itself.
 	"sqlite_master":    true, // SQLite internals.
 	"sqlite_sequence":  true,
@@ -202,7 +201,7 @@ func TestTenantConformance_FileScanExtractsSQL(t *testing.T) {
 // tenant_id column — it says nothing about whether the *value* stamped there is
 // the right tenant. This gate closes that: a repository function whose INSERT
 // stamps a tenant_id column must also call a write-side tenant guard —
-// shared.RequireTenant (born-scoped queues: job, run) or shared.AssertTenantScope
+// shared.RequireTenant (born-scoped queues: run) or shared.AssertTenantScope
 // (caller-supplied tenant: user.Save) — so the stamped tenant is validated, not
 // taken on faith.
 //
@@ -214,7 +213,7 @@ func TestTenantConformance_FileScanExtractsSQL(t *testing.T) {
 //   - For tenant-OWNED tables (users) it is airtight: the query gate already
 //     forces every query to name tenant_id, so an INSERT that stamps it cannot
 //     avoid this gate.
-//   - For read-EXEMPT-but-stamping tables (jobs, runs) it rests on the NamedExec
+//   - For read-EXEMPT-but-stamping tables (runs) it rests on the NamedExec
 //     idiom of naming every column. A positional INSERT, or one that omits
 //     tenant_id to lean on the column DEFAULT, names no tenant_id and escapes both
 //     gates (the row then silently defaults to the default tenant). Don't write

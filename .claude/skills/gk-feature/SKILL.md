@@ -24,7 +24,7 @@ nevypadlo — od entity v doméně až po zaregistrovanou HTTP routu a `make di`
   detailnější skills: `/gk-domain` (entita, value objects), `/gk-bus`
   (command/query/permission), `/gk-handlers` (HTTP vrstva), `/gk-config`
   (Wire DI). Sem chodíš pro pořadí kroků a aby ti nic neuteklo.
-- NEtýká se to periodické práce na pozadí (`/gk-scheduler`, `/gk-jobs`) ani
+- NEtýká se to periodické práce na pozadí (`/gk-scheduler`, `/gk-runs`) ani
   čistě frontendové změny.
 
 ## For non-tech / juniors

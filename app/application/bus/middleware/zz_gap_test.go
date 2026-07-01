@@ -190,7 +190,7 @@ func TestAuditMiddleware_FillsRecordIDAndCreatedAt(t *testing.T) {
 
 	before := time.Now()
 	handler := func(ctx context.Context) (any, error) {
-		// Handler supplies ONLY the action; id/created_at are the middleware's job.
+		// Handler supplies ONLY the action; id/created_at are the middleware's responsibility.
 		shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{Action: "user.created"})
 		return nil, nil
 	}

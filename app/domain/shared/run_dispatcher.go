@@ -1,9 +1,12 @@
 package shared
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // RunDispatcher enqueues a durable run from inside a command/event handler — the
-// long-running sibling of JobDispatcher (ADR-0001). The run's HANDLER executes
+// long-running primitive. The run's HANDLER executes
 // outside a transaction, but Enqueue itself honors Conn(ctx): called from a
 // CommandBus handler (inside a tx) the INSERT joins that transaction, so the
 // business write and the run enqueue commit atomically.
@@ -19,6 +22,17 @@ type RunDispatcher interface {
 		payload any,
 		opts ...EnqueueOption,
 	) error
+}
+
+// EnqueueOptions / WithDelay tune an enqueue. Delay 0 = run as soon as possible.
+type EnqueueOptions struct {
+	Delay time.Duration
+}
+
+type EnqueueOption func(*EnqueueOptions)
+
+func WithDelay(d time.Duration) EnqueueOption {
+	return func(o *EnqueueOptions) { o.Delay = d }
 }
 
 type runDispatcherKeyType struct{}

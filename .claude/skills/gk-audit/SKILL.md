@@ -69,9 +69,9 @@ necommituje spolu s business transakcí a přežije její rollback. Schema:
 
 **Pozice v chainu (klíčová)** — audit leží **vně** transakce:
 ```
-Recovery → Logging → Authorize → Audit → JobDispatcher → DispatchEvents → Transaction → handler
-                                 ^^^^^                                     ^^^^^^^^^^^
-                                 audit zde, tx vně → rollback audit nesmaže
+Recovery → Logging → Authorize → Tenant → Audit → RunDispatcher → DispatchEvents → Transaction → handler
+                                          ^^^^^                                     ^^^^^^^^^^^
+                                          audit zde, tx vně → rollback audit nesmaže
 ```
 Ověř v `app/infrastructure/di/container_provider.go` (build) a generated `wire_gen.go`.
 

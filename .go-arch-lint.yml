@@ -47,7 +47,7 @@ excludeFiles:
   - domain/zz_bornscoped_test.go
 
 # Only shared/ is common (AuthClaims, errors, ports). The bounded contexts
-# (user/token/job) are NOT common, so importing one from another is a
+# (user/token/run) are NOT common, so importing one from another is a
 # component-rule violation — this is what enforces "no cross-context imports".
 commonComponents:
   - domain_shared
@@ -66,8 +66,6 @@ components:
     in: domain/user/**
   domain_token:
     in: domain/token/**
-  domain_job:
-    in: domain/job/**
   domain_tenant:
     in: domain/tenant/**
   domain_run:
@@ -97,7 +95,6 @@ components:
   sqlite_repos:
     in:
       - infrastructure/sqlite/audit/**
-      - infrastructure/sqlite/job/**
       - infrastructure/sqlite/run/**
       - infrastructure/sqlite/tenant/**
       - infrastructure/sqlite/token/**
@@ -142,8 +139,6 @@ deps:
     anyVendorDeps: true
   domain_token:
     anyVendorDeps: true
-  domain_job:
-    anyVendorDeps: true
   domain_tenant:
     anyVendorDeps: true
   domain_run:
@@ -160,7 +155,6 @@ deps:
       - testfx
       - domain_user
       - domain_token
-      - domain_job
       - domain_tenant
       - domain_run
     anyVendorDeps: true
@@ -178,7 +172,6 @@ deps:
       - sqlite_repos
       - domain_user
       - domain_token
-      - domain_job
       - domain_tenant
       - domain_run
     anyVendorDeps: true
@@ -202,7 +195,6 @@ deps:
       - testfx
       - domain_user
       - domain_token
-      - domain_job
       - domain_tenant
       - domain_run
   sqlite_seeder:
@@ -218,7 +210,6 @@ deps:
       - application
       - testfx
       - domain_user
-      - domain_job
       - domain_run
     anyVendorDeps: true
 

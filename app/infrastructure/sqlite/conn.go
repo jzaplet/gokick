@@ -14,7 +14,7 @@ import (
 // Go's time.Now() by up to ~1 ms, so a time written at µs precision can lose the
 // julianday(col) <= julianday('now') race and a freshly-enqueued row be missed.
 // Truncating to ms removes it; reads round-trip the exact same ms value. Shared by
-// every repo that writes Go-sourced times (job, run) so the time discipline cannot
+// every repo that writes Go-sourced times (run) so the time discipline cannot
 // drift between queues — see /gk-repositories.
 func MsPrecisionUTC(t time.Time) time.Time {
 	return t.UTC().Truncate(time.Millisecond)

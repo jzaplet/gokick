@@ -1,7 +1,7 @@
 package domain_test
 
 // This file lives in app/domain/, which has no production package of its own —
-// it is the parent of the bounded-context packages (shared, user, token, job).
+// it is the parent of the bounded-context packages (shared, user, token, run, tenant).
 // The test below parses every non-test .go file under this directory and pins
 // the documented architecture promise (overview-39 / layers.md § Dependency
 // matrix, .go-arch-lint.yml): the domain layer may depend ONLY on the standard

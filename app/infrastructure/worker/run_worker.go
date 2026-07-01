@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"runtime/debug"
@@ -16,11 +17,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// Run-worker-local log keys (logKeyKinds/logKeyPanic/logKeyStack are shared with
-// the job worker in this package).
+// Run-worker-local log keys (logKeyKinds/logKeyPanic/logKeyStack live in common.go).
 const (
 	logKeyRunID       = "run_id"
-	logKeyRunKind     = "run_kind"
 	logKeyOwner       = "owner"
 	logKeyReclaims    = "reclaims"
 	logKeyMaxInflight = "max_in_flight"
@@ -38,13 +37,13 @@ const maxHeartbeatErrors = 3
 // long run that a binary WITH the handler could still resume.
 const minUnknownKindParks = 5
 
-// cancelGraceLeaseMultiple bounds, as a multiple of the lease, how long the
-// heartbeat keeps renewing for a cancelled run whose handler has not yet returned.
-// A ctx-aware handler returns promptly on cancel and never reaches this; the bound
-// only fires for a handler that ignores ctx cancellation (a contract violation) —
-// past it the worker abandons, the lease lapses, and reclaim + the poison-reclaim
-// cap terminate the run instead of renewing it forever.
-const cancelGraceLeaseMultiple = 4
+// winddownGraceLeaseMultiple bounds, as a multiple of the lease, how long the heartbeat
+// keeps renewing for a run whose handler should have stopped but hasn't — cancelled, or
+// past its per-attempt timeout. A ctx-aware handler returns promptly and never reaches
+// this; the bound only fires for a handler that IGNORES ctx (a contract violation) —
+// past it the worker abandons, the lease lapses, and reclaim + the poison-reclaim cap
+// terminate the run instead of renewing it forever.
+const winddownGraceLeaseMultiple = 4
 
 // RunWorkerConfig tunes the durable run worker. Zero fields take safe defaults.
 type RunWorkerConfig struct {
@@ -82,7 +81,7 @@ func (c RunWorkerConfig) withDefaults() RunWorkerConfig {
 	return c
 }
 
-// RunWorker executes durable runs OUTSIDE a transaction (ADR-0001): it claims a
+// RunWorker executes durable runs OUTSIDE a transaction: it claims a
 // run with a per-claim owner nonce, runs the registered handler in a goroutine
 // while a heartbeat renews the lease, and on worker death the lease lapses so
 // another worker reclaims and resumes from the last checkpoint.
@@ -92,16 +91,13 @@ type RunWorker struct {
 	reporter shared.ErrorReporter
 	repo     run.Repository
 	registry *runapp.HandlerRegistry
-	// Dispatchers a run handler may use for transactional side-work: a run handler
-	// runs OUTSIDE a tx (ContextForbidTx), so it persists progress via the
-	// Checkpointer and offloads anything that needs a transaction by enqueuing a
-	// short job or a child run. The worker bypasses the bus, so it injects these
-	// into the handler ctx itself (mirroring the job worker) — otherwise
-	// shared.*DispatcherFromContext would return the silent no-op and drop the
-	// enqueue. Either may be nil (a worker built without dispatchers); the inject
-	// then falls through to the no-op, same as before.
-	jobDispatcher shared.JobDispatcher
+	// Capabilities the worker injects into the handler ctx (it bypasses the bus, where
+	// these are normally injected): runDispatcher lets a handler enqueue a child task;
+	// transactor backs shared.WithTx so a handler can make a few writes atomically in a
+	// SHORT transaction it scopes itself. Both may be nil (a worker built without them);
+	// the handler-side helpers then fall through to a no-op / an error.
 	runDispatcher shared.RunDispatcher
+	transactor    shared.Transactor
 	cfg           RunWorkerConfig
 }
 
@@ -110,8 +106,8 @@ func NewRunWorker(
 	reporter shared.ErrorReporter,
 	repo run.Repository,
 	registry *runapp.HandlerRegistry,
-	jobDispatcher shared.JobDispatcher,
 	runDispatcher shared.RunDispatcher,
+	transactor shared.Transactor,
 	cfg RunWorkerConfig,
 ) *RunWorker {
 	return &RunWorker{
@@ -120,8 +116,8 @@ func NewRunWorker(
 		reporter:      reporter,
 		repo:          repo,
 		registry:      registry,
-		jobDispatcher: jobDispatcher,
 		runDispatcher: runDispatcher,
+		transactor:    transactor,
 		cfg:           cfg.withDefaults(),
 	}
 }
@@ -212,14 +208,17 @@ func (w *RunWorker) drain(wg *sync.WaitGroup) {
 // anywhere (not just the handler) from crashing the pool; on panic the run is
 // abandoned (no finalize) and left for lease-lapse reclaim.
 func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string) {
-	log := w.logger.With(logKeyRunID, r.ID, logKeyRunKind, r.Kind, logKeyOwner, owner)
+	// Per-run reporting scope so a terminal-failure Capture carries the run's log lines
+	// as breadcrumbs (as the bus/HTTP RecoveryMiddleware does per request).
+	workerCtx = w.reporter.WithRequestScope(workerCtx)
+	log := w.logger.With(logKeyRunID, r.ID, shared.LogKeyRunKind, r.Kind, logKeyOwner, owner)
 	defer func() {
 		if rec := recover(); rec != nil {
 			log.LogAttrs(workerCtx, slog.LevelError, "run worker: process panicked",
 				slog.Any(logKeyPanic, rec), slog.String(logKeyStack, string(debug.Stack())))
 			w.reporter.Capture(workerCtx,
 				&shared.PanicError{Value: rec, Message: fmt.Sprintf("run process panic: %v", rec)},
-				slog.String(logKeyRunID, r.ID), slog.String(logKeyRunKind, r.Kind))
+				slog.String(logKeyRunID, r.ID), slog.String(shared.LogKeyRunKind, r.Kind))
 		}
 	}()
 
@@ -239,7 +238,7 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 		return
 	}
 
-	handler, kindLease, known := w.registry.Lookup(r.Kind)
+	handler, kindLease, kindTimeout, known := w.registry.Lookup(r.Kind)
 	if !known {
 		w.handleUnknownKind(workerCtx, log, r, owner)
 		return
@@ -265,16 +264,22 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 	// mark the ctx no-transaction: a durable run runs OUTSIDE a tx, so an accidental
 	// BeginTx in the handler must fail closed, not freeze the DB (shared.ContextForbidTx).
 	runCtx := shared.ContextForbidTx(shared.ContextWithTenantID(workerCtx, r.TenantID))
-	// Inject the dispatchers the handler needs for transactional side-work (enqueue a
-	// short job or a child run). The worker bypasses the bus, so without this
-	// shared.*DispatcherFromContext would return the silent no-op and drop the
-	// enqueue. Skip a nil dispatcher so the ctx falls through to the no-op cleanly.
-	if w.jobDispatcher != nil {
-		runCtx = shared.ContextWithJobDispatcher(runCtx, w.jobDispatcher)
-	}
+	// Inject the capabilities the handler can use (the worker bypasses the bus, where
+	// these are normally injected): a RunDispatcher to enqueue a child task, and a
+	// Transactor backing shared.WithTx for short atomic writes the handler scopes
+	// itself. Skip a nil one so the ctx falls through cleanly (no-op enqueue / WithTx
+	// returns ErrTxUnavailable).
 	if w.runDispatcher != nil {
 		runCtx = shared.ContextWithRunDispatcher(runCtx, w.runDispatcher)
 	}
+	if w.transactor != nil {
+		runCtx = shared.ContextWithTransactor(runCtx, w.transactor)
+	}
+	// A run handler has no event collector (the bus installs one per request; the worker
+	// bypasses the bus). Install the forbidden-marker collector so a handler that calls
+	// Collect fails LOUD instead of silently dropping the event — domain events belong to
+	// the command/bus path, not a run handler.
+	runCtx = shared.ContextWithoutEventCollector(runCtx)
 
 	handlerCtx, cancelHandler := context.WithCancel(runCtx)
 	defer cancelHandler()
@@ -283,6 +288,17 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 	// heartbeat must keep renewing while a cancelled handler winds down.
 	hbCtx, cancelHeartbeat := context.WithCancel(runCtx)
 	defer cancelHeartbeat()
+
+	// Per-attempt timeout (0 = none): execCtx is a child of handlerCtx, so a deadline OR
+	// a lease-loss/cancel (cancelHandler) both stop the handler. The heartbeat is given
+	// execCtx too, so a blown deadline a NON-ctx-aware handler ignores still engages the
+	// winddown bound (abandon for reclaim) instead of renewing the lease forever.
+	execCtx := handlerCtx
+	if kindTimeout > 0 {
+		var cancelTimeout context.CancelFunc
+		execCtx, cancelTimeout = context.WithTimeout(handlerCtx, kindTimeout)
+		defer cancelTimeout()
+	}
 
 	var abandon, cancelled atomic.Bool
 	hbDone := make(chan struct{})
@@ -306,7 +322,7 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 				cancelHandler()
 			}
 		}()
-		w.heartbeat(hbCtx, r.ID, owner, kindLease, cancelHandler, &abandon, &cancelled)
+		w.heartbeat(hbCtx, r.ID, owner, kindLease, execCtx, cancelHandler, &abandon, &cancelled)
 	}()
 
 	// Honor a cancel already requested at claim time (immutable claimed-row value;
@@ -317,10 +333,15 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 	}
 
 	start := time.Now()
-	hErr := w.runHandler(handlerCtx, r, owner, kindLease, handler)
+	hErr := w.runHandler(execCtx, r, owner, kindLease, handler)
 
 	cancelHeartbeat() // stop the heartbeat
 	<-hbDone          // JOIN: establishes happens-before before reading the atomics
+
+	// A fired deadline (not merely a propagated cancel/abandon) means the attempt timed
+	// out. finalize ranks abandon/shutdown/cancelled above it, so this only decides an
+	// otherwise-healthy over-running attempt.
+	timedOut := kindTimeout > 0 && errors.Is(execCtx.Err(), context.DeadlineExceeded)
 
 	w.finalize(
 		workerCtx,
@@ -330,6 +351,7 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 		hErr,
 		abandon.Load(),
 		cancelled.Load(),
+		timedOut,
 		time.Since(start),
 	)
 }
@@ -357,14 +379,16 @@ func (w *RunWorker) runHandler(
 // heartbeat renews the lease until ctx is cancelled (shutdown or main's stop). On
 // a lost or untrustworthy lease it sets abandon + cancels the handler and exits;
 // on an observed cancel it sets cancelled + cancels the handler but KEEPS renewing
-// so the lease holds while the handler winds down — bounded by a grace deadline so
-// a handler that ignores ctx cannot pin the lease forever (it is then abandoned for
-// reclaim). The cancel signal rides back on the renew write itself (RETURNING
-// cancel_requested), so there is no separate poll.
+// so the lease holds while the handler winds down. The winddown — for a cancelled
+// handler OR one past its per-attempt deadline (execCtx) — is bounded by a grace
+// deadline so a handler that ignores ctx cannot pin the lease forever (it is then
+// abandoned for reclaim). The cancel signal rides back on the renew write itself
+// (RETURNING cancel_requested), so there is no separate poll.
 func (w *RunWorker) heartbeat(
 	ctx context.Context,
 	id, owner string,
 	lease time.Duration,
+	execCtx context.Context,
 	cancelHandler context.CancelFunc,
 	abandon, cancelled *atomic.Bool,
 ) {
@@ -386,10 +410,11 @@ func (w *RunWorker) heartbeat(
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	errs := 0
-	// cancelDeadline bounds the post-cancel winddown for a handler that ignores ctx:
-	// zero until a cancel is observed, then now + grace. It is a LOCAL safety timer
-	// (single goroutine), not a lease decision — those stay DB-clock sourced.
-	var cancelDeadline time.Time
+	// graceDeadline bounds the winddown for a handler that ignores ctx (cancelled, or
+	// past its per-attempt deadline): zero until winddown begins, then now + grace. It
+	// is a LOCAL safety timer (single goroutine), not a lease decision — those stay
+	// DB-clock sourced.
+	var graceDeadline time.Time
 
 	for {
 		select {
@@ -428,17 +453,19 @@ func (w *RunWorker) heartbeat(
 			cancelled.Store(true)
 			cancelHandler()
 		}
-		// Bound the winddown. A ctx-aware handler returns promptly and the heartbeat
-		// exits via ctx.Done() long before this fires; the deadline only catches a
-		// handler that IGNORES ctx — past it abandon, so the lease lapses for reclaim
-		// (and the poison-reclaim cap) rather than renewing forever.
-		if cancelled.Load() {
+		// Bound the winddown. It begins when the handler should have stopped — a cancel
+		// was observed, OR its per-attempt deadline fired (execCtx). A ctx-aware handler
+		// returns promptly and the heartbeat exits via ctx.Done() long before this fires;
+		// the deadline only catches a handler that IGNORES ctx — past it abandon, so the
+		// lease lapses for reclaim (and the poison-reclaim cap) rather than renewing
+		// forever.
+		if cancelled.Load() || execCtx.Err() != nil {
 			switch {
-			case cancelDeadline.IsZero():
-				cancelDeadline = time.Now().Add(cancelGraceLeaseMultiple * lease)
-			case time.Now().After(cancelDeadline):
+			case graceDeadline.IsZero():
+				graceDeadline = time.Now().Add(winddownGraceLeaseMultiple * lease)
+			case time.Now().After(graceDeadline):
 				w.logger.Warn(
-					"run worker: cancelled handler exceeded grace, abandoning for reclaim",
+					"run worker: handler exceeded winddown grace, abandoning for reclaim",
 					logKeyRunID,
 					id,
 				)
@@ -455,15 +482,17 @@ func (w *RunWorker) heartbeat(
 // owner-fenced and will be reclaimed + resumed). cancelled is ranked ABOVE success
 // on purpose — a handler whose ctx was cancelled and returns nil cannot be trusted
 // to have finished (it may have stopped early), so it is recorded Cancelled, not
-// Complete. Every finalizer is owner-checked; a false return means the lease was
-// lost at the last moment → abandon.
+// Complete. timedOut ranks below cancelled but above success — an attempt that blew
+// its deadline is a retryable failure (handleFailure), not a completion, even if the
+// handler returned nil. Every finalizer is owner-checked; a false return means the
+// lease was lost at the last moment → abandon.
 func (w *RunWorker) finalize(
 	workerCtx context.Context,
 	log *slog.Logger,
 	r *run.Run,
 	owner string,
 	hErr error,
-	abandon, cancelled bool,
+	abandon, cancelled, timedOut bool,
 	dur time.Duration,
 ) {
 	switch {
@@ -490,6 +519,21 @@ func (w *RunWorker) finalize(
 		default:
 			log.Info("run worker: run cancelled", shared.DurationMsAttr(dur))
 		}
+	case timedOut:
+		// A blown per-attempt deadline → retryable failure (reschedule with backoff, or
+		// terminal once the retry budget is spent). Ranked above success so a handler
+		// that returned nil exactly as the deadline fired is still treated as timed out.
+		w.handleFailure(
+			workerCtx,
+			log,
+			r,
+			owner,
+			fmt.Errorf(
+				"run timed out (exceeded per-attempt deadline) after %s",
+				dur.Round(time.Millisecond),
+			),
+			dur,
+		)
 	case hErr == nil:
 		ok, err := w.repo.MarkComplete(workerCtx, r.ID, owner)
 		switch {
@@ -528,7 +572,7 @@ func (w *RunWorker) handleFailure(
 			log.Error("run worker: run exhausted retries, failed",
 				shared.DurationMsAttr(dur), slog.Any(shared.LogKeyError, hErr))
 			w.reporter.Capture(ctx, fmt.Errorf("run %q exhausted retries: %w", r.Kind, hErr),
-				slog.String(logKeyRunID, r.ID), slog.String(logKeyRunKind, r.Kind))
+				slog.String(logKeyRunID, r.ID), slog.String(shared.LogKeyRunKind, r.Kind))
 		}
 		return
 	}
@@ -568,7 +612,7 @@ func (w *RunWorker) handleUnknownKind(
 		if ok, err := w.repo.MarkFailed(ctx, r.ID, owner, reason); err != nil {
 			log.Error("run worker: unknown-kind mark-failed errored", shared.LogKeyError, err)
 		} else if ok {
-			log.Error("run worker: unknown kind exhausted park budget, failed", logKeyRunKind, r.Kind)
+			log.Error("run worker: unknown kind exhausted park budget, failed", shared.LogKeyRunKind, r.Kind)
 			w.reporter.Capture(ctx, fmt.Errorf("run worker: %s", reason), slog.String(logKeyRunID, r.ID))
 		}
 		return
@@ -577,7 +621,7 @@ func (w *RunWorker) handleUnknownKind(
 	if ok, err := w.repo.Park(ctx, r.ID, owner, time.Now().Add(delay), reason); err != nil {
 		log.Error("run worker: unknown-kind park errored", shared.LogKeyError, err)
 	} else if ok {
-		log.Warn("run worker: unknown kind, parked for retry (registry skew)", logKeyRunKind, r.Kind)
+		log.Warn("run worker: unknown kind, parked for retry (registry skew)", shared.LogKeyRunKind, r.Kind)
 	}
 }
 

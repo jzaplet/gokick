@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Documentation Reference
 
-Detailed how-to lives in the **`gk-*` skills** (`.claude/skills/`) — invoke `/gk` for the index, or `/gk-<topic>` directly. Each covers one concept (auth, repositories, jobs, permissions, observability, frontend, deploy, …) with why/when, a plain-language explanation, how-it-works, a recipe, and pitfalls. Reach for them before writing code in an area you don't know.
+Detailed how-to lives in the **`gk-*` skills** (`.claude/skills/`) — invoke `/gk` for the index, or `/gk-<topic>` directly. Each covers one concept (auth, repositories, background work, permissions, observability, frontend, deploy, …) with why/when, a plain-language explanation, how-it-works, a recipe, and pitfalls. Reach for them before writing code in an area you don't know.
 
 Slim human docs (Documan): [Architecture](docs/framework/architecture.md) · [Installation](docs/framework/installation.md) · [Configuration](docs/framework/configuration.md) · flow pages under `docs/framework/` · [Roadmap (GoKick)](docs/framework/gokick-roadmap.md). The skill index is `/gk` (skills live in `.claude/skills/`). New skills follow `.claude/skills/gk/_TEMPLATE.md`.
 
@@ -41,8 +41,8 @@ go test ./app/infrastructure/security/ -run TestHash  # Single Go test
 ### CLI Commands
 
 ```bash
-./bin/app serve              # Start HTTP server + in-process scheduler + job worker
-./bin/app worker             # Run only the persistent job worker (no HTTP server)
+./bin/app serve              # Start HTTP server + in-process scheduler + durable-task worker
+./bin/app worker             # Run only the persistent durable-task worker (no HTTP server)
 ./bin/app seed               # Seed admin (+ superadmin if APP_SEED_SUPERADMIN_PASSWORD); multitenant → admin gets its own tenant
 ./bin/app create-user        # Create a user (-n -p [-e] [-r admin|user] [--tenant-id|--tenant-name]); multitenant → tenant required
 ./bin/app create-superadmin  # Create a platform superadmin (-n -p [-e]) — the only path to one (admin API refuses the role)
@@ -80,17 +80,17 @@ Bounded contexts in separate packages. **Never import between contexts** (e.g. `
 
 | Package | Contains |
 |---------|----------|
-| `domain/shared/` | `AuthClaims` (incl. `TenantID`), `ValidationError`, `AuthError`, `PermissionError`, `DomainEvent`, `EventCollector`, `AuditCollector` + `AuditEvent` / `AuditRecord`, `PermissionsRegistry`, `DefaultTenantID`, interfaces (`PasswordHasher`, `PermissionChecker`, `JwtService`, `TenantResolver`, `Transactor`, `Seeder`, `AuditLogger`, `JobDispatcher`) |
+| `domain/shared/` | `AuthClaims` (incl. `TenantID`), `ValidationError`, `AuthError`, `PermissionError`, `DomainEvent`, `EventCollector`, `AuditCollector` + `AuditEvent` / `AuditRecord`, `PermissionsRegistry`, `DefaultTenantID`, interfaces (`PasswordHasher`, `PermissionChecker`, `JwtService`, `TenantResolver`, `Transactor`, `Seeder`, `AuditLogger`, `RunDispatcher`) |
 | `domain/user/` | `User` entity, `Nickname`/`Role` (admin/user/**superadmin**) value objects, `Repository` interface, `PlatformRow` read model, `UserCreated` event |
 | `domain/token/` | `RefreshToken` entity, `TokenRepository` interface |
-| `domain/job/` | `Job` entity, `Repository` interface — persistent background work queue |
+| `domain/run/` | `Run` entity, `Repository` interface — the durable background-task primitive (runs OUTSIDE a tx; optional checkpoint, lease + heartbeat, owner-token fencing, cancel, per-attempt timeout) |
 | `domain/tenant/` | `Tenant` entity + `Overview` read model, `Repository` interface — row-level multitenancy boundary |
 
 **Conventions:**
 - Entity structs have `db:"..."` tags for sqlx scanning
 - Value objects return `*shared.ValidationError` on invalid input
 - Factory functions (`NewUser`) accept value objects, not raw strings
-- Repository interfaces return `nil, nil` for "not found" lookups (except `user.Repository.FindByID`, which returns a `*shared.ValidationError`; note this is not universal — `job.Repository.FindByID` returns `nil, nil`)
+- Repository interfaces return `nil, nil` for "not found" lookups (except `user.Repository.FindByID`, which returns a `*shared.ValidationError`; note this is not universal — `run.Repository.FindByID` returns `nil, nil`)
 - New bounded context = new package under `domain/` **plus its own arch-lint component** (`domain_user`, `domain_token`, …). Each context is a separate component precisely so a cross-context import fails the lint — the trade-off is there is no `domain/**` catch-all, so a new context needs a `domain_<ctx>` entry + a `mayDependOn` grant from each consumer (see the checklist below)
 
 ### Application Layer (`app/application/`)
@@ -99,7 +99,7 @@ CQRS with three bus types, each with its own middleware chain:
 
 | Bus | Chain | Use |
 |-----|-------|-----|
-| `CommandBus` | Recovery → Logging → Authorize → Tenant → Audit → JobDispatcher → DispatchEvents → Transaction | Write operations |
+| `CommandBus` | Recovery → Logging → Authorize → Tenant → Audit → RunDispatcher → DispatchEvents → Transaction | Write operations |
 | `QueryBus` | Recovery → Logging → Authorize → Tenant | Read operations |
 | `EventBus` | Recovery → Logging | Side-effects after commit |
 
@@ -134,7 +134,7 @@ func (h *ListUsersHandler) Handle(ctx context.Context, q ListUsersQuery) ([]user
 - `DispatchEventsMiddleware` creates a **per-request** `*shared.EventCollector` and stores it in `ctx` (no singleton — race-safe).
 - Command handlers read it via `shared.EventCollectorFromContext(ctx).Collect(event)`. Outside the bus (e.g. CLI bypass) the helper returns a throwaway collector so handlers never nil-check.
 - `DispatchEventsMiddleware` wraps `TransactionMiddleware` (outer). After the transaction commits successfully, the middleware flushes and dispatches events via `EventBus` **synchronously**. On rollback or commit failure, events are discarded.
-- Event handlers register on `EventBus` via `eventBus.Register(eventName, handlerFn)`. They **must not** call `Collect` themselves — for follow-up async work use `JobDispatcher` (roadmap F3).
+- Event handlers register on `EventBus` via `eventBus.Register(eventName, handlerFn)`. They **must not** call `Collect` themselves — for follow-up async work use `RunDispatcher`.
 
 **Dispatch from HTTP handler:**
 ```go
@@ -157,7 +157,7 @@ bus.Exec[[]user.User](ctx, h.queryBus.Bus, "ListUsers", q, func(ctx context.Cont
 | `sqlite/` | `BaseRepository` (embed in repos for transparent tx support via `r.Conn(ctx)`) |
 | `sqlite/user/` | `user.Repository` impl (incl. `RecordFailedLogin` / `ResetFailedLogin` / `RecordLogin` raw-pool on purpose; tenant-scoped admin reads/writes + cross-tenant platform reads) |
 | `sqlite/token/` | `token.TokenRepository` implementation |
-| `sqlite/job/` | `job.Repository` implementation |
+| `sqlite/run/` | `run.Repository` implementation (owner-fenced; julianday/ms time discipline shared via `sqlite/sqltime.go`) |
 | `sqlite/tenant/` | `tenant.Repository` implementation (row-level multitenancy boundary) |
 | `sqlite/audit/` | `shared.AuditLogger` implementation (raw-pool — survives business rollback) |
 | `sqlite/seeder/` | `shared.Seeder` impl — admin (+ optional superadmin) seeding; `SeedAdminPassword` / `SeedSuperAdminPassword` / `SeedAdminTenant` / `Multitenant` Wire-distinct types |
@@ -301,7 +301,7 @@ wire.Bind(new(shared.Seeder), new(*sqlite.Seeder))
 6. **`infrastructure/di/container_provider.go`** — add Wire providers + `wire.Bind` for interfaces
 7. **`make di && make arch-check`** — regenerate DI + verify layer rules
 
-Broad-glob components auto-cover new sub-packages: a new `application/<ctx>/command/` matches `application/**`, a new handler matches `presentation/http/handler/**`. But the **bounded-context** components are enumerated, not wildcarded — `domain` is split per context (`domain_user`, `domain_token`, `domain_job`, `domain_tenant`) and `sqlite_repos` lists each repo dir — exactly so a cross-context import is caught. So adding a new context (`domain/order/`, `infrastructure/sqlite/order/`) **does** require editing `.go-arch-lint.yml`: add a `domain_order` component, grant it in each consumer's `mayDependOn` (`application`, `sqlite_repos`, `testfx`, …), and add `infrastructure/sqlite/order/**` to `sqlite_repos`. That ~6-line edit is the price of enforcing cross-context isolation in the linter.
+Broad-glob components auto-cover new sub-packages: a new `application/<ctx>/command/` matches `application/**`, a new handler matches `presentation/http/handler/**`. But the **bounded-context** components are enumerated, not wildcarded — `domain` is split per context (`domain_user`, `domain_token`, `domain_run`, `domain_tenant`) and `sqlite_repos` lists each repo dir — exactly so a cross-context import is caught. So adding a new context (`domain/order/`, `infrastructure/sqlite/order/`) **does** require editing `.go-arch-lint.yml`: add a `domain_order` component, grant it in each consumer's `mayDependOn` (`application`, `sqlite_repos`, `testfx`, …), and add `infrastructure/sqlite/order/**` to `sqlite_repos`. That ~6-line edit is the price of enforcing cross-context isolation in the linter.
 
 ## Key Invariants
 
@@ -314,5 +314,5 @@ Broad-glob components auto-cover new sub-packages: a new `application/<ctx>/comm
 - **No cross-context imports.** Bounded contexts (`domain/user/`, `domain/token/`) are isolated. Shared types live in `domain/shared/`.
 - **Audit events for security-relevant work.** Handlers that mutate auth state or user records call `shared.AuditCollectorFromContext(ctx).Record(...)`. The collector returns a throwaway when no bus is active (CLI bypass), so the call is always safe. Action names follow the dotted convention `domain.event` (`auth.login.failed`, `user.role_changed`, etc.).
 - **Structured logging is statically enforced — there is one logging path.** All logging goes through the injected `*slog.Logger`, built once in `cmd/logger.go`. `.golangci.yml` forbids every alternative at lint time: `fmt.Print*` / `print`/`println` (stdout), the stdlib `log` package, **any** third-party logger (depguard **import allow-list** — a new dependency must be added to it), `slog.New*` outside `cmd/`, the global default logger (incl. `slog.Default()`), `os.Stdout`/`os.Stderr`, and direct file/fd opens (`os.Create`/`os.OpenFile`/`os.WriteFile`/`os.NewFile`/`syscall.Write`) so log data can't leak into a file. Every attribute **key is a Go constant** (sloglint `no-raw-keys`): cross-cutting keys in `shared.LogKey*` (`trace_id`, `user_id`, `command`, `duration_ms`, …); component-specific keys as package-local `logKey*` consts. Keys are `snake_case`, messages are constants, key-value and `slog.Attr` styles are never mixed. Correlation comes from `shared.LogAttrs(ctx)`, durations from `shared.DurationMsAttr`. See the `/gk-logging` skill.
-- **Error reporting is for the unexpected only.** Recovered panics (bus + HTTP `RecoveryMiddleware`) and terminal job failures (worker, exhausted retries) report to the injected `shared.ErrorReporter` (Sentry, built in `cmd/sentry.go`, a `NopReporter` without `APP_SENTRY_DSN`). Ordinary returned errors — validation, auth, 4xx — must NOT be reported; only the recovery/terminal paths, or the tracker drowns in noise. Same on the frontend (`@sentry/vue`, gated on `VITE_SENTRY_DSN`): Vue errors + unhandled rejections, never handled API 4xx. sentry-go is on the depguard allow-list precisely because it is the one sanctioned non-slog sink.
+- **Error reporting is for the unexpected only.** Recovered panics (bus + HTTP `RecoveryMiddleware`) and terminal task failures (the run worker, exhausted retries) report to the injected `shared.ErrorReporter` (Sentry, built in `cmd/sentry.go`, a `NopReporter` without `APP_SENTRY_DSN`). Ordinary returned errors — validation, auth, 4xx — must NOT be reported; only the recovery/terminal paths, or the tracker drowns in noise. Same on the frontend (`@sentry/vue`, gated on `VITE_SENTRY_DSN`): Vue errors + unhandled rejections, never handled API 4xx. sentry-go is on the depguard allow-list precisely because it is the one sanctioned non-slog sink.
 - **No hard-coded permissions on the frontend.** Every permission reference in `assets/` goes through the `Permission` enum in `assets/app/Auth/enums/resources.ts`. String literals like `'admin:users:read'` in `.vue` / `.ts` files are forbidden.

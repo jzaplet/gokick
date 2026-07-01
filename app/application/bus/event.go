@@ -9,7 +9,7 @@ type EventHandler func(ctx context.Context, event shared.DomainEvent) error
 
 // EventHandlerEntry is one (event-name → handler) pair collected by the DI
 // provider and applied during EventBus construction. Mirrors the slice-list
-// pattern used by PermissionsRegistry and JobHandlerRegistry.
+// pattern used by PermissionsRegistry and RunHandlerRegistry.
 type EventHandlerEntry struct {
 	Event   string
 	Handler EventHandler
@@ -33,7 +33,7 @@ func (eb *EventBus) Register(eventName string, handler EventHandler) {
 
 func (eb *EventBus) Dispatch(ctx context.Context, event shared.DomainEvent) {
 	// Block cascading Collect from inside event handlers — they must use
-	// JobDispatcher for follow-up async work.
+	// the RunDispatcher for follow-up async work.
 	ctx = shared.ContextWithoutEventCollector(ctx)
 
 	handlers := eb.handlers[event.EventName()]

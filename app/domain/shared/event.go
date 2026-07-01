@@ -26,8 +26,8 @@ func NewEventCollector() *EventCollector {
 
 func (c *EventCollector) Collect(event DomainEvent) {
 	if c.forbidden {
-		panic("shared.EventCollector: Collect called from an event/job handler — " +
-			"cascading events is not supported. Use shared.JobDispatcherFromContext(ctx).Enqueue(...) " +
+		panic("shared.EventCollector: Collect called from an event/run handler — " +
+			"cascading events is not supported. Use shared.RunDispatcherFromContext(ctx).Enqueue(...) " +
 			"for follow-up async work.")
 	}
 	c.mu.Lock()
@@ -48,7 +48,7 @@ type eventCollectorKeyType struct{}
 var eventCollectorKey = eventCollectorKeyType{}
 
 // forbiddenCollector marker — set by EventBus.Dispatch and worker before
-// invoking a handler. Cascading Collect from inside an event/job handler
+// invoking a handler. Cascading Collect from inside an event/run handler
 // is dropped silently otherwise; with the marker we fail fast.
 var forbiddenCollector = &EventCollector{forbidden: true}
 
@@ -58,8 +58,8 @@ func ContextWithEventCollector(ctx context.Context) (context.Context, *EventColl
 }
 
 // ContextWithoutEventCollector installs a forbidden-marker collector that
-// panics on Collect. Call it before invoking any event handler or job
-// handler — they must use JobDispatcher for follow-up async work, not
+// panics on Collect. Call it before invoking any event handler or run
+// handler — they must use the RunDispatcher for follow-up async work, not
 // re-emit events through a collector that no one will flush.
 func ContextWithoutEventCollector(ctx context.Context) context.Context {
 	return context.WithValue(ctx, eventCollectorKey, forbiddenCollector)
@@ -67,7 +67,7 @@ func ContextWithoutEventCollector(ctx context.Context) context.Context {
 
 // EventCollectorFromContext returns the per-request EventCollector.
 //   - Command flow (CommandBus dispatch) → real collector that gets flushed.
-//   - Event / job handler → forbidden collector; calling Collect panics.
+//   - Event / run handler → forbidden collector; calling Collect panics.
 //   - Outside both (CLI bypass) → throwaway collector; Collect silently drops.
 func EventCollectorFromContext(ctx context.Context) *EventCollector {
 	if c, ok := ctx.Value(eventCollectorKey).(*EventCollector); ok {

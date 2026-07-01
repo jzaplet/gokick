@@ -267,7 +267,7 @@ func TestSentryUser_AnonymousWithIP(t *testing.T) {
 	}
 }
 
-// No claims and no IP (e.g. a job-worker capture) yields no user rather than an
+// No claims and no IP (e.g. a run-worker capture) yields no user rather than an
 // empty husk.
 func TestSentryUser_NoneWhenAnonymousAndNoIP(t *testing.T) {
 	t.Parallel()
@@ -297,11 +297,11 @@ func TestSentryRequest_FromWhitelistedAttrs(t *testing.T) {
 	}
 }
 
-// A non-HTTP caller (job worker) passes no method → no Request, so event.Request
+// A non-HTTP caller (run worker) passes no method → no Request, so event.Request
 // stays unset rather than half-populated.
 func TestSentryRequest_NilWithoutMethod(t *testing.T) {
 	t.Parallel()
-	if req := sentryRequest([]slog.Attr{slog.String(shared.LogKeyJobKind, "email")}); req != nil {
+	if req := sentryRequest([]slog.Attr{slog.String(shared.LogKeyRunKind, "email")}); req != nil {
 		t.Fatalf("no method must yield nil Request, got %+v", req)
 	}
 }
@@ -397,15 +397,15 @@ func TestMaskRequestHeaders_NoRequest(t *testing.T) {
 func TestScrubBreadcrumb(t *testing.T) {
 	t.Parallel()
 	b := &sentry.Breadcrumb{Data: map[string]any{
-		"job_kind":      "email",
+		"run_kind":      "email",
 		"authorization": "Bearer leak",
 		"access_token":  "raw-token",
 		"db_password":   12345, // non-string secret — must still be masked by key
 		"attempts":      3,
 	}}
 	scrubBreadcrumb(b)
-	if b.Data["job_kind"] != "email" {
-		t.Fatalf("benign field must survive, got %v", b.Data["job_kind"])
+	if b.Data["run_kind"] != "email" {
+		t.Fatalf("benign field must survive, got %v", b.Data["run_kind"])
 	}
 	if b.Data["authorization"] != shared.MaskedValue {
 		t.Fatalf("authorization must be masked, got %v", b.Data["authorization"])
@@ -421,7 +421,7 @@ func TestScrubBreadcrumb(t *testing.T) {
 	}
 }
 
-// A worker capture (job_kind present) gets a per-kind fingerprint, so each
+// A worker capture (run_kind present) gets a per-kind fingerprint, so each
 // failing handler is its own Sentry issue rather than merging under the shared
 // worker-plumbing stack. NOT parallel: sentry.Init binds the global hub.
 func TestCapture_WorkerFingerprintByKind(t *testing.T) {
@@ -437,22 +437,22 @@ func TestCapture_WorkerFingerprintByKind(t *testing.T) {
 	}
 
 	sentryReporter{}.Capture(context.Background(),
-		errors.New(`job "email" exhausted retries: boom`),
-		slog.String(shared.LogKeyJobKind, "email"),
+		errors.New(`run "email" exhausted retries: boom`),
+		slog.String(shared.LogKeyRunKind, "email"),
 	)
 	sentry.Flush(2 * time.Second)
 
 	if captured == nil {
 		t.Fatal("BeforeSend never ran")
 	}
-	want := []string{"{{ default }}", "job:email"}
+	want := []string{"{{ default }}", "run:email"}
 	if len(captured.Fingerprint) != 2 ||
 		captured.Fingerprint[0] != want[0] || captured.Fingerprint[1] != want[1] {
 		t.Fatalf("fingerprint: got %v want %v", captured.Fingerprint, want)
 	}
 }
 
-// logger.With-bound attrs (the worker binds job_id/attempts) must appear in the
+// logger.With-bound attrs (the worker binds run_id/attempts) must appear in the
 // breadcrumb Data, not only the text log — the breadcrumb is built from the
 // record, so the wrapper has to mirror WithAttrs. NOT parallel: sentry.Init binds
 // the global hub.
@@ -471,9 +471,9 @@ func TestCapture_BreadcrumbCarriesBoundAttrs(t *testing.T) {
 	r := sentryReporter{}
 	ctx := r.WithRequestScope(context.Background())
 
-	// A derived logger with bound attrs, like the worker's per-job logger.
+	// A derived logger with bound attrs, like the worker's per-run logger.
 	logger := slog.New(breadcrumbHandler{Handler: newLogHandler(io.Discard, "json", slog.LevelInfo)}).
-		With("job_id", "j-1", "attempts", 2)
+		With("run_id", "j-1", "attempts", 2)
 	logger.InfoContext(ctx, "worker: step")
 
 	r.Capture(ctx, errors.New("boom"))
@@ -491,8 +491,8 @@ func TestCapture_BreadcrumbCarriesBoundAttrs(t *testing.T) {
 	if crumb == nil {
 		t.Fatal("expected the bound-attr log as a breadcrumb")
 	}
-	if crumb.Data["job_id"] != "j-1" {
-		t.Fatalf("bound attr job_id missing from breadcrumb data: %+v", crumb.Data)
+	if crumb.Data["run_id"] != "j-1" {
+		t.Fatalf("bound attr run_id missing from breadcrumb data: %+v", crumb.Data)
 	}
 }
 

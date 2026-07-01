@@ -13,9 +13,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// testLease is a comfortably-whole-second lease — jobs truncates int(sec) so a
-// sub-second lease would expire instantly; runs is sub-second safe but the shared
-// helpers use a whole-second lease for clarity.
+// testLease is a comfortably-whole-second lease. The runs queue is sub-second
+// safe (julianday lease math), but the shared helpers use a whole-second lease
+// for clarity.
 const testLease = time.Minute
 
 // newOwner returns a per-claim owner nonce (workerID + uuid), as the port
@@ -475,7 +475,7 @@ func TestClaimDue_SubSecondLease_NotInstantlyReclaimable(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "lease_subsec.db"))
 	enqueueRun(t, fx, "agent")
 	owner := newOwner("wA")
-	// 800ms lease must NOT truncate to +0s (the jobs int-seconds trap): the run
+	// 800ms lease must NOT truncate to +0s (sub-second leases must survive): the run
 	// must stay held for ~800ms, not be instantly reclaimable.
 	claimed, err := fx.Runs.ClaimDue(context.Background(), owner, 800*time.Millisecond)
 	if err != nil || claimed == nil {

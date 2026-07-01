@@ -37,7 +37,7 @@ Bez ORM (gokick píše SQL ručně) **neexistuje** automatické „přihoď `WHE
 
 **Statické fail-closed gates (zdroj, mimo SQL).** Conformance gate hlídá *dotazy*; dva další AST testy hlídají *vstupní cesty* a zavírají fail-open footguny na úrovni typů: `app/domain/zz_bornscoped_test.go` — doménová factory tenant-owned entity musí brát tenant jako **parametr** (`NewUser(…, tenantID)`), žádný hard-coded default; `app/application/zz_platform_isolation_test.go` — cross-tenant `*AcrossTenants` metody smí volat **jen** `application/platform/**`.
 
-**Worker propagace.** Worker obchází bus → `TenantMiddleware` se na job handlery nespustí. `jobs.tenant_id` se razí při enqueue (dispatcher z ctx) a worker ho v `runWithinTx` obnoví do ctx z claimnutého řádku před handlerem. `ClaimDue` zůstává globální drain (marker-exempt).
+**Worker propagace.** Worker obchází bus → `TenantMiddleware` se na run handlery nespustí. `runs.tenant_id` se razí při enqueue (dispatcher z ctx) a worker ho před handlerem obnoví do ctx z claimnutého řádku (`ContextWithTenantID`, mimo transakci). `ClaimDue` zůstává globální drain (marker-exempt).
 
 **Platformní rovina.** Role `superadmin` (nad admin/user) + `platform:*`. Žebřík v `shared.IsPermissionAllowedForRole`: superadmin → vše; `platform:*` brána sedí **mezi** superadmin a admin (admin platform nedostane). Cross-tenant metody (`FindAllAcrossTenants`, `CountAcrossTenants`, `Update/DeleteAcrossTenants`) žijí na **segregovaném** `user.PlatformRepository` (superset `Repository`) — ne-platform handler je ani nepojmenuje (compile error). Dotazy nesou `/* tenant-scope-exempt: platform superadmin */`. Endpointy `GET /api/v1/platform/{stats,users,tenants}` + `PUT/DELETE /api/v1/platform/users/{id}`; FE sekce na `/platform/*` (jen superadmin). FE `permissions.ts` zrcadlí backend žebřík.
 
@@ -68,6 +68,6 @@ Bez ORM (gokick píše SQL ručně) **neexistuje** automatické „přihoď `WHE
 
 ## Related
 
-- `/gk-permissions` (role/permission, FE enum) · `/gk-repositories` (tx-aware datová vrstva) · `/gk-jobs` (worker) · `/gk-auth` (JWT) · `/gk-migrations` (table-rebuild)
+- `/gk-permissions` (role/permission, FE enum) · `/gk-repositories` (tx-aware datová vrstva) · `/gk-runs` (durable worker) · `/gk-auth` (JWT) · `/gk-migrations` (table-rebuild)
 - Docs: [Installation](/framework/installation) (CLI), [Roadmap](/framework/gokick-roadmap)
 - Kód: `app/domain/{tenant,shared}/`, `app/infrastructure/sqlite/{conn.go,zz_tenant_test.go}`, `app/application/platform/`, `assets/app/Platform/`; gates: `app/domain/zz_bornscoped_test.go`, `app/application/zz_platform_isolation_test.go`

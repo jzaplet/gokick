@@ -43,7 +43,7 @@ ověří, že všechno (styl, architektura, testy) je v pořádku, než to pošl
 ### testfx — reálná DB v testu
 `app/internal/testfx/testfx.go`, import path `gokick/app/internal/testfx`.
 `testfx.New(t, dbPath)` otevře izolovanou SQLite na `dbPath`, spustí migrace a
-vrátí `*Fixture` s reálnými implementacemi (`Users`, `Tokens`, `Jobs`, `Hasher`,
+vrátí `*Fixture` s reálnými implementacemi (`Users`, `Tokens`, `Runs`, `Hasher`,
 `Jwt`, `DB`). DB se zavře automaticky přes `t.Cleanup`. Logger je tichý
 (`io.Discard`). Užitečné helpery na `*Fixture`:
 - `SeedUser(t, nickname, password, role)` / `SeedRefreshToken(t, userID, expiresAt)` — naplnění dat

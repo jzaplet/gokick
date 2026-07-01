@@ -15,20 +15,19 @@ Engine pro práci, která běží **mimo transakci** — protože buď **trvá d
 
 ![Run flow — dlouhá práce, co po pádu pokračuje od posledně](files/run-flow.svg)
 
-> Přehled toku. Návod (jak napsat run, cancel) → `/gk-runs`; kdy run vs job vs scheduler → [Background work](/framework/background-work).
+> Přehled toku. Návod (jak napsat run, cancel) → `/gk-runs`; kdy durable run vs fire-and-forget run vs scheduler → [Background work](/framework/background-work).
 
 
 ## K čemu to je
 
-Když práce **trvá dlouho a nesmí začít od nuly**, kdyby proces spadl. Obyčejný [job](/framework/job-flow) by nestačil ze dvou důvodů:
+Když práce **trvá dlouho a nesmí začít od nuly**, kdyby proces spadl. Obyčejný [fire-and-forget run](/framework/job-flow) běží sice taky mimo transakci, ale **nepamatuje si postup** — když spadne, příště začne od začátku. Run si po každém kroku ukládá, kde je (checkpoint), takže ho jiný worker **převezme a pokračuje od posledního uloženého kroku**. To je jediný rozdíl mezi fire-and-forget a durable runem: **run má checkpoint, fire-and-forget run ne** — jinak je to ten samý engine.
 
-1. **Job běží v transakci.** Dlouhá práce — nebo **jakékoli volání ven** (e-mail/SMTP, cizí API) — drží zámek na zápis do databáze celou tu dobu (SMTP může viset, API request 5 minut) → **zamkne celou databázi** pro všechny ostatní. Run proto běží mimo transakci.
-2. **Job si nepamatuje postup.** Když spadne, začne příště od začátku. Run si po každém kroku ukládá, kde je, takže pokračuje.
+> Proč obojí běží **mimo transakci**: dlouhá práce — nebo **jakékoli volání ven** (e-mail/SMTP, cizí API) — by v transakci držela SQLite write-lock celou tu dobu (SMTP může viset, API request 5 minut) → **zamkla by celou databázi** pro všechny ostatní. Proto je outside-tx vynucené pro oba tvary.
 
 
 ## Jak to teče
 
-1. **Zařazení** — z command handleru zavoláš `RunDispatcher.Enqueue(kind, maxRetries, payload)`. Zápis do fronty se připojí ke **stejné transakci** jako tvoje uložení dat — buď se uloží obojí, nebo nic (jako u jobu).
+1. **Zařazení** — z command handleru zavoláš `RunDispatcher.Enqueue(kind, maxRetries, payload)`. Zápis do fronty se připojí ke **stejné transakci** jako tvoje uložení dat — buď se uloží obojí, nebo nic (jako u fire-and-forget runu).
 2. **Převzetí** — worker si práci atomicky vezme a označí ji jako „dělám na tom" (nikdo jiný ji mezitím nevezme).
 3. **Běh mimo transakci** — handler dostane vstupní data a dosavadní postup (`r.State`). Běží **bez transakce**, klidně minuty až hodiny. (Otevřít transakci uvnitř handleru framework **nedovolí** — fail-closed.)
 4. **Checkpoint** — handler po každém kroku zavolá `ck.Save(postup)` — krátký zápis, kde skončil. Když mezitím o práci přišel (převzal ji jiný worker), `Save` to oznámí a handler skončí.
@@ -59,12 +58,12 @@ func ZpracujDavku(ctx context.Context, r *run.Run, ck run.Checkpointer) error {
 shared.RunDispatcherFromContext(ctx).Enqueue(ctx, "import:velky", 3, payload)
 ```
 
-`maxRetries` (kolik logických pokusů) je povinné. Run handler **nesmí otevřít transakci** (framework to hlídá); když potřebuješ něco uložit atomicky, **zařaď na to command nebo job** — ten poběží ve své vlastní krátké transakci mimo run.
+`maxRetries` (kolik logických pokusů) je povinné. Run handler **nesmí otevřít transakci** (framework to hlídá); když potřebuješ něco uložit atomicky, **zařaď na to command** — ten poběží ve své vlastní krátké transakci mimo run (background run transakci nemá).
 
 
 ## Související
 
-- [Job flow](/framework/job-flow) — kratší sourozenec (běží v transakci).
-- [Background work](/framework/background-work) — co kdy použít + proč jen runy běží mimo transakci.
+- [Fire-and-forget run](/framework/job-flow) — fire-and-forget tvar téhož enginu (bez checkpointu).
+- [Background work](/framework/background-work) — co kdy použít + proč background práce běží mimo transakci.
 - [Command flow](/framework/command-flow) — transakce, ke které se zařazení připojí.
-- Skilly: `/gk-runs`, `/gk-jobs`, `/gk-repositories`.
+- Skilly: `/gk-runs`, `/gk-repositories`.

@@ -36,11 +36,37 @@ type Checkpointer interface {
 // handler need not distinguish a clean-stop nil from a ctx.Err() on cancellation.
 type HandlerFunc func(ctx context.Context, r *run.Run, ck Checkpointer) error
 
-// Registration binds a kind to its handler and an optional per-kind lease (the
-// crash-reclaim window / heartbeat target). A zero Lease uses the registry default.
+// Registration binds a kind to its handler, an optional per-kind lease (the
+// crash-reclaim window / heartbeat target; zero = registry default), and an optional
+// per-attempt Timeout (zero = no timeout). Build one with FireAndForget (a
+// fire-and-forget task) or Durable (a long, resumable task) rather than the struct literal.
 type Registration struct {
 	Handler HandlerFunc
 	Lease   time.Duration
+	Timeout time.Duration
+}
+
+// FireAndForget registers a short, non-resumable task — the fire-and-forget shape: the default
+// lease, an optional per-attempt timeout, and a handler that need not checkpoint.
+//
+// The handler runs OUTSIDE a transaction and is
+// marked complete by a SEPARATE write after it returns, so delivery is at-least-once:
+// a crash between the handler returning and that write re-runs the handler on reclaim.
+// The handler MUST therefore be idempotent (or guard its external effects).
+func FireAndForget(handler HandlerFunc, timeout time.Duration) Registration {
+	return Registration{Handler: handler, Timeout: timeout}
+}
+
+// Durable registers a long, resumable task — the "run" shape: an explicit crash-reclaim
+// lease and an optional per-attempt timeout. The handler checkpoints via ck.Save and
+// resumes from the last checkpoint on reclaim.
+//
+// The timeout is PER ATTEMPT and a blown deadline counts as a logic-retry (it bumps
+// attempts and is gated by maxRetries), so set it longer than a single resume-to-next-
+// checkpoint step — a timeout shorter than the work between checkpoints can fail the
+// run terminally after maxRetries even while it is making real progress.
+func Durable(handler HandlerFunc, lease, timeout time.Duration) Registration {
+	return Registration{Handler: handler, Lease: lease, Timeout: timeout}
 }
 
 // minKindLease rejects an implausibly small explicit per-kind lease at registration
@@ -49,6 +75,19 @@ type Registration struct {
 // Durable runs last minutes to hours, so a sub-millisecond lease is always a typo —
 // e.g. Lease: 1 (1ns) intending time.Millisecond. Surfaces the mistake loudly at boot.
 const minKindLease = time.Millisecond
+
+// rejectSubMs flags a positive but implausibly small (< minKindLease) per-kind
+// duration as a units typo — shared by the lease and timeout validation, which would
+// otherwise repeat the same message. A zero value is "use default / none" (handled by
+// Lookup) and passes; the negative case differs per field and stays at the call site.
+func rejectSubMs(kind, label string, d time.Duration) error {
+	if d > 0 && d < minKindLease {
+		return fmt.Errorf(
+			"run: kind %q %s %s is implausibly small (min %s) — likely a units typo",
+			kind, label, d, minKindLease)
+	}
+	return nil
+}
 
 // HandlerRegistry maps run Kind → Registration. Populated once at DI; read-only
 // at runtime.
@@ -72,30 +111,36 @@ func NewHandlerRegistry(
 		if reg.Handler == nil {
 			return nil, fmt.Errorf("run: nil handler for kind %q", kind)
 		}
-		// A set-but-tiny per-kind lease is a typo (Lease <= 0 means "use default" and
-		// is handled by Lookup; only a positive sub-ms value is rejected here).
-		if reg.Lease > 0 && reg.Lease < minKindLease {
-			return nil, fmt.Errorf(
-				"run: kind %q lease %s is implausibly small (min %s) — likely a units typo",
-				kind, reg.Lease, minKindLease)
+		// A set-but-tiny lease/timeout is a units typo (0 = "use default / none", handled
+		// by Lookup; only a positive sub-ms value is rejected). A negative Timeout is a
+		// distinct hard error — it would silently disable the timeout the author asked
+		// for — so it is checked separately (a negative Lease just means "use default").
+		if err := rejectSubMs(kind, "lease", reg.Lease); err != nil {
+			return nil, err
+		}
+		if reg.Timeout < 0 {
+			return nil, fmt.Errorf("run: kind %q timeout %s is negative", kind, reg.Timeout)
+		}
+		if err := rejectSubMs(kind, "timeout", reg.Timeout); err != nil {
+			return nil, err
 		}
 		dup[kind] = reg
 	}
 	return &HandlerRegistry{regs: dup, defaultLease: defaultLease}, nil
 }
 
-// Lookup returns the handler and the effective lease (the kind's, or the default)
-// for a kind, and whether it is registered.
-func (r *HandlerRegistry) Lookup(kind string) (HandlerFunc, time.Duration, bool) {
+// Lookup returns the handler, the effective lease (the kind's, or the default), the
+// per-attempt timeout (0 = none), and whether the kind is registered.
+func (r *HandlerRegistry) Lookup(kind string) (HandlerFunc, time.Duration, time.Duration, bool) {
 	reg, ok := r.regs[kind]
 	if !ok {
-		return nil, 0, false
+		return nil, 0, 0, false
 	}
 	lease := reg.Lease
 	if lease <= 0 {
 		lease = r.defaultLease
 	}
-	return reg.Handler, lease, true
+	return reg.Handler, lease, reg.Timeout, true
 }
 
 func (r *HandlerRegistry) Has(kind string) bool {

@@ -96,12 +96,12 @@ func TestApplicationRun_MigratesBeforeSubcommand(t *testing.T) {
 	// TestRootCommand_RegistersSubcommands in console).
 	sysBus := bus.NewSystemCommandBus(busmw.TransactionMiddleware(manager))
 	rootCmd := console.NewRootCommand(
-		console.NewServeCommand(nil, nil, nil, nil),
+		console.NewServeCommand(nil, nil, nil),
 		console.NewSeedCommand(probe, sysBus),
 		console.NewCreateUserCommand(nil, nil, nil, nil, nil),
 		console.NewCreateSuperAdminCommand(nil, nil),
 		console.NewCreateTenantCommand(nil, nil),
-		console.NewWorkerCommand(nil, nil),
+		console.NewWorkerCommand(nil),
 	)
 
 	application := NewApplication(rootCmd, migrations)
@@ -155,12 +155,12 @@ func TestApplicationRun_StopsWhenMigrationFails(t *testing.T) {
 
 	probe := &migrationProbeSeeder{db: manager}
 	rootCmd := console.NewRootCommand(
-		console.NewServeCommand(nil, nil, nil, nil),
+		console.NewServeCommand(nil, nil, nil),
 		console.NewSeedCommand(probe, nil), // seed never runs (migration fails first)
 		console.NewCreateUserCommand(nil, nil, nil, nil, nil),
 		console.NewCreateSuperAdminCommand(nil, nil),
 		console.NewCreateTenantCommand(nil, nil),
-		console.NewWorkerCommand(nil, nil),
+		console.NewWorkerCommand(nil),
 	)
 	application := NewApplication(rootCmd, migrations)
 

@@ -585,7 +585,7 @@ func TestRunWorker_ParkingDoesNotConsumeRetryBudget(t *testing.T) {
 }
 
 // A run handler runs OUTSIDE a tx and offloads transactional side-work by enqueuing
-// a job or a child run. The worker bypasses the bus, so it must inject the
+// a fire-and-forget run or a child run. The worker bypasses the bus, so it must inject the
 // dispatchers into the handler ctx — without that shared.RunDispatcherFromContext
 // returns the silent no-op and the enqueue vanishes. Here a parent handler enqueues a
 // child run and we prove the child row actually lands and runs.
@@ -608,7 +608,7 @@ func TestRunWorker_HandlerCanEnqueueChildRun(t *testing.T) {
 		t.Fatalf("registry: %v", err)
 	}
 	dispatcher := runapp.NewDispatcher(fx.Runs, reg)
-	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, dispatcher, fastCfg())
+	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, dispatcher, nil, fastCfg())
 
 	enqueueRunW(t, fx, "parent", 0)
 	stop := startWorker(w)
@@ -622,8 +622,7 @@ func TestRunWorker_HandlerCanEnqueueChildRun(t *testing.T) {
 
 // The run worker bypasses the bus, so it must restore the tenant the run was
 // enqueued for into the handler's context from the claimed row. Uses a non-default
-// tenant so it proves propagation rather than a tautology — the run-side mirror of
-// the job worker's TestWorker_RestoresJobTenantIntoHandlerContext. A handler that
+// tenant so it proves propagation rather than a tautology. A handler that
 // saw the wrong tenant would query another tenant's data (the multitenant-agent
 // correctness this whole engine exists for).
 func TestRunWorker_RestoresRunTenantIntoHandlerContext(t *testing.T) {

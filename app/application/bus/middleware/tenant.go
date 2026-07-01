@@ -16,8 +16,8 @@ import (
 // A resolver error aborts the command/query before any handler runs: a tenant
 // that cannot be resolved is never silently treated as "no tenant".
 //
-// The worker bypasses the bus, so this middleware never runs for job handlers —
-// the worker restores the tenant from the claimed job row instead.
+// The worker bypasses the bus, so this middleware never runs for run handlers —
+// the worker restores the tenant from the claimed run row instead.
 func TenantMiddleware(resolver shared.TenantResolver) bus.Middleware {
 	return func(ctx context.Context, name string, cmd any, next func(ctx context.Context) (any, error)) (any, error) {
 		tenantID, err := resolver.Resolve(ctx)

@@ -13,20 +13,17 @@ import (
 type ServeCommand struct {
 	server    *server.Server
 	scheduler *scheduler.Scheduler
-	worker    *worker.Worker
 	runWorker *worker.RunWorker
 }
 
 func NewServeCommand(
 	server *server.Server,
 	scheduler *scheduler.Scheduler,
-	worker *worker.Worker,
 	runWorker *worker.RunWorker,
 ) *ServeCommand {
 	return &ServeCommand{
 		server:    server,
 		scheduler: scheduler,
-		worker:    worker,
 		runWorker: runWorker,
 	}
 }
@@ -34,10 +31,10 @@ func NewServeCommand(
 func (c *ServeCommand) Command() *cobra.Command {
 	return &cobra.Command{
 		Use:   "serve",
-		Short: "Start the HTTP server with in-process scheduler, job worker and run worker",
+		Short: "Start the HTTP server with in-process scheduler and durable-task worker",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Wrap the signal-handler ctx so we can also cancel on a non-SIGTERM
-			// server.Start failure (e.g. port bind) — otherwise scheduler/workers
+			// server.Start failure (e.g. port bind) — otherwise scheduler/worker
 			// would hang on a healthy ctx and the process would never exit.
 			ctx, cancel := context.WithCancel(cmd.Context())
 			defer cancel()
@@ -46,12 +43,6 @@ func (c *ServeCommand) Command() *cobra.Command {
 			go func() {
 				defer close(schedulerDone)
 				c.scheduler.Run(ctx)
-			}()
-
-			workerDone := make(chan struct{})
-			go func() {
-				defer close(workerDone)
-				c.worker.Run(ctx)
 			}()
 
 			runWorkerDone := make(chan struct{})
@@ -63,7 +54,6 @@ func (c *ServeCommand) Command() *cobra.Command {
 			serverErr := c.server.Start(ctx)
 			cancel()
 			<-schedulerDone
-			<-workerDone
 			<-runWorkerDone
 			return serverErr
 		},

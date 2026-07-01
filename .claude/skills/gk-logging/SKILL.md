@@ -19,7 +19,7 @@ Všechno logování teče jednou cestou: injektovaný `*slog.Logger` postavený 
 - Sáhni sem, když **přidáváš log řádek** a nevíš, jak (kde vzít logger, jaký klíč použít, jak připojit `trace_id`/`user_id`).
 - Když ti **lint zařval** na `fmt.Println`, `slog.New`, `os.Stdout`, syrový string klíč, mixování argumentů — vysvětlení je tady.
 - Když řešíš **formát/úroveň logů** lokálně vs. v produkci (`APP_LOG_FORMAT`, `APP_LOG_LEVEL`).
-- NEtýká se hlášení **neočekávaných** chyb (paniky, terminální selhání jobu) do Sentry — to je error reporting, samostatná cesta (viz `Related`). Běžné logování není Sentry.
+- NEtýká se hlášení **neočekávaných** chyb (paniky, terminální selhání runu) do Sentry — to je error reporting, samostatná cesta (viz `Related`). Běžné logování není Sentry.
 
 ## For non-tech / juniors
 

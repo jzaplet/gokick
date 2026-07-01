@@ -9,7 +9,6 @@ import (
 	"gokick/app/application/bus"
 	busmw "gokick/app/application/bus/middleware"
 	dashboardqry "gokick/app/application/dashboard/query"
-	jobapp "gokick/app/application/job"
 	platformcmd "gokick/app/application/platform/command"
 	platformqry "gokick/app/application/platform/query"
 	profilecmd "gokick/app/application/profile/command"
@@ -19,7 +18,6 @@ import (
 	tenantqry "gokick/app/application/tenant/query"
 	usercmd "gokick/app/application/user/command"
 	userqry "gokick/app/application/user/query"
-	"gokick/app/domain/job"
 	"gokick/app/domain/run"
 	"gokick/app/domain/shared"
 	"gokick/app/domain/tenant"
@@ -30,7 +28,6 @@ import (
 	"gokick/app/infrastructure/scheduler"
 	"gokick/app/infrastructure/security"
 	sqliteaudit "gokick/app/infrastructure/sqlite/audit"
-	sqlitejob "gokick/app/infrastructure/sqlite/job"
 	sqliterun "gokick/app/infrastructure/sqlite/run"
 	sqliteseeder "gokick/app/infrastructure/sqlite/seeder"
 	sqlitetenant "gokick/app/infrastructure/sqlite/tenant"
@@ -71,7 +68,6 @@ func provideCommandBus(
 	db *database.SqliteManager,
 	checker shared.PermissionChecker,
 	eventBus *bus.EventBus,
-	dispatcher shared.JobDispatcher,
 	runDispatcher shared.RunDispatcher,
 	audit shared.AuditLogger,
 	reporter shared.ErrorReporter,
@@ -84,7 +80,6 @@ func provideCommandBus(
 			reporter,
 			tenantResolver,
 			audit,
-			dispatcher,
 			runDispatcher,
 			eventBus,
 			db,
@@ -94,7 +89,7 @@ func provideCommandBus(
 
 // provideSystemCommandBus wires the OPERATOR-TRUSTED write bus for the CLI
 // create-* commands. It is the CommandBus chain MINUS Authorize and Tenant (no
-// principal, no JWT-resolved tenant) and minus JobDispatcher (these commands
+// principal, no JWT-resolved tenant) and minus RunDispatcher (these commands
 // enqueue nothing). Audit still wraps OUTSIDE Transaction and DispatchEvents
 // still wraps it, so the ordering invariants hold. See bus.SystemCommandBus.
 func provideSystemCommandBus(
@@ -219,7 +214,7 @@ func provideMultitenancy(cfg *config.Config) shared.Multitenancy {
 }
 
 // provideSchedulerJobs is the single source of truth for periodic in-process
-// jobs — mirrors providePermissionsRegistry / provideJobHandlerRegistry. Add
+// jobs — mirrors providePermissionsRegistry. Add
 // a new Job here; provideScheduler stays decoupled from job business.
 func provideSchedulerJobs(tokens token.TokenRepository) []scheduler.Job {
 	return []scheduler.Job{
@@ -233,37 +228,6 @@ func provideSchedulerJobs(tokens token.TokenRepository) []scheduler.Job {
 
 func provideScheduler(logger *slog.Logger, jobs []scheduler.Job) (*scheduler.Scheduler, error) {
 	return scheduler.NewScheduler(logger, jobs)
-}
-
-// provideJobHandlerRegistry collects every kind → handler the binary can
-// process. Empty for now — handlers will be added in subsequent phases as
-// real background work appears.
-func provideJobHandlerRegistry() (*jobapp.HandlerRegistry, error) {
-	return jobapp.NewHandlerRegistry(map[string]jobapp.HandlerFunc{})
-}
-
-// provideJobDispatcher returns the dispatcher as a domain interface so command
-// handlers and event handlers depend on shared.JobDispatcher, not on the
-// concrete application-layer type.
-func provideJobDispatcher(
-	repo job.Repository,
-	registry *jobapp.HandlerRegistry,
-) shared.JobDispatcher {
-	return jobapp.NewDispatcher(repo, registry)
-}
-
-// provideWorker wires the persistent job worker. Concurrency stays at 1 by
-// default because SQLite serializes writers (WAL: one writer at a time);
-// more goroutines don't increase throughput for DB-bound handlers.
-func provideWorker(
-	logger *slog.Logger,
-	reporter shared.ErrorReporter,
-	repo job.Repository,
-	registry *jobapp.HandlerRegistry,
-	db *database.SqliteManager,
-	dispatcher shared.JobDispatcher,
-) *worker.Worker {
-	return worker.NewWorker(logger, reporter, repo, registry, db, dispatcher, 1)
 }
 
 // provideRunHandlerRegistry collects every kind → durable-run handler the binary
@@ -282,16 +246,17 @@ func provideRunDispatcher(
 	return runapp.NewDispatcher(repo, registry)
 }
 
-// provideRunWorker wires the durable run worker (the agent engine) from config. It
-// injects the job + run dispatchers so a run handler can offload transactional
-// side-work — the worker bypasses the bus, which is where they are normally injected.
+// provideRunWorker wires the durable run worker (the one background-work engine) from
+// config. It injects the run dispatcher (so a handler can enqueue a child task) and the
+// SqliteManager as the Transactor backing shared.WithTx (short atomic writes the handler
+// scopes itself) — the worker bypasses the bus, where these are normally injected.
 func provideRunWorker(
 	logger *slog.Logger,
 	reporter shared.ErrorReporter,
 	repo run.Repository,
 	registry *runapp.HandlerRegistry,
-	jobDispatcher shared.JobDispatcher,
 	runDispatcher shared.RunDispatcher,
+	db *database.SqliteManager,
 	cfg *config.Config,
 ) *worker.RunWorker {
 	return worker.NewRunWorker(
@@ -299,8 +264,8 @@ func provideRunWorker(
 		reporter,
 		repo,
 		registry,
-		jobDispatcher,
 		runDispatcher,
+		db,
 		worker.RunWorkerConfig{
 			DefaultLease:      cfg.RunWorkerLease,
 			HeartbeatInterval: cfg.RunWorkerHeartbeat,
@@ -360,9 +325,6 @@ func CreateApplication(
 		provideMultitenancy,
 		provideSchedulerJobs,
 		provideScheduler,
-		provideJobHandlerRegistry,
-		provideJobDispatcher,
-		provideWorker,
 		provideRunHandlerRegistry,
 		provideRunDispatcher,
 		provideRunWorker,
@@ -372,14 +334,12 @@ func CreateApplication(
 		wire.Bind(new(user.Repository), new(*sqliteuser.Repository)),
 		wire.Bind(new(user.PlatformRepository), new(*sqliteuser.Repository)),
 		wire.Bind(new(token.TokenRepository), new(*sqlitetoken.Repository)),
-		wire.Bind(new(job.Repository), new(*sqlitejob.Repository)),
 		wire.Bind(new(run.Repository), new(*sqliterun.Repository)),
 		wire.Bind(new(tenant.Repository), new(*sqlitetenant.Repository)),
 		wire.Bind(new(shared.Seeder), new(*sqliteseeder.Seeder)),
 		wire.Bind(new(shared.AuditLogger), new(*sqliteaudit.Repository)),
 		sqliteuser.NewRepository,
 		sqlitetoken.NewRepository,
-		sqlitejob.NewRepository,
 		sqliterun.NewRepository,
 		sqlitetenant.NewRepository,
 		sqliteseeder.NewSeeder,

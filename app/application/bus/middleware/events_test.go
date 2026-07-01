@@ -142,7 +142,7 @@ func TestEventCollector_Collect_ConcurrentWriters(t *testing.T) {
 }
 
 // Event handler that calls Collect must panic (cascading events is not
-// supported — handlers must use JobDispatcher for follow-up async work).
+// supported — handlers must use the RunDispatcher for follow-up async work).
 func TestEventBus_Dispatch_CollectFromHandlerPanics(t *testing.T) {
 	t.Parallel()
 

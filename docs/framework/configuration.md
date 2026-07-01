@@ -158,7 +158,7 @@ Konfigurace Sentry je rozdělená na **dvě cesty**, protože backend a frontend
 
 **Frontend release** je výjimka — zůstává zapečený při buildu (`VITE_SENTRY_RELEASE`), protože Docker image je per-verze, kdežto DSN/environment se injektují za běhu (jeden image slouží všem prostředím).
 
-Kompletní postup (založení projektů, DSN, CSP, deploy za Cloudflare, source maps) je v skillu `/gk-sentry`. Co se reportuje a co ne (jen neočekávaná selhání — paniky, terminálně padlé joby, Vue chyby) viz skill `/gk-sentry`.
+Kompletní postup (založení projektů, DSN, CSP, deploy za Cloudflare, source maps) je v skillu `/gk-sentry`. Co se reportuje a co ne (jen neočekávaná selhání — paniky, terminálně padlé runy, Vue chyby) viz skill `/gk-sentry`.
 
 
 ## Ostatní proměnné v .env.example

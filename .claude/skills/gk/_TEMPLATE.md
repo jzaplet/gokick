@@ -88,7 +88,7 @@ Spouštění periodických úloh přímo v `serve` procesu, bez externího cronu
 
 ## What & when
 - Sáhni sem, když potřebuješ něco opakovaně (každou hodinu/minutu) — cleanup,
-  sync, housekeeping. Pro práci, co musí přežít restart/crash, použij `/gk-jobs`.
+  sync, housekeeping. Pro práci, co musí přežít restart/crash, použij `/gk-runs`.
 
 ## For non-tech / juniors
 Scheduler je „budík", co uvnitř aplikace každých N vteřin/minut zavolá tvoji
@@ -109,6 +109,6 @@ run-once-then-tick, panika v jednom jobu neshodí ostatní. …
 - Fn musí být idempotentní — při restartu se spustí hned (run-once-then-tick).
 
 ## Related
-- `/gk-jobs` (perzistentní fronta), `/gk-config` (DI registrace)
+- `/gk-runs` (perzistentní durable engine), `/gk-config` (DI registrace)
 - Kód: `app/infrastructure/scheduler/`
 ```

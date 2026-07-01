@@ -46,7 +46,7 @@ func (rowVisibleEvent) OccurredAt() time.Time { return time.Now() }
 // so removing AuthorizeMiddleware from the production wiring flips this test.
 func TestCommandBus_AuthorizeBlocksDeniedCommand(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "authz_cmd.db"))
-	cmdBus := newProductionCommandBus(t, fx, noopDispatcher{}, noopDispatcher{})
+	cmdBus := newProductionCommandBus(t, fx, noopDispatcher{})
 
 	// Authenticated but non-admin caller: the checker reaches the role gate and
 	// denies the admin-only command with a PermissionError (not AuthError).
@@ -115,7 +115,6 @@ func TestCommandBus_EventsDispatchAfterCommit(t *testing.T) {
 		fx.DB,
 		checker,
 		eventBus,
-		noopDispatcher{},
 		noopDispatcher{},
 		sqliteaudit.NewRepository(fx.DB),
 		shared.NopReporter{},
@@ -186,7 +185,6 @@ func TestCommandBus_EventsDiscardedOnRollback(t *testing.T) {
 		fx.DB,
 		checker,
 		eventBus,
-		noopDispatcher{},
 		noopDispatcher{},
 		sqliteaudit.NewRepository(fx.DB),
 		shared.NopReporter{},

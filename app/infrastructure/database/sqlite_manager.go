@@ -102,7 +102,7 @@ func (m *SqliteManager) BeginTx(ctx context.Context) (context.Context, error) {
 		return ctx, fmt.Errorf(
 			"database: BeginTx called in a no-transaction zone — a durable run handler " +
 				"must not open a transaction (it would hold the global write lock for the run's " +
-				"lifetime); persist state via the Checkpointer or enqueue a command/job",
+				"lifetime); persist state via the Checkpointer or enqueue a command/run",
 		)
 	}
 	tx, err := m.db.BeginTxx(ctx, nil)

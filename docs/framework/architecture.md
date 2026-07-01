@@ -13,7 +13,7 @@ description: 'DDD vrstvy s CQRS, pravidla závislostí, lifecycle, cross-domain 
 
 Architektura stojí na DDD s CQRS a bus patternem: čtyři vrstvy s přísnými pravidly závislostí. Komunikace přes CommandBus/QueryBus/EventBus drží vrstvy volně provázané (loose coupling) — command handlery neznají HTTP ani databázi.
 
-> Tahle stránka je **mentální model**. Detailní návody („jak přidat repo / command / handler / job …") jsou ve skillech `/gk-*` — napiš `/gk` pro přehled, nebo rovnou `/gk-architecture`, `/gk-feature`.
+> Tahle stránka je **mentální model**. Detailní návody („jak přidat repo / command / handler / run …") jsou ve skillech `/gk-*` — napiš `/gk` pro přehled, nebo rovnou `/gk-architecture`, `/gk-feature`.
 
 ## Čtyři vrstvy
 
@@ -55,7 +55,7 @@ cmd/main.go
 Tahle stránka je mentální model. Konkrétní cesta requestu napříč vrstvami — middleware chain, transakce, autorizace, mapování chyb — žije na samostatných stránkách:
 
 - [Request flow](/framework/request-flow) — společný HTTP middleware chain a kudy request vstupuje do busu.
-- [Command flow](/framework/command-flow) — write operace: Recovery → Logging → Authorize → Tenant → Audit → JobDispatcher → DispatchEvents → Transaction, commit a rozeslání eventů.
+- [Command flow](/framework/command-flow) — write operace: Recovery → Logging → Authorize → Tenant → Audit → RunDispatcher → DispatchEvents → Transaction, commit a rozeslání eventů.
 - [Query flow](/framework/query-flow) — read operace: Recovery → Logging → Authorize → Tenant, typovaný návrat přes `bus.Exec`.
 - [Event flow](/framework/event-flow) — domain eventy po commitu: per-request collector, synchronní dispatch přes EventBus.
 

@@ -23,7 +23,6 @@ import (
 
 	"gokick/app/application/bus"
 	mw "gokick/app/application/bus/middleware"
-	"gokick/app/domain/job"
 	"gokick/app/domain/shared"
 	"gokick/app/domain/user"
 	sqliteaudit "gokick/app/infrastructure/sqlite/audit"
@@ -309,55 +308,6 @@ func TestDispatchEventsMiddleware_AfterCommitSideEffectWithRealDB(t *testing.T) 
 }
 
 // ---------------------------------------------------------------------------
-// roadmap-39 — JobDispatcherMiddleware injects the dispatcher into ctx BEFORE
-// TransactionMiddleware, so an Enqueue inside a handler joins the business tx:
-// a handler error rolls the job back; a clean commit persists it.
-//
-// testRef was "none". Wires the real chain order
-// JobDispatcherMiddleware(outer) -> TransactionMiddleware(real DB)(inner) and a
-// dispatcher that writes through the real job.Repository (Conn-aware), then
-// asserts the jobs table reflects the tx outcome.
-// ---------------------------------------------------------------------------
-func TestJobDispatcherMiddleware_EnqueueJoinsBusinessTx(t *testing.T) {
-	// Not t.Parallel — see note in TestAuditMiddleware_PersistsAcrossBusinessRollback
-	// (goose RunUp touches process-global state; serialize DB-backed tests).
-	fx := testfx.New(t, t.TempDir()+"/job_tx.db")
-
-	dispatcher := &txJoiningDispatcher{repo: fx.Jobs}
-	jobmw := mw.JobDispatcherMiddleware(dispatcher)
-	txmw := mw.TransactionMiddleware(fx.DB)
-
-	runOnce := func(kind string, handlerErr error) {
-		_, _ = jobmw(
-			context.Background(),
-			"Cmd",
-			plainCmd{},
-			func(ctx context.Context) (any, error) {
-				return txmw(ctx, "Cmd", plainCmd{}, func(ctx context.Context) (any, error) {
-					if err := shared.JobDispatcherFromContext(ctx).Enqueue(ctx, kind, 0, nil); err != nil {
-						return nil, err
-					}
-					return nil, handlerErr
-				})
-			},
-		)
-	}
-
-	// Rollback path: handler errors -> the enqueued job must roll back with it.
-	runOnce("rolledbackjob", errors.New("boom"))
-	if n := countRows(t, fx, `SELECT COUNT(*) FROM jobs WHERE kind = ?`, "rolledbackjob"); n != 0 {
-		t.Fatalf("Enqueue must join the business tx and roll back, found %d job rows", n)
-	}
-
-	// Success path: clean commit -> the enqueued job persists.
-	runOnce("committedjob", nil)
-	if n := countRows(t, fx, `SELECT COUNT(*) FROM jobs WHERE kind = ?`, "committedjob"); n != 1 {
-		t.Fatalf("Enqueue on a clean commit must persist, found %d job rows", n)
-	}
-}
-
-// --- test doubles & helpers ------------------------------------------------
-
 // seedUserInTx writes a user row through the real repository using the given
 // (transaction-carrying) context, so the INSERT joins the surrounding tx and
 // rolls back with it.
@@ -439,22 +389,4 @@ func (c *ctxErrAudit) Save(ctx context.Context, _ *shared.AuditRecord) error {
 	c.saved = true
 	c.ctxErr = ctx.Err()
 	return nil
-}
-
-// txJoiningDispatcher is a minimal shared.JobDispatcher that persists through
-// the real job.Repository. Its Enqueue uses r.Conn(ctx), so when invoked inside
-// a transaction the INSERT joins that transaction — exactly what the middleware
-// chain ordering is supposed to make possible.
-type txJoiningDispatcher struct {
-	repo job.Repository
-}
-
-func (d *txJoiningDispatcher) Enqueue(
-	ctx context.Context,
-	kind string,
-	maxRetries int,
-	_ any,
-	_ ...shared.EnqueueOption,
-) error {
-	return d.repo.Enqueue(ctx, job.NewJob(kind, []byte("null"), maxRetries))
 }
