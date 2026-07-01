@@ -1,4 +1,4 @@
-.PHONY: install build serve dev di install-tools go-deps lint format format-check test arch-check \
+.PHONY: install build serve dev di install-tools go-deps lint format format-check test arch-check e2e-crash-recovery \
         fe-deps fe-dev fe-build fe-clean \
         migrate-create migrate-up migrate-down migrate-status \
         docker-build \
@@ -129,6 +129,12 @@ fe-clean:
 test:
 	yarn test
 	go test ./app/... ./cmd/... 2>&1 | grep -v '\[no test files\]'
+
+# Local durable-run crash-recovery E2E: builds bin/app, kills a serve process
+# mid-run, and asserts a cold restart resumes from the checkpoint. Needs jq. Not
+# part of `test` (spawns real processes) — run on demand.
+e2e-crash-recovery:
+	./test/e2e/run_crash_recovery.sh
 
 arch-check:
 	$(GO_ARCH_LINT) check
