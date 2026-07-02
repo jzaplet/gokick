@@ -42,6 +42,13 @@ type Config struct {
 	SentryEnvironment string
 	SentryDebug       bool
 
+	// RunDebug gates the /debug/runs endpoints and the e2e:* test run kinds, so a
+	// live or local deploy can exercise the durable-run engine's crash-recovery /
+	// drain guarantees that an in-process test cannot reach. Keep it OFF in
+	// production — it lets any caller enqueue and cancel runs; the app logs a
+	// warning at startup when it is on.
+	RunDebug bool
+
 	// TrustProxyHeaders flips IP extraction from RemoteAddr to X-Real-IP.
 	// Leave false unless the app sits behind a reverse proxy that you
 	// trust to rewrite X-Real-IP — any client can forge the header
@@ -94,6 +101,7 @@ func LoadConfig() (*Config, error) {
 		FrontendSentryDSN:      getEnv("APP_SENTRY_DSN_FRONTEND", ""),
 		SentryEnvironment:      getEnv("APP_SENTRY_ENVIRONMENT", ""),
 		SentryDebug:            getEnv("APP_SENTRY_DEBUG", "false") == "true",
+		RunDebug:               getEnv("APP_RUN_DEBUG", "false") == "true",
 	}
 
 	var err error

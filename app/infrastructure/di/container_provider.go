@@ -231,10 +231,18 @@ func provideScheduler(logger *slog.Logger, jobs []scheduler.Job) (*scheduler.Sch
 }
 
 // provideRunHandlerRegistry collects every kind → durable-run handler the binary
-// can process. Empty for now — agent handlers are registered here as they appear.
-// The default lease comes from config so an unset per-kind lease stays consistent.
+// can process. Real handlers are registered here as they appear. When APP_RUN_DEBUG
+// is on it also registers the e2e:* debug kinds (the crash-recovery / drain
+// harness) — never in production. The default lease comes from config so an unset
+// per-kind lease stays consistent.
 func provideRunHandlerRegistry(cfg *config.Config) (*runapp.HandlerRegistry, error) {
-	return runapp.NewHandlerRegistry(map[string]runapp.Registration{}, cfg.RunWorkerLease)
+	kinds := map[string]runapp.Registration{}
+	if cfg.RunDebug {
+		for kind, reg := range runapp.E2EDebugRegistrations() {
+			kinds[kind] = reg
+		}
+	}
+	return runapp.NewHandlerRegistry(kinds, cfg.RunWorkerLease)
 }
 
 // provideRunDispatcher returns the durable-run dispatcher as a domain interface so
@@ -372,6 +380,7 @@ func CreateApplication(
 		handler.NewAdminUsersHandler,
 		handler.NewDashboardHandler,
 		handler.NewPlatformHandler,
+		handler.NewDebugRunHandler,
 		server.NewServer,
 		console.NewServeCommand,
 		console.NewSeedCommand,

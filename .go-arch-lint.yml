@@ -223,6 +223,7 @@ deps:
       - testfx
       - domain_user
       - domain_tenant
+      - domain_run
   request:
     anyVendorDeps: true
   http_middleware:

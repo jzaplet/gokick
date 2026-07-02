@@ -72,3 +72,34 @@ jobs:
 
       - name: Build
         run: make build
+
+  e2e:
+    # Durable-run process-lifecycle E2E (kill -9 / SIGTERM against real serve
+    # processes + a persistent SQLite file) — deliberately NOT part of `make test`,
+    # so it runs as its own parallel job. Plain bash + jq + sqlite3, no Docker; the
+    # scripts build bin/app themselves (go:embed * is satisfied by the committed
+    # public/ files, no frontend build needed — E2E only talks to /health and
+    # /debug/runs). See test/e2e/README.md.
+    name: durable-run E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Cache Go build cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/go-build
+          key: go-e2e-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          restore-keys: go-e2e-${{ runner.os }}-
+
+      - name: Ensure jq + sqlite3
+        # Both ship in the ubuntu-latest image; this is a cheap no-op guard so an
+        # image change fails loudly here instead of mid-script.
+        run: sudo apt-get install -y --no-install-recommends jq sqlite3
+
+      - name: E2E (crash recovery · at-least-once · SIGTERM drain · terminal failure)
+        run: make e2e
