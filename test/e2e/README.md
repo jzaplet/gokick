@@ -10,6 +10,13 @@ endpoints. See `app/application/run/e2edebug.go` and
 `app/presentation/http/handler/debug_run.go`. `make e2e` runs all four; each also
 has its own target. Needs `jq` (at-least-once also `sqlite3`).
 
+**CI:** the `e2e` job in `.github/workflows/validate.yml` runs `make e2e` on every
+push/PR, parallel to the main validate job. Deliberately NOT part of `make test`
+(spawns real serve processes). No frontend build needed — the scripts build
+`bin/app` from the committed tree (`go:embed *` is satisfied by `public/favicon.ico`
+and the SPA handler serves a not-built fallback; E2E only talks to `/health` +
+`/debug/runs`).
+
 | Test | `make` | Proves |
 |------|--------|--------|
 | **Crash recovery** ⭐ | `e2e-crash-recovery` | kill -9 mid-run → a cold process reclaims the orphaned run and **resumes from its last checkpoint** to completion (`reclaims≥1`, final `step`==total). |
