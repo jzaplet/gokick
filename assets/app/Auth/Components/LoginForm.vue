@@ -22,11 +22,6 @@ const form: LoginRequest = reactive({
 const errors = ref<LoginErrors>({});
 const isLoading = ref(false);
 
-const clearFieldError = (field: keyof LoginErrors): void => {
-    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- optional key removal is the intended API
-    delete errors.value[field];
-};
-
 const handleSubmit = async (): Promise<void> => {
     isLoading.value = true;
     errors.value = {};
@@ -76,10 +71,8 @@ const handleSubmit = async (): Promise<void> => {
                 type="text"
                 label="Nickname"
                 placeholder="admin"
-                :error="errors.nickname"
                 required
                 :disabled="isLoading"
-                @update:model-value="() => clearFieldError('nickname')"
             />
 
             <Input
@@ -87,10 +80,8 @@ const handleSubmit = async (): Promise<void> => {
                 name="password"
                 type="password"
                 label="Password"
-                :error="errors.password"
                 required
                 :disabled="isLoading"
-                @update:model-value="() => clearFieldError('password')"
             />
         </div>
 
