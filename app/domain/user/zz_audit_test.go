@@ -109,6 +109,20 @@ func TestNewNickname_AtLimitOK(t *testing.T) {
 	}
 }
 
+// TestNewNickname_MaxCountsRunesNotBytes (F-014): the 50-char maximum counts
+// CHARACTERS, so a 50-rune accented nickname (100 bytes) is accepted, not
+// rejected early on its byte length.
+func TestNewNickname_MaxCountsRunesNotBytes(t *testing.T) {
+	in := strings.Repeat("á", 50) // 50 runes, 100 bytes
+	n, err := NewNickname(in)
+	if err != nil {
+		t.Fatalf("a 50-rune nickname must be accepted, got: %v", err)
+	}
+	if string(n) != in {
+		t.Fatal("accepted nickname must round-trip unchanged")
+	}
+}
+
 // TestNewRole_Invalid closes domain-11: any value outside the allowed set
 // (superadmin/admin/user) yields a *shared.ValidationError with Field "role"
 // and Message "invalid role".
@@ -141,9 +155,9 @@ func TestNewRole_AcceptsKnownRoles(t *testing.T) {
 	}
 }
 
-// TestNewPassword_TooLong closes domain-19: a password longer than 128
-// characters yields a *shared.ValidationError with Field "password" and
-// Message "password must be at most 128 characters".
+// TestNewPassword_TooLong closes domain-19: a password longer than the 128-byte
+// anti-DoS cap yields a *shared.ValidationError with Field "password" and Message
+// "password must be at most 128 bytes".
 func TestNewPassword_TooLong(t *testing.T) {
 	_, err := NewPassword(strings.Repeat("a", 129))
 
@@ -154,8 +168,20 @@ func TestNewPassword_TooLong(t *testing.T) {
 	if ve.Field != "password" {
 		t.Fatalf("Field: got %q want %q", ve.Field, "password")
 	}
-	if ve.Message != "password must be at most 128 characters" {
-		t.Fatalf("Message: got %q want %q", ve.Message, "password must be at most 128 characters")
+	if ve.Message != "password must be at most 128 bytes" {
+		t.Fatalf("Message: got %q want %q", ve.Message, "password must be at most 128 bytes")
+	}
+}
+
+// TestNewPassword_MinCountsRunesNotBytes (F-014): the 8-char minimum counts
+// CHARACTERS, so a 4-rune accented password (8 bytes) is too short and rejected,
+// while 8 accented runes (16 bytes) is accepted.
+func TestNewPassword_MinCountsRunesNotBytes(t *testing.T) {
+	if _, err := NewPassword("čtyř"); err == nil { // 4 runes / 6 bytes — too short
+		t.Fatal("a 4-rune password must be rejected (min counts characters, not bytes)")
+	}
+	if _, err := NewPassword("čtyřznak"); err != nil { // 8 runes / 10 bytes — accepted
+		t.Fatalf("an 8-rune password must be accepted, got: %v", err)
 	}
 }
 
