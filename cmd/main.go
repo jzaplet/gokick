@@ -58,7 +58,9 @@ func run() int {
 	// terminal reports were dropped, so log it rather than swallow the loss.
 	defer func() {
 		if !reporter.Flush(sentryFlushTimeout) {
-			logger.Warn("sentry flush timed out before exit; some error reports may have been dropped")
+			logger.Warn(
+				"sentry flush timed out before exit; some error reports may have been dropped",
+			)
 		}
 	}()
 

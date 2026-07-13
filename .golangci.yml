@@ -12,6 +12,14 @@ linters:
     - depguard
     - forbidigo
     - sloglint
+    # Complexity/size gates (ratchet). Enabled 2026-07-13 once the god-symbol
+    # refactors cleared every production over-threshold symbol; see the audit's
+    # RATCHET.md. Thresholds are the audit's post-refactor targets. Tests are
+    # excluded below (fixtures are legitimately long/branchy).
+    - funlen
+    - gocognit
+    - nestif
+    - gocritic
   settings:
     depguard:
       rules:
@@ -75,6 +83,14 @@ linters:
       static-msg: true # log messages must be constant strings
       no-raw-keys: true # every attribute key must be a constant
       key-naming-case: snake # keys are snake_case
+    funlen:
+      lines: 80
+      statements: 50
+      ignore-comments: true # comments don't count toward the line limit
+    gocognit:
+      min-complexity: 20
+    nestif:
+      min-complexity: 4
   exclusions:
     rules:
       # CLI commands legitimately print user-facing results to stdout.
@@ -105,3 +121,18 @@ linters:
         linters:
           - sloglint
           - forbidigo
+      # Complexity gates don't apply to tests: table-driven cases and fixtures are
+      # legitimately long and branchy, and holding them to the production threshold
+      # would push logic out of the test and hurt readability. Production code holds
+      # the line.
+      - path: _test\.go
+        linters:
+          - funlen
+          - gocognit
+      # Test data legitimately contains odd literals — e.g. a whitespace-padded map
+      # key that exercises the trimming path (cmd/logger_test.go). Don't let
+      # gocritic's mapKey whitespace check flag intentional test input.
+      - path: _test\.go
+        text: 'mapKey: suspicious whitespace'
+        linters:
+          - gocritic

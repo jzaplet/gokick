@@ -222,19 +222,7 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 		}
 	}()
 
-	// Poison-crash-loop bound at the CLAIM boundary: a run that keeps killing the
-	// worker process never reaches handleFailure, so the cap must fire here, before
-	// the handler runs. ClaimDue already returned the post-increment reclaims.
-	if r.Reclaims > w.cfg.MaxReclaims {
-		log.Error("run worker: exceeded max reclaims, failing (poison)", logKeyReclaims, r.Reclaims)
-		if ok, err := w.repo.MarkFailed(workerCtx, r.ID, owner,
-			fmt.Sprintf("exceeded max reclaims (%d > %d) — poison run", r.Reclaims, w.cfg.MaxReclaims)); err != nil {
-			log.Error("run worker: poison mark-failed errored", shared.LogKeyError, err)
-		} else if ok {
-			w.reporter.Capture(workerCtx,
-				fmt.Errorf("run %q exceeded max reclaims (poison-crash-loop)", r.Kind),
-				slog.String(logKeyRunID, r.ID))
-		}
+	if w.failIfPoison(workerCtx, log, r, owner) {
 		return
 	}
 
@@ -244,20 +232,8 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 		return
 	}
 
-	// Close the claim gap: ClaimDue already stamped DefaultLease, so re-lease to the
-	// kind's lease ONLY when it differs — a per-kind lease (shorter or longer) must
-	// take effect before the first heartbeat tick, but for the common default-lease
-	// kind the claim's lease is already correct and a second write is wasted. The
-	// heartbeat keeps its interval sound against kindLease by deriving it from the
-	// lease inside heartbeat() (not here). alive=false = already lost.
-	if kindLease != w.cfg.DefaultLease {
-		if alive, _, err := w.repo.RenewLease(workerCtx, r.ID, owner, kindLease); err != nil {
-			log.Error("run worker: initial re-lease errored, abandoning", shared.LogKeyError, err)
-			return
-		} else if !alive {
-			log.Warn("run worker: lost lease immediately after claim, abandoning")
-			return
-		}
+	if !w.initialReLease(workerCtx, log, r, owner, kindLease) {
+		return
 	}
 
 	runCtx := w.buildRunContext(workerCtx, r)
@@ -282,7 +258,16 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 	}
 
 	var abandon, cancelled atomic.Bool
-	hbDone := w.startHeartbeat(hbCtx, execCtx, r, owner, kindLease, cancelHandler, &abandon, &cancelled)
+	hbDone := w.startHeartbeat(
+		hbCtx,
+		execCtx,
+		r,
+		owner,
+		kindLease,
+		cancelHandler,
+		&abandon,
+		&cancelled,
+	)
 
 	// Honor a cancel already requested at claim time (immutable claimed-row value;
 	// no shared state read).
@@ -313,6 +298,60 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 		timedOut,
 		time.Since(start),
 	)
+}
+
+// failIfPoison enforces the poison-crash-loop bound at the CLAIM boundary: a run
+// that keeps killing the worker never reaches handleFailure, so the cap must fire
+// here, before the handler runs (ClaimDue already returned the post-increment
+// reclaims). Returns true if the run was over the cap and handled (marked failed) —
+// the caller must then stop processing it.
+func (w *RunWorker) failIfPoison(
+	workerCtx context.Context,
+	log *slog.Logger,
+	r *run.Run,
+	owner string,
+) bool {
+	if r.Reclaims <= w.cfg.MaxReclaims {
+		return false
+	}
+	log.Error("run worker: exceeded max reclaims, failing (poison)", logKeyReclaims, r.Reclaims)
+	if ok, err := w.repo.MarkFailed(workerCtx, r.ID, owner,
+		fmt.Sprintf("exceeded max reclaims (%d > %d) — poison run", r.Reclaims, w.cfg.MaxReclaims)); err != nil {
+		log.Error("run worker: poison mark-failed errored", shared.LogKeyError, err)
+	} else if ok {
+		w.reporter.Capture(workerCtx,
+			fmt.Errorf("run %q exceeded max reclaims (poison-crash-loop)", r.Kind),
+			slog.String(logKeyRunID, r.ID))
+	}
+	return true
+}
+
+// initialReLease closes the claim gap: ClaimDue stamped DefaultLease, so re-lease to
+// the kind's lease ONLY when it differs — a per-kind lease (shorter or longer) must
+// take effect before the first heartbeat tick, but for the common default-lease kind
+// the claim's lease is already correct and a second write is wasted (the heartbeat
+// keeps its interval sound by deriving it from kindLease itself). Returns false if
+// the lease was lost or the write errored — the caller must abandon.
+func (w *RunWorker) initialReLease(
+	workerCtx context.Context,
+	log *slog.Logger,
+	r *run.Run,
+	owner string,
+	kindLease time.Duration,
+) bool {
+	if kindLease == w.cfg.DefaultLease {
+		return true
+	}
+	alive, _, err := w.repo.RenewLease(workerCtx, r.ID, owner, kindLease)
+	if err != nil {
+		log.Error("run worker: initial re-lease errored, abandoning", shared.LogKeyError, err)
+		return false
+	}
+	if !alive {
+		log.Warn("run worker: lost lease immediately after claim, abandoning")
+		return false
+	}
+	return true
 }
 
 // buildRunContext assembles the ctx a run handler executes under. The worker
@@ -376,7 +415,10 @@ func (w *RunWorker) startHeartbeat(
 					slog.Any(logKeyPanic, rec), slog.String(logKeyStack, string(debug.Stack())))
 				w.reporter.Capture(
 					hbCtx,
-					&shared.PanicError{Value: rec, Message: fmt.Sprintf("heartbeat panic: %v", rec)},
+					&shared.PanicError{
+						Value:   rec,
+						Message: fmt.Sprintf("heartbeat panic: %v", rec),
+					},
 					slog.String(logKeyRunID, r.ID),
 				)
 				abandon.Store(true)
