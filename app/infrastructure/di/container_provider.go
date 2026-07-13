@@ -42,8 +42,9 @@ import (
 	"io/fs"
 	"log/slog"
 
-	"github.com/google/wire"
 	"time"
+
+	"github.com/google/wire"
 )
 
 func providePasswordHasher() shared.PasswordHasher {
