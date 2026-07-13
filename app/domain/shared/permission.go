@@ -17,6 +17,17 @@ type PermissionChecker interface {
 	Check(ctx context.Context, permission string) error
 }
 
+// Canonical role identifiers — the single source of the role names. The
+// user.Role value-object consts are defined as conversions of these
+// (Role(shared.RoleAdmin), …) and IsPermissionAllowedForRole compares against
+// them, so the authorization ladder and the domain VO can never drift apart on a
+// bare string literal.
+const (
+	RoleSuperAdmin = "superadmin"
+	RoleAdmin      = "admin"
+	RoleUser       = "user"
+)
+
 // IsPermissionAllowedForRole reports whether the given role may execute an
 // operation requiring the specified permission. Roles form a strict ladder:
 //
@@ -29,7 +40,7 @@ type PermissionChecker interface {
 // Order matters: the platform:* gate sits between superadmin and admin so that
 // admin's "everything below" does not silently swallow the platform plane.
 func IsPermissionAllowedForRole(permission, role string) bool {
-	if role == "superadmin" {
+	if role == RoleSuperAdmin {
 		return true
 	}
 
@@ -37,7 +48,7 @@ func IsPermissionAllowedForRole(permission, role string) bool {
 		return false
 	}
 
-	if role == "admin" {
+	if role == RoleAdmin {
 		return true
 	}
 
