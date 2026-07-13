@@ -6,6 +6,7 @@ import { useToast } from '@/app-ui/Toast/useToast';
 import { Permission } from '@/app/Auth/enums/resources';
 import Dropdown from '@/app-ui/Dropdown/Dropdown.vue';
 import UserIcon from '@/app-ui/Icons/UserIcon.vue';
+import NavLinks from '@/app/Layout/NavLinks.vue';
 
 const router = useRouter();
 const { success } = useToast();
@@ -64,18 +65,7 @@ const handleLogout = async (): Promise<void> => {
             </button>
 
             <nav class="hidden sm:flex items-center gap-1">
-                <RouterLink
-                    v-for="link in navLinks"
-                    :key="link.name"
-                    :to="{ name: link.name }"
-                    :class="[
-                        'px-3 py-1.5 rounded-md text-sm font-medium',
-                        'text-gray-700 hover:text-gray-900 hover:bg-gray-100',
-                    ]"
-                    active-class="!text-orange-700 !bg-orange-50"
-                >
-                    {{ link.label }}
-                </RouterLink>
+                <NavLinks :links="navLinks" />
             </nav>
 
             <Dropdown v-if="user !== null">
@@ -134,18 +124,7 @@ const handleLogout = async (): Promise<void> => {
                 'flex items-center justify-center gap-1 py-2',
             ]"
         >
-            <RouterLink
-                v-for="link in navLinks"
-                :key="link.name"
-                :to="{ name: link.name }"
-                :class="[
-                    'px-3 py-1.5 rounded-md text-sm font-medium',
-                    'text-gray-700 hover:text-gray-900 hover:bg-gray-100',
-                ]"
-                active-class="!text-orange-700 !bg-orange-50"
-            >
-                {{ link.label }}
-            </RouterLink>
+            <NavLinks :links="navLinks" />
         </nav>
     </header>
 </template>
