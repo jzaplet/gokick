@@ -113,6 +113,12 @@ export default tseslint.config(
       'eqeqeq': ['error', 'always'],
       'curly': ['error', 'all'],
 
+      // --- Size / depth gates (audit ratchet — enabled as preconditions clear) ---
+      // Measured green 2026-07-13: largest file 193 lines, max nesting depth 3.
+      // complexity 10 and no-as follow once their preconditions are cleared.
+      'max-lines': ['error', { max: 300, skipBlankLines: true, skipComments: true }],
+      'max-depth': ['error', 4],
+
       // Stylistic — overrides beyond the preset
       '@stylistic/max-len': ['error', {
         code: 120,
