@@ -24,7 +24,19 @@ export const apiFetch = async <TData, TError = { message: string }>(
         init.body = JSON.stringify(options.body);
     }
 
-    const response = await fetch(url, init);
+    let response: Response;
+
+    try {
+        response = await fetch(url, init);
+    } catch {
+        // Transport/network failure (offline, DNS, CORS, aborted) — surface it as
+        // a structured ApiError so every `result.success === false` consumer fires
+        // (toast, clear isLoading) instead of an unhandled promise rejection.
+        // status:0 marks "never reached the server"; refresh() treats it as a
+        // transient failure that keeps the session. `as TError` matches the same
+        // fetch-boundary cast parseResponse uses for the error body.
+        return { success: false, status: 0, data: { message: 'network error' } as TError };
+    }
 
     return parseResponse<TData, TError>(response);
 };

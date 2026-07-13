@@ -60,14 +60,14 @@ describe('logout', () => {
     });
 
     it('still clears the session when the network request rejects', async (): Promise<void> => {
-        // logout() is `try { await apiFetch(...) } finally { clearAuth() }`, so a
-        // rejecting fetch (offline / DNS failure) propagates out of logout() — but
-        // the finally block still wipes local state. Assert BOTH: logout rejects
-        // AND the in-memory session is gone, so the user isn't left "stuck".
+        // apiFetch converts a network rejection (offline / DNS) into a structured
+        // failure result instead of throwing, so logout() RESOLVES and the finally
+        // block still wipes local state — the user is never left "stuck" logged in,
+        // and no unhandled rejection escapes to the caller (e.g. AppHeader).
         vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network'));
 
         seedSession();
-        await expect(logout()).rejects.toThrow('network');
+        await expect(logout()).resolves.toBeUndefined();
 
         expectSessionCleared();
     });
