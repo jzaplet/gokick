@@ -25,5 +25,14 @@ func (h *LogoutHandler) Handle(ctx context.Context, _ LogoutCommand) error {
 		return &shared.AuthError{Message: "authentication required"}
 	}
 
+	// Record-before-revoke (mirrors the refresh theft branch): logout is a
+	// security-relevant global session revocation, so the intent is audited even
+	// if DeleteByUserID errors. The collector is a throwaway outside the bus.
+	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
+		Action:     "auth.logout",
+		TargetType: "user",
+		TargetID:   claims.UserID,
+	})
+
 	return h.tokens.DeleteByUserID(ctx, claims.UserID)
 }

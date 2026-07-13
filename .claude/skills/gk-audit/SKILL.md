@@ -107,6 +107,7 @@ Přidat audit zápis do command handleru:
   `auth.login.succeeded` / `auth.login.failed` (`{nickname}`) /
   `auth.account.locked` (`{locked_until}`) / `auth.token.theft_detected`
   (`{reason: reused_after_rotation | concurrent_rotation_race}`) /
+  `auth.logout` (global session revocation) /
   `user.created` (`{role}`) / `user.role_changed` (`{new_role}`) /
   `user.deleted` / `user.password_changed`.
 
