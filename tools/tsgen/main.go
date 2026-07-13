@@ -183,6 +183,12 @@ func structFields(st *ast.StructType) ([]dtoField, error) {
 			continue
 		}
 		for _, n := range f.Names {
+			// encoding/json serializes ONLY exported fields, tag or no tag — so an
+			// unexported field never reaches the wire. Emitting it would make the TS
+			// assert a property that never arrives; skip it exactly as json does.
+			if !n.IsExported() {
+				continue
+			}
 			key := name
 			if key == "" {
 				key = n.Name // encoding/json falls back to the field name
@@ -242,6 +248,12 @@ func mapType(expr ast.Expr) (tsType, dep string, err error) {
 			return t.Name, t.Name, nil
 		}
 	case *ast.ArrayType:
+		// []T -> T[] (never T[]|null). A NIL Go slice marshals to JSON `null`, which
+		// would break `T[]` at runtime — so DTO slice fields MUST be non-nil-
+		// initialized by the handler (the gokick convention: e.g. permissions comes
+		// from registry.ForRole, which starts `[]string{}`). This tool cannot enforce
+		// that at compile time; keeping T[] matches the convention and the FE's use
+		// (no null-guard on arrays) rather than pessimizing every slice to |null.
 		elem, dep, err := mapType(t.Elt)
 		if err != nil {
 			return "", "", err
@@ -404,6 +416,12 @@ func writeFiles(root string, files map[string]string) {
 		}
 		fmt.Printf("tsgen: wrote %s\n", rel)
 	}
+	for _, rel := range orphans(root, files) {
+		if err := os.Remove(filepath.Join(root, rel)); err != nil {
+			fatal("prune orphan %s: %v", rel, err)
+		}
+		fmt.Printf("tsgen: pruned orphan %s\n", rel)
+	}
 	fmt.Printf("tsgen: %d file(s) generated\n", len(files))
 }
 
@@ -421,6 +439,9 @@ func checkFiles(root string, files map[string]string) {
 			drift = append(drift, rel+" (out of date — run make ts-gen)")
 		}
 	}
+	for _, rel := range orphans(root, files) {
+		drift = append(drift, rel+" (orphan — no //gkts directive produces it; run make ts-gen to prune)")
+	}
 	if len(drift) > 0 {
 		sort.Strings(drift)
 		fmt.Fprintln(os.Stderr, "tsgen: generated TypeScript is out of date:")
@@ -430,6 +451,44 @@ func checkFiles(root string, files map[string]string) {
 		os.Exit(1)
 	}
 	fmt.Printf("tsgen: %d file(s) up to date\n", len(files))
+}
+
+// orphans returns generated files still on disk (identified by the DO-NOT-EDIT
+// header) that the CURRENT directive set no longer produces — a //gkts directive
+// was deleted or its path repointed, leaving a stale, now-authorless TS type the
+// frontend keeps importing. generate prunes them; check reports them as drift.
+func orphans(root string, current map[string]string) []string {
+	var out []string
+	err := filepath.WalkDir(filepath.Join(root, "assets"), func(path string, e os.DirEntry, err error) error {
+		if err != nil || e.IsDir() || !strings.HasSuffix(path, ".ts") {
+			return nil
+		}
+		b, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return rerr
+		}
+		if !strings.HasPrefix(string(b), genHeader) {
+			return nil
+		}
+		rel := filepath.ToSlash(mustRel(root, path))
+		if _, live := current[rel]; !live {
+			out = append(out, rel)
+		}
+		return nil
+	})
+	if err != nil {
+		fatal("scan for orphans: %v", err)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func mustRel(base, path string) string {
+	rel, err := filepath.Rel(base, path)
+	if err != nil {
+		fatal("rel %s: %v", path, err)
+	}
+	return rel
 }
 
 // repoRoot resolves the gokick module root by walking up from the working
