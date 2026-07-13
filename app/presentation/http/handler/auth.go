@@ -58,6 +58,7 @@ func NewAuthHandler(
 	}
 }
 
+//gkts:LoginRequest assets/app-ui/Auth/types/LoginRequest.ts
 type loginRequest struct {
 	Nickname string `json:"nickname"`
 	Password string `json:"password"`

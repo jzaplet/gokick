@@ -274,7 +274,10 @@ func render(dtos []dto, byGo map[string]directive) (map[string]string, error) {
 
 	out := make(map[string]string, len(order))
 	for _, path := range order {
-		group := byFile[path]
+		group, err := dedupe(path, byFile[path])
+		if err != nil {
+			return nil, err
+		}
 
 		// A file may host several types; a name defined here needs no import.
 		localNames := map[string]bool{}
@@ -311,6 +314,41 @@ func render(dtos []dto, byGo map[string]directive) (map[string]string, error) {
 		out[path] = sb.String()
 	}
 	return out, nil
+}
+
+// dedupe collapses DTOs that map to the same TS name in one file. Several Go
+// request DTOs legitimately share a TS type (e.g. create/update/platform user all
+// mirror UserFormData); an identical shape is emitted once. Two DTOs claiming the
+// same TS name with DIFFERENT fields is a real conflict — fail loud, don't pick one.
+func dedupe(path string, group []dto) ([]dto, error) {
+	seen := map[string]dto{}
+	var uniq []dto
+	for _, d := range group {
+		if prev, ok := seen[d.dir.tsName]; ok {
+			if !fieldsEqual(prev.fields, d.fields) {
+				return nil, fmt.Errorf(
+					"%s: TS type %q is defined by both %q and %q with different fields — "+
+						"reconcile the Go DTOs or give them distinct //gkts: names",
+					path, d.dir.tsName, prev.goName, d.goName)
+			}
+			continue // identical duplicate — one definition suffices
+		}
+		seen[d.dir.tsName] = d
+		uniq = append(uniq, d)
+	}
+	return uniq, nil
+}
+
+func fieldsEqual(a, b []dtoField) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // renderType writes one `export type` block and records any imports its fields need.
