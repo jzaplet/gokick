@@ -36,6 +36,10 @@ func run() int {
 		parseLogLevel(startup.LogLevel),
 		sentryEnabled,
 	)
+	// Keep SetDefault: it routes any stray stdlib `log` / third-party output that
+	// reaches the default logger through this one slog handler, preserving the
+	// single-logging-path invariant that forbidigo/sloglint enforce statically.
+	// Removing it would let such output escape to raw stderr, bypassing the handler.
 	slog.SetDefault(logger)
 	logger.Info("starting gokick", "version", version)
 
