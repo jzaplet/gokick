@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AdminUser } from '@/app/Admin/types/AdminUser';
 import { useAuth } from '@/app-ui/Auth';
+import { roleBadge } from '@/app-ui/Users/roleBadge';
 import Button from '@/app-ui/Buttons/Button.vue';
 import EditIcon from '@/app-ui/Icons/EditIcon.vue';
 import TrashIcon from '@/app-ui/Icons/TrashIcon.vue';
@@ -85,9 +86,7 @@ const isSelf = (id: string): boolean => {
                             :class="[
                                 'inline-flex px-2 py-1',
                                 'text-xs font-semibold rounded-full',
-                                user.role === 'admin'
-                                    ? 'bg-orange-100 text-orange-800'
-                                    : 'bg-gray-100 text-gray-800',
+                                roleBadge(user.role),
                             ]"
                         >
                             {{ user.role }}

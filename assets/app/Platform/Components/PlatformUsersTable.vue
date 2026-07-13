@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { PlatformUser } from '@/app/Platform/types/PlatformUser';
+import { roleBadge } from '@/app-ui/Users/roleBadge';
 import Button from '@/app-ui/Buttons/Button.vue';
 import EditIcon from '@/app-ui/Icons/EditIcon.vue';
 import TrashIcon from '@/app-ui/Icons/TrashIcon.vue';
@@ -12,17 +13,6 @@ defineEmits<{
     edit: [user: PlatformUser];
     delete: [user: PlatformUser];
 }>();
-
-const roleBadge = (role: string): string => {
-    if (role === 'superadmin') {
-        return 'bg-purple-100 text-purple-800';
-    }
-    if (role === 'admin') {
-        return 'bg-orange-100 text-orange-800';
-    }
-
-    return 'bg-gray-100 text-gray-800';
-};
 
 const formatLastLogin = (value: string | null): string => {
     if (value === null) {
