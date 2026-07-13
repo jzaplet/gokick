@@ -44,16 +44,35 @@ func (r *Repository) Save(ctx context.Context, u *user.User) error {
 func (r *Repository) Update(ctx context.Context, u *user.User) error {
 	const q = `UPDATE users SET nickname=?, password_hash=?, email=?, role=?, active=?, updated_at=?
 		WHERE id=? AND tenant_id=? AND role != 'superadmin'`
-	_, err := r.Conn(ctx).ExecContext(ctx, q,
+	res, err := r.Conn(ctx).ExecContext(ctx, q,
 		u.Nickname, u.PasswordHash, u.Email, u.Role, u.Active, u.UpdatedAt, u.ID, r.Tenant(ctx))
-	return err
+	return requireOneRow(res, err)
 }
 
 // Delete scopes by tenant AND excludes superadmin rows — same rationale as Update.
 func (r *Repository) Delete(ctx context.Context, id string) error {
-	_, err := r.Conn(ctx).ExecContext(ctx,
+	res, err := r.Conn(ctx).ExecContext(ctx,
 		`DELETE FROM users WHERE id=? AND tenant_id=? AND role != 'superadmin'`, id, r.Tenant(ctx))
-	return err
+	return requireOneRow(res, err)
+}
+
+// UpdatePassword sets a user's OWN password hash — the self-service write behind
+// the profile change-password flow. The id is always the authenticated subject's
+// own claims.UserID, so unlike Update it carries NO role != 'superadmin' filter: a
+// superadmin changing their own password is legitimate and must not silently
+// no-op. That escalation guard exists only to stop a tenant admin editing OTHER
+// users; a self password change can't escalate. Scoped WHERE id=? — a self
+// identity write, tenant-exempt like FindByID — and errors on 0 rows.
+func (r *Repository) UpdatePassword(
+	ctx context.Context,
+	userID, passwordHash string,
+	updatedAt time.Time,
+) error {
+	res, err := r.Conn(ctx).ExecContext(ctx,
+		`UPDATE users SET password_hash=?, updated_at=? WHERE id=?
+		 /* tenant-scope-exempt: self password change by id (subject == claims.UserID) */`,
+		passwordHash, updatedAt, userID)
+	return requireOneRow(res, err)
 }
 
 // FindByID loads the user named by an exact id — used by auth (the JWT subject)
@@ -138,18 +157,18 @@ func (r *Repository) CountAcrossTenants(ctx context.Context) (int, error) {
 func (r *Repository) UpdateAcrossTenants(ctx context.Context, u *user.User) error {
 	const q = `UPDATE users SET nickname=?, password_hash=?, email=?, role=?, active=?, updated_at=?
 		WHERE id=? AND role != 'superadmin' /* tenant-scope-exempt: platform superadmin */`
-	_, err := r.Conn(ctx).ExecContext(ctx, q,
+	res, err := r.Conn(ctx).ExecContext(ctx, q,
 		u.Nickname, u.PasswordHash, u.Email, u.Role, u.Active, u.UpdatedAt, u.ID)
-	return err
+	return requireOneRow(res, err)
 }
 
 // DeleteAcrossTenants is the platform-plane delete — same cross-tenant scope and
 // superadmin exclusion as UpdateAcrossTenants.
 func (r *Repository) DeleteAcrossTenants(ctx context.Context, id string) error {
-	_, err := r.Conn(ctx).ExecContext(ctx,
+	res, err := r.Conn(ctx).ExecContext(ctx,
 		`DELETE FROM users WHERE id=? AND role != 'superadmin' /* tenant-scope-exempt: platform superadmin */`,
 		id)
-	return err
+	return requireOneRow(res, err)
 }
 
 // RecordLogin stamps last_login_at on successful login. Raw pool (r.DB.DB()),
@@ -228,4 +247,26 @@ func (r *Repository) ResetFailedLogin(ctx context.Context, userID string) error 
 		 /* tenant-scope-exempt: clear brute-force counter on successful login */`,
 		userID)
 	return err
+}
+
+// requireOneRow turns a by-id mutation result into a not-found error when it
+// matched no row. A scoped UPDATE/DELETE that changes 0 rows — target absent, or
+// excluded by the WHERE guard (role != 'superadmin', wrong tenant) — must surface
+// as an error, never a silent success: a silent no-op returns 204 AND lets the
+// caller emit a phantom audit event for a write that never happened (F-023 phantom
+// role_changed, F-039 superadmin self-password no-op). Unlike sqlite.RowsAffectedBool
+// (owner-fencing, where 0 rows is a normal terminal outcome), here 0 rows is ALWAYS
+// an error. Field "id" mirrors FindByID's not-found so it maps to the same 400.
+func requireOneRow(res sql.Result, err error) error {
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return &shared.ValidationError{Field: "id", Message: "user not found"}
+	}
+	return nil
 }

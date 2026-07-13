@@ -31,8 +31,17 @@ func (h *DeleteUserHandler) Handle(ctx context.Context, cmd DeleteUserCommand) e
 		return &shared.ValidationError{Message: "cannot delete your own account"}
 	}
 
-	if _, err := h.users.FindByID(ctx, cmd.ID); err != nil {
+	target, err := h.users.FindByID(ctx, cmd.ID)
+	if err != nil {
 		return err
+	}
+
+	// A superadmin (platform) account is managed out-of-band — mirror the platform
+	// delete handler. Without this the repo's role != 'superadmin' filter turns the
+	// Delete into a 0-row no-op that (pre-F-039) reported success and emitted a
+	// phantom user.deleted audit for a row that was never removed.
+	if user.Role(target.Role).IsSuperAdmin() {
+		return &shared.PermissionError{Message: "cannot delete a superadmin account"}
 	}
 
 	if err := h.users.Delete(ctx, cmd.ID); err != nil {

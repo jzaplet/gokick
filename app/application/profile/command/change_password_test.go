@@ -44,6 +44,39 @@ func TestChangePasswordHandler_Success(t *testing.T) {
 	}
 }
 
+// F-039: a superadmin MUST be able to change their own password. The full-row
+// Update excludes superadmin rows (role != 'superadmin'), so pre-fix this was a
+// silent 0-row no-op that returned success with the password unchanged. The
+// self-scoped UpdatePassword (WHERE id=?, no role filter) makes it work.
+func TestChangePasswordHandler_SuperadminCanChangeOwnPassword(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "pwd_superadmin.db"))
+	su := fx.SeedUser(t, "root", "old-password", "superadmin")
+
+	authCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{
+		UserID: su.ID, Role: su.Role, Nickname: su.Nickname,
+	})
+
+	handler := NewChangePasswordHandler(fx.Users, fx.Hasher)
+	if err := handler.Handle(authCtx, ChangePasswordCommand{
+		OldPassword: "old-password",
+		NewPassword: "brand-new-password",
+	}); err != nil {
+		t.Fatalf("superadmin change password: %v", err)
+	}
+
+	reloaded, err := fx.Users.FindByID(ctx, su.ID)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if err := fx.Hasher.Verify("brand-new-password", reloaded.PasswordHash); err != nil {
+		t.Fatalf("new password must verify — was the update a silent no-op? %v", err)
+	}
+	if err := fx.Hasher.Verify("old-password", reloaded.PasswordHash); err == nil {
+		t.Fatal("old password must no longer verify")
+	}
+}
+
 func TestChangePasswordHandler_WrongOldPassword(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "pwd_wrong_old.db"))

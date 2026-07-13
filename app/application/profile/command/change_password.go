@@ -3,6 +3,7 @@ package command
 import (
 	"context"
 	"errors"
+	"time"
 
 	"gokick/app/domain/shared"
 	"gokick/app/domain/user"
@@ -61,9 +62,11 @@ func (h *ChangePasswordHandler) Handle(ctx context.Context, cmd ChangePasswordCo
 		return err
 	}
 
-	u.PasswordHash = newHash
-
-	if err := h.users.Update(ctx, u); err != nil {
+	// Self-service password write: scoped to the caller's own id, so it works for
+	// a superadmin too (the full-row Update excludes superadmin rows and would
+	// silently no-op — F-039). UpdatePassword also stamps updated_at, which the
+	// old full-row Update left stale here.
+	if err := h.users.UpdatePassword(ctx, u.ID, newHash, time.Now()); err != nil {
 		return err
 	}
 

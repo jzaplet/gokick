@@ -30,10 +30,42 @@ func NewUpdateUserHandler(
 	return &UpdateUserHandler{users: users, password: password}
 }
 
+// ensureNicknameAvailable rejects a rename that collides with another user's
+// nickname (nickname is globally unique). An unchanged nickname is a no-op.
+func (h *UpdateUserHandler) ensureNicknameAvailable(
+	ctx context.Context,
+	nickname string,
+	target *user.User,
+) error {
+	if nickname == target.Nickname {
+		return nil
+	}
+	conflict, err := h.users.FindByNickname(ctx, nickname)
+	if err != nil {
+		return err
+	}
+	if conflict != nil && conflict.ID != target.ID {
+		return &shared.ValidationError{
+			Field:   "nickname",
+			Message: "user with this nickname already exists",
+		}
+	}
+	return nil
+}
+
 func (h *UpdateUserHandler) Handle(ctx context.Context, cmd UpdateUserCommand) error {
 	target, err := h.users.FindByID(ctx, cmd.ID)
 	if err != nil {
 		return err
+	}
+
+	// A superadmin (platform) account is managed out-of-band, never through
+	// tenant-admin user management — mirror DeleteUserHandler and the platform
+	// handlers. Without this the repo's role != 'superadmin' filter turns the
+	// Update into a 0-row no-op that (pre-F-039) reported success and emitted a
+	// phantom user.role_changed audit for a change that never persisted (F-023).
+	if user.Role(target.Role).IsSuperAdmin() {
+		return &shared.PermissionError{Message: "cannot modify a superadmin account"}
 	}
 
 	nickname, err := user.NewNickname(cmd.Nickname)
@@ -71,17 +103,8 @@ func (h *UpdateUserHandler) Handle(ctx context.Context, cmd UpdateUserCommand) e
 		return err
 	}
 
-	if string(nickname) != target.Nickname {
-		conflict, err := h.users.FindByNickname(ctx, string(nickname))
-		if err != nil {
-			return err
-		}
-		if conflict != nil && conflict.ID != target.ID {
-			return &shared.ValidationError{
-				Field:   "nickname",
-				Message: "user with this nickname already exists",
-			}
-		}
+	if err := h.ensureNicknameAvailable(ctx, string(nickname), target); err != nil {
+		return err
 	}
 
 	if cmd.Password != "" {

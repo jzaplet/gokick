@@ -134,6 +134,33 @@ func TestUpdateUserHandler_NoRoleChangedAuditWhenRoleUnchanged(t *testing.T) {
 	}
 }
 
+// F-023: an admin updating a superadmin used to hit the repo's role != 'superadmin'
+// filter (a 0-row no-op) yet still emit a phantom user.role_changed audit for a
+// change that never persisted. The up-front superadmin guard now returns a
+// PermissionError before any audit is recorded.
+func TestUpdateUserHandler_NoPhantomRoleChangedOnSuperadminTarget(t *testing.T) {
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "audit_superadmin_phantom.db"))
+	su := fx.SeedUser(t, "root", "secret12", "superadmin")
+
+	collector := &shared.AuditCollector{}
+	ctx := shared.ContextWithAuditCollector(context.Background(), collector)
+
+	h := NewUpdateUserHandler(fx.Users, fx.Hasher)
+	err := h.Handle(ctx, UpdateUserCommand{
+		ID:       su.ID,
+		Nickname: "root",
+		Email:    "root@example.com",
+		Role:     "admin",
+	})
+	if err == nil {
+		t.Fatal("expected update of a superadmin to be refused")
+	}
+
+	if changed := auditEventsByAction(collector.Drain(), "user.role_changed"); len(changed) != 0 {
+		t.Fatalf("expected no phantom user.role_changed, got %d", len(changed))
+	}
+}
+
 // app-events-audit-43: DeleteUserHandler emits user.deleted (no metadata).
 func TestDeleteUserHandler_RecordsUserDeletedAudit(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "audit_user_deleted.db"))

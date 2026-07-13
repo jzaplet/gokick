@@ -142,6 +142,38 @@ func TestUpdateUserCommand_RequiredPermission(t *testing.T) {
 	}
 }
 
+// F-039/F-023: an admin must never modify a superadmin. FindByID is identity-
+// exempt so it loads the superadmin row, but the repo Update excludes superadmin
+// rows — pre-fix that was a silent 0-row no-op with a phantom role_changed audit.
+// The handler now refuses up front with a PermissionError and changes nothing.
+func TestUpdateUserHandler_RejectsSuperadminTarget(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "update_superadmin_target.db"))
+	su := fx.SeedUser(t, "root", "secret12", "superadmin")
+
+	h := NewUpdateUserHandler(fx.Users, fx.Hasher)
+	err := h.Handle(ctx, UpdateUserCommand{
+		ID:       su.ID,
+		Nickname: "root-renamed",
+		Email:    "root@example.com",
+		Role:     "admin",
+	})
+
+	var pe *shared.PermissionError
+	if !errors.As(err, &pe) {
+		t.Fatalf("expected *shared.PermissionError, got %T: %v", err, err)
+	}
+
+	unchanged, err := fx.Users.FindByID(ctx, su.ID)
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	if unchanged.Nickname != "root" || unchanged.Role != "superadmin" {
+		t.Fatalf("superadmin must be unchanged, got nickname=%q role=%q",
+			unchanged.Nickname, unchanged.Role)
+	}
+}
+
 // Mirror of DeleteUserHandler's self-lockout guard: an admin must not be
 // able to demote themselves out of the admin role and lock the org out
 // of admin operations. Self-update of nickname/password/email remains OK.

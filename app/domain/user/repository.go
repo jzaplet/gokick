@@ -8,6 +8,11 @@ import (
 type Repository interface {
 	Save(ctx context.Context, user *User) error
 	Update(ctx context.Context, user *User) error
+	// UpdatePassword sets a user's OWN password hash (self-service change-password).
+	// Scoped to WHERE id=? with no role != 'superadmin' filter, so a superadmin can
+	// change their own password (Update excludes superadmin rows to block a tenant
+	// admin editing OTHERS — a self password change can't escalate). Errors on 0 rows.
+	UpdatePassword(ctx context.Context, userID, passwordHash string, updatedAt time.Time) error
 	Delete(ctx context.Context, id string) error
 	FindByID(ctx context.Context, id string) (*User, error)
 	FindByNickname(ctx context.Context, nickname string) (*User, error)
