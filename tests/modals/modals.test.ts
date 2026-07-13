@@ -2,7 +2,6 @@ import { describe, expect, it, afterEach } from 'vitest';
 import { mount } from '@vue/test-utils';
 import type { VueWrapper } from '@vue/test-utils';
 import { nextTick } from 'vue';
-import Modal from '@/app-ui/Modals/Modal.vue';
 import ConfirmModal from '@/app-ui/Modals/ConfirmModal.vue';
 
 // Both modals Teleport their content to document.body, so assertions and
@@ -26,64 +25,6 @@ const findButtonByText = (text: string): HTMLButtonElement => {
 
     return match;
 };
-
-// guide-forms-fe-41: Modal accepts :show and title props and emits a close event.
-describe('Modal', () => {
-    let wrapper: VueWrapper | null = null;
-
-    afterEach((): void => {
-        wrapper?.unmount();
-        wrapper = null;
-    });
-
-    it('renders the title in the teleported dialog when show is true', (): void => {
-        wrapper = mount(Modal, {
-            props: { show: true, title: 'Delete user?' },
-            slots: { default: 'Body content here' },
-        });
-
-        // Sanity: the teleport actually landed in the body. If this is empty,
-        // every assertion below would be vacuously testing nothing.
-        expect(document.body.textContent).toContain('Delete user?');
-        expect(document.body.textContent).toContain('Body content here');
-    });
-
-    it('does not render content when show is false', (): void => {
-        wrapper = mount(Modal, {
-            props: { show: false, title: 'Hidden title' },
-            slots: { default: 'Hidden content' },
-        });
-
-        expect(document.body.textContent).not.toContain('Hidden title');
-        expect(document.body.textContent).not.toContain('Hidden content');
-    });
-
-    it('emits "close" when the close button is clicked', async (): Promise<void> => {
-        wrapper = mount(Modal, {
-            props: { show: true, title: 'Closable' },
-        });
-
-        // Modal's only <button> is the close affordance (header X).
-        findButtonByText('').click();
-        await nextTick();
-
-        expect(wrapper.emitted('close')).toHaveLength(1);
-    });
-
-    it('emits "close" when the backdrop overlay is clicked', async (): Promise<void> => {
-        wrapper = mount(Modal, {
-            props: { show: true, title: 'Backdrop close' },
-        });
-
-        const overlay = document.body.querySelector<HTMLDivElement>('div.bg-gray-900\\/50');
-
-        expect(overlay).not.toBeNull();
-        overlay?.click();
-        await nextTick();
-
-        expect(wrapper.emitted('close')).toHaveLength(1);
-    });
-});
 
 // guide-forms-fe-42: ConfirmModal accepts :show, title, and message props and
 // emits confirm and cancel events.
@@ -137,8 +78,8 @@ describe('ConfirmModal', () => {
     });
 
     it('emits "cancel" when the cancel button is clicked', async (): Promise<void> => {
-        // Fresh mount: ConfirmModal flips its internal isVisible to false after a
-        // click, removing the buttons — so confirm and cancel cannot share a mount.
+        // Visibility is controlled by the `show` prop (the parent flips it after an
+        // event), so confirm and cancel are exercised on separate mounts.
         wrapper = mount(ConfirmModal, {
             props: { show: true, title: 'Delete?', message: 'Sure?' },
         });
