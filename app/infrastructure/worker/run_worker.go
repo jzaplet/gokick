@@ -260,26 +260,7 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 		}
 	}
 
-	// Restore the tenant the run was enqueued for (the worker bypasses the bus) and
-	// mark the ctx no-transaction: a durable run runs OUTSIDE a tx, so an accidental
-	// BeginTx in the handler must fail closed, not freeze the DB (shared.ContextForbidTx).
-	runCtx := shared.ContextForbidTx(shared.ContextWithTenantID(workerCtx, r.TenantID))
-	// Inject the capabilities the handler can use (the worker bypasses the bus, where
-	// these are normally injected): a RunDispatcher to enqueue a child task, and a
-	// Transactor backing shared.WithTx for short atomic writes the handler scopes
-	// itself. Skip a nil one so the ctx falls through cleanly (no-op enqueue / WithTx
-	// returns ErrTxUnavailable).
-	if w.runDispatcher != nil {
-		runCtx = shared.ContextWithRunDispatcher(runCtx, w.runDispatcher)
-	}
-	if w.transactor != nil {
-		runCtx = shared.ContextWithTransactor(runCtx, w.transactor)
-	}
-	// A run handler has no event collector (the bus installs one per request; the worker
-	// bypasses the bus). Install the forbidden-marker collector so a handler that calls
-	// Collect fails LOUD instead of silently dropping the event — domain events belong to
-	// the command/bus path, not a run handler.
-	runCtx = shared.ContextWithoutEventCollector(runCtx)
+	runCtx := w.buildRunContext(workerCtx, r)
 
 	handlerCtx, cancelHandler := context.WithCancel(runCtx)
 	defer cancelHandler()
@@ -301,29 +282,7 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 	}
 
 	var abandon, cancelled atomic.Bool
-	hbDone := make(chan struct{})
-	go func() {
-		defer close(hbDone)
-		defer func() {
-			// A panic in the heartbeat (e.g. a repo call) must not crash the pool:
-			// recover, report, and abandon the run (left for lease-lapse reclaim).
-			if rec := recover(); rec != nil {
-				w.logger.LogAttrs(hbCtx, slog.LevelError, "run worker: heartbeat panicked",
-					slog.Any(logKeyPanic, rec), slog.String(logKeyStack, string(debug.Stack())))
-				w.reporter.Capture(
-					hbCtx,
-					&shared.PanicError{
-						Value:   rec,
-						Message: fmt.Sprintf("heartbeat panic: %v", rec),
-					},
-					slog.String(logKeyRunID, r.ID),
-				)
-				abandon.Store(true)
-				cancelHandler()
-			}
-		}()
-		w.heartbeat(hbCtx, r.ID, owner, kindLease, execCtx, cancelHandler, &abandon, &cancelled)
-	}()
+	hbDone := w.startHeartbeat(hbCtx, execCtx, r, owner, kindLease, cancelHandler, &abandon, &cancelled)
 
 	// Honor a cancel already requested at claim time (immutable claimed-row value;
 	// no shared state read).
@@ -356,6 +315,25 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 	)
 }
 
+// buildRunContext assembles the ctx a run handler executes under. The worker
+// bypasses the bus, so what the bus normally injects is set here: the run's tenant
+// restored, transactions forbidden (a durable run runs OUTSIDE a tx — an accidental
+// BeginTx must fail closed, not freeze the DB), the RunDispatcher/Transactor
+// capabilities injected (a nil one is skipped so the ctx falls through cleanly:
+// no-op enqueue / WithTx returns ErrTxUnavailable), and the event collector
+// forbidden so a handler that calls Collect fails LOUD instead of silently dropping
+// the event — domain events belong to the command/bus path, not a run handler.
+func (w *RunWorker) buildRunContext(workerCtx context.Context, r *run.Run) context.Context {
+	runCtx := shared.ContextForbidTx(shared.ContextWithTenantID(workerCtx, r.TenantID))
+	if w.runDispatcher != nil {
+		runCtx = shared.ContextWithRunDispatcher(runCtx, w.runDispatcher)
+	}
+	if w.transactor != nil {
+		runCtx = shared.ContextWithTransactor(runCtx, w.transactor)
+	}
+	return shared.ContextWithoutEventCollector(runCtx)
+}
+
 // runHandler invokes the handler with a panic-scoped recover so a handler panic
 // becomes an error on the linear path — heartbeat-stop and finalize always run.
 func (w *RunWorker) runHandler(
@@ -376,6 +354,103 @@ func (w *RunWorker) runHandler(
 	return handler(ctx, r, ck)
 }
 
+// startHeartbeat launches the lease-renewal goroutine and returns the channel that
+// closes when it exits — the JOIN point process waits on before reading abandon/
+// cancelled (that read is safe only after the join: happens-before). A panic in the
+// heartbeat (e.g. a repo call) must not crash the pool: it is recovered, reported,
+// and the run is abandoned (left for lease-lapse reclaim).
+func (w *RunWorker) startHeartbeat(
+	hbCtx, execCtx context.Context,
+	r *run.Run,
+	owner string,
+	lease time.Duration,
+	cancelHandler context.CancelFunc,
+	abandon, cancelled *atomic.Bool,
+) <-chan struct{} {
+	hbDone := make(chan struct{})
+	go func() {
+		defer close(hbDone)
+		defer func() {
+			if rec := recover(); rec != nil {
+				w.logger.LogAttrs(hbCtx, slog.LevelError, "run worker: heartbeat panicked",
+					slog.Any(logKeyPanic, rec), slog.String(logKeyStack, string(debug.Stack())))
+				w.reporter.Capture(
+					hbCtx,
+					&shared.PanicError{Value: rec, Message: fmt.Sprintf("heartbeat panic: %v", rec)},
+					slog.String(logKeyRunID, r.ID),
+				)
+				abandon.Store(true)
+				cancelHandler()
+			}
+		}()
+		w.heartbeat(hbCtx, r.ID, owner, lease, execCtx, cancelHandler, abandon, cancelled)
+	}()
+	return hbDone
+}
+
+// hbAction classifies the outcome of one heartbeat renew so the heartbeat loop
+// stays flat: keep looping, stop cleanly (a shutdown raced the renew write), or
+// abandon (lease lost or too many consecutive transient errors → hand the run to
+// lease-lapse reclaim).
+type hbAction int
+
+const (
+	hbContinue hbAction = iota
+	hbStop
+	hbAbandon
+)
+
+// renewOnce renews the lease for one tick and classifies the outcome, owning the
+// transient-error counter and the renew logging so heartbeat's loop doesn't nest.
+// The returned cancelRequested rides back on the SAME owner-checked renew write
+// (no extra round-trip, never the payload BLOB) and is only meaningful on a
+// successful renew (hbContinue). A shutdown/stop racing the write (ctx cancelled)
+// is hbStop, not an error; maxHeartbeatErrors consecutive transient failures, or a
+// lost lease (!alive), is hbAbandon.
+func (w *RunWorker) renewOnce(
+	ctx context.Context,
+	id, owner string,
+	lease time.Duration,
+	errs *int,
+) (hbAction, bool) {
+	alive, cancelRequested, err := w.repo.RenewLease(ctx, id, owner, lease)
+	if err != nil {
+		if ctx.Err() != nil { // shutdown / stop racing the write — leave it to the select
+			return hbStop, false
+		}
+		*errs++
+		w.logger.Warn("run worker: heartbeat renew errored",
+			logKeyRunID, id, shared.LogKeyError, err)
+		if *errs >= maxHeartbeatErrors {
+			return hbAbandon, false
+		}
+		return hbContinue, false
+	}
+	*errs = 0
+	if !alive {
+		return hbAbandon, false
+	}
+	return hbContinue, cancelRequested
+}
+
+// effectiveHeartbeatInterval derives the ticker interval from the ACTUAL per-kind
+// lease, not the global DefaultLease that sized base (cfg.HeartbeatInterval): cap
+// at lease/3 (matching withDefaults' DefaultLease/3) so a per-kind lease shorter
+// than the global interval can't expire before the first renewal and let another
+// worker reclaim a still-running run. The sub-ms floor is defense-in-depth —
+// NewHandlerRegistry already rejects a sub-ms per-kind lease, so this only guards
+// NewTicker against a 0 from an unvalidated path (a bare RunWorker built outside DI).
+func effectiveHeartbeatInterval(base, lease time.Duration) time.Duration {
+	interval := base
+	if third := lease / 3; third < interval {
+		interval = third
+	}
+	if interval <= 0 {
+		interval = time.Millisecond
+	}
+	return interval
+}
+
 // heartbeat renews the lease until ctx is cancelled (shutdown or main's stop). On
 // a lost or untrustworthy lease it sets abandon + cancels the handler and exits;
 // on an observed cancel it sets cancelled + cancels the handler but KEEPS renewing
@@ -392,22 +467,10 @@ func (w *RunWorker) heartbeat(
 	cancelHandler context.CancelFunc,
 	abandon, cancelled *atomic.Bool,
 ) {
-	// The ticker must fire well within the lease it renews — which is the per-kind
-	// lease, NOT the global DefaultLease that sized cfg.HeartbeatInterval. Derive the
-	// effective interval from the actual lease (cap at lease/3, matching withDefaults'
-	// DefaultLease/3) so a per-kind lease shorter than the global interval can't expire
-	// before the first renewal and let another worker reclaim a still-running run.
-	interval := w.cfg.HeartbeatInterval
-	if third := lease / 3; third < interval {
-		interval = third
-	}
-	// Defense-in-depth: NewHandlerRegistry rejects a sub-ms per-kind lease, so lease/3
-	// is normally well above zero; this floor only guards NewTicker against a 0 from an
-	// unvalidated path (e.g. a bare RunWorker built outside DI).
-	if interval <= 0 {
-		interval = time.Millisecond
-	}
-	ticker := time.NewTicker(interval)
+	// The ticker must fire well within the lease it renews — the per-kind lease, not
+	// the global DefaultLease that sized cfg.HeartbeatInterval (see
+	// effectiveHeartbeatInterval).
+	ticker := time.NewTicker(effectiveHeartbeatInterval(w.cfg.HeartbeatInterval, lease))
 	defer ticker.Stop()
 	errs := 0
 	// graceDeadline bounds the winddown for a handler that ignores ctx (cancelled, or
@@ -423,23 +486,11 @@ func (w *RunWorker) heartbeat(
 		case <-ticker.C:
 		}
 
-		alive, cancelRequested, err := w.repo.RenewLease(ctx, id, owner, lease)
-		if err != nil {
-			if ctx.Err() != nil { // shutdown / stop racing the write — leave it to the select
-				return
-			}
-			errs++
-			w.logger.Warn("run worker: heartbeat renew errored",
-				logKeyRunID, id, shared.LogKeyError, err)
-			if errs >= maxHeartbeatErrors {
-				abandon.Store(true)
-				cancelHandler()
-				return
-			}
-			continue
-		}
-		errs = 0
-		if !alive {
+		action, cancelRequested := w.renewOnce(ctx, id, owner, lease, &errs)
+		switch action {
+		case hbStop: // shutdown / stop raced the renew write — the select handles exit
+			return
+		case hbAbandon: // lease lost/uncertain or too many transient errors → reclaim
 			abandon.Store(true)
 			cancelHandler()
 			return
