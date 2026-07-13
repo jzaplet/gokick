@@ -134,49 +134,62 @@ func (sentryReporter) Capture(ctx context.Context, err error, attrs ...slog.Attr
 	// accumulated breadcrumbs are included — without leaking this request's
 	// tags/processor onto the shared hub across captures.
 	hub.WithScope(func(scope *sentry.Scope) {
-		var runKind string
-		for _, a := range all {
-			// Authorization/Cookie are represented (masked) in event.Request
-			// below, not as a tag. Every other attr becomes a searchable tag —
-			// masked when the key looks secret, so the open attr seam can't
-			// egress a credential.
-			if a.Key == shared.LogKeyAuthorization || a.Key == shared.LogKeyCookie {
-				continue
-			}
-			// The worker binds LogKeyRunKind on every capture; reading the SAME
-			// shared constant keeps the per-kind fingerprint from silently drifting.
-			if a.Key == shared.LogKeyRunKind {
-				runKind = a.Value.String()
-			}
-			scope.SetTag(a.Key, shared.MaskLogValue(a.Key, a.Value.String()))
-		}
+		runKind := applyScopeTags(scope, all)
 		if isPanic {
 			scope.SetTag(tagPanicType, fmt.Sprintf("%T", panicErr.Value))
 		}
 		if user, ok := sentryUser(ctx, ip); ok {
 			scope.SetUser(user)
 		}
-		req := sentryRequest(all)
-		// One processor finalizes the event: the reconstructed request (no
-		// direct scope setter for a pre-built *sentry.Request), the per-kind
-		// fingerprint for worker captures, the in-app demotion of our own
-		// reporting frames so the culprit is the real origin, and the "panic"
-		// exception type.
-		scope.AddEventProcessor(func(event *sentry.Event, _ *sentry.EventHint) *sentry.Event {
-			if req != nil {
-				event.Request = req
-			}
-			if runKind != "" {
-				event.Fingerprint = []string{"{{ default }}", "run:" + runKind}
-			}
-			setFrameInApp(event)
-			if isPanic {
-				setExceptionType(event, panicExceptionType)
-			}
-			return event
-		})
+		// One processor finalizes the event: the reconstructed request (no direct
+		// scope setter for a pre-built *sentry.Request), the per-kind fingerprint for
+		// worker captures, the in-app demotion of our own reporting frames so the
+		// culprit is the real origin, and the "panic" exception type.
+		scope.AddEventProcessor(eventProcessor(sentryRequest(all), runKind, isPanic))
 		hub.CaptureException(err)
 	})
+}
+
+// applyScopeTags sets a searchable, masked tag for every attr except the
+// credential headers (Authorization/Cookie live masked in event.Request, not as
+// tags). Masking on the open attr seam keeps a secret from egressing as a tag.
+// It returns the run kind if one was tagged — the worker binds LogKeyRunKind on
+// every capture, and reading the SAME shared constant keeps the per-kind
+// fingerprint from silently drifting.
+func applyScopeTags(scope *sentry.Scope, attrs []slog.Attr) (runKind string) {
+	for _, a := range attrs {
+		if a.Key == shared.LogKeyAuthorization || a.Key == shared.LogKeyCookie {
+			continue
+		}
+		if a.Key == shared.LogKeyRunKind {
+			runKind = a.Value.String()
+		}
+		scope.SetTag(a.Key, shared.MaskLogValue(a.Key, a.Value.String()))
+	}
+	return runKind
+}
+
+// eventProcessor builds the single processor that finalizes a captured event:
+// attach the reconstructed request, the per-kind fingerprint for worker
+// captures, the in-app frame demotion, and the "panic" exception type.
+func eventProcessor(
+	req *sentry.Request,
+	runKind string,
+	isPanic bool,
+) func(*sentry.Event, *sentry.EventHint) *sentry.Event {
+	return func(event *sentry.Event, _ *sentry.EventHint) *sentry.Event {
+		if req != nil {
+			event.Request = req
+		}
+		if runKind != "" {
+			event.Fingerprint = []string{"{{ default }}", "run:" + runKind}
+		}
+		setFrameInApp(event)
+		if isPanic {
+			setExceptionType(event, panicExceptionType)
+		}
+		return event
+	}
 }
 
 // setFrameInApp assigns the in-app flag for every stack frame, so Sentry's

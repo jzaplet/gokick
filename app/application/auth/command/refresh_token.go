@@ -63,26 +63,10 @@ func (h *RefreshTokenHandler) Handle(
 		return LoginResult{}, &shared.AuthError{Message: "invalid refresh token"}
 	}
 
-	audit := shared.AuditCollectorFromContext(ctx)
-
 	// Theft detection: a token that was already rotated is being presented again.
 	// Assume credentials are compromised and log the user out on all devices.
 	if existing.UsedAt != nil {
-		// Record the security event BEFORE the revocation so the theft is audited
-		// even if the delete fails. If the delete DOES fail, surface that error (→
-		// 5xx, cookie kept) instead of the AuthError: returning "reuse detected"
-		// while the tokens are still live would falsely tell the client it is
-		// logged out, and a 5xx lets the next retry re-attempt the revocation.
-		audit.Record(shared.AuditEvent{
-			Action:     "auth.token.theft_detected",
-			TargetType: "user",
-			TargetID:   existing.UserID,
-			Metadata:   map[string]any{"reason": "reused_after_rotation"},
-		})
-		if err := h.tokens.DeleteByUserID(ctx, existing.UserID); err != nil {
-			return LoginResult{}, err
-		}
-		return LoginResult{}, &shared.AuthError{Message: "refresh token reuse detected"}
+		return LoginResult{}, h.revokeAllAsTheft(ctx, existing.UserID, "reused_after_rotation")
 	}
 
 	if time.Now().After(existing.ExpiresAt) {
@@ -169,16 +153,7 @@ func (h *RefreshTokenHandler) Handle(
 		// per-context client single-flight cannot coordinate across tabs).
 		// Removing that false positive needs cross-tab refresh coordination — a
 		// roadmap item, not a change to this CAS.
-		audit.Record(shared.AuditEvent{
-			Action:     "auth.token.theft_detected",
-			TargetType: "user",
-			TargetID:   existing.UserID,
-			Metadata:   map[string]any{"reason": "concurrent_rotation_race"},
-		})
-		if err := h.tokens.DeleteByUserID(ctx, existing.UserID); err != nil {
-			return LoginResult{}, err
-		}
-		return LoginResult{}, &shared.AuthError{Message: "refresh token reuse detected"}
+		return LoginResult{}, h.revokeAllAsTheft(ctx, existing.UserID, "concurrent_rotation_race")
 	}
 
 	return LoginResult{
@@ -188,4 +163,25 @@ func (h *RefreshTokenHandler) Handle(
 		RefreshToken:     rawRefresh,
 		RefreshExpiresAt: expiresAt,
 	}, nil
+}
+
+// revokeAllAsTheft audits a token-theft event and force-logs-out the user on
+// all devices, returning the AuthError to surface. Both theft branches — reuse
+// after rotation, and the concurrent-rotation CAS race — share this exact
+// response, differing only by reason. The event is recorded BEFORE the revoke
+// so the theft is audited even if the delete fails; a delete failure is
+// surfaced (→ 5xx, cookie kept) instead of the AuthError, because telling the
+// client it is logged out while its tokens are still live is worse than a
+// retryable 5xx that lets the next attempt re-run the revocation.
+func (h *RefreshTokenHandler) revokeAllAsTheft(ctx context.Context, userID, reason string) error {
+	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
+		Action:     "auth.token.theft_detected",
+		TargetType: "user",
+		TargetID:   userID,
+		Metadata:   map[string]any{"reason": reason},
+	})
+	if err := h.tokens.DeleteByUserID(ctx, userID); err != nil {
+		return err
+	}
+	return &shared.AuthError{Message: "refresh token reuse detected"}
 }
