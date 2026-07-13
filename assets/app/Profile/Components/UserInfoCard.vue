@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import type { DeepReadonly } from 'vue';
 import type { AuthUser } from '@/app-ui/Auth';
 
 defineProps<{
-    user: AuthUser;
+    user: DeepReadonly<AuthUser>;
 }>();
 </script>
 

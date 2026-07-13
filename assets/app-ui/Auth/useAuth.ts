@@ -1,4 +1,4 @@
-import { readonly } from 'vue';
+import { type DeepReadonly, readonly } from 'vue';
 import { isAuthenticated, user } from '@/app-ui/Auth/state';
 import { login } from '@/app-ui/Auth/login';
 import { logout } from '@/app-ui/Auth/logout';
@@ -16,8 +16,8 @@ import {
 // action functions as-is. Each concern lives in its own file (state, login,
 // logout, refresh, permissions); useAuth is just the orchestrator.
 export const useAuth = (): {
-    user: typeof user;
-    isAuthenticated: typeof isAuthenticated;
+    user: DeepReadonly<typeof user>;
+    isAuthenticated: DeepReadonly<typeof isAuthenticated>;
     login: typeof login;
     logout: typeof logout;
     refresh: typeof refresh;
@@ -29,8 +29,8 @@ export const useAuth = (): {
     hasAnyPermission: typeof hasAnyPermission;
 } => {
     return {
-        user: readonly(user) as typeof user,
-        isAuthenticated: readonly(isAuthenticated) as typeof isAuthenticated,
+        user: readonly(user),
+        isAuthenticated: readonly(isAuthenticated),
         login,
         logout,
         refresh,
