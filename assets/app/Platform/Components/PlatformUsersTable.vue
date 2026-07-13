@@ -95,6 +95,14 @@ const isManageable = (role: string): boolean => {
                     </td>
                     <td class="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {{ user.nickname }}
+                        <span
+                            v-if="user.active === false"
+                            :class="[
+                                'ml-2 inline-flex px-2 py-0.5',
+                                'text-xs font-semibold rounded-full',
+                                'bg-gray-100 text-gray-600',
+                            ]"
+                        >Inactive</span>
                     </td>
                     <td class="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         <span v-if="user.email !== ''">{{ user.email }}</span>
