@@ -27,7 +27,7 @@ func NewDashboardHandler(
 	}
 }
 
-//gkts:DashboardResponse assets/app/Dashboard/types/DashboardResponse.ts
+//gkts:assets/app/Dashboard/types/DashboardResponse.ts DashboardResponse
 type dashboardDTO struct {
 	Message string `json:"message"`
 }

@@ -68,7 +68,7 @@ Recovery(→Sentry) → Logging → Audit → DispatchEvents → Transaction    
 
 ## 🔗 BE↔FE typová parita — vynucení „nemáš kam uhnout" (post-audit follow-up)
 
-Dnes generuje `tools/tsgen` TypeScript typy z anotovaných Go DTO (direktiva `//gkts:<TSName> <cesta>` → přesná cílová `.ts` cesta per typ) a `make ts-check` v `make lint` hlídá, že vygenerované soubory nedriftnou. To řeší drift **anotovaných** typů, ale je to **opt-in** — a tím zůstává díra:
+Dnes generuje `tools/tsgen` TypeScript typy z anotovaných Go DTO (direktiva `//gkts:<cesta> <TSName>` → přesná cílová `.ts` cesta per typ; cesta je první schválně — malé písmeno za dvojtečkou z ní dělá pravou gofmt/golines direktivu, takže ji formatter nechá být) a `make ts-check` v `make lint` hlídá, že vygenerované soubory nedriftnou. To řeší drift **anotovaných** typů, ale je to **opt-in** — a tím zůstává díra:
 
 - Zapomenu dát `//gkts:` na nový response/request DTO → generátor mlčí.
 - Handler odpoví inline `map[string]any` místo pojmenovaného structu → nikdo to nechytí.

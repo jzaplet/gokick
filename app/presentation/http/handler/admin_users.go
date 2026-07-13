@@ -39,7 +39,7 @@ func NewAdminUsersHandler(
 	}
 }
 
-//gkts:AdminUser assets/app/Admin/types/AdminUser.ts
+//gkts:assets/app/Admin/types/AdminUser.ts AdminUser
 type adminUserDTO struct {
 	ID       string `json:"id"`
 	Nickname string `json:"nickname"`
@@ -48,7 +48,7 @@ type adminUserDTO struct {
 	Active   bool   `json:"active"`
 }
 
-//gkts:UserFormData assets/app/Admin/types/UserFormData.ts
+//gkts:assets/app/Admin/types/UserFormData.ts UserFormData
 type createUserRequest struct {
 	Nickname string `json:"nickname"`
 	Password string `json:"password"`
@@ -56,7 +56,7 @@ type createUserRequest struct {
 	Role     string `json:"role"`
 }
 
-//gkts:UserFormData assets/app/Admin/types/UserFormData.ts
+//gkts:assets/app/Admin/types/UserFormData.ts UserFormData
 type updateUserRequest struct {
 	Nickname string `json:"nickname"`
 	Password string `json:"password"`

@@ -47,13 +47,13 @@ func NewPlatformHandler(
 	}
 }
 
-//gkts:PlatformStats assets/app/Platform/types/PlatformStats.ts
+//gkts:assets/app/Platform/types/PlatformStats.ts PlatformStats
 type platformStatsDTO struct {
 	TenantCount int `json:"tenant_count"`
 	UserCount   int `json:"user_count"`
 }
 
-//gkts:PlatformUser assets/app/Platform/types/PlatformUser.ts
+//gkts:assets/app/Platform/types/PlatformUser.ts PlatformUser
 type platformUserDTO struct {
 	ID          string  `json:"id"`
 	Nickname    string  `json:"nickname"`
@@ -65,7 +65,7 @@ type platformUserDTO struct {
 	LastLoginAt *string `json:"last_login_at"`
 }
 
-//gkts:PlatformTenant assets/app/Platform/types/PlatformTenant.ts
+//gkts:assets/app/Platform/types/PlatformTenant.ts PlatformTenant
 type platformTenantDTO struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
@@ -73,7 +73,7 @@ type platformTenantDTO struct {
 	UserCount int    `json:"user_count"`
 }
 
-//gkts:UserFormData assets/app/Admin/types/UserFormData.ts
+//gkts:assets/app/Admin/types/UserFormData.ts UserFormData
 type platformUserRequest struct {
 	Nickname string `json:"nickname"`
 	Password string `json:"password"`
