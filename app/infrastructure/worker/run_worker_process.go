@@ -125,10 +125,13 @@ func (w *RunWorker) failIfPoison(
 		return false
 	}
 	log.Error("run worker: exceeded max reclaims, failing (poison)", logKeyReclaims, r.Reclaims)
-	if ok, err := w.repo.MarkFailed(workerCtx, r.ID, owner,
-		fmt.Sprintf("exceeded max reclaims (%d > %d) — poison run", r.Reclaims, w.cfg.MaxReclaims)); err != nil {
+	switch ok, err := w.repo.MarkFailed(workerCtx, r.ID, owner,
+		fmt.Sprintf("exceeded max reclaims (%d > %d) — poison run", r.Reclaims, w.cfg.MaxReclaims)); {
+	case err != nil:
 		log.Error("run worker: poison mark-failed errored", shared.LogKeyError, err)
-	} else if ok {
+	case !ok:
+		log.Warn("run worker: lease lost at poison mark-failed, abandoning")
+	default:
 		w.reporter.Capture(workerCtx,
 			fmt.Errorf("run %q exceeded max reclaims (poison-crash-loop)", r.Kind),
 			slog.String(logKeyRunID, r.ID))
@@ -372,19 +375,37 @@ func (w *RunWorker) handleUnknownKind(
 ) {
 	reason := fmt.Sprintf("no handler registered for kind %q (registry skew)", r.Kind)
 	if r.Parks >= minUnknownKindParks {
-		if ok, err := w.repo.MarkFailed(ctx, r.ID, owner, reason); err != nil {
+		switch ok, err := w.repo.MarkFailed(ctx, r.ID, owner, reason); {
+		case err != nil:
 			log.Error("run worker: unknown-kind mark-failed errored", shared.LogKeyError, err)
-		} else if ok {
-			log.Error("run worker: unknown kind exhausted park budget, failed", shared.LogKeyRunKind, r.Kind)
-			w.reporter.Capture(ctx, fmt.Errorf("run worker: %s", reason), slog.String(logKeyRunID, r.ID))
+		case !ok:
+			log.Warn("run worker: lease lost at unknown-kind mark-failed, abandoning")
+		default:
+			log.Error(
+				"run worker: unknown kind exhausted park budget, failed",
+				shared.LogKeyRunKind,
+				r.Kind,
+			)
+			w.reporter.Capture(
+				ctx,
+				fmt.Errorf("run worker: %s", reason),
+				slog.String(logKeyRunID, r.ID),
+			)
 		}
 		return
 	}
 	delay := backoff(r.Parks + 1)
-	if ok, err := w.repo.Park(ctx, r.ID, owner, time.Now().Add(delay), reason); err != nil {
+	switch ok, err := w.repo.Park(ctx, r.ID, owner, time.Now().Add(delay), reason); {
+	case err != nil:
 		log.Error("run worker: unknown-kind park errored", shared.LogKeyError, err)
-	} else if ok {
-		log.Warn("run worker: unknown kind, parked for retry (registry skew)", shared.LogKeyRunKind, r.Kind)
+	case !ok:
+		log.Warn("run worker: lease lost at unknown-kind park, abandoning")
+	default:
+		log.Warn(
+			"run worker: unknown kind, parked for retry (registry skew)",
+			shared.LogKeyRunKind,
+			r.Kind,
+		)
 	}
 }
 
