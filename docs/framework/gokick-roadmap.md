@@ -79,6 +79,7 @@ Generátor umí říct „tenhle typ driftnul", ne „tady jsi typ zapomněl". *
 - [x] **① Codegen (`tools/tsgen`)** — Go DTO → TS, drift = fail v `make lint`. *(hotovo — 13 wire DTO generováno a gate-ováno)*
 - [ ] **② BE boundary analyzer** — `go/analysis` linter: každý `response.JSON(w, _, X)` a `request.DecodeJSON(w, r, &X)` musí mít `X` = pojmenovaný struct s `//gkts:`. Inline mapa / `any` / neanotovaný typ = fail. Escape `//gkts:ignore` (stejná disciplína jako raw-pool výjimky) pro debug endpointy. Výsledek: **Go response nejde odeslat mimo generovaný DTO.**
 - [ ] **③ FE typovaný fetch + lint** — `authFetch<Res, Req, Err>` s **povinným** `Req` typem; ESLint pravidlo zakáže fetch bez explicitních generovaných typů i inline `body` literál. Výsledek: **fetch nejde poslat mimo generovaný typ.**
+- [ ] **④ Parita chybových polí (F-077)** — do smyčky patří i jména validačních polí: `ValidationError.Field` ↔ TS `Errors` klíč ↔ JSON klíč. Dnes jen konvence (a `change_password` ručně remapuje `password`→`new_password`, aby seděl na FE formulář). Řeší se stejným codegen mostem; do jeho příchodu je levná pojistka curated golden test „{Field hodnoty dosažitelné z endpointu} ⊆ {klíče v jeho TS Errors typu}".
 
 ② + ③ dohromady = smyčka zavřená: nový handler ani nový fetch nelze přidat bez typu, který existuje a matchuje na obou stranách. Airtight je BE strana (statická jistota); FE je „velmi těsné" (strukturální typing TS), ale v kombinaci s ② nemá FE co poslat mimo deklarovaný kontrakt.
 
