@@ -170,8 +170,12 @@ func routingServer(t *testing.T) *Server {
 // guard before the (nil) handler runs. Covers the route-presence + auth-guard
 // claims: guide-auth-perm-17 (logout), overview-12 / overview-21 / presentation-39
 // / presentation-40 / presentation-41 (admin users routes), presentation-37 /
-// presentation-38 (dashboard routes), and the protected half of overview-13 /
-// presentation-22. NOTE: this asserts registration + protection only, not which
+// presentation-38 (dashboard routes), the five superadmin platform-plane routes
+// (stats / users / tenants / update-user / delete-user, all platform:* behind the
+// bus), and the protected half of overview-13 / presentation-22. The table is
+// exhaustive over the authed() API routes registered in registerRoutes (the
+// config-gated /debug/runs routes are out of scope — routingServer does not enable
+// RunDebug). NOTE: this asserts registration + protection only, not which
 // command/query each route dispatches nor its permission string (those are
 // covered by the *_RequiredPermission tests in the command/query packages).
 func TestRegisterRoutes_ProtectedRoutesRejectInvalidBearer(t *testing.T) {
@@ -192,6 +196,11 @@ func TestRegisterRoutes_ProtectedRoutesRejectInvalidBearer(t *testing.T) {
 		{http.MethodPost, "/api/v1/admin/users"},
 		{http.MethodPut, "/api/v1/admin/users/abc123"},
 		{http.MethodDelete, "/api/v1/admin/users/abc123"},
+		{http.MethodGet, "/api/v1/platform/stats"},
+		{http.MethodGet, "/api/v1/platform/users"},
+		{http.MethodGet, "/api/v1/platform/tenants"},
+		{http.MethodPut, "/api/v1/platform/users/abc123"},
+		{http.MethodDelete, "/api/v1/platform/users/abc123"},
 	}
 
 	for _, tc := range protected {
