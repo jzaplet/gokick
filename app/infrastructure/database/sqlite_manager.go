@@ -60,26 +60,23 @@ func NewSqliteManager(config *config.Config) (*SqliteManager, error) {
 	// scheduler/worker poll writes and a user-driven command serialize via
 	// a 5s wait instead of bubbling "database is locked" to the caller.
 	//
-	// foreign_keys is per-connection in SQLite — setting it via DSN
-	// guarantees every pooled connection has it on, not just the one the
-	// first PRAGMA executed against.
+	// foreign_keys AND journal_mode are both per-connection in SQLite — setting
+	// them via DSN _pragma guarantees EVERY pooled connection gets them, not just
+	// the one a first one-shot PRAGMA happened to run against. (WAL/DELETE also
+	// flip the on-disk header so they'd persist regardless, but MEMORY is purely
+	// per-connection, so a one-shot exec applied it to a single pooled connection
+	// only — the bug this closes.)
 	//
 	// The file: prefix is required for ncruces to parse the query string
 	// at all (driver.go newConnector: query parsing is gated on file:).
 	dsn := "file:" + config.DBPath +
 		"?_txlock=immediate" +
 		"&_pragma=busy_timeout(5000)" +
-		"&_pragma=foreign_keys(on)"
+		"&_pragma=foreign_keys(on)" +
+		"&_pragma=journal_mode(" + journalMode + ")"
 
 	db, err := sqlx.Open("sqlite3", dsn)
 	if err != nil {
-		return nil, err
-	}
-
-	// journal_mode is filesystem-persistent (WAL flips the on-disk header)
-	// so a one-shot exec on the pool is enough; later connections inherit
-	// it from the file.
-	if _, err := db.Exec("PRAGMA journal_mode=" + journalMode); err != nil {
 		return nil, err
 	}
 
