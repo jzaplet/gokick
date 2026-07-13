@@ -29,7 +29,7 @@ func TestCreateUserHandler_RecordsUserCreatedAudit(t *testing.T) {
 	collector := &shared.AuditCollector{}
 	// EventCollector is also needed: Handle calls EventCollectorFromContext too,
 	// but it returns a throwaway when absent, so only the audit collector is wired.
-	ctx := shared.ContextWithAuditCollector(context.Background(), collector)
+	ctx := shared.ContextWithAuditCollector(authedCtx("admin-actor", "admin"), collector)
 
 	h := NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	if err := h.Handle(ctx, CreateUserCommand{
@@ -72,7 +72,7 @@ func TestUpdateUserHandler_RecordsRoleChangedAudit(t *testing.T) {
 	target := fx.SeedUser(t, "bob", "secret12", "user")
 
 	collector := &shared.AuditCollector{}
-	ctx := shared.ContextWithAuditCollector(context.Background(), collector)
+	ctx := shared.ContextWithAuditCollector(authedCtx("admin-actor", "admin"), collector)
 
 	h := NewUpdateUserHandler(fx.Users, fx.Hasher)
 	if err := h.Handle(ctx, UpdateUserCommand{
@@ -107,7 +107,7 @@ func TestUpdateUserHandler_NoRoleChangedAuditWhenRoleUnchanged(t *testing.T) {
 	target := fx.SeedUser(t, "bob", "secret12", "user")
 
 	collector := &shared.AuditCollector{}
-	ctx := shared.ContextWithAuditCollector(context.Background(), collector)
+	ctx := shared.ContextWithAuditCollector(authedCtx("admin-actor", "admin"), collector)
 
 	h := NewUpdateUserHandler(fx.Users, fx.Hasher)
 	// Change only the email; role stays "user".
@@ -143,7 +143,7 @@ func TestUpdateUserHandler_NoPhantomRoleChangedOnSuperadminTarget(t *testing.T) 
 	su := fx.SeedUser(t, "root", "secret12", "superadmin")
 
 	collector := &shared.AuditCollector{}
-	ctx := shared.ContextWithAuditCollector(context.Background(), collector)
+	ctx := shared.ContextWithAuditCollector(authedCtx("admin-actor", "admin"), collector)
 
 	h := NewUpdateUserHandler(fx.Users, fx.Hasher)
 	err := h.Handle(ctx, UpdateUserCommand{

@@ -31,6 +31,11 @@ func NewUpdateUserHandler(
 }
 
 func (h *UpdateUserHandler) Handle(ctx context.Context, cmd UpdateUserCommand) error {
+	claims, err := shared.RequireClaims(ctx)
+	if err != nil {
+		return err
+	}
+
 	target, err := h.users.FindByID(ctx, cmd.ID)
 	if err != nil {
 		return err
@@ -41,8 +46,7 @@ func (h *UpdateUserHandler) Handle(ctx context.Context, cmd UpdateUserCommand) e
 	// Plane-specific, so it rides userwrite.Update's guard hook rather than the
 	// shared body. The platform handler passes nil (no self-demote concern there).
 	selfDemoteGuard := func(role user.Role) error {
-		claims := shared.ClaimsFromContext(ctx)
-		if claims != nil && claims.UserID == target.ID && string(role) != string(user.RoleAdmin) {
+		if claims.UserID == target.ID && string(role) != string(user.RoleAdmin) {
 			return &shared.ValidationError{
 				Field:   "role",
 				Message: "cannot change your own role",

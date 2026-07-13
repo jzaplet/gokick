@@ -20,9 +20,9 @@ func NewGetProfileHandler(users user.Repository) *GetProfileHandler {
 }
 
 func (h *GetProfileHandler) Handle(ctx context.Context, _ GetProfileQuery) (*user.User, error) {
-	claims := shared.ClaimsFromContext(ctx)
-	if claims == nil {
-		return nil, &shared.AuthError{Message: "authentication required"}
+	claims, err := shared.RequireClaims(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	return h.users.FindByID(ctx, claims.UserID)

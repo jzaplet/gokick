@@ -20,9 +20,9 @@ func NewLogoutHandler(tokens token.TokenRepository) *LogoutHandler {
 }
 
 func (h *LogoutHandler) Handle(ctx context.Context, _ LogoutCommand) error {
-	claims := shared.ClaimsFromContext(ctx)
-	if claims == nil {
-		return &shared.AuthError{Message: "authentication required"}
+	claims, err := shared.RequireClaims(ctx)
+	if err != nil {
+		return err
 	}
 
 	// Record-before-revoke (mirrors the refresh theft branch): logout is a

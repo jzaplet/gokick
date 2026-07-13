@@ -32,9 +32,9 @@ func NewChangePasswordHandler(
 }
 
 func (h *ChangePasswordHandler) Handle(ctx context.Context, cmd ChangePasswordCommand) error {
-	claims := shared.ClaimsFromContext(ctx)
-	if claims == nil {
-		return &shared.AuthError{Message: "authentication required"}
+	claims, err := shared.RequireClaims(ctx)
+	if err != nil {
+		return err
 	}
 
 	u, err := h.users.FindByID(ctx, claims.UserID)

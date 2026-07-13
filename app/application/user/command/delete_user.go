@@ -22,9 +22,9 @@ func NewDeleteUserHandler(users user.Repository) *DeleteUserHandler {
 }
 
 func (h *DeleteUserHandler) Handle(ctx context.Context, cmd DeleteUserCommand) error {
-	claims := shared.ClaimsFromContext(ctx)
-	if claims == nil {
-		return &shared.AuthError{Message: "authentication required"}
+	claims, err := shared.RequireClaims(ctx)
+	if err != nil {
+		return err
 	}
 
 	if claims.UserID == cmd.ID {

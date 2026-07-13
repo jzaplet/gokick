@@ -26,9 +26,9 @@ func (h *DeletePlatformUserHandler) Handle(
 	ctx context.Context,
 	cmd DeletePlatformUserCommand,
 ) error {
-	claims := shared.ClaimsFromContext(ctx)
-	if claims == nil {
-		return &shared.AuthError{Message: "authentication required"}
+	claims, err := shared.RequireClaims(ctx)
+	if err != nil {
+		return err
 	}
 	if claims.UserID == cmd.ID {
 		return &shared.ValidationError{Message: "cannot delete your own account"}
