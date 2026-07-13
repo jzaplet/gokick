@@ -20,6 +20,12 @@ linters:
     - gocognit
     - nestif
     - gocritic
+    # File-length gate. Go has no native per-file size limit (funlen is per
+    # function), so a file can accrete many small functions and still balloon —
+    # run_worker.go hit 738 lines that way. revive's file-length-limit caps TOTAL
+    # lines per file; only file-length-limit runs (no other revive rule is listed).
+    # Generated files (wire_gen.go) are auto-skipped; tests are excluded below.
+    - revive
   settings:
     depguard:
       rules:
@@ -91,6 +97,13 @@ linters:
       min-complexity: 20
     nestif:
       min-complexity: 4
+    revive:
+      # Only this rule runs — listing rules disables revive's default set, so the
+      # linter is a pure file-size gate, not revive's opinionated style suite.
+      rules:
+        - name: file-length-limit
+          arguments:
+            - max: 500 # total lines per file (comments + blanks included)
   exclusions:
     rules:
       # CLI commands legitimately print user-facing results to stdout.
@@ -129,6 +142,7 @@ linters:
         linters:
           - funlen
           - gocognit
+          - revive # test files (table-driven cases, fixtures) are legitimately long
       # Test data legitimately contains odd literals — e.g. a whitespace-padded map
       # key that exercises the trimming path (cmd/logger_test.go). Don't let
       # gocritic's mapKey whitespace check flag intentional test input.
