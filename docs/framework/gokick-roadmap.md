@@ -92,6 +92,12 @@ Vedlejší cíl: dnešní roztříštěnost (`cmd/` vs `tools/tsgen` vs `audit/t
 - **Ustálený stav = dva moduly:** `cmd/` (app) + `tools/gk` (dev codegen/checks).
 - **Make surface se nemění** — codegen se skládá do `make lint` (drift = fail) a `make build` (regen), takže se vynutí sám; 5 hlavních příkazů v README zůstává jedinou plochou. *„Code-gen, na který si nikdy nevzpomeneš, protože se vynutí sám."*
 
+### FE lint gaty (ratchet) — cognitive complexity čeká na TS7
+
+Post-audit zapnul FE gaty `max-lines 300` + `max-depth 4` + `knip` (dead-code, strict) do `make lint`. **Kognitivní complexity gate ale zatím NEJDE:** jediný nástroj, který kognitivní metriku poskytuje (`eslint-plugin-sonarjs`), transitivně vyžaduje **TypeScript 7** (nativní přepis), a ten `typescript-eslint` nepodporuje (peer `typescript >=4.8.4 <6.1.0`) — TS7 by rozbil celý type-aware lint. Projekt je proto na **TS 6.0.2 = strop ekosystému**. (Cyclomatic complexity vědomě nechceme — `cyclop` je na do-not-enable listu, protože penalizuje ploché validační řetězce.)
+
+- [ ] **Re-check TS7 viability** — až `typescript-eslint` vydá stabilní TS7 podporu (dnes jen `4.0.0-alpha`), ověřit upgrade TS 6→7 přes izolovaný worktree (build + type-aware lint + vue-tsc + testy) a při zelené zapnout cognitive-complexity gate (`sonarjs/cognitive-complexity`, práh dle kognitivní metriky, ne cyklomatické). Do té doby `max-lines` + `max-depth` drží strukturální strop.
+
 
 ## Cesta k 10/10
 
