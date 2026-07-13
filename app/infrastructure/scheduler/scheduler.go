@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -23,6 +24,7 @@ const (
 	logKeyName  = "name"
 	logKeyJobs  = "jobs"
 	logKeyPanic = "panic"
+	logKeyStack = "stack"
 )
 
 type JobFunc func(ctx context.Context) error
@@ -109,8 +111,14 @@ func (s *Scheduler) tick(ctx context.Context, j Job) {
 			// Log-only on purpose — NOT reported to the error tracker. Unlike a
 			// terminal job failure, a scheduler job re-ticks every interval
 			// forever, so a deterministic panic would emit an unbounded stream
-			// of identical events. The Error-level log is the operator signal.
-			s.logger.Error("scheduler: job panicked", logKeyName, j.Name, logKeyPanic, r)
+			// of identical events. The Error-level log is the operator signal, so
+			// it must carry the stack trace — without it the log names the job but
+			// not the faulting line.
+			s.logger.LogAttrs(ctx, slog.LevelError, "scheduler: job panicked",
+				slog.String(logKeyName, j.Name),
+				slog.Any(logKeyPanic, r),
+				slog.String(logKeyStack, string(debug.Stack())),
+			)
 		}
 	}()
 
