@@ -36,13 +36,14 @@ type Overview struct {
 	UserCount int    `db:"user_count"`
 }
 
-// NewTenant builds a tenant with a fresh UUIDv7 id. The bootstrap "Default"
-// tenant is created by migration, not this factory.
-func NewTenant(name string) *Tenant {
+// NewTenant builds a tenant with a fresh UUIDv7 id. It takes a validated Name
+// value object, not a raw string, so a blank/whitespace name can't reach the DB.
+// The bootstrap "Default" tenant is created by migration, not this factory.
+func NewTenant(name Name) *Tenant {
 	now := time.Now()
 	return &Tenant{
 		ID:        uuid.Must(uuid.NewV7()).String(),
-		Name:      name,
+		Name:      string(name),
 		Plan:      PlanFree,
 		CreatedAt: now,
 		UpdatedAt: now,

@@ -8,8 +8,6 @@ import (
 	"gokick/app/domain/shared"
 	"gokick/app/domain/tenant"
 	"gokick/app/domain/user"
-
-	"github.com/google/uuid"
 )
 
 // Structured-log keys. sloglint's no-raw-keys forbids bare string keys.
@@ -103,15 +101,19 @@ func (s *Seeder) seedAdmin(ctx context.Context) error {
 		return err
 	}
 
-	admin := &user.User{
-		ID:           uuid.New().String(),
-		Nickname:     "admin",
-		PasswordHash: hash,
-		Email:        "admin@localhost",
-		Role:         string(user.RoleAdmin),
-		TenantID:     tenantID,
-		Active:       true,
+	nick, err := user.NewNickname("admin")
+	if err != nil {
+		return err
 	}
+	email, err := user.NewEmail("admin@localhost")
+	if err != nil {
+		return err
+	}
+
+	// Construct through the born-scoped NewUser factory (not a bare literal) so the
+	// seeded admin gets the same UUIDv7 id + CreatedAt/UpdatedAt stamps and VO
+	// validation as every other user — the factory is the single construction path.
+	admin := user.NewUser(nick, hash, email, user.RoleAdmin, tenantID)
 
 	if err := s.users.Save(ctx, admin); err != nil {
 		return err
@@ -141,8 +143,12 @@ func (s *Seeder) adminTenantID(ctx context.Context) (string, error) {
 		return shared.DefaultTenantID, nil
 	}
 
-	name := string(s.adminTenant)
-	existing, err := s.tenants.FindByName(ctx, name)
+	name, err := tenant.NewName(string(s.adminTenant))
+	if err != nil {
+		return "", fmt.Errorf("APP_SEED_ADMIN_TENANT: %w", err)
+	}
+
+	existing, err := s.tenants.FindByName(ctx, string(name))
 	if err != nil {
 		return "", err
 	}
@@ -162,7 +168,7 @@ func (s *Seeder) adminTenantID(ctx context.Context) (string, error) {
 		Metadata:   map[string]any{"name": t.Name},
 	})
 
-	s.logger.Info("seeded admin tenant", logKeyTenant, name)
+	s.logger.Info("seeded admin tenant", logKeyTenant, string(name))
 	return t.ID, nil
 }
 
@@ -194,15 +200,16 @@ func (s *Seeder) seedSuperAdmin(ctx context.Context) error {
 		return err
 	}
 
-	superAdmin := &user.User{
-		ID:           uuid.New().String(),
-		Nickname:     "superadmin",
-		PasswordHash: hash,
-		Email:        "superadmin@localhost",
-		Role:         string(user.RoleSuperAdmin),
-		TenantID:     shared.DefaultTenantID,
-		Active:       true,
+	nick, err := user.NewNickname("superadmin")
+	if err != nil {
+		return err
 	}
+	email, err := user.NewEmail("superadmin@localhost")
+	if err != nil {
+		return err
+	}
+
+	superAdmin := user.NewUser(nick, hash, email, user.RoleSuperAdmin, shared.DefaultTenantID)
 
 	if err := s.users.Save(ctx, superAdmin); err != nil {
 		return err

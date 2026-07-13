@@ -247,7 +247,11 @@ func (f *Fixture) SeedUser(t *testing.T, nickname, password, role string) *user.
 // multitenant tests to create the distinct tenants whose isolation they assert.
 func (f *Fixture) SeedTenant(t *testing.T, name string) *tenant.Tenant {
 	t.Helper()
-	tn := tenant.NewTenant(name)
+	n, err := tenant.NewName(name)
+	if err != nil {
+		t.Fatalf("tenant name: %v", err)
+	}
+	tn := tenant.NewTenant(n)
 	if err := f.Tenants.Save(context.Background(), tn); err != nil {
 		t.Fatalf("save tenant: %v", err)
 	}
