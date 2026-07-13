@@ -51,7 +51,7 @@ func NewUser(
 	tenantID string,
 ) *User {
 	return &User{
-		ID:           uuid.New().String(),
+		ID:           uuid.Must(uuid.NewV7()).String(),
 		Nickname:     string(nickname),
 		PasswordHash: passwordHash,
 		Email:        string(email),

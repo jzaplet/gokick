@@ -66,7 +66,7 @@ type Run struct {
 func NewRun(kind string, payload []byte, maxRetries int) *Run {
 	now := time.Now()
 	return &Run{
-		ID:         uuid.NewString(),
+		ID:         uuid.Must(uuid.NewV7()).String(),
 		Kind:       kind,
 		Payload:    payload,
 		RunAt:      now,

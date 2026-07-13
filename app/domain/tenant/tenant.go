@@ -41,7 +41,7 @@ type Overview struct {
 func NewTenant(name string) *Tenant {
 	now := time.Now()
 	return &Tenant{
-		ID:        uuid.NewString(),
+		ID:        uuid.Must(uuid.NewV7()).String(),
 		Name:      name,
 		Plan:      PlanFree,
 		CreatedAt: now,
