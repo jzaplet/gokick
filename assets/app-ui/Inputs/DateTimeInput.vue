@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue';
+import { targetValue } from '@/app-ui/Events/eventTarget';
 
 type Props = {
     modelValue?: null | string;
@@ -38,9 +39,7 @@ const resolveValue = (value: Props['modelValue']): string | null => {
 };
 
 const handleInput = (event: Event): void => {
-    const target = event.target as HTMLInputElement;
-
-    inputValue.value = target.value;
+    inputValue.value = targetValue(event);
 };
 
 const handleChange = (): void => {

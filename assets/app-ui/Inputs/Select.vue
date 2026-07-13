@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
+import { targetValue } from '@/app-ui/Events/eventTarget';
 
 type Option = {
     value: string;
@@ -30,13 +31,13 @@ const inputId
 const selectValue = ref(props.modelValue ?? '');
 
 const handleChange = (event: Event): void => {
-    const target = event.target as HTMLSelectElement;
+    const value = targetValue(event);
 
-    selectValue.value = target.value;
-    const value = target.value === '' ? null : target.value;
+    selectValue.value = value;
+    const emitted = value === '' ? null : value;
 
-    emit('update:modelValue', value);
-    emit('change', value);
+    emit('update:modelValue', emitted);
+    emit('change', emitted);
 };
 
 watch(
