@@ -48,7 +48,17 @@ const handleSubmit = async (): Promise<void> => {
         admin: '/admin/dashboard',
     };
     const defaultByRole = roleHome[result.data.user.role] ?? '/user/dashboard';
-    const target = typeof redirectQuery === 'string' ? redirectQuery : defaultByRole;
+
+    // Only accept a same-origin absolute path: reject protocol-relative
+    // (`//evil.com`) and any non-string so a crafted ?redirect= can't bounce the
+    // user off-site (open redirect). The narrowing lives in the ternary so no cast.
+    const safeRedirect = (query: typeof redirectQuery): string | null =>
+        typeof query === 'string'
+        && query.startsWith('/') === true
+        && query.startsWith('//') === false
+            ? query
+            : null;
+    const target = safeRedirect(redirectQuery) ?? defaultByRole;
 
     await router.push(target);
 };
