@@ -1,0 +1,10 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "assets/router/routes.ts",
+    "assets/app-ui/Auth/index.ts",
+    "assets/app-ui/Fetch/index.ts"
+  ],
+  "project": ["assets/**/*.{ts,vue}"],
+  "ignoreDependencies": ["tailwindcss"]
+}

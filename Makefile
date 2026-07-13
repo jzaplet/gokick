@@ -73,6 +73,7 @@ format:
 lint:
 	yarn lint
 	yarn type-check
+	yarn knip
 	$(GOLANGCI_LINT) run ./app/... ./cmd/...
 	$(MAKE) arch-check
 	$(MAKE) format-check

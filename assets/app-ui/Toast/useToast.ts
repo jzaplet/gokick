@@ -17,7 +17,8 @@ let idCounter = 0;
 
 const isAsleep = ref(false);
 
-export const sleepingToasts = reactive<Toast[]>([]);
+const sleepingToasts = reactive<Toast[]>([]);
+
 export const toasts = reactive<Toast[]>([]);
 
 export const asleep = (): void => {
@@ -111,7 +112,7 @@ export const clearToasts = (): void => {
     storage.removeItem(TOAST_STORAGE_KEY);
 };
 
-export const loadToasts = (): void => {
+const loadToasts = (): void => {
     const storedToasts = storage.getItem(TOAST_STORAGE_KEY);
 
     if (storedToasts === null) {
