@@ -119,25 +119,37 @@ const loadToasts = (): void => {
         return;
     }
 
-    const parsed: {
-        toasts: Toast[];
-        sleepingToasts: Toast[];
-    } = JSON.parse(storedToasts) as {
-        toasts: Toast[];
-        sleepingToasts: Toast[];
-    };
+    // loadToasts() runs at module-evaluation time (App.vue → ToastContainer →
+    // useToast import), so an unguarded throw here bricks the whole app with a
+    // white screen at bootstrap. localStorage survives across deploys, so one
+    // corrupt or schema-changed 'persistent-toasts' value would poison every
+    // future load until cleared by hand. Recover instead: drop the bad key and
+    // start with empty state — a lost toast history is never worth a dead app.
+    // Long-term hardening (versioning/validating the persisted shape) is tracked
+    // separately with the BE↔FE parity follow-up. (F-076)
+    try {
+        const parsed: {
+            toasts: Toast[];
+            sleepingToasts: Toast[];
+        } = JSON.parse(storedToasts) as {
+            toasts: Toast[];
+            sleepingToasts: Toast[];
+        };
 
-    const { toasts: active, sleepingToasts: sleeping } = parsed;
+        const { toasts: active, sleepingToasts: sleeping } = parsed;
 
-    for (const toast of active) {
-        addToast(toast.type, toast.message, toast.duration);
+        for (const toast of active) {
+            addToast(toast.type, toast.message, toast.duration);
+        }
+
+        for (const toast of sleeping) {
+            sleepingToasts.push(toast);
+        }
+
+        awake();
+    } catch {
+        storage.removeItem(TOAST_STORAGE_KEY);
     }
-
-    for (const toast of sleeping) {
-        sleepingToasts.push(toast);
-    }
-
-    awake();
 };
 
 loadToasts();

@@ -104,3 +104,36 @@ describe('useToast duration semantics (guide-forms-fe-38)', () => {
         expect(toasts.map((t) => t.message)).toEqual(['sticky']);
     });
 });
+
+// F-076: loadToasts() runs at module-evaluation time (App.vue → ToastContainer
+// → useToast import). Before the fix an unguarded JSON.parse / iteration over a
+// corrupt or wrong-shape 'persistent-toasts' value threw during import → the app
+// failed to mount = white screen for every returning user until the key was
+// cleared by hand. These re-import the module fresh (vi.resetModules) with a
+// poisoned key and assert the import survives with empty state.
+describe('useToast corrupt-storage recovery (F-076)', () => {
+    beforeEach((): void => {
+        localStorage.clear();
+        vi.resetModules();
+    });
+
+    it('recovers from invalid JSON at module init instead of throwing', async (): Promise<void> => {
+        localStorage.setItem('persistent-toasts', '{not valid json');
+
+        const mod = await import('@/app-ui/Toast/useToast');
+
+        expect(mod.toasts).toHaveLength(0);
+        // The poisoned key is dropped so it can't brick every future load.
+        expect(localStorage.getItem('persistent-toasts')).toBeNull();
+    });
+
+    it('recovers from a wrong-shape payload at module init instead of throwing', async (): Promise<void> => {
+        // Valid JSON, but toasts/sleepingToasts are absent → 'active is not iterable'.
+        localStorage.setItem('persistent-toasts', JSON.stringify({ foo: 'bar' }));
+
+        const mod = await import('@/app-ui/Toast/useToast');
+
+        expect(mod.toasts).toHaveLength(0);
+        expect(localStorage.getItem('persistent-toasts')).toBeNull();
+    });
+});
