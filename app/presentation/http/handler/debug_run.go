@@ -38,7 +38,11 @@ var (
 // e2e:checkpoint. max_retries is an optional query param (default 0). Returns the
 // new run id; the worker picks it up on its next poll.
 func (h *DebugRunHandler) Enqueue(w http.ResponseWriter, r *http.Request) {
-	payload, err := io.ReadAll(io.LimitReader(r.Body, debugRunMaxPayload))
+	// Reject an oversize body (400) rather than silently truncating it — matches
+	// the request.DecodeJSON idiom instead of io.LimitReader's quiet cut, so a
+	// too-big payload can't enqueue a corrupt run that looks like success.
+	r.Body = http.MaxBytesReader(w, r.Body, debugRunMaxPayload)
+	payload, err := io.ReadAll(r.Body)
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, err)
 		return
