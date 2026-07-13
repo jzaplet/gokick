@@ -63,6 +63,7 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
+//gkts:AuthUser assets/app-ui/Auth/types/AuthUser.ts
 type userDTO struct {
 	ID          string   `json:"id"`
 	Nickname    string   `json:"nickname"`
@@ -71,6 +72,7 @@ type userDTO struct {
 	Permissions []string `json:"permissions"`
 }
 
+//gkts:LoginResponse assets/app-ui/Auth/types/LoginResponse.ts
 type loginResponse struct {
 	AccessToken      string  `json:"access_token"`
 	AccessExpiration int     `json:"access_expiration"`

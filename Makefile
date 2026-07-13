@@ -76,6 +76,7 @@ lint:
 	$(GOLANGCI_LINT) run ./app/... ./cmd/...
 	$(MAKE) arch-check
 	$(MAKE) format-check
+	$(MAKE) ts-check
 	$(MAKE) documan-lint
 
 # Fail if any Go file is not golines-formatted. golines is not covered by
@@ -99,6 +100,16 @@ serve:
 # DI
 di:
 	cd app/infrastructure/di && $(WIRE)
+
+# Go->TS type parity (F-082). Generate the frontend request/response types from
+# the annotated Go DTOs (//gkts:<Name> <path> directives) — mirrors `make di` for
+# wire. Run after changing a DTO. `ts-check` (wired into `make lint`) fails CI if
+# the committed TS has drifted from the Go source.
+ts-gen:
+	cd tools/tsgen && go run . generate
+
+ts-check:
+	cd tools/tsgen && go run . check
 
 # Migrations
 migrate-create:
