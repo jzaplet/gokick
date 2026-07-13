@@ -33,6 +33,13 @@ import (
 //     during a rolling deploy (a binary without the handler claimed it). Bounded by
 //     the worker INDEPENDENTLY of max_retries, so deploy timing never consumes the
 //     handler's logic-retry budget.
+//
+// INCREMENT TIMING dictates each budget check's operator — do NOT "unify" them:
+// Reclaims is bumped by ClaimDue (in SQL) BEFORE failIfPoison sees it, so that
+// check is `>` (post-increment). Attempts and Parks are bumped by Reschedule /
+// Park AFTER their checks run, so those checks are `>=` (pre-increment). Moving
+// any increment across its check requires flipping that check's operator; the
+// poison-boundary test (run_worker_test.go, MaxReclaims+1) pins the reclaims side.
 type Run struct {
 	ID   string `db:"id"`
 	Kind string `db:"kind"`
