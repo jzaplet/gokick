@@ -75,9 +75,19 @@ func (s *JwtService) ValidateAccessToken(tokenString string) (*shared.AuthClaims
 		return nil, &shared.AuthError{Message: "invalid token claims"}
 	}
 
+	userID := claimString(claims, "sub")
+	role := claimString(claims, "role")
+	if userID == "" || role == "" {
+		// Fail closed: a validly-signed token whose `sub` or `role` claim is
+		// absent/empty must be rejected, not silently downgraded to baseline
+		// (empty-role) permissions. GenerateAccessToken always sets both, so no
+		// legitimate token is affected. Nickname/email/tenant stay tolerant.
+		return nil, &shared.AuthError{Message: "invalid token claims"}
+	}
+
 	return &shared.AuthClaims{
-		UserID:   claimString(claims, "sub"),
-		Role:     claimString(claims, "role"),
+		UserID:   userID,
+		Role:     role,
 		Nickname: claimString(claims, "nickname"),
 		Email:    claimString(claims, "email"),
 		TenantID: claimString(claims, "tenant"),
