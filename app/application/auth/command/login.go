@@ -38,7 +38,7 @@ type LoginHandler struct {
 	users     user.Repository
 	tokens    token.TokenRepository
 	password  shared.PasswordHasher
-	jwt       shared.JwtService
+	jwt       shared.TokenService
 	dummyHash string
 }
 
@@ -61,7 +61,7 @@ func NewLoginHandler(
 	users user.Repository,
 	tokens token.TokenRepository,
 	password shared.PasswordHasher,
-	jwt shared.JwtService,
+	jwt shared.TokenService,
 ) *LoginHandler {
 	// Pay the bcrypt cost once at startup so the "user not found" branch
 	// can compare against a real hash and match the timing of "user

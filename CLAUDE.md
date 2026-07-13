@@ -80,7 +80,7 @@ Bounded contexts in separate packages. **Never import between contexts** (e.g. `
 
 | Package | Contains |
 |---------|----------|
-| `domain/shared/` | `AuthClaims` (incl. `TenantID`), `ValidationError`, `AuthError`, `PermissionError`, `DomainEvent`, `EventCollector`, `AuditCollector` + `AuditEvent` / `AuditRecord`, `PermissionsRegistry`, `DefaultTenantID`, interfaces (`PasswordHasher`, `PermissionChecker`, `JwtService`, `TenantResolver`, `Transactor`, `Seeder`, `AuditLogger`, `RunDispatcher`) |
+| `domain/shared/` | `AuthClaims` (incl. `TenantID`), `ValidationError`, `AuthError`, `PermissionError`, `DomainEvent`, `EventCollector`, `AuditCollector` + `AuditEvent` / `AuditRecord`, `PermissionsRegistry`, `DefaultTenantID`, interfaces (`PasswordHasher`, `PermissionChecker`, `TokenService`, `TenantResolver`, `Transactor`, `Seeder`, `AuditLogger`, `RunDispatcher`) |
 | `domain/user/` | `User` entity, `Nickname`/`Role` (admin/user/**superadmin**) value objects, `Repository` interface, `PlatformRow` read model, `UserCreated` event |
 | `domain/token/` | `RefreshToken` entity, `TokenRepository` interface |
 | `domain/run/` | `Run` entity, `Repository` interface — the durable background-task primitive (runs OUTSIDE a tx; optional checkpoint, lease + heartbeat, owner-token fencing, cancel, per-attempt timeout) |

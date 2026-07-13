@@ -34,13 +34,13 @@ func (RefreshTokenCommand) SkipTransaction() {}
 type RefreshTokenHandler struct {
 	users  user.Repository
 	tokens token.TokenRepository
-	jwt    shared.JwtService
+	jwt    shared.TokenService
 }
 
 func NewRefreshTokenHandler(
 	users user.Repository,
 	tokens token.TokenRepository,
-	jwt shared.JwtService,
+	jwt shared.TokenService,
 ) *RefreshTokenHandler {
 	return &RefreshTokenHandler{
 		users:  users,

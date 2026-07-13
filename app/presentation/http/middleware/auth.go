@@ -17,7 +17,7 @@ const bearerPrefix = "Bearer "
 //   - header valid    → claims stored in context via shared.ContextWithClaims
 //
 // Actual permission enforcement happens in the bus AuthorizeMiddleware.
-func AuthMiddleware(jwt shared.JwtService) func(http.Handler) http.Handler {
+func AuthMiddleware(jwt shared.TokenService) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			header := r.Header.Get("Authorization")

@@ -28,7 +28,7 @@ Klíčové pravidlo: každý lístek musí mít napsáno, **kdo ho smí podat** 
 Každý command žije v souboru `app/application/<context>/command/xxx.go` a obsahuje **dva typy**:
 
 - **`XxxCommand`** — data struct, raw hodnoty z HTTP requestu (`string`, …). Žádná logika.
-- **`XxxHandler`** — logika. Konstruktor `NewXxxHandler(...)` bere **jen doménové interfaces** (`user.Repository`, `shared.PasswordHasher`, `shared.JwtService`), nikdy konkrétní infrastrukturu. Metoda `Handle(ctx, cmd)` dělá práci.
+- **`XxxHandler`** — logika. Konstruktor `NewXxxHandler(...)` bere **jen doménové interfaces** (`user.Repository`, `shared.PasswordHasher`, `shared.TokenService`), nikdy konkrétní infrastrukturu. Metoda `Handle(ctx, cmd)` dělá práci.
 
 **Deklarace permission je povinná** (`app/domain/shared/permission.go`). Command implementuje právě jedno:
 - `RequiredPermission() string` (interface `Permissioned`) — např. `create_user.go:18` vrací `"admin:users:create"`.

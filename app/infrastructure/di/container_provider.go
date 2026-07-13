@@ -339,7 +339,7 @@ func CreateApplication(
 		provideRunWorker,
 		providePermissionsRegistry,
 		security.NewJwtService,
-		wire.Bind(new(shared.JwtService), new(*security.JwtService)),
+		wire.Bind(new(shared.TokenService), new(*security.JwtService)),
 		wire.Bind(new(user.Repository), new(*sqliteuser.Repository)),
 		wire.Bind(new(user.PlatformRepository), new(*sqliteuser.Repository)),
 		wire.Bind(new(token.TokenRepository), new(*sqlitetoken.Repository)),

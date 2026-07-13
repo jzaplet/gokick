@@ -55,7 +55,7 @@ type Server struct {
 	config     *config.Config
 	logger     *slog.Logger
 	reporter   shared.ErrorReporter
-	jwt        shared.JwtService
+	jwt        shared.TokenService
 	limiters   *RateLimiters
 	ipExtract  middleware.IPExtractor
 	health     *handler.HealthHandler
@@ -72,7 +72,7 @@ func NewServer(
 	config *config.Config,
 	logger *slog.Logger,
 	reporter shared.ErrorReporter,
-	jwt shared.JwtService,
+	jwt shared.TokenService,
 	limiters *RateLimiters,
 	ipExtract middleware.IPExtractor,
 	health *handler.HealthHandler,
