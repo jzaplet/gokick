@@ -151,7 +151,13 @@ deps:
     mayDependOn:
       - bus
   application:
+    # Self-dependency: application/** is deliberately ONE component (unlike the
+    # per-context domain split), so application subpackages may import each other
+    # — e.g. user/command + platform/command share application/userwrite (the
+    # admin↔platform update-user body, F-023). bus/bus_middleware stay separate
+    # components on purpose, so this does not open a path to them.
     mayDependOn:
+      - application
       - testfx
       - domain_user
       - domain_token

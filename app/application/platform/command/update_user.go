@@ -2,8 +2,8 @@ package command
 
 import (
 	"context"
-	"time"
 
+	"gokick/app/application/userwrite"
 	"gokick/app/domain/shared"
 	"gokick/app/domain/user"
 )
@@ -43,78 +43,14 @@ func (h *UpdatePlatformUserHandler) Handle(
 		return err
 	}
 
-	// A superadmin (platform) account is never editable through the API — it is
-	// managed out-of-band only. The repo write also excludes superadmin rows.
-	if user.Role(target.Role).IsSuperAdmin() {
-		return &shared.PermissionError{Message: "cannot modify a superadmin account"}
-	}
-
-	nickname, err := user.NewNickname(cmd.Nickname)
-	if err != nil {
-		return err
-	}
-
-	role, err := user.NewRole(cmd.Role)
-	if err != nil {
-		return err
-	}
-	if role.IsSuperAdmin() {
-		return &shared.ValidationError{
-			Field:   "role",
-			Message: "cannot assign the superadmin role",
-		}
-	}
-
-	email, err := user.NewEmail(cmd.Email)
-	if err != nil {
-		return err
-	}
-
-	if string(nickname) != target.Nickname {
-		conflict, err := h.users.FindByNickname(ctx, string(nickname))
-		if err != nil {
-			return err
-		}
-		if conflict != nil && conflict.ID != target.ID {
-			return &shared.ValidationError{
-				Field:   "nickname",
-				Message: "user with this nickname already exists",
-			}
-		}
-	}
-
-	if cmd.Password != "" {
-		newPassword, err := user.NewPassword(cmd.Password)
-		if err != nil {
-			return err
-		}
-		hash, err := h.password.Hash(string(newPassword))
-		if err != nil {
-			return err
-		}
-		target.PasswordHash = hash
-	}
-
-	roleChanged := target.Role != string(role)
-
-	// target.Active is left untouched — the edit form carries no active flag.
-	target.Nickname = string(nickname)
-	target.Email = string(email)
-	target.Role = string(role)
-	target.UpdatedAt = time.Now()
-
-	if err := h.users.UpdateAcrossTenants(ctx, target); err != nil {
-		return err
-	}
-
-	if roleChanged {
-		shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
-			Action:     "user.role_changed",
-			TargetType: "user",
-			TargetID:   target.ID,
-			Metadata:   map[string]any{"new_role": target.Role},
-		})
-	}
-
-	return nil
+	// No self-demote guard on the platform plane (a superadmin editing tenant
+	// users can't lock itself out), so guard is nil. The cross-tenant
+	// UpdateAcrossTenants is the only divergence from the admin handler; the
+	// shared body (incl. leaving target.Active untouched) lives in userwrite.
+	return userwrite.Update(ctx, h.users, h.password, target, userwrite.Fields{
+		Nickname: cmd.Nickname,
+		Email:    cmd.Email,
+		Role:     cmd.Role,
+		Password: cmd.Password,
+	}, nil, h.users.UpdateAcrossTenants)
 }
