@@ -106,16 +106,6 @@ func (r *Repository) FindByNickname(ctx context.Context, nickname string) (*user
 	return &u, err
 }
 
-// FindAllActive (like FindAll) excludes superadmin rows: a platform account must
-// never surface in a tenant admin's user listing — it lives above the tenant.
-func (r *Repository) FindAllActive(ctx context.Context) ([]user.User, error) {
-	var users []user.User
-	err := r.Conn(ctx).SelectContext(ctx, &users,
-		`SELECT * FROM users WHERE active=1 AND tenant_id=? AND role != 'superadmin' ORDER BY nickname`,
-		r.Tenant(ctx))
-	return users, err
-}
-
 func (r *Repository) FindAll(ctx context.Context) ([]user.User, error) {
 	var users []user.User
 	err := r.Conn(ctx).SelectContext(ctx, &users,

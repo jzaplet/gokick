@@ -16,7 +16,6 @@ type Repository interface {
 	Delete(ctx context.Context, id string) error
 	FindByID(ctx context.Context, id string) (*User, error)
 	FindByNickname(ctx context.Context, nickname string) (*User, error)
-	FindAllActive(ctx context.Context) ([]User, error)
 	FindAll(ctx context.Context) ([]User, error)
 
 	// RecordLogin stamps last_login_at = now for the user on a successful login.
