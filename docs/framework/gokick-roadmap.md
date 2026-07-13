@@ -66,6 +66,33 @@ Recovery(→Sentry) → Logging → Audit → DispatchEvents → Transaction    
 - [ ] **Hardening:** `otelsql` + OTEL SDK do depguard allow-listu (`.golangci.yml`); collector endpoint do CSP `connect-src` + `traceparent` přes CORS.
 
 
+## 🔗 BE↔FE typová parita — vynucení „nemáš kam uhnout" (post-audit follow-up)
+
+Dnes generuje `tools/tsgen` TypeScript typy z anotovaných Go DTO (direktiva `//gkts:<TSName> <cesta>` → přesná cílová `.ts` cesta per typ) a `make ts-check` v `make lint` hlídá, že vygenerované soubory nedriftnou. To řeší drift **anotovaných** typů, ale je to **opt-in** — a tím zůstává díra:
+
+- Zapomenu dát `//gkts:` na nový response/request DTO → generátor mlčí.
+- Handler odpoví inline `map[string]any` místo pojmenovaného structu → nikdo to nechytí.
+- FE `fetch` pošle neotypované `body` nebo zkonzumuje odpověď jako `any` → parita nevynucená.
+
+Generátor umí říct „tenhle typ driftnul", ne „tady jsi typ zapomněl". **Cílový stav = uzavřená smyčka**, kde `//gkts:` na Go DTO je jediný zdroj pravdy a hranice drátu se vynutí staticky:
+
+- [x] **① Codegen (`tools/tsgen`)** — Go DTO → TS, drift = fail v `make lint`. *(hotovo — 13 wire DTO generováno a gate-ováno)*
+- [ ] **② BE boundary analyzer** — `go/analysis` linter: každý `response.JSON(w, _, X)` a `request.DecodeJSON(w, r, &X)` musí mít `X` = pojmenovaný struct s `//gkts:`. Inline mapa / `any` / neanotovaný typ = fail. Escape `//gkts:ignore` (stejná disciplína jako raw-pool výjimky) pro debug endpointy. Výsledek: **Go response nejde odeslat mimo generovaný DTO.**
+- [ ] **③ FE typovaný fetch + lint** — `authFetch<Res, Req, Err>` s **povinným** `Req` typem; ESLint pravidlo zakáže fetch bez explicitních generovaných typů i inline `body` literál. Výsledek: **fetch nejde poslat mimo generovaný typ.**
+
+② + ③ dohromady = smyčka zavřená: nový handler ani nový fetch nelze přidat bez typu, který existuje a matchuje na obou stranách. Airtight je BE strana (statická jistota); FE je „velmi těsné" (strukturální typing TS), ale v kombinaci s ② nemá FE co poslat mimo deklarovaný kontrakt.
+
+### Sjednocení dev-tooling adresářů
+
+Vedlejší cíl: dnešní roztříštěnost (`cmd/` vs `tools/tsgen` vs `audit/tool`) je matoucí — kam sáhnout, co použít.
+
+- `cmd/` = samotná aplikace (zůstává — to je produkt).
+- `audit/tool` = **dočasný** tracker; teardown po dopracování backlogu → zmizí.
+- `tools/tsgen` → přejmenovat/rozšířit na **jeden `tools/gk` modul** se sub-příkazy (`ts-gen`, `ts-check`, `boundary-check`). Vlastní `go.mod` je nutnost — codegen píše na stdout i do souborů, což lint invarianty hlavního modulu (jediná logovací cesta) zakazují.
+- **Ustálený stav = dva moduly:** `cmd/` (app) + `tools/gk` (dev codegen/checks).
+- **Make surface se nemění** — codegen se skládá do `make lint` (drift = fail) a `make build` (regen), takže se vynutí sám; 5 hlavních příkazů v README zůstává jedinou plochou. *„Code-gen, na který si nikdy nevzpomeneš, protože se vynutí sám."*
+
+
 ## Cesta k 10/10
 
 Co konkrétně chybí do plného skóre v jednotlivých disciplínách. **Jedna disciplína nese ~90 % práce** — škálovatelnost; zbytek představují cílené dílčí úpravy v řádu týdnů. Dokumentace & AI skills je na **10/10** (ADRs jsou součástí šablony, ne tohoto projektu — do hodnocení se nepromítají). Detaily a kontext v [PDF reportu](../gokick-hodnoceni.pdf), kapitola 9.
