@@ -96,11 +96,7 @@ func Update(
 	}
 
 	if f.Password != "" {
-		newPassword, err := user.NewPassword(f.Password)
-		if err != nil {
-			return err
-		}
-		hash, err := hasher.Hash(string(newPassword))
+		hash, err := user.HashNewPassword(f.Password, hasher)
 		if err != nil {
 			return err
 		}

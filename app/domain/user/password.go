@@ -8,6 +8,21 @@ import (
 
 type Password string
 
+// HashNewPassword validates a raw password into the Password value object and
+// hashes it in one call — the single rules+hashing seam shared by every write
+// path that hashes a fresh password inline (change-password, the admin/platform
+// update body). Returns a *shared.ValidationError (field "password") on an invalid
+// password, the hasher's error otherwise. Handlers that validate the password
+// EARLY but hash LATE (create-user/superadmin, to skip the bcrypt cost when the
+// nickname is already taken) keep NewPassword and Hash separate on purpose.
+func HashNewPassword(raw string, hasher shared.PasswordHasher) (string, error) {
+	pw, err := NewPassword(raw)
+	if err != nil {
+		return "", err
+	}
+	return hasher.Hash(string(pw))
+}
+
 func NewPassword(s string) (Password, error) {
 	if s == "" {
 		return "", &shared.ValidationError{Field: "password", Message: "password is required"}

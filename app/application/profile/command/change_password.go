@@ -46,7 +46,7 @@ func (h *ChangePasswordHandler) Handle(ctx context.Context, cmd ChangePasswordCo
 		return &shared.AuthError{Message: "current password is incorrect"}
 	}
 
-	newPassword, err := user.NewPassword(cmd.NewPassword)
+	newHash, err := user.HashNewPassword(cmd.NewPassword, h.password)
 	if err != nil {
 		// `user.NewPassword` reports a generic `password` field; remap so the
 		// error lands on the form's New Password input rather than `general`.
@@ -54,11 +54,6 @@ func (h *ChangePasswordHandler) Handle(ctx context.Context, cmd ChangePasswordCo
 		if errors.As(err, &ve) {
 			return &shared.ValidationError{Field: "new_password", Message: ve.Message}
 		}
-		return err
-	}
-
-	newHash, err := h.password.Hash(string(newPassword))
-	if err != nil {
 		return err
 	}
 
