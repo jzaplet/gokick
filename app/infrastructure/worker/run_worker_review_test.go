@@ -91,7 +91,7 @@ func newRunWorkerWithRepo(
 		t.Fatalf("registry: %v", err)
 	}
 	reporter := &countingReporter{}
-	return NewRunWorker(silentLogger(), reporter, repo, reg, nil, nil, cfg), reporter
+	return NewRunWorker(silentLogger(), reporter, repo, reg, nil, nil, nil, cfg), reporter
 }
 
 // #1 — the headline invariant for the handler shape that can violate it: a

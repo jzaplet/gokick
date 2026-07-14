@@ -77,9 +77,13 @@ func ContextWithAuditCollector(ctx context.Context) (context.Context, *AuditColl
 	return context.WithValue(ctx, auditCollectorKey{}, c), c
 }
 
-// AuditCollectorFromContext returns the request-scoped collector when
-// the call site is inside the bus. Outside (CLI bypass, tests) it
-// returns a throwaway so handlers don't have to nil-check.
+// AuditCollectorFromContext returns the request-scoped collector installed by a
+// middleware/worker that will drain it: the bus AuditMiddleware for HTTP + CLI
+// commands (the CLI runs through the SystemCommandBus, which HAS audit), and the
+// run worker for background runs (it installs a real collector and drains to the
+// AuditLogger). Elsewhere — a handler invoked with no such installer, or a test —
+// it returns a throwaway so callers never have to nil-check; a Record on that
+// throwaway is simply not persisted.
 func AuditCollectorFromContext(ctx context.Context) *AuditCollector {
 	if c, ok := ctx.Value(auditCollectorKey{}).(*AuditCollector); ok {
 		return c

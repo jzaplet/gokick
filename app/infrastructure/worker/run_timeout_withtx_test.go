@@ -36,7 +36,7 @@ func TestRunWorker_Timeout_ReschedulesAsFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("registry: %v", err)
 	}
-	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, nil, fastCfg())
+	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, nil, nil, fastCfg())
 	r := enqueueRunW(t, fx, "slow", 1) // 1 retry available
 
 	stop := startWorker(w)
@@ -70,7 +70,7 @@ func TestRunWorker_HandlerWithTx_CommitsChildWrite(t *testing.T) {
 		t.Fatalf("registry: %v", err)
 	}
 	// transactor = fx.DB (implements shared.Transactor) → WithTx works.
-	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, fx.DB, fastCfg())
+	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, fx.DB, nil, fastCfg())
 	enqueueRunW(t, fx, "withtx.parent", 0)
 
 	stop := startWorker(w)
@@ -100,7 +100,7 @@ func TestRunWorker_HandlerWithTx_RollsBackOnError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("registry: %v", err)
 	}
-	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, fx.DB, fastCfg())
+	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, fx.DB, nil, fastCfg())
 	r := enqueueRunW(t, fx, "withtx.rbparent", 0) // run-once → first failure is terminal
 
 	stop := startWorker(w)
@@ -131,7 +131,7 @@ func TestRunWorker_Timeout_NilReturn_NotCompleted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("registry: %v", err)
 	}
-	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, nil, fastCfg())
+	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, nil, nil, fastCfg())
 	r := enqueueRunW(t, fx, "slownil", 1)
 
 	stop := startWorker(w)
@@ -169,7 +169,7 @@ func TestRunWorker_Timeout_NonCtxAwareHandler_AbandonsForReclaim(t *testing.T) {
 	}
 	cfg := fastCfg()
 	cfg.MaxInFlight = 1 // the stuck handler pins the only slot, so the worker can't reclaim
-	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, nil, cfg)
+	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, nil, nil, cfg)
 	r := enqueueRunW(t, fx, "stuck", 0)
 
 	stop := startWorker(w)

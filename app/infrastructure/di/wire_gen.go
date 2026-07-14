@@ -118,7 +118,7 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	if err != nil {
 		return nil, err
 	}
-	runWorker := provideRunWorker(logger, reporter, repository, handlerRegistry, runDispatcher, sqliteManager, configConfig)
+	runWorker := provideRunWorker(logger, reporter, repository, handlerRegistry, runDispatcher, sqliteManager, auditRepository, configConfig)
 	serveCommand := console.NewServeCommand(serverServer, scheduler, runWorker)
 	seedAdminPassword := provideSeedAdminPassword(configConfig)
 	seedSuperAdminPassword := provideSeedSuperAdminPassword(configConfig)
@@ -346,16 +346,18 @@ func provideRunDispatcher(
 }
 
 // provideRunWorker wires the durable run worker (the one background-work engine) from
-// config. It injects the run dispatcher (so a handler can enqueue a child task) and the
+// config. It injects the run dispatcher (so a handler can enqueue a child task), the
 // SqliteManager as the Transactor backing shared.WithTx (short atomic writes the handler
-// scopes itself) — the worker bypasses the bus, where these are normally injected.
+// scopes itself), and the AuditLogger so a run handler's audit events are drained and
+// persisted — the worker bypasses the bus, where these are normally injected.
 func provideRunWorker(
 	logger *slog.Logger,
 	reporter shared.ErrorReporter,
 	repo run3.Repository,
 	registry *run2.HandlerRegistry,
 	runDispatcher shared.RunDispatcher,
-	db *database.SqliteManager,
+	db *database.SqliteManager, audit2 shared.AuditLogger,
+
 	cfg *config.Config,
 ) *worker.RunWorker {
 	return worker.NewRunWorker(
@@ -364,7 +366,7 @@ func provideRunWorker(
 		repo,
 		registry,
 		runDispatcher,
-		db, worker.RunWorkerConfig{
+		db, audit2, worker.RunWorkerConfig{
 			DefaultLease:      cfg.RunWorkerLease,
 			HeartbeatInterval: cfg.RunWorkerHeartbeat,
 			PollInterval:      cfg.RunWorkerPoll,

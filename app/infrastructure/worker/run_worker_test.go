@@ -51,7 +51,7 @@ func newRunWorker(
 		t.Fatalf("registry: %v", err)
 	}
 	reporter := &countingReporter{}
-	return NewRunWorker(silentLogger(), reporter, fx.Runs, reg, nil, nil, cfg), reporter
+	return NewRunWorker(silentLogger(), reporter, fx.Runs, reg, nil, nil, nil, cfg), reporter
 }
 
 func enqueueRunW(t *testing.T, fx *testfx.Fixture, kind string, maxRetries int) *run.Run {
@@ -608,7 +608,16 @@ func TestRunWorker_HandlerCanEnqueueChildRun(t *testing.T) {
 		t.Fatalf("registry: %v", err)
 	}
 	dispatcher := runapp.NewDispatcher(fx.Runs, reg)
-	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, dispatcher, nil, fastCfg())
+	w := NewRunWorker(
+		silentLogger(),
+		&countingReporter{},
+		fx.Runs,
+		reg,
+		dispatcher,
+		nil,
+		nil,
+		fastCfg(),
+	)
 
 	enqueueRunW(t, fx, "parent", 0)
 	stop := startWorker(w)

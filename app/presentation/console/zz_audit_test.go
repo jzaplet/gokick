@@ -243,6 +243,7 @@ func newTestRunWorker(t *testing.T, fx *testfx.Fixture) *worker.RunWorker {
 		registry,
 		nil,
 		nil,
+		nil,
 		worker.RunWorkerConfig{},
 	)
 }

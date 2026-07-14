@@ -226,6 +226,14 @@ func (f *Fixture) AssertTokenCount(t *testing.T, want int) {
 	}
 }
 
+// NewAuditLogger returns a real AuditLogger backed by this fixture's DB, for tests
+// that need the run worker (or any non-bus path) to actually persist audit rows.
+// Keeps the sqlite/audit import in testfx so consumer test packages don't take an
+// infrastructure→infrastructure dependency of their own.
+func (f *Fixture) NewAuditLogger() shared.AuditLogger {
+	return sqliteaudit.NewRepository(f.DB)
+}
+
 // SeedUser persists a user with the given nickname/password/role and returns the entity.
 func (f *Fixture) SeedUser(t *testing.T, nickname, password, role string) *user.User {
 	t.Helper()

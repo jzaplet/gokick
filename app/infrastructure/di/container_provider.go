@@ -260,9 +260,10 @@ func provideRunDispatcher(
 }
 
 // provideRunWorker wires the durable run worker (the one background-work engine) from
-// config. It injects the run dispatcher (so a handler can enqueue a child task) and the
+// config. It injects the run dispatcher (so a handler can enqueue a child task), the
 // SqliteManager as the Transactor backing shared.WithTx (short atomic writes the handler
-// scopes itself) — the worker bypasses the bus, where these are normally injected.
+// scopes itself), and the AuditLogger so a run handler's audit events are drained and
+// persisted — the worker bypasses the bus, where these are normally injected.
 func provideRunWorker(
 	logger *slog.Logger,
 	reporter shared.ErrorReporter,
@@ -270,6 +271,7 @@ func provideRunWorker(
 	registry *runapp.HandlerRegistry,
 	runDispatcher shared.RunDispatcher,
 	db *database.SqliteManager,
+	audit shared.AuditLogger,
 	cfg *config.Config,
 ) *worker.RunWorker {
 	return worker.NewRunWorker(
@@ -279,6 +281,7 @@ func provideRunWorker(
 		registry,
 		runDispatcher,
 		db,
+		audit,
 		worker.RunWorkerConfig{
 			DefaultLease:      cfg.RunWorkerLease,
 			HeartbeatInterval: cfg.RunWorkerHeartbeat,

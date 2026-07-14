@@ -19,6 +19,7 @@ const (
 	logKeyOwner       = "owner"
 	logKeyReclaims    = "reclaims"
 	logKeyMaxInflight = "max_in_flight"
+	logKeyAuditAction = "action"
 )
 
 // maxHeartbeatErrors is how many consecutive RenewLease errors the heartbeat
@@ -90,10 +91,14 @@ type RunWorker struct {
 	// Capabilities the worker injects into the handler ctx (it bypasses the bus, where
 	// these are normally injected): runDispatcher lets a handler enqueue a child task;
 	// transactor backs shared.WithTx so a handler can make a few writes atomically in a
-	// SHORT transaction it scopes itself. Both may be nil (a worker built without them);
-	// the handler-side helpers then fall through to a no-op / an error.
+	// SHORT transaction it scopes itself; auditLogger drains a run handler's audit
+	// events after it returns (the worker's analogue of the bus AuditMiddleware, so a
+	// background run gets the SAME complete middleware set, not one that silently drops
+	// Record). All may be nil (a worker built without them); the handler-side helpers
+	// then fall through to a no-op / an error / a dropped audit event.
 	runDispatcher shared.RunDispatcher
 	transactor    shared.Transactor
+	auditLogger   shared.AuditLogger
 	cfg           RunWorkerConfig
 }
 
@@ -104,6 +109,7 @@ func NewRunWorker(
 	registry *runapp.HandlerRegistry,
 	runDispatcher shared.RunDispatcher,
 	transactor shared.Transactor,
+	auditLogger shared.AuditLogger,
 	cfg RunWorkerConfig,
 ) *RunWorker {
 	return &RunWorker{
@@ -114,6 +120,7 @@ func NewRunWorker(
 		registry:      registry,
 		runDispatcher: runDispatcher,
 		transactor:    transactor,
+		auditLogger:   auditLogger,
 		cfg:           cfg.withDefaults(),
 	}
 }

@@ -129,6 +129,7 @@ func serveTestRunWorker(
 		registry,
 		nil,
 		nil,
+		nil,
 		worker.RunWorkerConfig{},
 	)
 }

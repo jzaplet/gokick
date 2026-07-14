@@ -104,6 +104,12 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 	cancelHeartbeat() // stop the heartbeat
 	<-hbDone          // JOIN: establishes happens-before before reading the atomics
 
+	// Drain any audit events the handler recorded, whatever the run's outcome —
+	// like the bus AuditMiddleware, which persists on both success and handler
+	// error. (A process panic recovers above and skips this, matching the bus,
+	// where a panic short-circuits the post-next() drain.)
+	w.drainAudit(workerCtx, log, runCtx)
+
 	// A fired deadline (not merely a propagated cancel/abandon) means the attempt timed
 	// out. finalize ranks abandon/shutdown/cancelled above it, so this only decides an
 	// otherwise-healthy over-running attempt.
@@ -184,9 +190,12 @@ func (w *RunWorker) initialReLease(
 // restored, transactions forbidden (a durable run runs OUTSIDE a tx — an accidental
 // BeginTx must fail closed, not freeze the DB), the RunDispatcher/Transactor
 // capabilities injected (a nil one is skipped so the ctx falls through cleanly:
-// no-op enqueue / WithTx returns ErrTxUnavailable), and the event collector
-// forbidden so a handler that calls Collect fails LOUD instead of silently dropping
-// the event — domain events belong to the command/bus path, not a run handler.
+// no-op enqueue / WithTx returns ErrTxUnavailable), a real AuditCollector installed
+// so a handler's audit.Record buffers for the post-return drain (drainAudit) — the
+// worker's analogue of the bus AuditMiddleware — and the event collector forbidden
+// so a handler that calls Collect fails LOUD instead of silently dropping the event.
+// The asymmetry is deliberate: audit events have a durable sink here (AuditLogger),
+// domain events do not (their post-commit EventBus dispatch is a bus-only concern).
 func (w *RunWorker) buildRunContext(workerCtx context.Context, r *run.Run) context.Context {
 	runCtx := shared.ContextForbidTx(shared.ContextWithTenantID(workerCtx, r.TenantID))
 	if w.runDispatcher != nil {
@@ -194,6 +203,9 @@ func (w *RunWorker) buildRunContext(workerCtx context.Context, r *run.Run) conte
 	}
 	if w.transactor != nil {
 		runCtx = shared.ContextWithTransactor(runCtx, w.transactor)
+	}
+	if w.auditLogger != nil {
+		runCtx, _ = shared.ContextWithAuditCollector(runCtx)
 	}
 	return shared.ContextWithoutEventCollector(runCtx)
 }
