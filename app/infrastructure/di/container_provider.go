@@ -222,6 +222,11 @@ func provideMultitenancy(cfg *config.Config) shared.Multitenancy {
 // provideSchedulerJobs is the single source of truth for periodic in-process
 // jobs — mirrors providePermissionsRegistry. Add
 // a new Job here; provideScheduler stays decoupled from job business.
+//
+// Jobs run with NO tenant in ctx: under APP_MULTITENANCY=true a Fn that touches
+// a tenant-owned table (r.Tenant(ctx)) panics on every tick, log-only, forever.
+// Tenant-scoped work belongs in a run (tenant stamped at enqueue) or must
+// resolve tenants explicitly.
 func provideSchedulerJobs(tokens token.Repository) []scheduler.Job {
 	return []scheduler.Job{
 		{

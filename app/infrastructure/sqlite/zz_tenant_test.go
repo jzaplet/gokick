@@ -39,7 +39,7 @@ var tenantOwnedTables = map[string]bool{
 // exemptTables — control-plane / global, never tenant-scoped.
 var exemptTables = map[string]bool{
 	"refresh_tokens":   true, // keyed by token hash (a secret); refresh runs without an access token.
-	"audit_log":        true, // control-plane, raw pool, records pre-auth events.
+	"audit_log":        true, // control-plane, raw pool; append-only security trail, deliberately not tenant-partitioned.
 	"runs":             true, // durable tasks: ClaimDue is a global drain; tenant rides on the row, not the claim.
 	"tenants":          true, // the tenant registry itself.
 	"sqlite_master":    true, // SQLite internals.

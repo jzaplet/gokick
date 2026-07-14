@@ -1,8 +1,10 @@
 // Package run implements run.Repository on SQLite. It uses the project's
 // julianday/ms-precision time discipline (julianday comparisons, ms-precision writes) and adds the
-// owner-token fencing the durable model needs: every mutating method is
-// owner-checked and returns whether it affected its one row, so a worker that
-// lost its lease cannot stomp a run another worker reclaimed.
+// owner-token fencing the durable model needs: every worker mutating method past
+// the claim (the lease/checkpoint/finalize writes) is owner-checked and returns
+// whether it affected its one row, so a worker that lost its lease cannot stomp
+// a run another worker reclaimed. Enqueue (the command-side INSERT) and
+// RequestCancel (the operator signal) are deliberately not owner-checked.
 package run
 
 import (

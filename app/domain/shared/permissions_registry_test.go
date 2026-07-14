@@ -50,7 +50,7 @@ func TestPermissionsRegistry_AllIsSortedAndDeduplicated(t *testing.T) {
 	}
 }
 
-func TestPermissionsRegistry_ForRole_AdminGetsEverything(t *testing.T) {
+func TestPermissionsRegistry_ForRole_AdminGetsAllNonPlatform(t *testing.T) {
 	reg := NewPermissionsRegistry([]Permissioned{
 		fakePermissioned("admin:users:create"),
 		fakePermissioned("admin:users:delete"),

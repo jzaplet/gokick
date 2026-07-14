@@ -62,17 +62,19 @@ Fire-and-forget run je výprava bez deníku (jeden krok, žádný checkpoint). P
 ## How it works
 
 **Schéma `runs`** (`migrations/…_create_runs_table.sql`) = fronta + `state`
-(checkpoint BLOB), `locked_by` (owner token), `reclaims`, `updated_at`,
+(checkpoint BLOB), `locked_by` (owner token), `reclaims`, `parks`, `updated_at`,
 `cancel_requested`/`cancelled_at`. Stav se odvozuje ze sloupců (`completed_at` /
 `failed_at` / `cancelled_at` != NULL → terminal; `locked_until > now` → běží).
 
-**Entita + port** (`app/domain/run/`): `Run` + `Repository`. Dva oddělené čítače:
+**Entita + port** (`app/domain/run/`): `Run` + `Repository`. Tři oddělené čítače:
 `Attempts` = **logické retry** (bumpuje jen `Reschedule`, cap `MaxRetries`),
 `Reclaims` = **crash reclaimy** (bumpuje `ClaimDue` při převzetí vypršelého leasu,
+cap zvlášť), `Parks` = **registry-skew parky** (bumpuje `Park` u neznámého kindu,
 cap zvlášť). Mutující metody jsou **owner-checked** a vrací `bool`: `false` = lease
-ztracen → caller se vzdá (fencing). `ClaimDue`/`RenewLease`/`Checkpoint`/`MarkComplete`/
-`Reschedule`/`MarkFailed`/`MarkCancelled`/`RequestCancel`/`IsCancelRequested` (levný
-flag-only poll pro heartbeat, netáhne state BLOB)/`FindByID`. Čas: `julianday()` na
+ztracen → caller se vzdá (fencing). `ClaimDue`/`RenewLease` (heartbeat; v témže owner-checked zápisu vrací přes
+`RETURNING` i `cancel_requested` — žádný samostatný cancel-poll, state BLOB se
+netáhne)/`Checkpoint`/`MarkComplete`/`Reschedule`/`Park`/`MarkFailed`/`MarkCancelled`/
+`RequestCancel`/`FindByID`. Čas: `julianday()` na
 porovnání, ms-precizní zápisy, sub-second lease — viz `/gk-repositories`.
 
 **Kontrakt + registrace** (`app/application/run/registry.go`): handler píše aplikace,
@@ -171,8 +173,11 @@ Přidání nového kindu (vyber tvar podle „potřebuje checkpoint/resume?"):
 - **Z handleru NEvolat `EventCollector.Collect`.** Sběrač eventů se vyprazdňuje jen v
   command request goroutině; ve workeru je zablokovaný a Collect je runtime panic. Pro
   navazující async práci zařaď další run (`RunDispatcher` je v ctx).
-- **Neznámý kind = terminal failure.** Worker dostane kind bez handleru (deploy/registry-skew)
-  → `MarkFailed` + report do Sentry, žádný retry.
+- **Neznámý kind = park s backoffem, ne okamžitý fail.** Worker dostane kind bez handleru
+  (deploy/registry-skew) → `Park`: reschedule s exponenciálním backoffem, bumpne vyhrazený
+  čítač `parks` (NE `attempts` — deploy okno nespálí logic-retry budget, přežije ho i run-once
+  run s `maxRetries=0`). Teprve po vyčerpání park budgetu (`minUnknownKindParks` = 5)
+  → `MarkFailed` + report do Sentry.
 
 ## Related
 

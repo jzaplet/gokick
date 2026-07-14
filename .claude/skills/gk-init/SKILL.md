@@ -56,8 +56,10 @@ DB server. **Seed** je jednorázové naplnění DB výchozími daty (admin úče
   | `./bin/app create-user -n <nick> -p <pass> [-e <email>] [-r <role>]` | Vytvoří uživatele; role default `admin`, alternativa `user` (`console/create_user.go`) |
   | `./bin/app worker` | Jen persistentní durable-task worker, bez HTTP serveru — pro škálování workerů zvlášť (`console/worker.go`) |
 
-- **`create-user` bypassuje bus** a volá přímo `*usercmd.CreateUserHandler.Handle()` —
-  recykluje stejnou validaci, hashing a unique-nickname check jako HTTP API.
+- **`create-user` jede přes `SystemCommandBus`** (transakce, audit trail, post-commit
+  eventy, panic→Sentry — bez Authorize/Tenant middleware) a uvnitř volá stejný
+  `*usercmd.CreateUserHandler` jako HTTP API — recykluje stejnou validaci, hashing
+  a unique-nickname check.
 
 ## Recipe
 

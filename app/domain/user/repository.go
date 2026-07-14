@@ -32,17 +32,19 @@ type Repository interface {
 	FindAll(ctx context.Context) ([]User, error)
 
 	// RecordLogin stamps last_login_at = now for the user on a successful login.
-	// Best-effort analytics; runs OUTSIDE the caller's tx (raw pool) like
-	// ResetFailedLogin, so it neither blocks login nor depends on the bus commit.
+	// Best-effort analytics; raw pool like ResetFailedLogin (login runs outside
+	// the bus tx by design), so it neither blocks login nor ties the stamp to
+	// any caller's commit.
 	RecordLogin(ctx context.Context, userID string) error
 
 	// RecordFailedLogin atomically bumps the failed-login counter for the
 	// user. The implementation decides reset / lock inside a single SQL
 	// statement so two concurrent failed logins can't race past the
 	// threshold. Returns the new locked_until when locking was triggered
-	// (else nil). Must run OUTSIDE the caller's transaction so the count
-	// persists when the login handler returns AuthError and the
-	// surrounding bus tx rolls back.
+	// (else nil). Must run OUTSIDE any caller transaction — login runs
+	// outside the bus tx by design (SkipTransaction), and the count must
+	// never be tied to a caller's commit: a future in-tx caller's
+	// rollback must not erase it.
 	RecordFailedLogin(
 		ctx context.Context,
 		userID string,

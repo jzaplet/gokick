@@ -215,8 +215,9 @@ func (r *Repository) DeleteAcrossTenants(ctx context.Context, id string) error {
 }
 
 // RecordLogin stamps last_login_at on successful login. Raw pool (r.DB.DB()),
-// outside the bus tx — same rationale as ResetFailedLogin: a successful login
-// should record even if a later step in the handler rolls back. Best-effort.
+// same rationale as ResetFailedLogin: login runs outside any bus tx by design
+// (SkipTransaction), so the stamp auto-commits on its own, independent of any
+// future in-tx caller. Best-effort.
 func (r *Repository) RecordLogin(ctx context.Context, userID string) error {
 	_, err := r.DB.DB().ExecContext(ctx,
 		`UPDATE users SET last_login_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?
@@ -229,9 +230,11 @@ func (r *Repository) RecordLogin(ctx context.Context, userID string) error {
 // after the window, increment otherwise, lock when threshold reached) is
 // atomic relative to other concurrent failed logins for the same row.
 // Uses r.DB.DB() (raw pool) instead of r.Conn(ctx) (tx-aware) on purpose
-// — the surrounding LoginHandler returns AuthError on bad credentials,
-// which rolls back its bus transaction; the counter update must survive
-// that rollback or brute-force protection becomes a no-op.
+// — login runs outside any bus tx by design (LoginCommand declares
+// SkipTransaction), so this single-statement write auto-commits on its
+// own; the raw pool also future-proofs the counter against a future
+// in-tx caller, whose rollback must not erase it — otherwise
+// brute-force protection becomes a no-op.
 func (r *Repository) RecordFailedLogin(
 	ctx context.Context,
 	userID string,
@@ -289,9 +292,10 @@ func (r *Repository) RecordFailedLogin(
 	return &locked.Time, nil
 }
 
-// ResetFailedLogin runs outside the caller's tx for the same reason as
-// RecordFailedLogin — a successful login should clear the counter even
-// if a later step in the same handler hits an error and rolls back.
+// ResetFailedLogin uses the raw pool for the same reason as
+// RecordFailedLogin — login runs outside any bus tx by design
+// (SkipTransaction); the single-statement clear auto-commits on its
+// own, independent of any future in-tx caller.
 func (r *Repository) ResetFailedLogin(ctx context.Context, userID string) error {
 	_, err := r.DB.DB().ExecContext(ctx,
 		`UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?

@@ -46,7 +46,8 @@ func (r *PermissionsRegistry) All() []string {
 }
 
 // ForRole returns the permissions available to the given role, filtered by
-// IsPermissionAllowedForRole. Admin gets the full list.
+// IsPermissionAllowedForRole. Superadmin gets the full list; admin gets
+// everything except platform:*; user is further denied admin:*.
 func (r *PermissionsRegistry) ForRole(role string) []string {
 	result := []string{}
 	for _, p := range r.all {

@@ -55,13 +55,13 @@ Parametr `cmd any` slouží middleware k introspekci (např. type-assert na
 
 **Řetězce middleware** se skládají v DI (`app/infrastructure/di/container_provider.go`),
 ne v `bus/`. `busmw.BaseChain(...)` (`middleware/base.go`) je sdílený základ
-**Recovery → Logging → Authorize**:
+**Recovery → Logging → Authorize → Tenant**:
 
 | Bus | Chain (pořadí) |
 |---|---|
 | `CommandBus` | Recovery → Logging → Authorize → Tenant → **Audit → RunDispatcher → DispatchEvents → Transaction** |
 | `SystemCommandBus` | Recovery → Logging → **Audit → DispatchEvents → Transaction** (bez Authorize/Tenant/RunDispatcher — operator-trusted CLI, tenant injectovaný explicitně) |
-| `QueryBus` | Recovery → Logging → Authorize |
+| `QueryBus` | Recovery → Logging → Authorize → Tenant |
 | `EventBus` | Recovery → Logging |
 
 Co která stanice dělá (`app/application/bus/middleware/`):
@@ -74,6 +74,11 @@ Co která stanice dělá (`app/application/bus/middleware/`):
   `shared.Permissioned` (vrací permission string) nebo `shared.SkipPermission`
   (explicitní opt-out). Když ani jedno → middleware vrátí error. Volá
   `PermissionChecker.Check()`.
+- **Tenant** (`tenant.go`) — resolvne aktivní tenant a uloží ho do `ctx`, takže
+  každý downstream handler i repozitář vidí stejný tenant. Sedí v `BaseChain`,
+  takže ho dostane CommandBus **i** QueryBus — čtení potřebuje tenant scoping
+  stejně jako zápis. Chyba resolveru command/query zastaví (fail-closed).
+  Detail → `/gk-multitenancy`.
 - **Audit** (`audit.go`) — po handleru vydrénuje `AuditCollector` a zapíše přes
   `AuditLogger`. Sedí **vně** Transaction, takže security záznamy
   (`auth.login.failed`, …) přežijí i rollback. Selhání zápisu se jen zaloguje,
@@ -87,8 +92,10 @@ Co která stanice dělá (`app/application/bus/middleware/`):
   se eventy zahodí.
 - **Transaction** (`transaction.go`) — `BeginTx`/`Commit`/`Rollback` přes
   `shared.Transactor` (duck typing, `SqliteManager` ho implementuje). Command
-  může opt-outnout přes marker `SkipsTransaction` (potřebné u raw-pool zápisů
-  jako Login, jinak SQLite self-deadlock).
+  může opt-outnout přes marker `shared.SkipsTransaction` — ze dvou různých
+  důvodů: raw-pool zápisy (Login, jinak SQLite self-deadlock) a cleanup,
+  který musí přežít vrácený error (RefreshToken — theft/expiry smaže tokeny
+  a vrátí `AuthError`; uvnitř tx by rollback force-logout zrušil).
 
 `EventBus.Register(name, handler)` se volá **jen při DI wiringu** (single-goroutine
 init) — `event.go` čte mapu bez zámku, což je safe jen díky tomu. Dispatch navíc
@@ -133,12 +140,15 @@ err := bus.ExecVoid(
 - **Pořadí drží pravidla.** Audit je **vně** Transaction schválně (přežije
   rollback). DispatchEvents **obaluje** Transaction (eventy jen po commitu).
   Nepřehazuj je.
-- **Query nemá transakci ani eventy.** `QueryBus` = jen Recovery/Logging/Authorize.
-  Nepotřebuje je — je read-only.
+- **Query nemá transakci ani eventy.** `QueryBus` = Recovery/Logging/Authorize/Tenant.
+  Transakci a eventy nepotřebuje — je read-only. **Tenant ale běží i pro query**:
+  čtení musí být tenant-scoped stejně jako zápis.
 - **`Register` jen při DI.** Registrace event handleru po prvním dispatchi je
   data race (mapa se čte bez zámku) — proto se dělá jen v `provideEventBus`.
-- **`SkipsTransaction` jen výjimečně** — pro raw-pool zápisy (Login), jinak
-  SQLite self-deadlock. Ne jako pohodlný útěk z transakce.
+- **`SkipsTransaction` jen výjimečně** — dnes jen dva legitimní důvody:
+  raw-pool zápisy (Login, jinak SQLite self-deadlock) a cleanup přeživší
+  vrácený error (RefreshToken, force-logout po theft/expiry). Ne jako
+  pohodlný útěk z transakce.
 
 ## Related
 - Skills: `/gk-commands`, `/gk-queries` (psaní handlerů), `/gk-events`
@@ -146,6 +156,6 @@ err := bus.ExecVoid(
   `/gk-wire` (DI registrace busů)
 - Kód: `app/application/bus/` (`bus.go`, `command.go`, `query.go`, `event.go`,
   `exec.go`, `void.go`), `app/application/bus/middleware/` (`base.go`,
-  `recovery.go`, `logging.go`, `authorize.go`, `audit.go`, `run_dispatcher.go`,
+  `recovery.go`, `logging.go`, `authorize.go`, `tenant.go`, `audit.go`, `run_dispatcher.go`,
   `events.go`, `transaction.go`), `app/infrastructure/di/container_provider.go`,
   `app/domain/shared/permission.go`

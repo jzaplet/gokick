@@ -18,7 +18,7 @@ In-process scheduler pro periodickou (cron-like) práci uvnitř běžícího ser
 
 ## K čemu to je
 
-Na údržbové úlohy uvnitř procesu — úklid, synchronizace, sběr statistik. **Není** to perzistentní fronta: stav je jen v paměti (in-memory), bez retry, restart úlohy jen znovu rozběhne. Práci, která **musí** proběhnout i po pádu procesu, posílej do [Fire-and-forget run](/framework/job-flow) (`/gk-runs`).
+Na údržbové úlohy uvnitř procesu — úklid, synchronizace, sběr statistik. **Není** to perzistentní fronta: stav je jen v paměti (in-memory), bez retry, restart úlohy jen znovu rozběhne. Práci, která **musí** proběhnout i po pádu procesu, posílej do [Fire-and-forget run](/framework/job-flow) (`/gk-runs`). Joby navíc běží **bez tenanta v ctx** — pod `APP_MULTITENANCY=true` job, který sáhne na tenant-owned tabulku (`r.Tenant(ctx)`), zpanikaří při každém ticku (panika se jen loguje, do Sentry nejde); tenant-scoped práce patří do runu (tenant se razítkuje při enqueue), nebo si musí tenant vyřešit explicitně.
 
 
 ## Jak to teče

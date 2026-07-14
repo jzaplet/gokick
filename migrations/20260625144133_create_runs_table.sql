@@ -1,10 +1,10 @@
 -- +goose Up
--- Durable long-running work (agents). Like `jobs`, but the handler runs OUTSIDE
+-- The one durable-task primitive: background work whose handler runs OUTSIDE
 -- a transaction and persists resumable state via short checkpoint writes, with a
 -- heartbeat renewing the lease — so a minutes/hours-long run never holds the
--- global SQLite write lock (which would freeze every other write). See ADR-0001.
+-- global SQLite write lock (which would freeze every other write).
 --
--- State is DERIVED from columns (no status enum), mirroring `jobs`:
+-- State is DERIVED from columns (no status enum):
 --   completed_at != NULL → done · failed_at != NULL → permanently failed
 --   locked_until > now    → running (lease held) · otherwise → pending / retryable
 --
@@ -23,8 +23,8 @@ CREATE TABLE IF NOT EXISTS runs (
     payload      BLOB NOT NULL,             -- immutable initial input
     state        BLOB,                      -- latest checkpoint (resumable state); NULL until first checkpoint
     run_at       DATETIME NOT NULL,         -- when eligible to claim (delay / retry backoff)
-    -- Three distinct counters, deliberately NOT merged (unlike jobs, where a claim
-    -- IS an attempt). A long run that merely straddles a deploy/OOM must not burn
+    -- Three distinct counters, deliberately NOT merged (a claim is NOT an attempt).
+    -- A long run that merely straddles a deploy/OOM must not burn
     -- its logic-retry budget, so crash-reclaims and registry-skew parks are counted
     -- separately and each bounded independently of max_retries.
     attempts     INTEGER NOT NULL DEFAULT 0,  -- LOGIC retries: bumped on Reschedule; gated by max_retries

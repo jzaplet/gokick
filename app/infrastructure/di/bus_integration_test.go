@@ -38,8 +38,9 @@ func (testEvent) OccurredAt() time.Time { return time.Unix(0, 0) }
 
 // newProductionCommandBus builds the CommandBus through the SAME provider the
 // binary uses (provideCommandBus), so the middleware chain under test cannot
-// drift from production the way a hand-assembled chain (or testfx.NewBuses,
-// which omits Audit) silently can.
+// drift from production the way a hand-assembled chain silently could.
+// testfx.NewBuses builds the same busmw.CommandChain (the single source), just
+// at the fixture layer rather than through the provider.
 func newProductionCommandBus(
 	t *testing.T,
 	fx *testfx.Fixture,

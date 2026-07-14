@@ -46,8 +46,9 @@ neochrání).
    proběhne přes `r.Conn(ctx)`, takže se připojí ke **stejné transakci** jako business zápis.
 2. **Commit** → run je viditelný pro worker. **Rollback** → žádný osiřelý run.
 3. **Claim** — worker se každou chvíli ptá fronty a atomicky si převezme (claim) run, který
-   je na řadě, jediným `UPDATE … RETURNING` (`attempts++`, nastaví lease). Dva workery
-   nedostanou stejný řádek.
+   je na řadě, jediným `UPDATE … RETURNING` (nastaví lease; `reclaims++` jen při převzetí
+   propadlé lease — `attempts` claim nikdy nezvedá, ty rostou jen při `Reschedule`). Dva
+   workery nedostanou stejný řádek.
 4. **Execution** — handler dostane payload a běží **MIMO transakci** (worker mu ctx označí
    `ContextForbidTx`, takže `BeginTx` fail-closed selže). Při úspěchu worker zapíše
    `MarkComplete` **samostatným zápisem** po návratu handleru.
