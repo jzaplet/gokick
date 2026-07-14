@@ -84,7 +84,7 @@ i refresh jsou `SkipPermissionCheck()` (veřejné).
 
 **Endpointy:** `POST /api/v1/auth/login` (veřejný) · `POST /api/v1/auth/refresh`
 (cookie) · `POST /api/v1/auth/logout` (Bearer). Login/refresh response:
-`{ access_token, access_expiration, user: { id, nickname, email, role, permissions } }`.
+`{ access_token, access_expiration, user: { id, nickname, email, role, permissions } }`. Pozor na jednotky: `access_expiration` je v **sekundách** — FE si ho na ms převádí až u sebe (`state.ts`, `establishSession`); codegen hlídá jméno+typ, jednotku ne.
 
 ## Recipe
 

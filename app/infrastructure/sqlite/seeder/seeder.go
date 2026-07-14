@@ -75,7 +75,26 @@ func (s *Seeder) Seed(ctx context.Context) error {
 }
 
 func (s *Seeder) seedAdmin(ctx context.Context) error {
-	existing, err := s.users.FindByNickname(ctx, "admin")
+	return s.seedUser(
+		ctx, "admin", "admin@localhost", user.RoleAdmin,
+		string(s.adminPassword), "APP_SEED_ADMIN_PASSWORD", s.adminTenantID,
+	)
+}
+
+// seedUser is the one find-or-create path both seeded accounts share: skip when
+// the nickname exists, validate through the same VOs as the user-facing CRUD,
+// construct via the born-scoped NewUser factory (single construction path —
+// UUIDv7 id + timestamps), Save, and record the bootstrap audit event.
+// resolveTenant runs lazily AFTER the exists-check, so an idempotent re-run
+// never touches (or creates) tenants.
+func (s *Seeder) seedUser(
+	ctx context.Context,
+	nickname, email string,
+	role user.Role,
+	password, passwordEnvVar string,
+	resolveTenant func(context.Context) (string, error),
+) error {
+	existing, err := s.users.FindByNickname(ctx, nickname)
 	if err != nil {
 		return err
 	}
@@ -84,11 +103,11 @@ func (s *Seeder) seedAdmin(ctx context.Context) error {
 	}
 
 	// Force the operator to supply a real password instead of silently
-	// minting an admin with a guessable one. NewPassword enforces the same
+	// minting an account with a guessable one. NewPassword enforces the same
 	// length policy as the user-facing CRUD.
-	pw, err := user.NewPassword(string(s.adminPassword))
+	pw, err := user.NewPassword(password)
 	if err != nil {
-		return fmt.Errorf("APP_SEED_ADMIN_PASSWORD: %w", err)
+		return fmt.Errorf("%s: %w", passwordEnvVar, err)
 	}
 
 	hash, err := s.hasher.Hash(string(pw))
@@ -96,26 +115,23 @@ func (s *Seeder) seedAdmin(ctx context.Context) error {
 		return err
 	}
 
-	tenantID, err := s.adminTenantID(ctx)
+	tenantID, err := resolveTenant(ctx)
 	if err != nil {
 		return err
 	}
 
-	nick, err := user.NewNickname("admin")
+	nick, err := user.NewNickname(nickname)
 	if err != nil {
 		return err
 	}
-	email, err := user.NewEmail("admin@localhost")
+	mail, err := user.NewEmail(email)
 	if err != nil {
 		return err
 	}
 
-	// Construct through the born-scoped NewUser factory (not a bare literal) so the
-	// seeded admin gets the same UUIDv7 id + CreatedAt/UpdatedAt stamps and VO
-	// validation as every other user — the factory is the single construction path.
-	admin := user.NewUser(nick, hash, email, user.RoleAdmin, tenantID)
+	u := user.NewUser(nick, hash, mail, role, tenantID)
 
-	if err := s.users.Save(ctx, admin); err != nil {
+	if err := s.users.Save(ctx, u); err != nil {
 		return err
 	}
 
@@ -125,11 +141,11 @@ func (s *Seeder) seedAdmin(ctx context.Context) error {
 	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
 		Action:     "user.created",
 		TargetType: "user",
-		TargetID:   admin.ID,
-		Metadata:   map[string]any{"role": admin.Role},
+		TargetID:   u.ID,
+		Metadata:   map[string]any{"role": u.Role},
 	})
 
-	s.logger.Info("seeded default admin user", logKeyNickname, "admin")
+	s.logger.Info("seeded user", logKeyNickname, nickname)
 	return nil
 }
 
@@ -182,46 +198,9 @@ func (s *Seeder) seedSuperAdmin(ctx context.Context) error {
 		return nil
 	}
 
-	existing, err := s.users.FindByNickname(ctx, "superadmin")
-	if err != nil {
-		return err
-	}
-	if existing != nil {
-		return nil
-	}
-
-	pw, err := user.NewPassword(string(s.superAdminPassword))
-	if err != nil {
-		return fmt.Errorf("APP_SEED_SUPERADMIN_PASSWORD: %w", err)
-	}
-
-	hash, err := s.hasher.Hash(string(pw))
-	if err != nil {
-		return err
-	}
-
-	nick, err := user.NewNickname("superadmin")
-	if err != nil {
-		return err
-	}
-	email, err := user.NewEmail("superadmin@localhost")
-	if err != nil {
-		return err
-	}
-
-	superAdmin := user.NewUser(nick, hash, email, user.RoleSuperAdmin, shared.DefaultTenantID)
-
-	if err := s.users.Save(ctx, superAdmin); err != nil {
-		return err
-	}
-
-	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
-		Action:     "user.created",
-		TargetType: "user",
-		TargetID:   superAdmin.ID,
-		Metadata:   map[string]any{"role": superAdmin.Role},
-	})
-
-	s.logger.Info("seeded superadmin user", logKeyNickname, "superadmin")
-	return nil
+	return s.seedUser(
+		ctx, "superadmin", "superadmin@localhost", user.RoleSuperAdmin,
+		string(s.superAdminPassword), "APP_SEED_SUPERADMIN_PASSWORD",
+		func(context.Context) (string, error) { return shared.DefaultTenantID, nil },
+	)
 }

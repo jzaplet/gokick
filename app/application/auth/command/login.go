@@ -24,7 +24,11 @@ func (LoginCommand) SkipPermissionCheck() {}
 // safe to auto-commit individually.
 func (LoginCommand) SkipTransaction() {}
 
-type LoginResult struct {
+// IssuedSession is the freshly-minted session payload (access + refresh token
+// pair and the owning user) returned by BOTH issuance paths — login and refresh
+// rotation (built in issueSession). Use-neutral on purpose: refresh returning a
+// "login" result was a misnomer (F-033).
+type IssuedSession struct {
 	User             user.User
 	AccessToken      string
 	AccessExpiresIn  time.Duration
@@ -81,12 +85,12 @@ func NewLoginHandler(
 	}
 }
 
-func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (LoginResult, error) {
+func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (IssuedSession, error) {
 	audit := shared.AuditCollectorFromContext(ctx)
 
 	u, err := h.users.FindByNickname(ctx, cmd.Nickname)
 	if err != nil {
-		return LoginResult{}, err
+		return IssuedSession{}, err
 	}
 
 	// Always call Verify so an attacker timing the response can't tell
@@ -107,7 +111,7 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (LoginResul
 
 	if u == nil || verifyErr != nil {
 		h.handleFailedLogin(ctx, audit, cmd.Nickname, u, locked)
-		return LoginResult{}, &shared.AuthError{Message: "invalid credentials"}
+		return IssuedSession{}, &shared.AuthError{Message: "invalid credentials"}
 	}
 
 	if locked {
@@ -120,7 +124,7 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (LoginResul
 			TargetType: "user",
 			TargetID:   u.ID,
 		})
-		return LoginResult{}, &shared.AuthError{Message: "invalid credentials"}
+		return IssuedSession{}, &shared.AuthError{Message: "invalid credentials"}
 	}
 
 	// Successful login → clear the counter so the next failure cycle
@@ -134,7 +138,7 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (LoginResul
 
 	res, err := issueSession(ctx, h.jwt, h.tokens, u)
 	if err != nil {
-		return LoginResult{}, err
+		return IssuedSession{}, err
 	}
 
 	// Record success only after the token is actually issued and saved.

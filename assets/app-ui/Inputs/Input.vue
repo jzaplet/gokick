@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue';
+import type { FieldSize } from '@/app-ui/Inputs/field';
+import { onMounted, ref } from 'vue';
 import { targetValue } from '@/app-ui/Events/eventTarget';
+import { fieldId, fieldSizeClass, useFieldValueSync } from '@/app-ui/Inputs/field';
 
 type Props = {
     modelValue?: null | string | number;
@@ -16,7 +18,7 @@ type Props = {
     isNullable?: boolean;
     statusMessage?: string;
     statusVariant?: 'success' | 'info';
-    size?: 'sm' | 'md' | 'lg' | 'xl';
+    size?: FieldSize;
     withSpinner?: boolean;
 };
 
@@ -27,8 +29,7 @@ const emit = defineEmits<{
     'keyup': [KeyboardEvent];
 }>();
 
-const inputId
-    = props.name ?? `input-${Math.random().toString(36).substring(2, 9)}`;
+const inputId = fieldId(props.name, 'input');
 
 const inputValue = ref(props.defaultValue ?? '');
 
@@ -68,17 +69,7 @@ const handleChange = (): void => {
     emit('change', resolvedValue);
 };
 
-watch(
-    () => props.modelValue,
-    (newValue) => {
-        if (newValue === null || newValue === undefined) {
-            inputValue.value = '';
-        } else {
-            inputValue.value = String(newValue);
-        }
-    },
-    { immediate: true },
-);
+useFieldValueSync(() => props.modelValue, inputValue);
 
 onMounted(() => {
     emit('update:modelValue', resolveValue(props.modelValue));
@@ -109,13 +100,7 @@ onMounted(() => {
         transition-colors focus:outline-none focus:ring-2
         focus:ring-orange-500 focus:border-orange-500"
             :class="[
-                size === 'xl'
-                    ? 'px-6 py-4 text-lg'
-                    : size === 'lg'
-                        ? 'px-4 py-3 text-base'
-                        : size === 'sm'
-                            ? 'px-2 py-1 text-sm'
-                            : 'px-3 py-2',
+                fieldSizeClass(size),
                 withSpinner && (size === 'xl' || size === 'lg')
                     ? 'pr-12'
                     : '',

@@ -222,7 +222,7 @@ func TestLoginHandler_DoesNotDeadlockUnderCommandBus(t *testing.T) {
 	go func() {
 		_, err := testfx.ExecCommand(ctx, cmdBus, "Login",
 			LoginCommand{Nickname: "jana", Password: "secret123"},
-			func(ctx context.Context) (LoginResult, error) {
+			func(ctx context.Context) (IssuedSession, error) {
 				return handler.Handle(ctx, LoginCommand{Nickname: "jana", Password: "secret123"})
 			})
 		done <- err

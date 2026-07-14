@@ -285,10 +285,10 @@ func TestRefreshTokenHandler_TheftForceLogoutPersistsThroughBusTx(t *testing.T) 
 
 	cmdBus, _, _ := fx.NewBuses()
 	handler := NewRefreshTokenHandler(fx.Users, fx.Tokens, fx.Jwt)
-	refresh := func() (LoginResult, error) {
+	refresh := func() (IssuedSession, error) {
 		return testfx.ExecCommand(ctx, cmdBus, "RefreshToken",
 			RefreshTokenCommand{RawToken: raw},
-			func(ctx context.Context) (LoginResult, error) {
+			func(ctx context.Context) (IssuedSession, error) {
 				return handler.Handle(ctx, RefreshTokenCommand{RawToken: raw})
 			})
 	}

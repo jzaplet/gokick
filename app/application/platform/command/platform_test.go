@@ -263,3 +263,51 @@ func TestCreateSuperAdminHandler_RejectsShortPassword(t *testing.T) {
 		t.Fatal("a too-short password must be rejected")
 	}
 }
+
+// F-011 not-found branch: a platform edit/delete of a NONEXISTENT id must fail
+// with a field-keyed ValidationError (400), never silently no-op — the same
+// contract the admin-plane handlers pin. Guards the target==nil branch that
+// FindByIDAcrossTenants' (nil, nil) not-found contract feeds.
+func TestUpdatePlatformUser_NotFound(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "platform_update_nf.db"))
+
+	h := NewUpdatePlatformUserHandler(fx.PlatformUsers, fx.Hasher)
+	err := h.Handle(ctx, UpdatePlatformUserCommand{
+		ID:       "0193b1e0-0000-7000-8000-000000000000",
+		Nickname: "ghost",
+		Email:    "ghost@example.com",
+		Role:     "user",
+	})
+
+	var ve *shared.ValidationError
+	if !errors.As(err, &ve) || ve.Field != "id" {
+		t.Fatalf(
+			"update of a nonexistent id must return ValidationError{Field:\"id\"}, got %v",
+			err,
+		)
+	}
+}
+
+func TestDeletePlatformUser_NotFound(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "platform_delete_nf.db"))
+
+	callerCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{
+		UserID: "caller-super", Role: "superadmin",
+	})
+
+	h := NewDeletePlatformUserHandler(fx.PlatformUsers)
+	err := h.Handle(
+		callerCtx,
+		DeletePlatformUserCommand{ID: "0193b1e0-0000-7000-8000-000000000001"},
+	)
+
+	var ve *shared.ValidationError
+	if !errors.As(err, &ve) || ve.Field != "id" {
+		t.Fatalf(
+			"delete of a nonexistent id must return ValidationError{Field:\"id\"}, got %v",
+			err,
+		)
+	}
+}

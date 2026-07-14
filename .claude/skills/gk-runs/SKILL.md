@@ -118,7 +118,9 @@ serveru pro split deploy: 1× serve + N× worker, sdílená SQLite).
 pro oba tvary**: `RunDispatcherMiddleware` ho vloží do ctx; `Enqueue` z command handleru
 padne do **stejné transakce** jako business write (atomický enqueue přes `Conn(ctx)`).
 Neznámý `kind` (bez registrovaného handleru) i `maxRetries < 0` selžou už při enqueue.
-Nahradit za: "Mimo bus (testy, přímé volání handleru) vrací no-op dispatcher — enqueue se tiše zahodí, handler nenil-checkuje. CLI příkazy jedou přes SystemCommandBus, který RunDispatcher nese — enqueue z CLI je durable INSERT a run si vyzvedne serve/worker (F-008)."
+Mimo bus (testy, přímé volání handleru) vrací no-op dispatcher — enqueue se tiše
+zahodí, handler nenil-checkuje. CLI příkazy jedou přes SystemCommandBus, který
+RunDispatcher nese — enqueue z CLI je durable INSERT a run si vyzvedne serve/worker.
 
 ## Recipe
 

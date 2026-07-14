@@ -49,21 +49,21 @@ func NewRefreshTokenHandler(
 func (h *RefreshTokenHandler) Handle(
 	ctx context.Context,
 	cmd RefreshTokenCommand,
-) (LoginResult, error) {
+) (IssuedSession, error) {
 	hash := h.jwt.HashRefreshToken(cmd.RawToken)
 
 	existing, err := h.tokens.FindByHash(ctx, hash)
 	if err != nil {
-		return LoginResult{}, err
+		return IssuedSession{}, err
 	}
 	if existing == nil {
-		return LoginResult{}, &shared.AuthError{Message: "invalid refresh token"}
+		return IssuedSession{}, &shared.AuthError{Message: "invalid refresh token"}
 	}
 
 	// Theft detection: a token that was already rotated is being presented again.
 	// Assume credentials are compromised and log the user out on all devices.
 	if existing.UsedAt != nil {
-		return LoginResult{}, h.revokeAllAsTheft(ctx, existing.UserID, "reused_after_rotation")
+		return IssuedSession{}, h.revokeAllAsTheft(ctx, existing.UserID, "reused_after_rotation")
 	}
 
 	if time.Now().After(existing.ExpiresAt) {
@@ -73,7 +73,7 @@ func (h *RefreshTokenHandler) Handle(
 		// Return the AuthError (→ 401, cookie cleared) regardless; the orphaned
 		// expired row is swept by a later rotation or retention.
 		_ = h.tokens.DeleteByUserID(ctx, existing.UserID)
-		return LoginResult{}, &shared.AuthError{Message: "refresh token expired"}
+		return IssuedSession{}, &shared.AuthError{Message: "refresh token expired"}
 	}
 
 	u, err := h.users.FindByID(ctx, existing.UserID)
@@ -83,12 +83,12 @@ func (h *RefreshTokenHandler) Handle(
 		// must never end the session, or it durably logs out a still-valid client
 		// — the very regression this handler guards on every other branch. Only a
 		// genuine "user is gone" (u == nil below) is a definitive auth failure.
-		return LoginResult{}, err
+		return IssuedSession{}, err
 	}
 	if u == nil {
 		// FindByID's not-found contract is (nil, nil): the user's row is genuinely
 		// gone. That IS a definitive auth failure — end the session.
-		return LoginResult{}, &shared.AuthError{Message: "user no longer exists"}
+		return IssuedSession{}, &shared.AuthError{Message: "user no longer exists"}
 	}
 
 	// Mint the replacement token pair and persist the new refresh token FIRST,
@@ -102,7 +102,7 @@ func (h *RefreshTokenHandler) Handle(
 	// returns keeps that Save-before-MarkUsed order intact.
 	res, err := issueSession(ctx, h.jwt, h.tokens, u)
 	if err != nil {
-		return LoginResult{}, err
+		return IssuedSession{}, err
 	}
 
 	// Now consume the old token: atomically mark it used. If the update touched 0
@@ -113,7 +113,7 @@ func (h *RefreshTokenHandler) Handle(
 	// reused-token branch above.
 	marked, err := h.tokens.MarkUsed(ctx, hash)
 	if err != nil {
-		return LoginResult{}, err
+		return IssuedSession{}, err
 	}
 	if !marked {
 		// A concurrent rotation of the SAME cookie lost the CAS race. Because Save
@@ -128,7 +128,7 @@ func (h *RefreshTokenHandler) Handle(
 		// per-context client single-flight cannot coordinate across tabs).
 		// Removing that false positive needs cross-tab refresh coordination — a
 		// roadmap item, not a change to this CAS.
-		return LoginResult{}, h.revokeAllAsTheft(ctx, existing.UserID, "concurrent_rotation_race")
+		return IssuedSession{}, h.revokeAllAsTheft(ctx, existing.UserID, "concurrent_rotation_race")
 	}
 
 	return res, nil

@@ -46,7 +46,7 @@ Když command neimplementuje ani jedno, `AuthorizeMiddleware` vrátí runtime er
 
 **Dispatch z HTTP handleru** (detail v `/gk-bus`):
 - bez návratové hodnoty → `bus.DispatchVoid(...)`.
-- s typovaným výsledkem → `bus.Dispatch[T](...)`, např. `Login` vrací `LoginResult` (`handler/auth.go:96`). Obě berou `*bus.CommandBus`, takže command nejde omylem poslat přes query bus.
+- s typovaným výsledkem → `bus.Dispatch[T](...)`, např. `Login` vrací `IssuedSession` (`handler/auth.go:96`). Obě berou `*bus.CommandBus`, takže command nejde omylem poslat přes query bus.
 
 Transakci, autorizaci, audit i rozeslání eventů řídí middleware v busu — handler o nich neví.
 

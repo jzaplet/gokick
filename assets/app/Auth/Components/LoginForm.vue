@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { LoginErrors } from '@/app/Auth/types/LoginErrors';
 import type { LoginRequest } from '@/app-ui/Auth';
+import { Role } from '@/app/Auth/enums/roles';
 import { reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuth } from '@/app-ui/Auth';
@@ -39,8 +40,8 @@ const handleSubmit = async (): Promise<void> => {
 
     const redirectQuery = route.query['redirect'];
     const roleHome: Record<string, string> = {
-        superadmin: '/platform/dashboard',
-        admin: '/admin/dashboard',
+        [Role.SuperAdmin]: '/platform/dashboard',
+        [Role.Admin]: '/admin/dashboard',
     };
     const defaultByRole = roleHome[result.data.user.role] ?? '/user/dashboard';
 

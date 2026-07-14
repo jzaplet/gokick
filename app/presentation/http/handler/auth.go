@@ -78,7 +78,12 @@ type userDTO struct {
 
 //gkts:assets/app-ui/Auth/types/LoginResponse.ts LoginResponse
 type loginResponse struct {
-	AccessToken      string  `json:"access_token"`
+	AccessToken string `json:"access_token"`
+	// AccessExpiration is in SECONDS — the wire unit contract. The FE converts
+	// to ms at its edge (assets/app-ui/Auth/state.ts, establishSession). The
+	// codegen enforces name+type parity, NOT units: changing this to ms would
+	// still compile on both sides, so the unit lives in this comment + the FE
+	// conversion site. (F-082 semantic seam.)
 	AccessExpiration int     `json:"access_expiration"`
 	User             userDTO `json:"user"`
 }
@@ -98,7 +103,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		h.commandBus,
 		"Login",
 		cmd,
-		func(ctx context.Context) (authcmd.LoginResult, error) {
+		func(ctx context.Context) (authcmd.IssuedSession, error) {
 			return h.login.Handle(ctx, cmd)
 		},
 	)
@@ -126,7 +131,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		h.commandBus,
 		"RefreshToken",
 		cmd,
-		func(ctx context.Context) (authcmd.LoginResult, error) {
+		func(ctx context.Context) (authcmd.IssuedSession, error) {
 			return h.refreshToken.Handle(ctx, cmd)
 		},
 	)
@@ -182,7 +187,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) writeAuthResponse(
 	ctx context.Context,
 	w http.ResponseWriter,
-	result authcmd.LoginResult,
+	result authcmd.IssuedSession,
 ) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     refreshCookieName,

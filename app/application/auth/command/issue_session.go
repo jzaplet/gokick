@@ -9,7 +9,7 @@ import (
 )
 
 // issueSession mints an access+refresh token pair for u, persists the refresh
-// token, and returns the populated LoginResult. It is the single source of
+// token, and returns the populated IssuedSession. It is the single source of
 // truth for the AuthClaims shape and the RefreshToken construction, shared by
 // the login and refresh handlers (F-025) — a new claim or a token-TTL policy
 // change lands in one place instead of drifting between the two issuance paths
@@ -25,7 +25,7 @@ func issueSession(
 	jwt shared.TokenService,
 	tokens token.Repository,
 	u *user.User,
-) (LoginResult, error) {
+) (IssuedSession, error) {
 	accessToken, accessExpiresIn, err := jwt.GenerateAccessToken(&shared.AuthClaims{
 		UserID:   u.ID,
 		Role:     u.Role,
@@ -34,20 +34,20 @@ func issueSession(
 		TenantID: u.TenantID,
 	})
 	if err != nil {
-		return LoginResult{}, err
+		return IssuedSession{}, err
 	}
 
 	rawRefresh, hash, expiresAt, err := jwt.GenerateRefreshToken()
 	if err != nil {
-		return LoginResult{}, err
+		return IssuedSession{}, err
 	}
 
 	rt := token.NewRefreshToken(u.ID, hash, expiresAt)
 	if err := tokens.Save(ctx, rt); err != nil {
-		return LoginResult{}, err
+		return IssuedSession{}, err
 	}
 
-	return LoginResult{
+	return IssuedSession{
 		User:             *u,
 		AccessToken:      accessToken,
 		AccessExpiresIn:  accessExpiresIn,

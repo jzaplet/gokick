@@ -46,7 +46,7 @@ Handler dělá málo — dekóduje JSON a předá command nebo query busu; `r.Co
 cmd := authcmd.LoginCommand{Nickname: body.Nickname, Password: body.Password}
 
 result, err := bus.Dispatch(r.Context(), h.commandBus, "Login", cmd,
-    func(ctx context.Context) (authcmd.LoginResult, error) {
+    func(ctx context.Context) (authcmd.IssuedSession, error) {
         return h.login.Handle(ctx, cmd)
     },
 )
