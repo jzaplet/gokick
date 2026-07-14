@@ -2,10 +2,13 @@ package shared
 
 import "sort"
 
-// PermissionsRegistry holds the set of permissions known to the application.
-// It is built at startup from every command/query handler that implements
-// the Permissioned interface, giving a single source of truth derived
-// directly from the code — no separate list to maintain.
+// PermissionsRegistry holds the set of permissions known to the application. The
+// permission STRINGS are code-derived (each is a command/query's own
+// RequiredPermission), so they're never hand-copied. Enrollment, though — WHICH
+// handlers feed the registry — IS a hand-maintained list (providePermissionsRegistry
+// in di); a forgotten entry would silently blank that permission on the frontend,
+// so a conformance gate (di.TestProvidePermissionsRegistry_EnrollsEveryFEFacingPermission)
+// asserts every non-CLIOnly RequiredPermission is enrolled.
 type PermissionsRegistry struct {
 	all []string
 }
