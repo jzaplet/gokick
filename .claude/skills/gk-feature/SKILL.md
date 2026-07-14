@@ -21,9 +21,9 @@ nevypadlo — od entity v doméně až po zaregistrovanou HTTP routu a `make di`
   command (zápis) nebo query (čtení), CRUD nad existující entitou, nebo úplně
   nový bounded context.
 - Tohle je **rozcestník a checklist** — proč/jak jednotlivých vrstev řeší
-  detailnější skills: `/gk-domain` (entita, value objects), `/gk-bus`
-  (command/query/permission), `/gk-handlers` (HTTP vrstva), `/gk-config`
-  (Wire DI). Sem chodíš pro pořadí kroků a aby ti nic neuteklo.
+  detailnější skills: `/gk-entities` (entita, value objects), `/gk-bus`
+  (command/query/dispatch), `/gk-commands` + `/gk-queries` (application handlery
+  + permission), `/gk-di` (Wire DI). Sem chodíš pro pořadí kroků a aby ti nic neuteklo.
 - NEtýká se to periodické práce na pozadí (`/gk-scheduler`, `/gk-runs`) ani
   čistě frontendové změny.
 
@@ -65,16 +65,16 @@ Nikdy nevolá handler přímo a neimportuje `infrastructure/`:
 
 ```go
 // command (bez návratu):
-err := bus.ExecVoid(r.Context(), h.commandBus.Bus, "CreateUser", cmd,
+err := bus.DispatchVoid(r.Context(), h.commandBus, "CreateUser", cmd,
     func(ctx context.Context) error { return h.createUser.Handle(ctx, cmd) })
 // query (typovaný návrat):
-users, err := bus.Exec(r.Context(), h.queryBus.Bus, "ListUsers", q,
+users, err := bus.Query(r.Context(), h.queryBus, "ListUsers", q,
     func(ctx context.Context) ([]user.User, error) { return h.listUsers.Handle(ctx, q) })
 ```
 
 **Route** se registruje v `Server.registerRoutes()` v
 `app/presentation/http/server/server.go`. Chráněné a admin routy se obalí
-`authed := middleware.AuthMiddleware(s.jwt)`; oddělení user/admin řeší bus
+`authed := middleware.AuthMiddleware(s.jwt, s.resp)`; oddělení user/admin řeší bus
 `AuthorizeMiddleware` přes permission, **ne** žádný role-guard middleware:
 
 ```go
@@ -89,11 +89,10 @@ Přidání nové akce nad **existující** entitou (např. další command):
    `app/infrastructure/sqlite/<ctx>/repository.go` (vždy přes `r.Conn(ctx)`),
    a její podpis do `Repository` interface v `app/domain/<ctx>/`.
 2. **Command / Query** — nový soubor v `app/application/<ctx>/command/`
-   (zápis) nebo `…/query/` (čtení): struct, `RequiredPermission()` **nebo**
-   `SkipPermission()`, `NewXxxHandler(...)` constructor, `Handle(ctx, …)`.
+   (zápis) nebo `…/query/` (čtení): V kroku 2: „struct, `RequiredPermission()` **nebo** `SkipPermissionCheck()` (interface `SkipPermission`), `NewXxxHandler(...)` constructor, `Handle(ctx, …)`". V Invariants: „— `RequiredPermission()` nebo explicitní `SkipPermissionCheck()`.".
 3. **Handler** — přidej metodu na existující handler v
-   `app/presentation/http/handler/` (DTO + `request.DecodeJSON` + `bus.ExecVoid`/
-   `bus.Exec`). Nový handler = nový soubor + constructor + pole na `Server`.
+   `app/presentation/http/handler/` (DTO + `request.DecodeJSON` + `bus.DispatchVoid`/
+   `bus.Query`). Nový handler = nový soubor + constructor + pole na `Server`.
 4. **Route** — zaregistruj v `registerRoutes()` v `server.go` (obal `authed(...)`
    u chráněných/admin).
 5. **DI** (`app/infrastructure/di/container_provider.go`):
@@ -118,12 +117,12 @@ do `sqlite_repos`. Detail: `/gk-architecture`.
   `AuthorizeMiddleware`. A permissioned command/query patří i do
   `providePermissionsRegistry()`.
 - **Bus dispatch je povinný** — z handleru nikdy nevolej `Handle(...)` přímo.
-  Bus dodává recovery, logging, autorizaci, transakci a dispatch eventů.
+  Bus dodává recovery, logging, autorizaci, tenant scoping, audit, run-dispatch, transakci a dispatch eventů.
 - **Handler neimportuje `infrastructure/`** — jen `application/`, `domain/`,
   `request`, `response`.
 - **V repozitáři vždy `r.Conn(ctx)`** (z embedovaného `BaseRepository`), aby se
   zápis účastnil transakce. Výjimky (raw pool) jen tam, kde to musí přežít
-  rollback — viz `/gk-database`.
+  rollback — viz `/gk-repositories`.
 - **Žádné cross-context importy** — `domain/user/` nesmí importovat `domain/token/`.
   Sdílené typy patří do `domain/shared/`.
 - **`make di` po každé DI změně** — bez něj se nový handler/provider nepropojí
@@ -134,8 +133,8 @@ do `sqlite_repos`. Detail: `/gk-architecture`.
 
 ## Related
 
-- Skills: `/gk-domain`, `/gk-bus`, `/gk-handlers`, `/gk-config`, `/gk-architecture`,
-  `/gk-database`
+- Skills: `/gk-entities`, `/gk-bus`, `/gk-commands`, `/gk-queries`, `/gk-di`,
+  `/gk-config`, `/gk-architecture`, `/gk-repositories`
 - Docs: `CLAUDE.md` (Adding a New Feature)
 - Kód: `app/domain/user/`, `app/infrastructure/sqlite/user/repository.go`,
   `app/application/user/command/`, `app/application/user/query/`,

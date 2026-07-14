@@ -38,18 +38,18 @@ Proč to tak je: nic se nemůže rozejít. Frontend vždy odpovídá backendu (j
 
 - `public/embed.go` embeduje výsledek Vite buildu (`//go:embed *` → `embed.FS`), server ho obsluhuje jako SPA.
 - `migrations/embed.go` embeduje SQL migrace (`//go:embed *.sql`).
-- Migrace se aplikují **automaticky při startu** přes `database.MigrationManager` (`app/application.go`) — a to **před každým** subcommandem (`serve`, `seed`, `create-user`, `worker`), ne jen při `serve`. Detail: `/gk-migrations`.
+- Migrace se aplikují **automaticky při startu** přes `database.MigrationManager` (`app/application.go`) — a to **před každým** subcommandem (`serve`, `worker`, `seed`, `create-user`, `create-superadmin`, `create-tenant`), ne jen při `serve`. Detail: `/gk-migrations`.
 
 ### CLI příkazy (`app/presentation/console/`)
 
-Root command `app` (`root.go`) registruje čtyři subcommandy:
+Change to „Root command `app` (`root.go`) registruje šest subcommandů:" and add two table rows: „| `create-superadmin` | Vytvoří platformního superadmina (`-n` nickname, `-p` heslo, `-e` email) — jediná cesta k roli superadmin (admin API ji odmítá); jede přes `SystemCommandBus` |" and „| `create-tenant` | Vytvoří tenant a vypíše jeho id (`-n` název) — pro multitenant provisioning |"
 
 | Příkaz | Co dělá |
 |---|---|
 | `serve` | HTTP server **+** in-process scheduler **+** durable-task worker v jednom procesu (`serve.go`: `scheduler.Run` a `worker.Run` jako goroutiny, sdílí jeden `ctx` ze signal handleru → SIGTERM nechá vše korektně dobíhat) |
-| `worker` | Jen perzistentní durable-task worker, bez HTTP a scheduleru (`run_worker.go`) — pro škálování workeru zvlášť (1 serve replika + N worker replik) |
-| `seed` | Vytvoří admin účet (heslo z `APP_SEED_ADMIN_PASSWORD`), pokud ještě není |
-| `create-user` | Vytvoří uživatele (`-n` nickname, `-p` heslo, `-e` email, `-r` role); jede přes `SystemCommandBus` (transakce + audit) |
+| `worker` | Jen perzistentní durable-task worker, bez HTTP a scheduleru (`worker.go`; engine v `app/infrastructure/worker/run_worker.go`) — pro škálování workeru zvlášť (1 serve replika + N worker replik) |
+| `seed` | Vytvoří admin účet (heslo z `APP_SEED_ADMIN_PASSWORD`), pokud ještě není; s `APP_SEED_SUPERADMIN_PASSWORD` seedne i superadmina, multitenant admin dostane vlastní tenant — vše přes `SystemCommandBus` v jedné transakci |
+| `create-user` | Vytvoří uživatele (`-n` nickname, `-p` heslo, `-e` email, `-r` role; multitenant navíc povinně `--tenant-id` NEBO `--tenant-name`); superadmin roli odmítá (na to je `create-superadmin`); jede přes `SystemCommandBus` (transakce + audit) |
 
 ### Production Dockerfile (`docker/production/Dockerfile`)
 
@@ -74,7 +74,7 @@ Jedno číslo verze teče do binárky i do SPA, aby Sentry grupoval chyby podle 
 
 ### GitHub CI
 
-- **`validate.yml`** (push na `main` + každý PR): `make install` → `make lint` → `make test` → `make build`. `SKIP_DOCUMAN: "1"` (doc lint má vlastní `documan.yml`).
+- **`validate.yml`** (push na `main` + každý PR): job `validate` = `make install` → `make lint` → `make test` → `make build`; paralelní job `e2e` = `make e2e` (durable-run process-lifecycle testy, viz `/gk-runs`). `SKIP_DOCUMAN: "1"` (doc lint má vlastní `documan.yml`).
 - **`release.yml`** (na tagu `v*`): postaví produkční image přes multi-stage Dockerfile, stampuje tag jako verzi. **Push do GHCR je defaultně VYPNUTÝ** (gokick je template — fork nesmí auto-publikovat); zapneš repo variable `RELEASE_PUSH=true`. Bez ní se image jen postaví (ověří, že release kompiluje), nepushne. Source-map upload do Sentry je optional (`SENTRY_AUTH_TOKEN` jako build secret).
 
 ## Recipe: postavit produkční image lokálně

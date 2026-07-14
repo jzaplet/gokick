@@ -42,7 +42,7 @@ scheduler.Job{
 }
 ```
 
-Aktuálně jediný job maže prošlé refresh tokeny (`WHERE datetime(expires_at) < datetime('now')`); díky run-once-then-tick proběhne úklid hned po startu.
+Aktuálně jediný job maže prošlé refresh tokeny (`WHERE julianday(expires_at) < julianday('now')` — julianday je repo-wide idiom pro datetime porovnání, viz `sqlite/sqltime.go`); díky run-once-then-tick proběhne úklid hned po startu.
 
 
 ## Související

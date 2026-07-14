@@ -13,7 +13,7 @@ name: 'gk-architecture'
 # GK — Architecture (DDD 4 vrstvy + CQRS)
 
 Jednou větou: gokick je rozdělený na čtyři vrstvy s přísnými pravidly, kdo koho
-smí importovat, a `go-arch-lint` ta pravidla hlídá při každém buildu.
+smí importovat, a `go-arch-lint` ta pravidla hlídá v `make lint` / `make arch-check` (a v CI).
 
 ## What & when
 
@@ -68,18 +68,16 @@ jen ty pod sebou. Plná matice závislostí je v `.go-arch-lint.yml` (`mayDepend
 (`AuthClaims`, error typy, service interfaces). Jeden kontext **nesmí** importovat
 druhý — komunikace jde přes QueryBus nebo domain eventy.
 
-**CQRS busy** (tři, každý s vlastním řetězcem middleware). Řetězce se skládají
-v `app/infrastructure/di/container_provider.go` (`provideCommandBus`,
-`provideQueryBus`, `provideEventBus`) nad `busmw.BaseChain` z
-`app/application/bus/middleware/base.go` (= `Recovery → Logging → Authorize`):
+**CQRS busy** (tři user-facing + operator-trusted `SystemCommandBus` pro CLI create-*/seed, každý s vlastním řetězcem middleware). Řetězce se skládají v `app/application/bus/middleware/base.go` (`busmw.BaseChain` = `Recovery → Logging → Authorize → Tenant`; `busmw.CommandChain` na něj navěsí write-side zbytek) — DI providery v `app/infrastructure/di/container_provider.go` (`provideCommandBus`, `provideQueryBus`, `provideEventBus`) je jen volají:
 
 | Bus | Řetězec | K čemu |
 |---|---|---|
 | `CommandBus` | Recovery → Logging → Authorize → Tenant → **Audit → RunDispatcher → DispatchEvents → Transaction** | zápisy |
-| `QueryBus` | Recovery → Logging → Authorize | čtení |
+| `SystemCommandBus` | Recovery → Logging → **Audit → RunDispatcher → DispatchEvents → Transaction** | CLI zápisy (bez Authorize/Tenant) |
+| `QueryBus` | Recovery → Logging → Authorize → Tenant | čtení |
 | `EventBus` | Recovery → Logging | side-effects po commitu |
 
-Audit je **vně** transakce (`provideCommandBus`), aby bezpečnostní eventy
+Audit je **vně** transakce (`busmw.CommandChain`), aby bezpečnostní eventy
 (login_failed, account_locked) přežily i rollback business transakce.
 
 **Vynucení lintem** (`.go-arch-lint.yml`, `workdir: app`): doména je rozdělená na
@@ -120,14 +118,14 @@ kontexty jsou vyjmenované ručně.
 - **Žádné cross-context importy.** `domain/user/` nesmí importovat `domain/token/`.
   Sdílené typy patří do `domain/shared/`.
 - **Command/query přes bus, nikdy přímo.** HTTP handler posílá přes
-  `bus.Exec` / `bus.ExecVoid` — bus dodá recovery, logging, autorizaci, transakci.
+  **Command/query přes bus, nikdy přímo.** HTTP handler posílá přes `bus.Dispatch` / `bus.DispatchVoid` (command) a `bus.Query` (query) — typované na `*CommandBus` / `*QueryBus`, takže záměna busu neprojde kompilací; bus dodá recovery, logging, autorizaci, tenant a transakci.
 - **Každý command/query deklaruje permission** — buď `Permissioned`
   (`RequiredPermission() string`) nebo `SkipPermission` (`SkipPermissionCheck()`),
   oba z `app/domain/shared/permission.go`. Když chybí obojí, `AuthorizeMiddleware`
   vrátí error (chrání proti zapomenuté deklaraci).
 - **`r.Conn(ctx)` v repozitářích**, ne `r.DB.DB()` — kvůli transparentní účasti
   v transakci. Výjimka (raw pool, dokumentovaná v komentáři metody): zápisy, co
-  musí přežít rollback — `RecordFailedLogin`/`ResetFailedLogin`
+  musí přežít rollback — `RecordFailedLogin`/`ResetFailedLogin`/`RecordLogin`
   (`app/infrastructure/sqlite/user/repository.go`) a audit
   (`app/infrastructure/sqlite/audit/repository.go`).
 - **Context klíče: `type xxxKey struct{}` + `xxxKey{}`** — nový klíč do `context`

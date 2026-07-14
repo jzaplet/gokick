@@ -33,8 +33,8 @@ Migrations live in `migrations/` (Goose SQL format, embedded into binary). Migra
 
 ```bash
 make test                                        # vitest + go test (app/ + cmd/ only)
-make lint                                        # ESLint + vue-tsc + golangci-lint + go-arch-lint + golines format-check + documan-lint
-make format                                      # ESLint Stylistic fix + golines
+make lint                                        # ESLint + vue-tsc + knip + golangci-lint + go-arch-lint + golines format-check + ts-check + documan-lint
+make format                                      # ESLint Stylistic fix + golines + documan-fix
 go test ./app/infrastructure/security/ -run TestHash  # Single Go test
 ```
 
@@ -90,7 +90,7 @@ Bounded contexts in separate packages. **Never import between contexts** (e.g. `
 - Entity structs have `db:"..."` tags for sqlx scanning
 - Value objects return `*shared.ValidationError` on invalid input
 - Factory functions (`NewUser`) accept value objects, not raw strings
-- Repository interfaces return `nil, nil` for "not found" lookups (except `user.Repository.FindByID`, which returns a `*shared.ValidationError`; note this is not universal — `run.Repository.FindByID` returns `nil, nil`)
+- Repository interfaces return `nil, nil` for "not found" lookups — uniform across contexts (`user.FindByID` included since F-011)
 - New bounded context = new package under `domain/` **plus its own arch-lint component** (`domain_user`, `domain_token`, …). Each context is a separate component precisely so a cross-context import fails the lint — the trade-off is there is no `domain/**` catch-all, so a new context needs a `domain_<ctx>` entry + a `mayDependOn` grant from each consumer (see the checklist below)
 
 ### Application Layer (`app/application/`)
@@ -107,7 +107,7 @@ CQRS with three bus types, each with its own middleware chain:
 
 **Audit middleware lives OUTSIDE Transaction** so security-relevant events (login_failed, account_locked, theft_detected) persist even when the business tx rolls back. Audit write failures are logged but never propagated to the caller.
 
-**Command pattern** (`application/command/`):
+**Command pattern** (`application/<ctx>/command/`):
 ```go
 type CreateUserCommand struct { Nickname, Password, Email, Role string }
 func (c CreateUserCommand) RequiredPermission() string { return "admin:users:create" }
@@ -116,7 +116,7 @@ type CreateUserHandler struct { repo user.Repository; password shared.PasswordHa
 func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) error { ... }
 ```
 
-**Query pattern** (`application/query/`):
+**Query pattern** (`application/<ctx>/query/`):
 ```go
 type ListUsersQuery struct{}
 func (q ListUsersQuery) RequiredPermission() string { return "admin:users:read" }
@@ -132,21 +132,23 @@ func (h *ListUsersHandler) Handle(ctx context.Context, q ListUsersQuery) ([]user
 
 **Event pattern** (`application/event/`):
 - `DispatchEventsMiddleware` creates a **per-request** `*shared.EventCollector` and stores it in `ctx` (no singleton — race-safe).
-- Command handlers read it via `shared.EventCollectorFromContext(ctx).Collect(event)`. Outside the bus (e.g. CLI bypass) the helper returns a throwaway collector so handlers never nil-check.
+- Command handlers read it via `shared.EventCollectorFromContext(ctx).Collect(event)`. Outside any bus (e.g. a handler invoked directly in a test) the helper returns a throwaway collector so handlers never nil-check; inside event/run handlers it returns a forbidden collector that panics on Collect (use `RunDispatcher` there).
 - `DispatchEventsMiddleware` wraps `TransactionMiddleware` (outer). After the transaction commits successfully, the middleware flushes and dispatches events via `EventBus` **synchronously**. On rollback or commit failure, events are discarded.
 - Event handlers register on `EventBus` via `eventBus.Register(eventName, handlerFn)`. They **must not** call `Collect` themselves — for follow-up async work use `RunDispatcher`.
 
 **Dispatch from HTTP handler:**
 ```go
 // Command (no return value):
-bus.ExecVoid(ctx, h.commandBus.Bus, "CreateUser", cmd, func(ctx context.Context) error {
+bus.DispatchVoid(ctx, h.commandBus, "CreateUser", cmd, func(ctx context.Context) error {
     return h.createUser.Handle(ctx, cmd)
 })
 // Query (typed return):
-bus.Exec[[]user.User](ctx, h.queryBus.Bus, "ListUsers", q, func(ctx context.Context) ([]user.User, error) {
+bus.Query(ctx, h.queryBus, "ListUsers", q, func(ctx context.Context) ([]user.User, error) {
     return h.listUsers.Handle(ctx, q)
 })
 ```
+
+Taking `*CommandBus`/`*QueryBus` makes the bus↔operation pairing compile-checked; the CLI uses `bus.SystemDispatch`/`bus.SystemDispatchVoid` on the `*SystemCommandBus`.
 
 ### Infrastructure Layer (`app/infrastructure/`)
 
@@ -177,7 +179,7 @@ func (r *Repository) Save(ctx context.Context, u *user.User) error {
 ```go
 wire.Bind(new(user.Repository), new(*sqliteuser.Repository))
 wire.Bind(new(token.Repository), new(*sqlitetoken.Repository))
-wire.Bind(new(shared.Seeder), new(*sqlite.Seeder))
+wire.Bind(new(shared.Seeder), new(*sqliteseeder.Seeder))
 ```
 
 ### Presentation Layer (`app/presentation/`)
@@ -185,12 +187,12 @@ wire.Bind(new(shared.Seeder), new(*sqlite.Seeder))
 | Package | Purpose |
 |---------|---------|
 | `http/handler/` | HTTP handlers — decode JSON, dispatch via bus, return response |
-| `http/middleware/` | Trace ID, CORS, CSRF (stdlib Go 1.25), Logging, JWT Auth, Role Guard |
-| `http/response/` | `JSON()`, `Error()`, `HandleError()` — maps domain errors to HTTP status |
+| `http/middleware/` | Trace ID, IP, ReportScope, Recovery, Security headers, CORS, Logging, JWT Auth, Rate limit — CSRF (stdlib Go 1.25 `http.CrossOriginProtection`) is assembled in `http/server/`; permission checks live in the bus `AuthorizeMiddleware` |
+| `http/response/` | injected `*Responder` — `JSON(ctx, w, …)`, `Error(ctx, w, …)`, `HandleError(ctx, w, err)` methods; maps domain errors to HTTP status (encode failures logged, not swallowed) |
 | `http/server/` | `http.ServeMux` routing, middleware chain assembly |
 | `console/` | Cobra CLI commands (`serve`, `worker`, `seed`, `create-user`, `create-superadmin`, `create-tenant`) — `serve` co-runs the in-process scheduler + worker alongside the HTTP server, sharing one ctx so SIGTERM drains all. The create/seed commands dispatch through the **`SystemCommandBus`** (operator-trusted: no Authorize/Tenant, but transaction + audit + panic→Sentry); with multitenancy on, `create-user` requires a tenant (`--tenant-id` / `--tenant-name`) |
 
-**Error → HTTP mapping** (duck typing, no import between response/ and domain/):
+**Error → HTTP mapping** (duck typing — domain errors declare `HTTPStatus()`, response/ matches its local `HTTPError` interface):
 - `*shared.ValidationError` → 400
 - `*shared.AuthError` → 401 (not authenticated)
 - `*shared.PermissionError` → 403 (authenticated but not permitted)
@@ -270,7 +272,7 @@ wire.Bind(new(shared.Seeder), new(*sqlite.Seeder))
 - Requests:
   - **Protected endpoints** → `authFetch<Data, Errors>('POST', '/api/v1/...', { body })` from `@/app-ui/Auth`.
   - **Public endpoints** → `apiFetch<Data, Errors>` from `@/app-ui/Fetch`.
-- **Backend error response shape** (via `response.Error()` + `FieldError` interface):
+- **Backend error response shape** (via `Responder.Error()` + `FieldError` interface):
   - `ValidationError{Field: "nickname"}` → `{ "nickname": "..." }` — routed to specific field.
   - Any other error → `{ "general": "..." }`.
 - **Frontend error handling:** one-line merge.
@@ -295,7 +297,7 @@ wire.Bind(new(shared.Seeder), new(*sqlite.Seeder))
 
 1. **`domain/<context>/`** — entity, value objects, repository interface
 2. **`infrastructure/sqlite/<context>/`** — repository implementation
-3. **`application/command/`** or **`application/query/`** — handler with `Permissioned` or `SkipPermission`
+3. **`application/<ctx>/command/`** or **`application/<ctx>/query/`** — handler with `Permissioned` or `SkipPermission`
 4. **`presentation/http/handler/`** — HTTP handler dispatching via bus
 5. **`presentation/http/server/`** — register route
 6. **`infrastructure/di/container_provider.go`** — add Wire providers + `wire.Bind` for interfaces
@@ -305,14 +307,14 @@ Broad-glob components auto-cover new sub-packages: a new `application/<ctx>/comm
 
 ## Key Invariants
 
-- **Domain interfaces only.** Command/query handlers, seeders, and CLI commands depend on domain interfaces (`user.Repository`, `shared.Seeder`), never on concrete infrastructure types (`*sqliteuser.Repository`, `*sqlite.Seeder`).
+- **Domain interfaces only.** Command/query handlers, seeders, and CLI commands depend on domain interfaces (`user.Repository`, `shared.Seeder`), never on concrete infrastructure types (`*sqliteuser.Repository`, `*sqliteseeder.Seeder`).
 - **Bus dispatch required.** All commands/queries go through a bus — HTTP handlers never call application handlers directly (they use the `CommandBus`/`QueryBus`); the CLI create/seed commands use the `SystemCommandBus` (the CommandBus chain minus Authorize/Tenant). The bus provides recovery, logging, authorization (HTTP), transactions, audit, and event dispatch.
 - **`r.Conn(ctx)` in repositories.** Always use `r.Conn(ctx)` (from embedded `BaseRepository`), never `r.DB.DB()` directly. This ensures transparent transaction participation. **Exception:** writes that MUST commit independently of any bus tx — `user.Repository.RecordFailedLogin/ResetFailedLogin/RecordLogin` (login is `SkipTransaction`, so these single-statement writes auto-commit; the raw pool also future-proofs against an in-tx caller) and `audit.Repository.Save` (must survive the business rollback) — use `r.DB.DB()` on purpose. These are the only legitimate raw-pool callers; document the reason in the method comment.
 - **Tenant scoping (multitenancy).** Every SQL query on a tenant-owned table (`users`, …) must scope by `tenant_id` (from `r.Tenant(ctx)`) OR carry an inline `/* tenant-scope-exempt: <reason> */` marker — the `zz_tenant_test.go` conformance gate fails CI otherwise (an unclassified table also fails). The resolver supplies the tenant, the repo applies it (no transparent `WHERE` injection); `r.Tenant(ctx)` panics on a missing tenant in multitenant mode (fail-closed). Cross-tenant platform reads carry `tenant-scope-exempt: platform superadmin`. See `/gk-multitenancy`.
 - **Permission declaration.** Every command/query must declare permissions. Forgetting both `Permissioned` and `SkipPermission` is a runtime error.
 - **Events use primitives.** Domain events carry only primitive types (string IDs, timestamps), never entities or value objects.
 - **No cross-context imports.** Bounded contexts (`domain/user/`, `domain/token/`) are isolated. Shared types live in `domain/shared/`.
-- **Audit events for security-relevant work.** Handlers that mutate auth state or user records call `shared.AuditCollectorFromContext(ctx).Record(...)`. The collector returns a throwaway when no bus is active (CLI bypass), so the call is always safe. Action names follow the dotted convention `domain.event` (`auth.login.failed`, `user.role_changed`, etc.).
+- **Audit events for security-relevant work.** Handlers that mutate auth state or user records call `shared.AuditCollectorFromContext(ctx).Record(...)`. The collector returns a throwaway when nothing installed one in ctx (e.g. a handler invoked directly in a test — the CLI system bus and the run worker both install real collectors), so the call is always safe. Action names follow the dotted convention `domain.event` (`auth.login.failed`, `user.role_changed`, etc.).
 - **Structured logging is statically enforced — there is one logging path.** All logging goes through the injected `*slog.Logger`, built once in `cmd/logger.go`. `.golangci.yml` forbids every alternative at lint time: `fmt.Print*` / `print`/`println` (stdout), the stdlib `log` package, **any** third-party logger (depguard **import allow-list** — a new dependency must be added to it), `slog.New*` outside `cmd/`, the global default logger (incl. `slog.Default()`), `os.Stdout`/`os.Stderr`, and direct file/fd opens (`os.Create`/`os.OpenFile`/`os.WriteFile`/`os.NewFile`/`syscall.Write`) so log data can't leak into a file. Every attribute **key is a Go constant** (sloglint `no-raw-keys`): cross-cutting keys in `shared.LogKey*` (`trace_id`, `user_id`, `command`, `duration_ms`, …); component-specific keys as package-local `logKey*` consts. Keys are `snake_case`, messages are constants, key-value and `slog.Attr` styles are never mixed. Correlation comes from `shared.LogAttrs(ctx)`, durations from `shared.DurationMsAttr`. See the `/gk-logging` skill.
 - **Error reporting is for the unexpected only.** Recovered panics (bus + HTTP `RecoveryMiddleware`) and terminal task failures (the run worker, exhausted retries) report to the injected `shared.ErrorReporter` (Sentry, built in `cmd/sentry.go`, a `NopReporter` without `APP_SENTRY_DSN`). Ordinary returned errors — validation, auth, 4xx — must NOT be reported; only the recovery/terminal paths, or the tracker drowns in noise. Same on the frontend (`@sentry/vue`, gated on `VITE_SENTRY_DSN`): Vue errors + unhandled rejections, never handled API 4xx. sentry-go is on the depguard allow-list precisely because it is the one sanctioned non-slog sink.
 - **No hard-coded permissions on the frontend.** Every permission reference in `assets/` goes through the `Permission` enum in `assets/app/Auth/enums/resources.ts`. String literals like `'admin:users:read'` in `.vue` / `.ts` files are forbidden.

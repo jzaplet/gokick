@@ -19,9 +19,7 @@ a **value objects** (typy, které se nedají vyrobit v nevalidním stavu).
 - Sáhni sem, když přidáváš nový doménový typ (entitu jako `User`/`Run`, nebo
   value object jako `Nickname`), píšeš factory funkci (`NewUser`), nebo řešíš
   „kde má žít validace formátu vs. business pravidlo".
-- NEtýká se: repozitářů (to je infrastruktura — `/gk-database`), command/query
-  handlerů a permissions (`/gk-commands`, `/gk-queries`), ani doménových
-  událostí na bus (`/gk-events`).
+Nahradit ve všech výskytech: `/gk-database` → `/gk-repositories`, `/gk-events` → `/gk-domain-events`, `/gk-forms` → `/gk-frontend-forms` (ř. 22, 24, 70, 93, 117, 119, 120).
 
 ## For non-tech / juniors
 **Entita** je doménový objekt, který má identitu (ID) a něco v životě reprezentuje
@@ -39,15 +37,16 @@ nevyplníš správnou hodnotu. Entita je celý vyplněný formulář s razítkem
 
 ## How it works
 **Bounded contexts** — každá entita má vlastní balíček pod `app/domain/`:
-`domain/user/`, `domain/token/`, `domain/run/`. Mezi konteyty se **nesmí
+`domain/user/`, `domain/token/`, `domain/run/`, `domain/tenant/`. Mezi konteyty se **nesmí
 importovat** (`user/` nesmí znát `token/`); sdílené typy žijí v `domain/shared/`.
 
 **Entity** (`app/domain/user/user.go`, `domain/token/refresh_token.go`,
 `domain/run/run.go`):
 - Struct má `db:"..."` tagy — `sqlx` podle nich automaticky scanuje řádky DB do
   struktury. Příklad: `Nickname string \`db:"nickname"\``.
-- ID je `string` (UUID). `User`/`RefreshToken` používají `uuid.New().String()`,
-  `Run` `uuid.NewString()` (UUIDv7).
+- ID je `string` (UUIDv7). `User`/`Run` (i `Tenant`) generují
+  `uuid.Must(uuid.NewV7()).String()`; `RefreshToken` (factory `NewRefreshToken`)
+  používá `uuid.New().String()`.
 - Entita nemá metody se side-effecty (žádné `Save`/`Load`) — to dělá repository.
 - Nullable časové sloupce: `*time.Time` (nil = unset) napříč VŠEMI kontexty —
   `Run.CompletedAt`, `RefreshToken.UsedAt` (marker theft detection),
@@ -58,7 +57,9 @@ importovat** (`user/` nesmí znát `token/`); sdílené typy žijí v `domain/sh
 
 **Factory funkce** (`NewUser`, `NewRun`):
 - Přijímají **value objects, ne raw stringy** — `NewUser(nickname Nickname,
-  passwordHash string, email Email, role Role)`. Když se caller dostal až k
+  passwordHash string, email Email, role Role, tenantID string)`. Když se caller dostal až k
+  factory, data jsou validní. `tenantID` je povinný (born-scoped invariant multitenancy,
+  vynucený `zz_bornscoped_test.go`) — single-tenant caller předá `shared.DefaultTenantID`. Když se caller dostal až k
   factory, data jsou validní.
 - `passwordHash` je odvozený stav (produkt `PasswordHasher`), ne value object —
   raw heslo se validuje přes `Password` VO těsně před hashováním.
@@ -70,10 +71,15 @@ importovat** (`user/` nesmí znát `token/`); sdílené typy žijí v `domain/sh
   `Field` se na FE mapuje na konkrétní políčko (viz `/gk-forms`).
 - Konkrétně:
   - `Nickname`: povinný, max 50 znaků.
-  - `Role`: enum `RoleAdmin`/`RoleUser`, jiná hodnota → chyba.
+  - `Role`: enum `RoleSuperAdmin`/`RoleAdmin`/`RoleUser` (konverze kanonických
+    `shared.Role*` konstant), jiná hodnota → chyba. `Role.IsSuperAdmin()` hlídá,
+    že admin API superadmina nikdy nepřidělí (superadmin vzniká jen seedem/CLI).
   - `Email`: **nepovinný** — prázdný řetězec projde; jinak max 254 znaků a musí
     obsahovat `@`. Striktnější (regex/MX) schválně ne.
-  - `Password`: validuje **raw** heslo před hashem — povinné, 8–128 znaků.
+  - `Password`: validuje **raw** heslo před hashem — povinné, min 8 znaků (runy),
+    max 128 **bajtů** (záměrně bajtový anti-DoS strop vstupu hasheru). Pro cesty,
+    které hashují hned, existuje `user.HashNewPassword(raw, hasher)` — validace
+    a hash v jednom volání.
 
 ## Recipe
 
@@ -102,16 +108,19 @@ importovat** (`user/` nesmí znát `token/`); sdílené typy žijí v `domain/sh
 - **Žádné cross-context importy** — `domain/user/` nesmí importovat `domain/token/`.
   Sdílené typy → `domain/shared/`.
 - **Value object vrací `*shared.ValidationError`** (ne `errors.New`) — jen tak se
-  na FE chyba namapuje na správné políčko (`response.HandleError` → 400).
+  na FE chyba namapuje na správné políčko (metoda `HandleError` injektovaného
+  `*response.Responder` → 400).
 - **Entita nemá I/O metody** — perzistence patří do repository.
 - **`LoginCommand` NEvaliduje heslo přes `Password` VO** — jen porovnává se
   stored hashem. Validace pravidel při loginu by zamkla existující účty po změně
-  pravidel. `Password` se používá v `CreateUserCommand` a `ChangePasswordCommand`.
-- **Pozor na not-found konvenci repozitáře:** `FindByNickname` vrací `nil, nil`
-  (nenalezeno není chyba), ale `user.Repository.FindByID` vrací `*shared.ValidationError`
-  (`user not found`) — pozor, není to univerzální pravidlo: `run.Repository.FindByID`
-  naopak vrací `nil, nil`. Detail je v implementaci, ale ovlivňuje, jak entitu
-  konzumuješ.
+  pravidel. `Password` se používá všude, kde vzniká NOVÉ heslo — `CreateUserCommand`,
+  `ChangePasswordCommand`, platformní `CreateSuperAdminCommand`, admin/platform
+  update (`userwrite.Update` přes `user.HashNewPassword`) a seeder/CLI.
+- **Not-found konvence repozitářů je jednotná:** `FindByID` i `FindByNickname` vrací
+  `nil, nil` (nenalezeno není chyba) — stejně jako porty token/run/tenant. Nil entita
+  JE signál not-found; error znamená skutečné (přechodné) selhání. Každý caller si
+  nil namapuje na vlastní odpověď (400 pro admina editujícího stale id, 401/force-logout
+  pro zmizelého přihlášeného uživatele).
 
 ## Related
 - Sousední skills: `/gk-database` (repository implementace, `r.Conn(ctx)`),
@@ -121,4 +130,5 @@ importovat** (`user/` nesmí znát `token/`); sdílené typy žijí v `domain/sh
 - Kód: `app/domain/user/` (`user.go`, `nickname.go`, `role.go`, `email.go`,
   `password.go`, `user_created.go`, `repository.go`), `app/domain/token/`
   (`refresh_token.go`, `repository.go`), `app/domain/run/` (`run.go`,
-  `repository.go`), `app/domain/shared/` (`ValidationError`)
+  `repository.go`), `app/domain/tenant/` (`tenant.go`, `name.go` — `Name` je
+  value object, `repository.go`), `app/domain/shared/` (`ValidationError`)

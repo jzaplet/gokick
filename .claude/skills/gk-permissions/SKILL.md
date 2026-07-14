@@ -60,7 +60,7 @@ func (LoginCommand) SkipPermissionCheck() {}                                    
 
 ## Invariants & pitfalls
 - **Každý command/query deklaruje permission.** Chybí-li `Permissioned` i `SkipPermission`, bus vrátí runtime error — není to volitelné.
-- **Registry je jediný zdroj pravdy a musí se ručně doplnit.** Nový `Permissioned` handler, který nepřidáš do `providePermissionsRegistry`, je sice chráněný backendem, ale frontend o permission neví → UI se chová, jako bys ji neměl. Druhá konfigurace neexistuje.
+- **Registry je jediný zdroj pravdy a musí se ručně doplnit.** Nový `Permissioned` handler, který nepřidáš do `providePermissionsRegistry`, by frontend o permission nechal bez informace — zapomenutý zápis ale chytí konformní test `TestProvidePermissionsRegistry_EnrollsEveryFEFacingPermission` (`app/infrastructure/di/`), takže `make test` spadne dřív, než se to dostane do UI. Druhá konfigurace neexistuje.
 - **Žádné raw permission stringy na FE.** Každá reference jde přes `Permission` enum (`resources.ts`). Literál `'admin:users:read'` v `.vue`/`.ts` je zakázaný — enum je typovaný, překlep = compile-time chyba.
 - **FE schovává, BE rozhoduje.** `hasPermission` je jen UX; autoritativní kontrola je vždy `AuthorizeMiddleware` na backendu. Nikdy nespoléhej na FE jako na bezpečnostní hranici.
 - **Jen role-based, žádné per-user granty.** `IsPermissionAllowedForRole` zná tři role: `superadmin` (vše vč. `platform:*`), `admin` (vše kromě `platform:*`) a ostatní (vše kromě `admin:*` a `platform:*`). Jemnější model zatím není.

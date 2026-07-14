@@ -45,13 +45,13 @@ Handler dělá málo — dekóduje JSON a předá command nebo query busu; `r.Co
 ```go
 cmd := authcmd.LoginCommand{Nickname: body.Nickname, Password: body.Password}
 
-result, err := bus.Exec(r.Context(), h.commandBus.Bus, "Login", cmd,
+result, err := bus.Dispatch(r.Context(), h.commandBus, "Login", cmd,
     func(ctx context.Context) (authcmd.LoginResult, error) {
         return h.login.Handle(ctx, cmd)
     },
 )
 if err != nil {
-    response.HandleError(w, err) // doménová chyba → HTTP status
+    h.resp.HandleError(r.Context(), w, err) // doménová chyba → HTTP status
     return
 }
 ```

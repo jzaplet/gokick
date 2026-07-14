@@ -42,18 +42,18 @@ Dvě věci stojí za zapamatování: **Audit je mimo transakci** (bezpečnostní
 ## Příklad
 
 ```go
-err := bus.ExecVoid(r.Context(), h.commandBus.Bus, "CreateUser", cmd,
+err := bus.DispatchVoid(r.Context(), h.commandBus, "CreateUser", cmd,
     func(ctx context.Context) error {
         return h.createUser.Handle(ctx, cmd)
     },
 )
 if err != nil {
-    response.HandleError(w, err)
+    h.resp.HandleError(r.Context(), w, err)
     return
 }
 ```
 
-`ExecVoid` je `Exec[any]` bez návratové hodnoty; `Exec[R]` použij, když command něco vrací.
+`DispatchVoid` je `Dispatch[R]` bez návratové hodnoty; `Dispatch[R]` použij, když command něco vrací. Obě berou `*bus.CommandBus`, takže záměna s QueryBusem nejde přeložit.
 
 
 ## Související

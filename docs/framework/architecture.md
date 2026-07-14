@@ -19,10 +19,10 @@ Architektura stojí na DDD s CQRS a bus patternem: čtyři vrstvy s přísnými 
 
 | Vrstva | Složka | Balíčky | Popis |
 |---|---|---|---|
-| **Domain** | `domain/` | `shared/`, `user/`, `token/` | Entity, value objects, interfaces, errors, events. Žádné závislosti. |
+| **Domain** | `domain/` | `shared/`, `user/`, `token/`, `run/`, `tenant/` | Entity, value objects, interfaces, errors, events. Žádné závislosti. |
 | **Application** | `application/` | `bus/`, `<domain>/command/`, `<domain>/query/`, `<domain>/event/` | CQRS handlery organizované po doménách, bus middleware. Závisí jen na domain. |
-| **Infrastructure** | `infrastructure/` | `config/`, `database/`, `sqlite/`, `security/`, `di/` | Implementace domain interfaces, databáze, security. |
-| **Presentation** | `presentation/` | `http/handler/`, `http/middleware/`, `http/response/`, `http/server/`, `console/` | HTTP a CLI vrstva. |
+| **Infrastructure** | `infrastructure/` | `config/`, `database/`, `sqlite/`, `security/`, `scheduler/`, `worker/`, `di/` | Implementace domain interfaces, databáze, security, background práce. |
+| **Presentation** | `presentation/` | `http/handler/`, `http/middleware/`, `http/request/`, `http/response/`, `http/server/`, `console/` | HTTP a CLI vrstva. |
 
 ```
 presentation --> application --> domain <-- infrastructure
@@ -35,13 +35,14 @@ presentation --> application --> domain <-- infrastructure
 
 ```
 cmd/main.go
+  -> config.LoadStartup() + logger + Sentry reporter  Startup env pro logging/reporting
   -> signal.NotifyContext(SIGINT, SIGTERM)  Root ctx s signal handlingem
-  -> di.CreateApplication()                Wire DI vytvoří vše
+  -> di.CreateApplication(logger, reporter)  Wire DI vytvoří vše
     -> config.LoadConfig()                 Načtení .env
     -> database.NewSqliteManager()         Připojení k SQLite
     -> database.NewMigrationManager()      Vytvoření migration manageru
-    -> bus.NewCommandBus/NewQueryBus/NewEventBus  CQRS busy s middleware chain
-    -> server.New(handlers, middlewares)    HTTP server
+    -> bus.NewCommandBus/NewQueryBus/NewEventBus/NewSystemCommandBus  CQRS busy s middleware chain
+    -> server.NewServer(config, handlers, ...)  HTTP server
     -> console.NewRootCommand()            Cobra CLI
   -> application.Run(ctx)
     -> database.MigrationManager.RunUp()   Automatické migrace
@@ -56,7 +57,7 @@ Tahle stránka je mentální model. Konkrétní cesta requestu napříč vrstvam
 
 - [Request flow](/framework/request-flow) — společný HTTP middleware chain a kudy request vstupuje do busu.
 - [Command flow](/framework/command-flow) — write operace: Recovery → Logging → Authorize → Tenant → Audit → RunDispatcher → DispatchEvents → Transaction, commit a rozeslání eventů.
-- [Query flow](/framework/query-flow) — read operace: Recovery → Logging → Authorize → Tenant, typovaný návrat přes `bus.Exec`.
+- [Query flow](/framework/query-flow) — read operace: Recovery → Logging → Authorize → Tenant, typovaný návrat přes `bus.Query`.
 - [Event flow](/framework/event-flow) — domain eventy po commitu: per-request collector, synchronní dispatch přes EventBus.
 
 
@@ -73,8 +74,9 @@ make arch-check    # go-arch-lint se instaluje automaticky přes make install
 Hlavní body konfigurace:
 - `workdir: app` — všechny cesty relativně k `app/`
 - `commonComponents: [domain_shared]` — všem je dostupné pouze `domain/shared/` (sdílené typy a porty); bounded kontexty (`domain_user`, `domain_token`, …) common **nejsou**
-- `exclude: [infrastructure/di/**]` — DI balíček nemá omezení
-- `excludeFiles: [infrastructure/database/migration_manager.go]` — lifecycle soubor mimo kontrolu
+- `deepScan: true` — analýza call-grafů zachytí i cross-layer wiring mimo importy
+- `exclude: [infrastructure/di/**, internal/testfx/**]` — DI balíček a test fixture (deepScan nemá per-komponentní vypnutí) bez omezení
+- `excludeFiles` — lifecycle soubor `infrastructure/database/migration_manager.go` + sada test souborů (black-box self-importy, `zz_*` konformní testy) mimo kontrolu
 - Každá komponenta má `mayDependOn` seznam povolených závislostí
 
 ### Cross-domain izolace
@@ -82,7 +84,7 @@ Hlavní body konfigurace:
 Každý doménový kontext (`domain/user/`, `domain/token/`, ...) je izolovaný balíček. `domain/shared/` obsahuje sdílené typy (errors, interfaces, auth context). Pravidla:
 
 - **Bounded context nesmí importovat jiný bounded context.** `domain/user/` nesmí importovat `domain/token/` a naopak.
-- Komunikace mezi kontexty: **QueryBus** (synchronní) nebo **Domain Events** (asynchronní).
+- Komunikace mezi kontexty: **QueryBus** (synchronní) nebo **Domain Events** (po commitu; dispatch je synchronní — pro asynchronní návaznou práci slouží `RunDispatcher`).
 - Eventy používají jen primitivy (string ID, ne celé entity).
 - go-arch-lint zachytí cross-domain import při `make arch-check`.
 

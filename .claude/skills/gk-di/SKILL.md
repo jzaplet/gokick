@@ -36,7 +36,7 @@ wire_gen.go             # vygenerovaný kód (//go:build !wireinject) — NIKDY 
 
 **Build tagy je drží odděleně.** Při normálním buildu se kompiluje jen `wire_gen.go` (`!wireinject`); `container_provider.go` se přidá do překladu jen pro samotný nástroj `wire` (`wireinject`). Proto v repu žijí dvě funkce stejného jména `CreateApplication`, ale do binárky se dostane jen ta vygenerovaná.
 
-**`CreateApplication` v `container_provider.go` je jen kostra (stub):** tělo je `wire.Build(...)` se seznamem providerů a pak `return nil, nil`. To `nil, nil` **není bug** — je to kanonický Wire vzor. Wire ten seznam přečte, domyslí závislosti a vygeneruje skutečné tělo `CreateApplication` ve `wire_gen.go`, kde se konstruktory volají ve správném pořadí. Vstupní bod: `cmd/main.go:53` volá `di.CreateApplication(logger, reporter)`.
+**`CreateApplication` v `container_provider.go` je jen kostra (stub):** tělo je `wire.Build(...)` se seznamem providerů a pak `return nil, nil`. To `nil, nil` **není bug** — je to kanonický Wire vzor. Wire ten seznam přečte, domyslí závislosti a vygeneruje skutečné tělo `CreateApplication` ve `wire_gen.go`, kde se konstruktory volají ve správném pořadí. Vstupní bod: `cmd/main.go:85` (funkce `run()`) volá `di.CreateApplication(logger, reporter)`.
 
 **Tři druhy záznamů ve `wire.Build(...)`:**
 
@@ -55,7 +55,7 @@ wire_gen.go             # vygenerovaný kód (//go:build !wireinject) — NIKDY 
 
 **Registry-style providery (single source of truth):** některé `provideX` vrací seznam, který je jediným místem registrace dané věci — `providePermissionsRegistry` (seznam command/query s permission), `provideSchedulerJobs` (periodické úlohy), `provideEventHandlers` a `provideRunHandlerRegistry`. Nový záznam přidáš sem, zbytek grafu zůstane beze změny.
 
-> Pozn.: `provideEventHandlers` má dnes jen zakomentovaný příklad a `provideRunHandlerRegistry` vrací **prázdnou mapu** — jsou to zatím **prázdné registry** připravené na budoucí handlery, ne hotová funkcionalita.
+> Pozn.: `provideEventHandlers` má dnes jen zakomentovaný příklad a `provideRunHandlerRegistry` bez zapnutého `APP_RUN_DEBUG` neregistruje žádný kind (s ním registruje jen `e2e:*` debug kinds pro E2E harness; vrací `*runapp.HandlerRegistry` postavený přes `runapp.NewHandlerRegistry` s default lease z configu) — reálné handlery zatím žádné: **prázdné registry** připravené na budoucí handlery, ne hotová funkcionalita.
 
 ## Recipe
 
@@ -84,4 +84,4 @@ wire_gen.go             # vygenerovaný kód (//go:build !wireinject) — NIKDY 
 ## Related
 
 - Skills: `/gk-feature` (DI je krok 6 v end-to-end checklistu featury), `/gk-architecture` (kam infrastructure/DI patří ve vrstvách a proč), `/gk-bus` (busy, které se zde wirují přes `provideCommandBus`/`provideQueryBus`/`provideEventBus`), `/gk-config` (`config.LoadConfig` jako provider v grafu)
-- Kód: `app/infrastructure/di/container_provider.go` (recept + `provideX` + `wire.Bind`), `app/infrastructure/di/wire_gen.go` (generovaný výstup), `cmd/main.go` (`di.CreateApplication` na ř. 53), `Makefile` (target `di`)
+- Kód: `app/infrastructure/di/container_provider.go` (recept + `provideX` + `wire.Bind`), `app/infrastructure/di/wire_gen.go` (generovaný výstup), `cmd/main.go` (`di.CreateApplication` na ř. 85), `Makefile` (target `di`)

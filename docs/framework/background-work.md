@@ -55,10 +55,10 @@ SQLite umí **psát jen z jednoho místa naráz**. Transakce si ten zámek na z�
 
 Aby background práce omylem nezamkla databázi, je to pravidlo **vynucené**, ne jen napsané (platí pro oba tvary — fire-and-forget i durable run):
 
-1. **Za běhu** — když se uvnitř handleru někdo pokusí otevřít transakci, **selže to s jasnou chybou** (framework označí ten běh jako „bez transakce" a otevření odmítne).
-2. **Při buildu** — test projde kód handlerů a **shodí build**, kdyby tam transakce byla.
+1. **Za běhu** — když se uvnitř handleru transakce otevře **omylem** (třeba implicitně přes repo/command volání), **selže to s jasnou chybou** (framework označí ten běh jako „bez transakce" a implicitní otevření odmítne). Vědomá krátká transakce jde jedině přes `shared.WithTx`.
+2. **Při buildu** — test projde kód run enginu (worker + run vrstva aplikace) a **shodí build**, kdyby transakci otvíral on sám; handlery hlídá ta běhová pojistka z bodu 1.
 
-Postup tedy run ukládá přes `Checkpointer`; když opravdu potřebuješ něco uložit atomicky, **zařaď na to command** — ten poběží ve své vlastní krátké transakci mimo background práci (žádný run transakci nemá).
+Postup tedy run ukládá přes `Checkpointer`; když opravdu potřebuješ zapsat víc řádků atomicky, použij `shared.WithTx` — **krátkou transakci, kterou si handler sám ohraničí** (zapiš pár řádků, commit, pokračuj). I pro ni platí tvrdé pravidlo výš: žádné volání ven a žádná dlouhá práce uvnitř — přesně jako v command handleru.
 
 
 ## Související

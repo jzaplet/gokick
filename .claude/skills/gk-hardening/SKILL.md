@@ -66,7 +66,7 @@ Maskuje se **na jediném místě: těsně před odchodem do error trackeru** (`E
 1. Otevři `app/presentation/http/middleware/security.go`, najdi `csp := strings.Join([]string{ … })`.
 2. Přidej host do správné direktivy (`script-src` pro skript, `connect-src` pro XHR/fetch, `img-src` pro obrázky…). Drž to **co nejužší** — CSP je záměrně lokální (`'self'`).
 3. Sentry ingest se přidává automaticky přes `sentryIngestOrigin` — ten needituj ručně.
-4. `make test` (security_test pokrývá direktivy) + ověř v prohlížeči (DevTools → Console hlásí CSP violations).
+4. `make test` (direktivy pokrývají `TestSecurityHeadersMiddleware_*` testy v `middleware/zz_audit_test.go`) + ověř v prohlížeči (DevTools → Console hlásí CSP violations).
 
 ## Recipe: nová credential hlavička / log klíč k maskování
 

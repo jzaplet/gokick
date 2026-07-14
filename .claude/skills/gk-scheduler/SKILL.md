@@ -67,11 +67,11 @@ func provideSchedulerJobs(tokens token.Repository) []scheduler.Job {
 - **Job nesmí volat vlastní HTTP API přes localhost** — server běží paralelně, vznikl by závod (race). DB volání jsou OK (Wire je v té chvíli hotový).
 - **Multi-instance: žádná koordinace.** Scheduler je in-process — dvě repliky tikají nezávisle, každá pustí svůj job. Pro single-execution napříč clusterem dej DB lock přímo do `Fn`.
 - **Nedávej sem práci, která musí přežít restart.** Když proces neběží, neběží ani job a nikdo to nedožene. Pro to slouží perzistentní durable engine ([[gk-runs]]).
-- **Logování přes injektovaný `*slog.Logger`**, klíče jsou konstanty (`logKeyName`, `logKeyJobs`, `logKeyPanic` + sdílené `shared.DurationMsAttr` / `shared.LogKeyError`) — neporušuj jedinou logovací cestu projektu.
+- **Logování přes injektovaný `*slog.Logger`**, klíče jsou konstanty (`logKeyName`, `logKeyJobs` + sdílené `shared.LogKeyPanic` / `shared.LogKeyStack` / `shared.DurationMsAttr` / `shared.LogKeyError`) — neporušuj jedinou logovací cestu projektu.
 
 ## Related
 
-- `/gk-config` — DI registrace providerů a `make di` workflow.
+- `/gk-di` — DI registrace providerů a `make di` workflow.
 - `/gk-architecture` — proč `scheduler` žije v `infrastructure/` a kdo na něm smí záviset.
 - `/gk-runs` — perzistentní durable engine (fire-and-forget i durable run) pro práci, co musí přežít restart/crash.
 - Kód: `app/infrastructure/scheduler/scheduler.go`, registrace `app/infrastructure/di/container_provider.go` (`provideSchedulerJobs`/`provideScheduler`), spuštění `app/presentation/console/serve.go`.

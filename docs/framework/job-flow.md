@@ -52,10 +52,10 @@ neochrání).
 4. **Execution** — handler dostane payload a běží **MIMO transakci** (worker mu ctx označí
    `ContextForbidTx`, takže `BeginTx` fail-closed selže). Při úspěchu worker zapíše
    `MarkComplete` **samostatným zápisem** po návratu handleru.
-5. **Retry** — chyba nebo panika → `attempts ≤ maxRetries` → `Reschedule` s exponenciálním
+5. **Retry** — chyba nebo panika → `attempts < maxRetries` → `Reschedule` s exponenciálním
    backoffem; jinak `MarkFailed` + **report do Sentry**.
 
-Stav se odvozuje ze sloupců (`completed_at` / `failed_at` / `locked_until`), žádný `status`
+Stav se odvozuje ze sloupců (`completed_at` / `failed_at` / `cancelled_at` / `locked_until`), žádný `status`
 enum tu není.
 
 
@@ -70,7 +70,7 @@ shared.RunDispatcherFromContext(ctx).Enqueue(ctx, "welcome:send", maxRetries, pa
 ```
 
 Neznámý `kind` (bez registrovaného handleru) i `maxRetries < 0` selžou už při zařazení do
-fronty. Mimo bus (CLI, testy) je dispatcher no-op, takže volání je vždy bezpečné.
+fronty. Mimo bus (testy volající handler napřímo) je dispatcher no-op, takže volání je vždy bezpečné; CLI příkazy jdou přes SystemCommandBus, jehož chain dispatcher nese, takže i odtud se run durable zařadí.
 
 
 ## Související

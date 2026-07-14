@@ -118,7 +118,7 @@ serveru pro split deploy: 1× serve + N× worker, sdílená SQLite).
 pro oba tvary**: `RunDispatcherMiddleware` ho vloží do ctx; `Enqueue` z command handleru
 padne do **stejné transakce** jako business write (atomický enqueue přes `Conn(ctx)`).
 Neznámý `kind` (bez registrovaného handleru) i `maxRetries < 0` selžou už při enqueue.
-Mimo bus (CLI, testy) vrací no-op dispatcher — enqueue se tiše zahodí, handler nenil-checkuje.
+Nahradit za: "Mimo bus (testy, přímé volání handleru) vrací no-op dispatcher — enqueue se tiše zahodí, handler nenil-checkuje. CLI příkazy jedou přes SystemCommandBus, který RunDispatcher nese — enqueue z CLI je durable INSERT a run si vyzvedne serve/worker (F-008)."
 
 ## Recipe
 
@@ -145,13 +145,16 @@ Přidání nového kindu (vyber tvar podle „potřebuje checkpoint/resume?"):
 
 ## Invariants & pitfalls
 
-- **Handler NESMÍ otevřít transakci — vynuceno pro oba tvary.** Worker označí handler
-  ctx `shared.ContextForbidTx`; `Transactor.BeginTx` v té zóně **fail-closed selže**
-  (+ statická `zz_notx_test.go` brána skenuje run path). Dlouhý handler v `BEGIN IMMEDIATE`
-  by držel globální SQLite write-lock → freeze; i krátké volání ven by drželo zámek po dobu
-  volání. Stav perzistuj přes `Checkpointer`; transakční side-work **zařaď jako command**
-  (poběží ve vlastní krátké tx mimo run). Kdy durable run vs fire-and-forget run vs scheduler vs event →
-  `docs/framework/background-work.md`.
+- **Handler NESMÍ držet transakci přes pomalou práci — implicitní tx je vynuceně
+  zakázaná.** Worker označí handler ctx `shared.ContextForbidTx`; `Transactor.BeginTx`
+  v té zóně **fail-closed selže** (+ statická `zz_notx_test.go` brána skenuje run path).
+  Dlouhý handler v `BEGIN IMMEDIATE` by držel globální SQLite write-lock → freeze;
+  i krátké volání ven by drželo zámek po dobu volání. Stav perzistuj přes `Checkpointer`;
+  pár atomických zápisů udělej přes `shared.WithTx(ctx, fn)` — krátkou tx, kterou si
+  handler sám ohraničí (worker mu `Transactor` do ctx injektuje; drž ji krátkou, žádné
+  pomalé/externí I/O uvnitř — přesně jako v command handleru). Vnořený `WithTx` i syrový
+  `BeginTx` uvnitř fail-closed selžou. Kdy durable run vs fire-and-forget run vs
+  scheduler vs event → `docs/framework/background-work.md`.
 - **At-least-once → idempotence VŠEHO.** Mimo tx zaniká atomicita „handler-writes +
   complete" — `MarkComplete` je **samostatný zápis až po návratu handleru**, takže crash
   v okně mezi nimi handler na reclaimu **zopakuje**. Idempotentní musí být nejen externí

@@ -104,7 +104,7 @@ i refresh jsou `SkipPermissionCheck()` (veřejné).
    `ValidateAccessToken` (přes `claimString`).
 3. Naplň ho při vydání v `issueSession` (`issue_session.go`) — jediné místo, které staví
    `&shared.AuthClaims{...}` pro login i refresh (takhle tam přibyl claim `tenant`).
-4. Pokud má jít na FE, přidej ho i do `userDTO` ve `writeAuthResponse` (`auth.go`).
+4. Pokud má jít na FE, přidej ho do structu `userDTO` (`auth.go`, plní se ve `writeAuthResponse`) a spusť `make ts-gen` — `userDTO` je `//gkts`-anotovaný, TS typ `AuthUser` se generuje a `make lint` (ts-check) bez regenerace spadne.
 
 ## Invariants & pitfalls
 - **Do DB jen hash, nikdy raw refresh token.** Klient drží raw, server ho jen hashuje
