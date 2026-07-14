@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { PlatformUser } from '@/app/Platform/types/PlatformUser';
+import { Role } from '@/app/Auth/enums/roles';
 import { roleBadge } from '@/app-ui/Users/roleBadge';
 import Button from '@/app-ui/Buttons/Button.vue';
 import EditIcon from '@/app-ui/Icons/EditIcon.vue';
@@ -25,7 +26,7 @@ const formatLastLogin = (value: string | null): string => {
 // A superadmin row is managed out-of-band — the backend rejects edit/delete on
 // it, so the actions are disabled here to match.
 const isManageable = (role: string): boolean => {
-    return role !== 'superadmin';
+    return role !== Role.SuperAdmin;
 };
 </script>
 
