@@ -77,7 +77,10 @@ func TestGetStats_CountsTenantsAndUsers(t *testing.T) {
 	fx.SeedUserInTenant(t, "bob", "user", shared.DefaultTenantID)
 	fx.SeedUserInTenant(t, "root", "superadmin", shared.DefaultTenantID)
 
-	stats, err := NewGetStatsHandler(fx.PlatformTenants, fx.PlatformUsers).Handle(ctx, GetStatsQuery{})
+	stats, err := NewGetStatsHandler(
+		fx.PlatformTenants,
+		fx.PlatformUsers,
+	).Handle(ctx, GetStatsQuery{})
 	if err != nil {
 		t.Fatalf("stats: %v", err)
 	}

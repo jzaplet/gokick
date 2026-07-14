@@ -17,6 +17,22 @@ import (
 // process runs one claimed run end-to-end. A top-level recover keeps a panic
 // anywhere (not just the handler) from crashing the pool; on panic the run is
 // abandoned (no finalize) and left for lease-lapse reclaim.
+// reportProcessPanic logs a recovered process panic with its stack and reports it
+// to the error tracker — mirrors the bus/HTTP RecoveryMiddleware's panic handling.
+func (w *RunWorker) reportProcessPanic(
+	ctx context.Context,
+	log *slog.Logger,
+	r *run.Run,
+	rec any,
+) {
+	log.LogAttrs(ctx, slog.LevelError, "run worker: process panicked",
+		slog.Any(shared.LogKeyPanic, rec),
+		slog.String(shared.LogKeyStack, string(debug.Stack())))
+	w.reporter.Capture(ctx,
+		&shared.PanicError{Value: rec, Message: fmt.Sprintf("run process panic: %v", rec)},
+		slog.String(logKeyRunID, r.ID), slog.String(shared.LogKeyRunKind, r.Kind))
+}
+
 func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string) {
 	// Per-run reporting scope so a terminal-failure Capture carries the run's log lines
 	// as breadcrumbs (as the bus/HTTP RecoveryMiddleware does per request).
@@ -24,19 +40,7 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 	log := w.logger.With(logKeyRunID, r.ID, shared.LogKeyRunKind, r.Kind, logKeyOwner, owner)
 	defer func() {
 		if rec := recover(); rec != nil {
-			log.LogAttrs(
-				workerCtx,
-				slog.LevelError,
-				"run worker: process panicked",
-				slog.Any(
-					shared.LogKeyPanic,
-					rec,
-				),
-				slog.String(shared.LogKeyStack, string(debug.Stack())),
-			)
-			w.reporter.Capture(workerCtx,
-				&shared.PanicError{Value: rec, Message: fmt.Sprintf("run process panic: %v", rec)},
-				slog.String(logKeyRunID, r.ID), slog.String(shared.LogKeyRunKind, r.Kind))
+			w.reportProcessPanic(workerCtx, log, r, rec)
 		}
 	}()
 

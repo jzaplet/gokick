@@ -434,6 +434,6 @@ func (s *deleteExpiredSpy) DeleteExpired(context.Context) error {
 
 // Compile-time guards: the spies must satisfy the real domain interfaces.
 var (
-	_ token.Repository = (*deleteExpiredSpy)(nil)
-	_ shared.DomainEvent    = rowVisibleEvent{}
+	_ token.Repository   = (*deleteExpiredSpy)(nil)
+	_ shared.DomainEvent = rowVisibleEvent{}
 )
