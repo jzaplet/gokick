@@ -30,6 +30,12 @@ func (noopDispatcher) Enqueue(context.Context, string, int, any, ...shared.Enque
 	return nil
 }
 
+// testEvent is a minimal shared.DomainEvent for the DispatchEvents-order test.
+type testEvent struct{}
+
+func (testEvent) EventName() string     { return "test.happened" }
+func (testEvent) OccurredAt() time.Time { return time.Unix(0, 0) }
+
 // newProductionCommandBus builds the CommandBus through the SAME provider the
 // binary uses (provideCommandBus), so the middleware chain under test cannot
 // drift from production the way a hand-assembled chain (or testfx.NewBuses,
@@ -171,6 +177,62 @@ func TestCommandBus_RunEnqueueJoinsBusinessTransaction(t *testing.T) {
 	}
 	if n := runCount(); n != 1 {
 		t.Fatalf("run enqueue must commit with the business tx, got %d run rows", n)
+	}
+}
+
+// F-028: DispatchEventsMiddleware wraps TransactionMiddleware, so an event a
+// handler Collects is dispatched to the EventBus ONLY after the business tx
+// commits, and is discarded on rollback. This ordering is the one chain invariant
+// not otherwise pinned through the assembled production chain — a reorder in
+// CommandChain compiles and passes every other test. A spy event handler counts
+// fires: the event must fire once on commit and never on rollback.
+func TestCommandBus_EventsDispatchOnCommitNotRollback(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "events_order.db"))
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	fired := 0
+	eventBus := provideEventBus(logger, []bus.EventHandlerEntry{
+		{Event: "test.happened", Handler: func(context.Context, shared.DomainEvent) error {
+			fired++
+			return nil
+		}},
+	}, shared.NopReporter{})
+	cmdBus := provideCommandBus(
+		logger,
+		fx.DB,
+		security.NewPermissionChecker(),
+		eventBus,
+		noopDispatcher{},
+		sqliteaudit.NewRepository(fx.DB),
+		shared.NopReporter{},
+		security.NewDefaultTenantResolver(),
+	)
+
+	// Rollback case: collect an event then fail → the handler must NOT fire.
+	_ = bus.ExecVoid(
+		ctx,
+		cmdBus.Bus,
+		"CollectThenFail",
+		skipPermCmd{},
+		func(ctx context.Context) error {
+			shared.EventCollectorFromContext(ctx).Collect(testEvent{})
+			return errors.New("boom")
+		},
+	)
+	if fired != 0 {
+		t.Fatalf("event must NOT dispatch when the business tx rolls back, fired=%d", fired)
+	}
+
+	// Commit case: collect an event then succeed → the handler fires exactly once.
+	if e := bus.ExecVoid(ctx, cmdBus.Bus, "CollectThenCommit", skipPermCmd{}, func(ctx context.Context) error {
+		shared.EventCollectorFromContext(ctx).Collect(testEvent{})
+		return nil
+	}); e != nil {
+		t.Fatalf("collect+commit: %v", e)
+	}
+	if fired != 1 {
+		t.Fatalf("event must dispatch exactly once on commit, fired=%d", fired)
 	}
 }
 
