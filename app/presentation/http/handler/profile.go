@@ -73,7 +73,7 @@ func (h *ProfileHandler) Get(w http.ResponseWriter, r *http.Request) {
 func (h *ProfileHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	var body changePasswordRequest
 	if err := request.DecodeJSON(w, r, &body); err != nil {
-		response.Error(w, http.StatusBadRequest, err)
+		response.HandleError(w, err)
 
 		return
 	}

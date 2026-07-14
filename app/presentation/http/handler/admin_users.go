@@ -93,7 +93,7 @@ func (h *AdminUsersHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *AdminUsersHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var body createUserRequest
 	if err := request.DecodeJSON(w, r, &body); err != nil {
-		response.Error(w, http.StatusBadRequest, err)
+		response.HandleError(w, err)
 
 		return
 	}
@@ -126,7 +126,7 @@ func (h *AdminUsersHandler) Create(w http.ResponseWriter, r *http.Request) {
 func (h *AdminUsersHandler) Update(w http.ResponseWriter, r *http.Request) {
 	var body updateUserRequest
 	if err := request.DecodeJSON(w, r, &body); err != nil {
-		response.Error(w, http.StatusBadRequest, err)
+		response.HandleError(w, err)
 
 		return
 	}

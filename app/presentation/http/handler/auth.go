@@ -83,7 +83,7 @@ type loginResponse struct {
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var body loginRequest
 	if err := request.DecodeJSON(w, r, &body); err != nil {
-		response.Error(w, http.StatusBadRequest, err)
+		response.HandleError(w, err)
 
 		return
 	}

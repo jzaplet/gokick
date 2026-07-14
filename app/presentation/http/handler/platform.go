@@ -165,7 +165,7 @@ func (h *PlatformHandler) Tenants(w http.ResponseWriter, r *http.Request) {
 func (h *PlatformHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	var body platformUserRequest
 	if err := request.DecodeJSON(w, r, &body); err != nil {
-		response.Error(w, http.StatusBadRequest, err)
+		response.HandleError(w, err)
 
 		return
 	}
