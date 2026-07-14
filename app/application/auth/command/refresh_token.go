@@ -101,24 +101,10 @@ func (h *RefreshTokenHandler) Handle(
 	// force-logout a legitimate client on retry (the old cookie would now read as
 	// reused). The new token is not handed to any client until this handler
 	// returns success, so nothing can present it during the Save→MarkUsed window.
-	accessToken, accessExpiresIn, err := h.jwt.GenerateAccessToken(&shared.AuthClaims{
-		UserID:   u.ID,
-		Role:     u.Role,
-		Nickname: u.Nickname,
-		Email:    u.Email,
-		TenantID: u.TenantID,
-	})
+	// issueSession's Save is its final write, so calling MarkUsed only after it
+	// returns keeps that Save-before-MarkUsed order intact.
+	res, err := issueSession(ctx, h.jwt, h.tokens, u)
 	if err != nil {
-		return LoginResult{}, err
-	}
-
-	rawRefresh, newHash, expiresAt, err := h.jwt.GenerateRefreshToken()
-	if err != nil {
-		return LoginResult{}, err
-	}
-
-	rt := token.NewRefreshToken(u.ID, newHash, expiresAt)
-	if err := h.tokens.Save(ctx, rt); err != nil {
 		return LoginResult{}, err
 	}
 
@@ -148,13 +134,7 @@ func (h *RefreshTokenHandler) Handle(
 		return LoginResult{}, h.revokeAllAsTheft(ctx, existing.UserID, "concurrent_rotation_race")
 	}
 
-	return LoginResult{
-		User:             *u,
-		AccessToken:      accessToken,
-		AccessExpiresIn:  accessExpiresIn,
-		RefreshToken:     rawRefresh,
-		RefreshExpiresAt: expiresAt,
-	}, nil
+	return res, nil
 }
 
 // revokeAllAsTheft audits a token-theft event and force-logs-out the user on

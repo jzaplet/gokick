@@ -132,44 +132,22 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (LoginResul
 	// raw pool (outside the bus tx) — analytics, never a reason to fail login.
 	_ = h.users.RecordLogin(ctx, u.ID)
 
-	accessToken, accessExpiresIn, err := h.jwt.GenerateAccessToken(&shared.AuthClaims{
-		UserID:   u.ID,
-		Role:     u.Role,
-		Nickname: u.Nickname,
-		Email:    u.Email,
-		TenantID: u.TenantID,
-	})
+	res, err := issueSession(ctx, h.jwt, h.tokens, u)
 	if err != nil {
-		return LoginResult{}, err
-	}
-
-	rawRefresh, hash, expiresAt, err := h.jwt.GenerateRefreshToken()
-	if err != nil {
-		return LoginResult{}, err
-	}
-
-	rt := token.NewRefreshToken(u.ID, hash, expiresAt)
-	if err := h.tokens.Save(ctx, rt); err != nil {
 		return LoginResult{}, err
 	}
 
 	// Record success only after the token is actually issued and saved.
 	// audit.md defines auth.login.succeeded as "po vydání tokenu" — emitting
-	// it before tokens.Save would log a success for a login that then failed
-	// on the save and returned an error to the caller.
+	// it before issueSession's Save would log a success for a login that then
+	// failed on the save and returned an error to the caller.
 	audit.Record(shared.AuditEvent{
 		Action:     "auth.login.succeeded",
 		TargetType: "user",
 		TargetID:   u.ID,
 	})
 
-	return LoginResult{
-		User:             *u,
-		AccessToken:      accessToken,
-		AccessExpiresIn:  accessExpiresIn,
-		RefreshToken:     rawRefresh,
-		RefreshExpiresAt: expiresAt,
-	}, nil
+	return res, nil
 }
 
 // handleFailedLogin records the auth.login.failed event, bumps the
