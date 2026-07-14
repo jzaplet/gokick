@@ -1,10 +1,33 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+// F-065: a malformed .env must fail fast at LoadConfig, not be silently swallowed
+// (indistinguishable from an absent .env). An absent .env stays fine (defaults).
+func TestLoadConfig_MalformedDotenvFails(t *testing.T) {
+	dir := t.TempDir()
+	// A line with no '=' separator — godotenv can't split key from value.
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("THIS_IS_NOT_A_PAIR\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	if _, err := LoadConfig(); err == nil || !strings.Contains(err.Error(), "invalid .env") {
+		t.Fatalf("expected an invalid .env error, got %v", err)
+	}
+}
+
+func TestLoadConfig_AbsentDotenvIsFine(t *testing.T) {
+	t.Chdir(t.TempDir()) // empty dir, no .env
+	if _, err := LoadConfig(); err != nil {
+		t.Fatalf("absent .env must not error, got %v", err)
+	}
+}
 
 // LoadConfig parses the APP_RUN_WORKER_* env vars onto the Config. No test exercised
 // this glue, so its parse + wrapped-error branches were dead. These do NOT use

@@ -43,6 +43,17 @@ func run() int {
 	slog.SetDefault(logger)
 	logger.Info("starting gokick", "version", version)
 
+	// LoadStartup couldn't log a malformed .env (no logger yet) — surface it now.
+	// A missing .env is silent (nil); only a parse failure lands here. LoadConfig
+	// will hard-fail on the same error a few lines down, so this is the early hint.
+	if startup.DotenvError != nil {
+		logger.Warn(
+			"failed to parse .env; using process env + defaults",
+			"error",
+			startup.DotenvError,
+		)
+	}
+
 	reporter, err := newErrorReporter(startup.SentryDSN, startup.SentryEnvironment, version)
 	if err != nil {
 		logger.Error("failed to initialize error reporter", "error", err)

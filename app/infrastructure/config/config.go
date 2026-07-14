@@ -82,7 +82,13 @@ type Config struct {
 }
 
 func LoadConfig() (*Config, error) {
-	_ = godotenv.Load()
+	// A missing .env is fine (real env / defaults); a MALFORMED one is a broken
+	// deploy config and fails fast here, consistent with every other LoadConfig
+	// validation. LoadStartup ran first and already surfaced the same parse error
+	// as a Warn before the logger existed — this is the authoritative hard stop.
+	if err := loadDotenv(); err != nil {
+		return nil, fmt.Errorf("invalid .env: %w", err)
+	}
 
 	config := &Config{
 		HTTPPort:               getEnv("APP_HTTP_PORT", "3000"),
@@ -178,13 +184,19 @@ type StartupConfig struct {
 	SentryDSN         string
 	SentryEnvironment string
 	SentryRelease     string
+	// DotenvError carries a malformed-.env parse error (nil when .env is absent or
+	// valid). LoadStartup runs before the logger exists, so it stashes the error
+	// here for main to Warn once the logger is built.
+	DotenvError error
 }
 
 // LoadStartup loads .env (best-effort) and reads the bootstrap configuration.
-// LoadConfig loads .env again later; godotenv.Load never overrides already-set
+// A malformed .env is stashed in DotenvError (not fatal here — the logger it
+// would be reported through doesn't exist yet). LoadConfig loads .env again later
+// and fails fast on the same parse error; godotenv never overrides already-set
 // vars, so the repeat is harmless.
 func LoadStartup() StartupConfig {
-	_ = godotenv.Load()
+	dotenvErr := loadDotenv()
 
 	return StartupConfig{
 		LogFormat:         getEnv("APP_LOG_FORMAT", ""),
@@ -192,7 +204,18 @@ func LoadStartup() StartupConfig {
 		SentryDSN:         getEnv("APP_SENTRY_DSN", ""),
 		SentryEnvironment: getEnv("APP_SENTRY_ENVIRONMENT", ""),
 		SentryRelease:     getEnv("APP_SENTRY_RELEASE", ""),
+		DotenvError:       dotenvErr,
 	}
+}
+
+// loadDotenv loads .env, treating an absent file as success (real env / defaults)
+// but returning a genuine parse error so callers can surface it — a malformed
+// .env must never be silently indistinguishable from an absent one.
+func loadDotenv() error {
+	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 func getEnv(key, fallback string) string {
