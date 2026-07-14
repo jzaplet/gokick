@@ -107,9 +107,11 @@ type debugRunView struct {
 
 func viewRun(rn *run.Run) debugRunView {
 	v := debugRunView{
-		ID:              rn.ID,
-		Kind:            rn.Kind,
-		Status:          runStatus(rn),
+		ID:   rn.ID,
+		Kind: rn.Kind,
+		// Derive the label from the domain method — the ONE terminal/lease-state
+		// derivation — instead of re-expressing the switch here.
+		Status:          rn.Status(time.Now()),
 		Attempts:        rn.Attempts,
 		Reclaims:        rn.Reclaims,
 		Parks:           rn.Parks,
@@ -120,21 +122,4 @@ func viewRun(rn *run.Run) debugRunView {
 		v.State = json.RawMessage(rn.State)
 	}
 	return v
-}
-
-// runStatus derives a coarse lifecycle status from the row's terminal/lease columns
-// — the same derivation the engine uses, just projected for the harness.
-func runStatus(rn *run.Run) string {
-	switch {
-	case rn.CompletedAt != nil:
-		return "completed"
-	case rn.FailedAt != nil:
-		return "failed"
-	case rn.CancelledAt != nil:
-		return "cancelled"
-	case rn.LockedUntil != nil && rn.LockedUntil.After(time.Now()):
-		return "running"
-	default:
-		return "pending"
-	}
 }

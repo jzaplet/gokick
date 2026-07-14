@@ -98,3 +98,34 @@ func NewRun(kind string, payload []byte, maxRetries int) (*Run, error) {
 		UpdatedAt:  now,
 	}, nil
 }
+
+// IsTerminal reports whether the run has reached a terminal state — one of the
+// three terminal timestamps is set. This is the domain mirror of the SQL
+// sqlite.NotTerminalClause (which encodes NOT IsTerminal); both express the one
+// terminal-state rule, from the entity's side and the query's side.
+func (r *Run) IsTerminal() bool {
+	return r.CompletedAt != nil || r.FailedAt != nil || r.CancelledAt != nil
+}
+
+// Status derives the observable lifecycle label from the row. The three terminal
+// labels come from the terminal timestamps (the IsTerminal rule); a lease still in
+// the future reads as "running", otherwise "pending".
+//
+// This is the ONE place the read path derives status — a presentation handler must
+// call it, not re-express the switch. NOTE: the running/pending split uses the
+// passed wall clock for an OBSERVATIONAL label only; lease/fencing DECISIONS in the
+// repo use the DB clock and the owner-checked fencing bool, never this.
+func (r *Run) Status(now time.Time) string {
+	switch {
+	case r.CompletedAt != nil:
+		return "completed"
+	case r.FailedAt != nil:
+		return "failed"
+	case r.CancelledAt != nil:
+		return "cancelled"
+	case r.LockedUntil != nil && r.LockedUntil.After(now):
+		return "running"
+	default:
+		return "pending"
+	}
+}

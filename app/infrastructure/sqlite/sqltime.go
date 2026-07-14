@@ -16,6 +16,14 @@ const NowExpr = `strftime('%Y-%m-%d %H:%M:%f', 'now')`
 // in one place for every fenced queue.
 const LeaseExpr = `strftime('%Y-%m-%d %H:%M:%f', julianday('now') + ? / 86400.0)`
 
+// NotTerminalClause is the SQL predicate for a run that has NOT reached a terminal
+// state — none of the three terminal timestamps is set. It is the single source of
+// the terminal-state rule shared by every run query (claim, renew, checkpoint,
+// finalizers) so the derivation can't drift across the ~9 call sites, exactly like
+// NowExpr/LeaseExpr. Bare column names (no table alias): it slots into a WHERE on
+// the runs table. The domain mirror for the read path is run.Run.IsTerminal.
+const NotTerminalClause = `completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL`
+
 // RowsAffectedBool turns a conditional UPDATE result into the exactly-one-row
 // bool: (true, nil) iff exactly one row was affected, (false, nil) when zero rows
 // matched (contention lost / terminal — NOT an error), (false, err) on a real

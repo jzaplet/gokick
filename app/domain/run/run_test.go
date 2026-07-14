@@ -3,7 +3,43 @@ package run
 import (
 	"errors"
 	"testing"
+	"time"
 )
+
+// F-100: the terminal/lease-state derivation has one domain source (Status /
+// IsTerminal), mirroring the SQL sqlite.NotTerminalClause. The read path calls it
+// instead of re-expressing the switch.
+func TestRun_StatusAndIsTerminal(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	ptr := func(t time.Time) *time.Time { return &t }
+	future, past := ptr(now.Add(time.Hour)), ptr(now.Add(-time.Hour))
+
+	cases := []struct {
+		name     string
+		run      Run
+		want     string
+		terminal bool
+	}{
+		{"completed", Run{CompletedAt: past}, "completed", true},
+		{"failed", Run{FailedAt: past}, "failed", true},
+		{"cancelled", Run{CancelledAt: past}, "cancelled", true},
+		{"running (live lease)", Run{LockedUntil: future}, "running", false},
+		{"pending (no lease)", Run{}, "pending", false},
+		{"pending (expired lease)", Run{LockedUntil: past}, "pending", false},
+		// Terminal wins over a live lease (a completed run that still shows a lease).
+		{"completed beats lease", Run{CompletedAt: past, LockedUntil: future}, "completed", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.run.Status(now); got != tc.want {
+				t.Errorf("Status = %q, want %q", got, tc.want)
+			}
+			if got := tc.run.IsTerminal(); got != tc.terminal {
+				t.Errorf("IsTerminal = %v, want %v", got, tc.terminal)
+			}
+		})
+	}
+}
 
 // NewRun owns the construction invariants so no enqueue path (dispatcher,
 // debug_run, or any future caller) can persist a Run that violates them —
