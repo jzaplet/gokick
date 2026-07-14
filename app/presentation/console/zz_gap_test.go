@@ -101,7 +101,7 @@ func serveTestServer(logger *slog.Logger) *server.Server {
 		Refresh: middleware.NewRateLimiter(rule, extract, logger),
 	}
 	return server.NewServer(
-		&config.Config{HTTPPort: "0", CookieSecure: false, CORSOrigin: "*"},
+		&config.Config{HTTPPort: "0", CookieSecure: false, CORSOrigin: "https://app.example.com"},
 		logger,
 		shared.NopReporter{},
 		nil, // jwt — only used by registerRoutes' AuthMiddleware wrapper, never invoked

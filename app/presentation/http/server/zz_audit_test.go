@@ -152,7 +152,7 @@ func routingServer(t *testing.T) *Server {
 	rule := middleware.RateRule{Tokens: 1000, Per: time.Minute}
 
 	return &Server{
-		config:    &config.Config{CookieSecure: false, CORSOrigin: "*"},
+		config:    &config.Config{CookieSecure: false, CORSOrigin: "https://app.example.com"},
 		logger:    logger,
 		reporter:  shared.NopReporter{},
 		jwt:       jwt,

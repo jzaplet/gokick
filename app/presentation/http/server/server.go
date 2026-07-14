@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -254,6 +255,17 @@ func (s *Server) registerRoutes() *http.ServeMux {
 
 func (s *Server) buildMiddlewareChain(handler http.Handler) http.Handler {
 	csrf := &http.CrossOriginProtection{}
+	// CORS and CSRF must agree on the one allowed cross-origin browser client:
+	// CORSMiddleware advertises s.config.CORSOrigin, so the same origin is
+	// registered as CSRF-trusted — without this, a write from the CORS-allowed
+	// origin would still be 403'd by CrossOriginProtection (Sec-Fetch-Site:
+	// cross-site). The origin shape is validated fail-fast in LoadConfig, so an
+	// error here is impossible by construction; the panic keeps the impossible
+	// loud at startup rather than silently shipping a broken pairing.
+	if err := csrf.AddTrustedOrigin(s.config.CORSOrigin); err != nil {
+		panic(fmt.Sprintf("CORS origin %q rejected as CSRF trusted origin: %v",
+			s.config.CORSOrigin, err))
+	}
 
 	// Order: Trace → IP → ReportScope → Recovery → Security headers → CORS →
 	// CSRF → Logging (→ handler). HSTS is only emitted in production (gated on

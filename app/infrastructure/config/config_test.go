@@ -123,3 +123,45 @@ func TestLoadConfig_StrictBool_ParsesBothLiterals(t *testing.T) {
 		t.Fatal("APP_COOKIE_SECURE=false must parse false")
 	}
 }
+
+// F-069: APP_CORS_ORIGIN must be one concrete scheme://host[:port] origin.
+// CORSMiddleware always sends Allow-Credentials: true, so a wildcard (or an
+// empty/malformed value) is a broken deploy config and must fail at load.
+func TestLoadConfig_RejectsBadCORSOrigin(t *testing.T) {
+	for _, origin := range []string{
+		"*",
+		"null",
+		"example.com",             // no scheme
+		"ftp://example.com",       // non-http(s) scheme
+		"http://example.com/app",  // path
+		"http://example.com/",     // trailing slash is a path
+		"http://example.com?q=1",  // query
+		"http://user@example.com", // credentials
+	} {
+		t.Run(origin, func(t *testing.T) {
+			t.Setenv("APP_CORS_ORIGIN", origin)
+			if _, err := LoadConfig(); err == nil ||
+				!strings.Contains(err.Error(), "APP_CORS_ORIGIN") {
+				t.Fatalf("expected an APP_CORS_ORIGIN error for %q, got %v", origin, err)
+			}
+		})
+	}
+}
+
+func TestLoadConfig_AcceptsConcreteCORSOrigin(t *testing.T) {
+	for _, origin := range []string{
+		"http://localhost:5173",
+		"https://app.example.com",
+	} {
+		t.Run(origin, func(t *testing.T) {
+			t.Setenv("APP_CORS_ORIGIN", origin)
+			cfg, err := LoadConfig()
+			if err != nil {
+				t.Fatalf("a concrete origin must load, got %v", err)
+			}
+			if cfg.CORSOrigin != origin {
+				t.Fatalf("CORSOrigin = %q, want %q", cfg.CORSOrigin, origin)
+			}
+		})
+	}
+}

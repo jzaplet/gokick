@@ -89,6 +89,54 @@ func TestBuildMiddlewareChain_CSRFBlocksCrossSitePOST(t *testing.T) {
 			t.Fatal("terminal handler did not run on a same-origin POST — chain over-blocked")
 		}
 	})
+
+	// F-069: the CORS-allowed origin is also CSRF-trusted. The same cross-site
+	// POST that is rejected above must pass once its Origin is the configured
+	// CORS origin (chainOnlyServer sets https://app.example.com) — CORS and CSRF
+	// agree on the one allowed cross-origin browser client. A different origin
+	// stays rejected, so the trust is per-origin, not a blanket cross-site allow.
+	t.Run("cross-site POST from the CORS origin allowed", func(t *testing.T) {
+		chain, reached := newChain()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users", nil)
+		req.RemoteAddr = "203.0.113.7:5555"
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		req.Header.Set("Origin", "https://app.example.com")
+		rec := httptest.NewRecorder()
+		chain.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf(
+				"cross-site POST from the CORS origin: got %d want 200 — "+
+					"CORSOrigin is not registered as a CSRF trusted origin; body=%s",
+				rec.Code,
+				rec.Body.String(),
+			)
+		}
+		if !*reached {
+			t.Fatal("terminal handler did not run on a POST from the CORS-allowed origin")
+		}
+	})
+
+	t.Run("cross-site POST from another origin still rejected", func(t *testing.T) {
+		chain, reached := newChain()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users", nil)
+		req.RemoteAddr = "203.0.113.7:5555"
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		req.Header.Set("Origin", "https://evil.example.com")
+		rec := httptest.NewRecorder()
+		chain.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf(
+				"cross-site POST from an untrusted origin: got %d want 403; body=%s",
+				rec.Code,
+				rec.Body.String(),
+			)
+		}
+		if *reached {
+			t.Fatal("terminal handler ran for an untrusted cross-site origin")
+		}
+	})
 }
 
 // TestServer_SPAFallbackServesIndexForUnknownPath drives a request the whole way through
@@ -168,7 +216,7 @@ func boundServer(t *testing.T) (*Server, *testfx.Fixture) {
 	)
 
 	s := &Server{
-		config:    &config.Config{CookieSecure: false, CORSOrigin: "*"},
+		config:    &config.Config{CookieSecure: false, CORSOrigin: "https://app.example.com"},
 		logger:    logger,
 		reporter:  shared.NopReporter{},
 		jwt:       fx.Jwt,

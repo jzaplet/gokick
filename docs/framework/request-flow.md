@@ -31,7 +31,7 @@ Middleware se uplatní v pořadí, v jakém jsou v seznamu — **první obaluje 
 4. **Recovery** — `recover()` zachytí paniku → log + Sentry → generický 500 (stack trace se ke klientovi nedostane).
 5. **Security** — CSP, HSTS (na HTTPS), `X-Frame-Options: DENY`, … (cíl A+ na securityheaders.com).
 6. **CORS** — `Access-Control-*` podle `APP_CORS_ORIGIN`, preflight `OPTIONS` → 204.
-7. **CSRF** — `http.CrossOriginProtection` (Go 1.25 stdlib) přes `Sec-Fetch-Site`.
+7. **CSRF** — `http.CrossOriginProtection` (Go 1.25 stdlib) přes `Sec-Fetch-Site`; `APP_CORS_ORIGIN` je registrovaný jako důvěryhodný origin (`AddTrustedOrigin`), takže CORS-povolený klient projde i zápisem.
 8. **Logging** — po doběhnutí jeden access řádek: status, bytes, `duration_ms`.
 9. **Per-route** — `RateLimit` (login/refresh) a `JWT Auth` se vážou jen na vybrané endpointy.
 

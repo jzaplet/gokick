@@ -42,7 +42,7 @@ Sémantickou validaci dělají konzumenti:
 |---|---|---|
 | `APP_HTTP_PORT` | `3000` | Port, na kterém naslouchá HTTP server (`./bin/app serve`). V `docker-compose.yml` ho OrbStack přes `dev.orbstack.http-port` forwarduje na **`https://$APP_DOMAIN`** (žádný host port mapping). |
 | `APP_DOMAIN` | `gokick.local` | OrbStack dev doména pro `docker-compose` (jen compose, ne `make serve`). Jedna proměnná na projekt: app jede na `https://$APP_DOMAIN`, docs odvozeně na `https://docs.$APP_DOMAIN`. |
-| `APP_CORS_ORIGIN` | `http://localhost:5173` | Jediný povolený origin pro CORS (Vite dev server). V produkci nastav na doménu SPA. |
+| `APP_CORS_ORIGIN` | `http://localhost:5173` | Jediný povolený origin pro CORS (Vite dev server). V produkci nastav na doménu SPA. Musí to být přesně jeden konkrétní origin tvaru `scheme://host[:port]` — `*`, prázdná hodnota, cesta nebo query selžou při startu (CORS odpovídá s `Allow-Credentials: true`, a credentialed CORS wildcard zakazuje). Stejný origin server registruje i jako důvěryhodný pro CSRF, takže CORS a CSRF souhlasí. |
 
 Čteno přes `Config` struct.
 

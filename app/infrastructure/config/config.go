@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"time"
@@ -106,6 +107,10 @@ func LoadConfig() (*Config, error) {
 		RateLimitRefresh:       getEnv("APP_RATE_LIMIT_REFRESH", "60/min"),
 		FrontendSentryDSN:      getEnv("APP_SENTRY_DSN_FRONTEND", ""),
 		SentryEnvironment:      getEnv("APP_SENTRY_ENVIRONMENT", ""),
+	}
+
+	if err := validateCORSOrigin(config.CORSOrigin); err != nil {
+		return nil, err
 	}
 
 	var err error
@@ -251,6 +256,33 @@ func getEnvInt(key string, fallback int) (int, error) {
 		return fallback, nil
 	}
 	return strconv.Atoi(v)
+}
+
+// validateCORSOrigin enforces that APP_CORS_ORIGIN is one concrete origin of the
+// exact scheme://host[:port] shape. CORSMiddleware always answers with
+// Access-Control-Allow-Credentials: true, and credentialed CORS forbids a
+// wildcard — "*" (or an empty/relative/path-carrying value) would either be
+// rejected by browsers or silently break the CORS↔CSRF pairing, so a bad value
+// is a broken deploy config and fails fast at startup. The same value is
+// registered as a CSRF trusted origin (server.buildMiddlewareChain), which
+// requires this exact shape too.
+func validateCORSOrigin(origin string) error {
+	if origin == "" || origin == "*" {
+		return fmt.Errorf(
+			"APP_CORS_ORIGIN must be one concrete origin (scheme://host[:port]), got %q: "+
+				"credentialed CORS (Allow-Credentials: true) forbids a wildcard", origin)
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return fmt.Errorf("invalid APP_CORS_ORIGIN %q: %w", origin, err)
+	}
+	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+		u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+		return fmt.Errorf(
+			"invalid APP_CORS_ORIGIN %q: must be exactly scheme://host[:port] with an http(s) "+
+				"scheme and no path, query, fragment or credentials", origin)
+	}
+	return nil
 }
 
 // getEnvBool reads a strict boolean env var: only "true" or "false" are accepted.
