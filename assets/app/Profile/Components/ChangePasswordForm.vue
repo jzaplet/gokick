@@ -66,10 +66,8 @@ const handleSubmit = async (): Promise<void> => {
                 name="old_password"
                 type="password"
                 label="Current password"
-                :error="errors.old_password"
                 required
                 :disabled="isLoading"
-                @update:model-value="() => clearFieldError('old_password')"
             />
 
             <Input
