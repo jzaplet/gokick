@@ -56,7 +56,11 @@ func (h *DebugRunHandler) Enqueue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	rn := run.NewRun(r.PathValue("kind"), payload, maxRetries)
+	rn, err := run.NewRun(r.PathValue("kind"), payload, maxRetries)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, err)
+		return
+	}
 	if err := h.runs.Enqueue(r.Context(), rn); err != nil {
 		response.HandleError(w, err)
 		return

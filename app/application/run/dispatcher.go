@@ -29,6 +29,11 @@ func (d *Dispatcher) Enqueue(
 	payload any,
 	opts ...shared.EnqueueOption,
 ) error {
+	// Validate the RunDispatcher API contract at this service boundary: a rich,
+	// operation-named error and an early exit before marshaling. run.NewRun
+	// re-enforces the same maxRetries/kind invariant as the entity's own
+	// unbypassable chokepoint (a second enqueue path, debug_run, exists) — this
+	// check is the friendly front door, not the guard.
 	if maxRetries < 0 {
 		return fmt.Errorf("run: Enqueue(%q) requires maxRetries >= 0 (got %d)", kind, maxRetries)
 	}
@@ -46,7 +51,10 @@ func (d *Dispatcher) Enqueue(
 		return fmt.Errorf("run: marshal payload for kind %q: %w", kind, err)
 	}
 
-	r := run.NewRun(kind, raw, maxRetries)
+	r, err := run.NewRun(kind, raw, maxRetries)
+	if err != nil {
+		return fmt.Errorf("run: construct %q: %w", kind, err)
+	}
 	// Stamp the tenant from the enqueuing context so the worker can restore it for
 	// the handler (the worker bypasses the bus). The empty case (a non-bus enqueue)
 	// is resolved fail-closed by the repo (RequireTenant): default in single-tenant,

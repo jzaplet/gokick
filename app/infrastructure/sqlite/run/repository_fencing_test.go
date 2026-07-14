@@ -14,7 +14,7 @@ import (
 
 func enqueueRunPayload(t *testing.T, fx *testfx.Fixture, payload string) *run.Run {
 	t.Helper()
-	r := run.NewRun("agent", []byte(payload), 3)
+	r, _ := run.NewRun("agent", []byte(payload), 3)
 	if err := fx.Runs.Enqueue(context.Background(), r); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
@@ -23,7 +23,7 @@ func enqueueRunPayload(t *testing.T, fx *testfx.Fixture, payload string) *run.Ru
 
 func enqueueRunInTenant(t *testing.T, fx *testfx.Fixture, tenantID string) *run.Run {
 	t.Helper()
-	r := run.NewRun("agent", []byte(`{}`), 3)
+	r, _ := run.NewRun("agent", []byte(`{}`), 3)
 	r.TenantID = tenantID
 	if err := fx.Runs.Enqueue(context.Background(), r); err != nil {
 		t.Fatalf("enqueue: %v", err)

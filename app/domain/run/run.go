@@ -11,9 +11,18 @@
 package run
 
 import (
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
+)
+
+// Construction invariants, enforced by NewRun so no caller can persist a Run
+// that violates them (the dispatcher is not the only enqueue path — debug_run
+// and any future caller go through NewRun too).
+var (
+	ErrEmptyKind       = errors.New("run: kind must not be empty")
+	ErrNegativeRetries = errors.New("run: maxRetries must be >= 0")
 )
 
 // Run is a persisted unit of durable long-running work. State is DERIVED from
@@ -68,9 +77,16 @@ type Run struct {
 }
 
 // NewRun constructs a fresh pending Run with a uuid id, RunAt=now, and zero
-// attempts/reclaims. maxRetries must be >= 0 (validated by the dispatcher); it
-// caps logic retries only, never crash reclaims.
-func NewRun(kind string, payload []byte, maxRetries int) *Run {
+// attempts/reclaims. It enforces the construction invariants (non-empty kind,
+// maxRetries >= 0) so an invalid Run can never be persisted, whatever the
+// enqueue path. maxRetries caps logic retries only, never crash reclaims.
+func NewRun(kind string, payload []byte, maxRetries int) (*Run, error) {
+	if kind == "" {
+		return nil, ErrEmptyKind
+	}
+	if maxRetries < 0 {
+		return nil, ErrNegativeRetries
+	}
 	now := time.Now()
 	return &Run{
 		ID:         uuid.Must(uuid.NewV7()).String(),
@@ -80,5 +96,5 @@ func NewRun(kind string, payload []byte, maxRetries int) *Run {
 		MaxRetries: maxRetries,
 		CreatedAt:  now,
 		UpdatedAt:  now,
-	}
+	}, nil
 }

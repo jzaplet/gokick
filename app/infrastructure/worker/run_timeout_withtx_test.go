@@ -56,7 +56,8 @@ func TestRunWorker_HandlerWithTx_CommitsChildWrite(t *testing.T) {
 	fx := testfx.New(t, t.TempDir()+"/rw_withtx_commit.db")
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		return shared.WithTx(ctx, func(txCtx context.Context) error {
-			return fx.Runs.Enqueue(txCtx, run.NewRun("withtx.child", []byte(`{}`), 0))
+			child, _ := run.NewRun("withtx.child", []byte(`{}`), 0)
+			return fx.Runs.Enqueue(txCtx, child)
 		})
 	}
 	reg, err := runapp.NewHandlerRegistry(map[string]runapp.Registration{
@@ -86,7 +87,8 @@ func TestRunWorker_HandlerWithTx_RollsBackOnError(t *testing.T) {
 	boom := errors.New("fail after the write")
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		return shared.WithTx(ctx, func(txCtx context.Context) error {
-			if e := fx.Runs.Enqueue(txCtx, run.NewRun("withtx.rbchild", []byte(`{}`), 0)); e != nil {
+			rbchild, _ := run.NewRun("withtx.rbchild", []byte(`{}`), 0)
+			if e := fx.Runs.Enqueue(txCtx, rbchild); e != nil {
 				return e
 			}
 			return boom // roll the child enqueue back with the tx
