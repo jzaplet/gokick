@@ -57,3 +57,28 @@ func TestLoadConfig_RunWorker_InvalidIntFails(t *testing.T) {
 		t.Fatalf("expected a wrapped invalid-int error, got %v", err)
 	}
 }
+
+// F-050: a boolean typo must fail fast, not silently coerce to false (which for
+// APP_COOKIE_SECURE would ship insecure cookies).
+func TestLoadConfig_StrictBool_RejectsTypo(t *testing.T) {
+	t.Setenv("APP_COOKIE_SECURE", "ture")
+	_, err := LoadConfig()
+	if err == nil || !strings.Contains(err.Error(), "APP_COOKIE_SECURE") {
+		t.Fatalf("expected a strict-bool error naming the key, got %v", err)
+	}
+}
+
+func TestLoadConfig_StrictBool_ParsesBothLiterals(t *testing.T) {
+	t.Setenv("APP_MULTITENANCY", "true")
+	t.Setenv("APP_COOKIE_SECURE", "false")
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Multitenancy != true {
+		t.Fatal("APP_MULTITENANCY=true must parse true")
+	}
+	if cfg.CookieSecure != false {
+		t.Fatal("APP_COOKIE_SECURE=false must parse false")
+	}
+}

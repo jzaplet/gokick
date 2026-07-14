@@ -90,21 +90,35 @@ func LoadConfig() (*Config, error) {
 		DBJournalMode:          getEnv("APP_DB_JOURNAL_MODE", "WAL"),
 		JWTSecret:              getEnv("APP_JWT_SECRET", ""),
 		CORSOrigin:             getEnv("APP_CORS_ORIGIN", "http://localhost:5173"),
-		CookieSecure:           getEnv("APP_COOKIE_SECURE", "true") == "true",
 		SeedAdminPassword:      getEnv("APP_SEED_ADMIN_PASSWORD", ""),
 		SeedSuperAdminPassword: getEnv("APP_SEED_SUPERADMIN_PASSWORD", ""),
 		SeedAdminTenant:        getEnv("APP_SEED_ADMIN_TENANT", "Tenant 1"),
-		TrustProxyHeaders:      getEnv("APP_TRUST_PROXY_HEADERS", "false") == "true",
-		Multitenancy:           getEnv("APP_MULTITENANCY", "false") == "true",
 		RateLimitLogin:         getEnv("APP_RATE_LIMIT_LOGIN", "10/min"),
 		RateLimitRefresh:       getEnv("APP_RATE_LIMIT_REFRESH", "60/min"),
 		FrontendSentryDSN:      getEnv("APP_SENTRY_DSN_FRONTEND", ""),
 		SentryEnvironment:      getEnv("APP_SENTRY_ENVIRONMENT", ""),
-		SentryDebug:            getEnv("APP_SENTRY_DEBUG", "false") == "true",
-		RunDebug:               getEnv("APP_RUN_DEBUG", "false") == "true",
 	}
 
 	var err error
+
+	// Booleans are parsed strictly (getEnvBool): a typo fails fast instead of
+	// silently coercing to false — for APP_COOKIE_SECURE that would ship insecure
+	// cookies + drop HSTS unnoticed.
+	for _, b := range []struct {
+		dst *bool
+		key string
+		def bool
+	}{
+		{&config.CookieSecure, "APP_COOKIE_SECURE", true},
+		{&config.TrustProxyHeaders, "APP_TRUST_PROXY_HEADERS", false},
+		{&config.Multitenancy, "APP_MULTITENANCY", false},
+		{&config.SentryDebug, "APP_SENTRY_DEBUG", false},
+		{&config.RunDebug, "APP_RUN_DEBUG", false},
+	} {
+		if *b.dst, err = getEnvBool(b.key, b.def); err != nil {
+			return nil, err
+		}
+	}
 
 	config.JWTAccessExpiration, err = time.ParseDuration(getEnv("APP_JWT_ACCESS_EXPIRATION", "15m"))
 	if err != nil {
@@ -185,4 +199,20 @@ func getEnvInt(key string, fallback int) (int, error) {
 		return fallback, nil
 	}
 	return strconv.Atoi(v)
+}
+
+// getEnvBool reads a strict boolean env var: only "true" or "false" are accepted.
+// Any other non-empty value is an error, so a typo fails fast at load rather than
+// silently coercing to false (the trap the old `== "true"` had).
+func getEnvBool(key string, fallback bool) (bool, error) {
+	switch os.Getenv(key) {
+	case "":
+		return fallback, nil
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, fmt.Errorf("%s must be \"true\" or \"false\"", key)
+	}
 }
