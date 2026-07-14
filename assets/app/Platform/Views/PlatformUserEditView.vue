@@ -1,34 +1,34 @@
 <script setup lang="ts">
 import type { PlatformUser } from '@/app/Platform/types/PlatformUser';
-import type { UserFormData } from '@/app/Admin/types/UserFormData';
-import type { UserFormErrors } from '@/app/Admin/types/UserFormErrors';
+import type { PlatformUserFormData } from '@/app/Platform/types/PlatformUserFormData';
+import type { PlatformUserFormErrors } from '@/app/Platform/types/PlatformUserFormErrors';
 import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { authFetch } from '@/app-ui/Auth';
 import { useToast } from '@/app-ui/Toast/useToast';
 import Spinner from '@/app-ui/Loading/Spinner.vue';
-import UserForm from '@/app/Admin/Components/UserForm.vue';
+import PlatformUserForm from '@/app/Platform/Components/PlatformUserForm.vue';
 
 const router = useRouter();
 const route = useRoute();
 const { success, error } = useToast();
 
 const userId = String(route.params['id']);
-const initial = ref<UserFormData | null>(null);
-const errors = ref<UserFormErrors>({});
+const initial = ref<PlatformUserFormData | null>(null);
+const errors = ref<PlatformUserFormErrors>({});
 const isLoading = ref(false);
 const isFetching = ref(true);
 
-const clearFieldError = (field: keyof UserFormErrors): void => {
+const clearFieldError = (field: keyof PlatformUserFormErrors): void => {
     // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- optional key removal is the intended API
     delete errors.value[field];
 };
 
-const handleSubmit = async (data: UserFormData): Promise<void> => {
+const handleSubmit = async (data: PlatformUserFormData): Promise<void> => {
     isLoading.value = true;
     errors.value = {};
 
-    const result = await authFetch<null, UserFormErrors>(
+    const result = await authFetch<null, PlatformUserFormErrors>(
         'PUT',
         `/api/v1/platform/users/${userId}`,
         { body: data },
@@ -87,7 +87,7 @@ onMounted(async (): Promise<void> => {
                 <Spinner />
             </div>
 
-            <UserForm
+            <PlatformUserForm
                 v-else-if="initial !== null"
                 mode="edit"
                 submit-label="Save"
