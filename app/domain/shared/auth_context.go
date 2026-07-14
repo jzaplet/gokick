@@ -13,12 +13,10 @@ type AuthClaims struct {
 	TenantID string
 }
 
-type authClaimsKeyType struct{}
-
-var authClaimsKey = authClaimsKeyType{}
+type authClaimsKey struct{}
 
 func ClaimsFromContext(ctx context.Context) *AuthClaims {
-	claims, _ := ctx.Value(authClaimsKey).(*AuthClaims)
+	claims, _ := ctx.Value(authClaimsKey{}).(*AuthClaims)
 	return claims
 }
 
@@ -36,5 +34,5 @@ func RequireClaims(ctx context.Context) (*AuthClaims, error) {
 }
 
 func ContextWithClaims(ctx context.Context, claims *AuthClaims) context.Context {
-	return context.WithValue(ctx, authClaimsKey, claims)
+	return context.WithValue(ctx, authClaimsKey{}, claims)
 }

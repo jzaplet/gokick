@@ -130,6 +130,10 @@ kontexty jsou vyjmenované ručně.
   musí přežít rollback — `RecordFailedLogin`/`ResetFailedLogin`
   (`app/infrastructure/sqlite/user/repository.go`) a audit
   (`app/infrastructure/sqlite/audit/repository.go`).
+- **Context klíče: `type xxxKey struct{}` + `xxxKey{}`** — nový klíč do `context`
+  (v `domain/shared`) se deklaruje jako prázdný typ a používá jako literál
+  `xxxKey{}` v `context.WithValue` / `ctx.Value`. Ne přes pomocnou `var xxxKey =
+  xxxKeyType{}` (delší, tváří se mutable). Jeden styl napříč balíčkem.
 - **Eventy nesou jen primitivy** (string ID, timestamp), nikdy celé entity.
 - **Nový kontext = editace `.go-arch-lint.yml`.** Není tam `domain/**` catch-all
   schválně — bez ručního zápisu komponenty `make arch-check` spadne.
