@@ -7,8 +7,6 @@ import (
 	"gokick/app/domain/shared"
 	"gokick/app/domain/token"
 	"gokick/app/domain/user"
-
-	"github.com/google/uuid"
 )
 
 type LoginCommand struct {
@@ -150,13 +148,7 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (LoginResul
 		return LoginResult{}, err
 	}
 
-	rt := &token.RefreshToken{
-		ID:        uuid.New().String(),
-		UserID:    u.ID,
-		TokenHash: hash,
-		ExpiresAt: expiresAt,
-		CreatedAt: time.Now(),
-	}
+	rt := token.NewRefreshToken(u.ID, hash, expiresAt)
 	if err := h.tokens.Save(ctx, rt); err != nil {
 		return LoginResult{}, err
 	}

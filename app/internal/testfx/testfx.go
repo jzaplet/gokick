@@ -25,8 +25,6 @@ import (
 	sqlitetenant "gokick/app/infrastructure/sqlite/tenant"
 	sqlitetoken "gokick/app/infrastructure/sqlite/token"
 	sqliteuser "gokick/app/infrastructure/sqlite/user"
-
-	"github.com/google/uuid"
 )
 
 type Fixture struct {
@@ -292,13 +290,7 @@ func (f *Fixture) SeedRefreshToken(t *testing.T, userID string, expiresAt time.T
 	if err != nil {
 		t.Fatalf("generate refresh: %v", err)
 	}
-	rt := &token.RefreshToken{
-		ID:        uuid.New().String(),
-		UserID:    userID,
-		TokenHash: hash,
-		ExpiresAt: expiresAt,
-		CreatedAt: time.Now(),
-	}
+	rt := token.NewRefreshToken(userID, hash, expiresAt)
 	if err := f.Tokens.Save(context.Background(), rt); err != nil {
 		t.Fatalf("save token: %v", err)
 	}
