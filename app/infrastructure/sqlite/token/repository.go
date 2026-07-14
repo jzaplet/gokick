@@ -55,9 +55,10 @@ func (r *Repository) DeleteByUserID(ctx context.Context, userID string) error {
 }
 
 func (r *Repository) DeleteExpired(ctx context.Context) error {
-	// datetime() wraps expires_at because Go time.Time serializes with a
-	// timezone offset that doesn't lex-compare to SQLite's UTC datetime('now').
+	// julianday() wraps expires_at because Go time.Time serializes with a
+	// timezone offset that doesn't lex-compare to SQLite's UTC clock format —
+	// julianday is the repo-wide datetime comparison idiom (sqlite/sqltime.go).
 	_, err := r.Conn(ctx).
-		ExecContext(ctx, `DELETE FROM refresh_tokens WHERE datetime(expires_at) < datetime('now')`)
+		ExecContext(ctx, `DELETE FROM refresh_tokens WHERE julianday(expires_at) < julianday('now')`)
 	return err
 }

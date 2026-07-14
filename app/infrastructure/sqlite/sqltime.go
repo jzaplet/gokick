@@ -2,6 +2,19 @@ package sqlite
 
 import "database/sql"
 
+// Time discipline for DATETIME (TEXT) columns — the invariant the zz_sqltime
+// gate enforces:
+//
+// Datetime columns hold TWO text encodings. Rows written from Go carry RFC3339
+// ("2026-07-14T10:00:00.123Z" — 'T' separator, 'Z' suffix); rows stamped by the
+// DB clock (NowExpr / LeaseExpr) carry SQLite's own format
+// ("2026-07-14 10:00:00.123" — space separator, no timezone). The two do NOT
+// compare as raw strings ('T' sorts above ' '), so a bare-column relational
+// comparison or ORDER BY silently misorders mixed rows. Compare and order
+// datetime columns ONLY via julianday(col) — never as raw text, and never via
+// datetime(col) either, so the repo keeps exactly one comparison idiom
+// (millisecond-precise and encoding-agnostic).
+
 // NowExpr writes the DB clock at millisecond precision (completed_at / failed_at /
 // cancelled_at / updated_at and other DB-sourced timestamps). It is the SQL-side
 // companion to MsPrecisionUTC: shared by the durable-queue repos so the write-clock
