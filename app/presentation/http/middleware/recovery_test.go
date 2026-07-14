@@ -54,6 +54,34 @@ func TestRecoveryMiddleware_PanicYields500AndReports(t *testing.T) {
 	}
 }
 
+// F-073: a panic AFTER the response has started must NOT corrupt the in-flight
+// body. The handler writes a 200 + partial body, then panics — Recovery still
+// logs + reports, but must not re-write (which would append the 500 JSON to the
+// partial). Without the wrote-header guard, the body would be corrupted.
+func TestRecoveryMiddleware_PanicAfterResponseStarted_DoesNotCorrupt(t *testing.T) {
+	t.Parallel()
+	rep := &recordingReporter{}
+	h := RecoveryMiddleware(slog.New(slog.NewTextHandler(io.Discard, nil)), rep)(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"partial":`))
+			panic("boom mid-write")
+		}))
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
+
+	// The body stays exactly the partial the handler wrote — the 500 JSON was NOT
+	// appended (the guard skipped the re-write).
+	if body := rec.Body.String(); body != `{"partial":` {
+		t.Fatalf("mid-write panic must not append the 500 body, got %q", body)
+	}
+	// The panic is still reported, never silently lost.
+	if rep.count != 1 {
+		t.Fatalf("reporter must still capture the mid-write panic once, got %d", rep.count)
+	}
+}
+
 // The reporter receives a fixed whitelist — method, request PATH (no query),
 // User-Agent — and nothing else from the request. The query string is dropped
 // outright (a ?token=… param would otherwise leak), and Authorization and Cookie
