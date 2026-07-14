@@ -21,6 +21,13 @@ type Repository interface {
 	// propagate. Each caller maps a nil user to its own response (400 for an admin
 	// editing a stale id, 401/force-logout for a vanished authenticated user).
 	FindByID(ctx context.Context, id string) (*User, error)
+	// FindScopedByID is the tenant-SCOPED by-id read behind the admin read-one
+	// endpoint (GET /admin/users/{id}). Unlike FindByID — an identity load that is
+	// tenant-exempt on purpose (auth JWT subject, cross-tenant by design) — this
+	// scopes WHERE tenant_id=? AND role != 'superadmin', exactly like FindAll: an
+	// admin may read only a non-superadmin user in its OWN tenant. Returns
+	// (nil, nil) when no such row exists (absent, other tenant, or a superadmin).
+	FindScopedByID(ctx context.Context, id string) (*User, error)
 	FindByNickname(ctx context.Context, nickname string) (*User, error)
 	FindAll(ctx context.Context) ([]User, error)
 
@@ -66,6 +73,12 @@ type PlatformRepository interface {
 	// The query carries a tenant-scope-exempt marker so the conformance gate
 	// admits it consciously.
 	FindAllAcrossTenants(ctx context.Context) ([]PlatformRow, error)
+
+	// FindByIDAcrossTenants is the cross-tenant read-one behind the platform
+	// read-one endpoint (GET /platform/users/{id}) — the by-id INVERSE of
+	// FindAllAcrossTenants, joined to the tenant name. No tenant filter (a
+	// superadmin reads any user in any tenant); returns (nil, nil) when absent.
+	FindByIDAcrossTenants(ctx context.Context, id string) (*PlatformRow, error)
 
 	// CountAcrossTenants counts all users across all tenants (platform dashboard).
 	CountAcrossTenants(ctx context.Context) (int, error)

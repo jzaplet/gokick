@@ -230,6 +230,7 @@ func (s *Server) registerRoutes() *http.ServeMux {
 	// Admin — bus AuthorizeMiddleware enforces admin:* permission per command/query.
 	mux.Handle("GET /api/v1/dashboard/admin", authed(http.HandlerFunc(s.dashboard.Admin)))
 	mux.Handle("GET /api/v1/admin/users", authed(http.HandlerFunc(s.adminUsers.List)))
+	mux.Handle("GET /api/v1/admin/users/{id}", authed(http.HandlerFunc(s.adminUsers.Get)))
 	mux.Handle("POST /api/v1/admin/users", authed(http.HandlerFunc(s.adminUsers.Create)))
 	mux.Handle("PUT /api/v1/admin/users/{id}", authed(http.HandlerFunc(s.adminUsers.Update)))
 	mux.Handle("DELETE /api/v1/admin/users/{id}", authed(http.HandlerFunc(s.adminUsers.Delete)))
@@ -237,6 +238,7 @@ func (s *Server) registerRoutes() *http.ServeMux {
 	// Platform plane — superadmin only (platform:* permissions, enforced by the bus).
 	mux.Handle("GET /api/v1/platform/stats", authed(http.HandlerFunc(s.platform.Stats)))
 	mux.Handle("GET /api/v1/platform/users", authed(http.HandlerFunc(s.platform.Users)))
+	mux.Handle("GET /api/v1/platform/users/{id}", authed(http.HandlerFunc(s.platform.GetUser)))
 	mux.Handle("GET /api/v1/platform/tenants", authed(http.HandlerFunc(s.platform.Tenants)))
 	mux.Handle("PUT /api/v1/platform/users/{id}", authed(http.HandlerFunc(s.platform.UpdateUser)))
 	mux.Handle(

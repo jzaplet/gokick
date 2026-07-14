@@ -23,6 +23,7 @@ type PlatformHandler struct {
 	commandBus  *bus.CommandBus
 	getStats    *platformqry.GetStatsHandler
 	listUsers   *platformqry.ListAllUsersHandler
+	getUser     *platformqry.GetUserHandler
 	listTenants *platformqry.ListTenantsHandler
 	updateUser  *platformcmd.UpdatePlatformUserHandler
 	deleteUser  *platformcmd.DeletePlatformUserHandler
@@ -34,6 +35,7 @@ func NewPlatformHandler(
 	commandBus *bus.CommandBus,
 	getStats *platformqry.GetStatsHandler,
 	listUsers *platformqry.ListAllUsersHandler,
+	getUser *platformqry.GetUserHandler,
 	listTenants *platformqry.ListTenantsHandler,
 	updateUser *platformcmd.UpdatePlatformUserHandler,
 	deleteUser *platformcmd.DeletePlatformUserHandler,
@@ -44,6 +46,7 @@ func NewPlatformHandler(
 		commandBus:  commandBus,
 		getStats:    getStats,
 		listUsers:   listUsers,
+		getUser:     getUser,
 		listTenants: listTenants,
 		updateUser:  updateUser,
 		deleteUser:  deleteUser,
@@ -132,6 +135,31 @@ func (h *PlatformHandler) Users(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.resp.JSON(r.Context(), w, http.StatusOK, dtos)
+}
+
+// GetUser returns one user in ANY tenant (GET /platform/users/{id}) — the
+// cross-tenant read-one the platform edit view fetches instead of pulling the
+// whole cross-tenant list and .find()ing it. A missing id surfaces as the query
+// handler's 400 (Field "id"), so row is non-nil here.
+func (h *PlatformHandler) GetUser(w http.ResponseWriter, r *http.Request) {
+	q := platformqry.GetUserQuery{ID: r.PathValue("id")}
+
+	row, err := bus.Query(
+		r.Context(),
+		h.queryBus,
+		"PlatformGetUser",
+		q,
+		func(ctx context.Context) (*user.PlatformRow, error) {
+			return h.getUser.Handle(ctx, q)
+		},
+	)
+	if err != nil {
+		h.resp.HandleError(r.Context(), w, err)
+
+		return
+	}
+
+	h.resp.JSON(r.Context(), w, http.StatusOK, toPlatformUserDTO(*row))
 }
 
 func (h *PlatformHandler) Tenants(w http.ResponseWriter, r *http.Request) {

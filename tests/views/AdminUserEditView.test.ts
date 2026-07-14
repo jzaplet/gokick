@@ -28,13 +28,26 @@ const OTHER_ID = 'u-other';
 
 const Blank = { template: '<div />' };
 
-// One user list shared by every GET. The edited row starts as role "user".
+// The users the read-one endpoint can return. The edited row starts as role "user".
 const userList = [
     { id: TARGET_ID, nickname: 'alice', email: 'alice@x.dev', role: 'user', active: true },
     { id: OTHER_ID, nickname: 'bob', email: 'bob@x.dev', role: 'user', active: true },
 ];
 
-// Routes the network: GET list -> userList, PUT update -> 200 success.
+// Resolves the by-id read-one GET to the single matching user (404-as-400 when
+// absent, mirroring the backend's not-found contract).
+const getUserById = (url: string): Response => {
+    const id = url.slice('/api/v1/admin/users/'.length);
+    const target = userList.find((u) => u.id === id);
+
+    if (target === undefined) {
+        return new Response(JSON.stringify({ id: 'user not found' }), { status: 400 });
+    }
+
+    return new Response(JSON.stringify(target), { status: 200 });
+};
+
+// Routes the network: GET by-id -> one user, PUT update -> 200 success.
 const mockFetch = (): void => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(
         (input, init): Promise<Response> => {
@@ -45,8 +58,8 @@ const mockFetch = (): void => {
                 return Promise.resolve(new Response(JSON.stringify(null), { status: 200 }));
             }
 
-            if (method === 'GET' && url === '/api/v1/admin/users') {
-                return Promise.resolve(new Response(JSON.stringify(userList), { status: 200 }));
+            if (method === 'GET' && url.startsWith('/api/v1/admin/users/')) {
+                return Promise.resolve(getUserById(url));
             }
 
             return Promise.resolve(new Response(null, { status: 500 }));
@@ -213,8 +226,8 @@ describe('AdminUserEditView role-change reload (roadmap-96)', () => {
                     );
                 }
 
-                if (method === 'GET' && url === '/api/v1/admin/users') {
-                    return Promise.resolve(new Response(JSON.stringify(userList), { status: 200 }));
+                if (method === 'GET' && url.startsWith('/api/v1/admin/users/')) {
+                    return Promise.resolve(getUserById(url));
                 }
 
                 return Promise.resolve(new Response(null, { status: 500 }));

@@ -17,6 +17,7 @@ type AdminUsersHandler struct {
 	commandBus *bus.CommandBus
 	queryBus   *bus.QueryBus
 	listUsers  *userqry.ListUsersHandler
+	getUser    *userqry.GetUserHandler
 	createUser *usercmd.CreateUserHandler
 	updateUser *usercmd.UpdateUserHandler
 	deleteUser *usercmd.DeleteUserHandler
@@ -27,6 +28,7 @@ func NewAdminUsersHandler(
 	commandBus *bus.CommandBus,
 	queryBus *bus.QueryBus,
 	listUsers *userqry.ListUsersHandler,
+	getUser *userqry.GetUserHandler,
 	createUser *usercmd.CreateUserHandler,
 	updateUser *usercmd.UpdateUserHandler,
 	deleteUser *usercmd.DeleteUserHandler,
@@ -36,6 +38,7 @@ func NewAdminUsersHandler(
 		commandBus: commandBus,
 		queryBus:   queryBus,
 		listUsers:  listUsers,
+		getUser:    getUser,
 		createUser: createUser,
 		updateUser: updateUser,
 		deleteUser: deleteUser,
@@ -91,6 +94,31 @@ func (h *AdminUsersHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.resp.JSON(r.Context(), w, http.StatusOK, dtos)
+}
+
+// Get returns one user in the caller's tenant (GET /admin/users/{id}) — the
+// read-one the edit view fetches instead of pulling the whole list and .find()ing
+// client-side. A missing / cross-tenant / superadmin id surfaces as the query
+// handler's 400 (Field "id"), so u is non-nil here.
+func (h *AdminUsersHandler) Get(w http.ResponseWriter, r *http.Request) {
+	q := userqry.GetUserQuery{ID: r.PathValue("id")}
+
+	u, err := bus.Query(
+		r.Context(),
+		h.queryBus,
+		"GetUser",
+		q,
+		func(ctx context.Context) (*user.User, error) {
+			return h.getUser.Handle(ctx, q)
+		},
+	)
+	if err != nil {
+		h.resp.HandleError(r.Context(), w, err)
+
+		return
+	}
+
+	h.resp.JSON(r.Context(), w, http.StatusOK, toAdminUserDTO(*u))
 }
 
 func (h *AdminUsersHandler) Create(w http.ResponseWriter, r *http.Request) {

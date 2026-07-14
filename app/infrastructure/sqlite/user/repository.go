@@ -101,6 +101,26 @@ func (r *Repository) FindByID(ctx context.Context, id string) (*user.User, error
 	return &u, nil
 }
 
+// FindScopedByID is the tenant-scoped by-id read behind the admin read-one
+// endpoint (GET /admin/users/{id}). It mirrors FindAll's scoping (tenant_id=? AND
+// role != 'superadmin') rather than the tenant-exempt FindByID, so the read-one
+// cannot become a cross-tenant leak: an admin reads only a non-superadmin user in
+// its OWN tenant. Not-found — absent, another tenant, or a superadmin — is
+// (nil, nil), the same idiom as FindByID.
+func (r *Repository) FindScopedByID(ctx context.Context, id string) (*user.User, error) {
+	var u user.User
+	err := r.Conn(ctx).GetContext(ctx, &u,
+		`SELECT * FROM users WHERE id=? AND tenant_id=? AND role != 'superadmin'`,
+		id, r.Tenant(ctx))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
 // FindByNickname is the login lookup — it runs before any tenant is resolved,
 // and nickname is globally unique, so it is a global identity lookup exempt
 // from tenant scoping.
@@ -137,6 +157,30 @@ func (r *Repository) FindAllAcrossTenants(ctx context.Context) ([]user.PlatformR
 		   JOIN tenants t ON t.id = u.tenant_id /* tenant-scope-exempt: platform superadmin */
 		  ORDER BY t.name, u.nickname`)
 	return rows, err
+}
+
+// FindByIDAcrossTenants is the platform-plane read-one: one user in ANY tenant,
+// joined to its tenant name — the by-id inverse of FindAllAcrossTenants. It does
+// NOT scope by tenant_id; the marker makes the cross-tenant read explicit to the
+// conformance gate. Not-found returns (nil, nil).
+func (r *Repository) FindByIDAcrossTenants(
+	ctx context.Context,
+	id string,
+) (*user.PlatformRow, error) {
+	var row user.PlatformRow
+	err := r.Conn(ctx).GetContext(ctx, &row,
+		`SELECT u.id, u.nickname, u.email, u.role, u.active, u.tenant_id,
+		        t.name AS tenant_name, u.last_login_at
+		   FROM users u
+		   JOIN tenants t ON t.id = u.tenant_id /* tenant-scope-exempt: platform superadmin */
+		  WHERE u.id = ?`, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
 }
 
 // CountAcrossTenants counts every user (all tenants, including superadmins) for

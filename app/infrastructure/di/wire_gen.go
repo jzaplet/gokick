@@ -98,21 +98,23 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	changePasswordHandler := command2.NewChangePasswordHandler(userRepository, passwordHasher)
 	profileHandler := handler.NewProfileHandler(responder, commandBus, queryBus, getProfileHandler, changePasswordHandler, permissionsRegistry)
 	listUsersHandler := query2.NewListUsersHandler(userRepository)
+	getUserHandler := query2.NewGetUserHandler(userRepository)
 	multitenancy := provideMultitenancy(configConfig)
 	createUserHandler := command3.NewCreateUserHandler(userRepository, passwordHasher, multitenancy)
 	updateUserHandler := command3.NewUpdateUserHandler(userRepository, passwordHasher)
 	deleteUserHandler := command3.NewDeleteUserHandler(userRepository)
-	adminUsersHandler := handler.NewAdminUsersHandler(responder, commandBus, queryBus, listUsersHandler, createUserHandler, updateUserHandler, deleteUserHandler)
+	adminUsersHandler := handler.NewAdminUsersHandler(responder, commandBus, queryBus, listUsersHandler, getUserHandler, createUserHandler, updateUserHandler, deleteUserHandler)
 	getUserDashboardHandler := query3.NewGetUserDashboardHandler()
 	getAdminDashboardHandler := query3.NewGetAdminDashboardHandler()
 	dashboardHandler := handler.NewDashboardHandler(responder, queryBus, getUserDashboardHandler, getAdminDashboardHandler)
 	tenantRepository := tenant.NewRepository(sqliteManager)
 	getStatsHandler := query4.NewGetStatsHandler(tenantRepository, userRepository)
 	listAllUsersHandler := query4.NewListAllUsersHandler(userRepository)
+	queryGetUserHandler := query4.NewGetUserHandler(userRepository)
 	listTenantsHandler := query4.NewListTenantsHandler(tenantRepository)
 	updatePlatformUserHandler := command4.NewUpdatePlatformUserHandler(userRepository, passwordHasher)
 	deletePlatformUserHandler := command4.NewDeletePlatformUserHandler(userRepository)
-	platformHandler := handler.NewPlatformHandler(responder, queryBus, commandBus, getStatsHandler, listAllUsersHandler, listTenantsHandler, updatePlatformUserHandler, deletePlatformUserHandler)
+	platformHandler := handler.NewPlatformHandler(responder, queryBus, commandBus, getStatsHandler, listAllUsersHandler, queryGetUserHandler, listTenantsHandler, updatePlatformUserHandler, deletePlatformUserHandler)
 	debugRunHandler := handler.NewDebugRunHandler(responder, repository)
 	serverServer := server.NewServer(configConfig, logger, reporter, jwtService, responder, rateLimiters, ipExtractor, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler, platformHandler, debugRunHandler)
 	v2 := provideSchedulerJobs(tokenRepository)
@@ -380,5 +382,5 @@ func provideRunWorker(
 }
 
 func providePermissionsRegistry() *shared.PermissionsRegistry {
-	return shared.NewPermissionsRegistry([]shared.Permissioned{command.LogoutCommand{}, command2.ChangePasswordCommand{}, query.GetProfileQuery{}, command3.CreateUserCommand{}, command3.UpdateUserCommand{}, command3.DeleteUserCommand{}, query2.ListUsersQuery{}, query3.GetUserDashboardQuery{}, query3.GetAdminDashboardQuery{}, query4.ListAllUsersQuery{}, query4.ListTenantsQuery{}, query4.GetStatsQuery{}, command4.UpdatePlatformUserCommand{}, command4.DeletePlatformUserCommand{}, command4.CreateSuperAdminCommand{}, command5.CreateTenantCommand{}, query5.GetTenantQuery{}})
+	return shared.NewPermissionsRegistry([]shared.Permissioned{command.LogoutCommand{}, command2.ChangePasswordCommand{}, query.GetProfileQuery{}, command3.CreateUserCommand{}, command3.UpdateUserCommand{}, command3.DeleteUserCommand{}, query2.ListUsersQuery{}, query2.GetUserQuery{}, query3.GetUserDashboardQuery{}, query3.GetAdminDashboardQuery{}, query4.ListAllUsersQuery{}, query4.GetUserQuery{}, query4.ListTenantsQuery{}, query4.GetStatsQuery{}, command4.UpdatePlatformUserCommand{}, command4.DeletePlatformUserCommand{}, command4.CreateSuperAdminCommand{}, command5.CreateTenantCommand{}, query5.GetTenantQuery{}})
 }

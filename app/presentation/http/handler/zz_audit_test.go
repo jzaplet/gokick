@@ -49,6 +49,7 @@ func newAdminUsersHandler(t *testing.T) (*AdminUsersHandler, *testfx.Fixture) {
 		cmdBus,
 		qryBus,
 		userqry.NewListUsersHandler(fx.Users),
+		userqry.NewGetUserHandler(fx.Users),
 		usercmd.NewCreateUserHandler(fx.Users, fx.Hasher, false),
 		usercmd.NewUpdateUserHandler(fx.Users, fx.Hasher),
 		usercmd.NewDeleteUserHandler(fx.Users),
