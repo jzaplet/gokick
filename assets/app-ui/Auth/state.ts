@@ -1,5 +1,6 @@
 import { ref } from 'vue';
 import type { AuthUser } from '@/app-ui/Auth/types/AuthUser';
+import type { LoginResponse } from '@/app-ui/Auth/types/LoginResponse';
 import { setAccessToken } from '@/app-ui/Fetch/accessToken';
 
 // Reactive session state — single source of truth for views.
@@ -41,6 +42,64 @@ export const scheduleRefresh = (expiresInMs: number, fn: () => void): void => {
 // place — there is never a refresh AND a retry timer alive at once.
 export const scheduleRetry = (delayMs: number, fn: () => void): void => {
     armRefreshTimer(delayMs, fn);
+};
+
+// Validates the user principal carries the fields the app later dereferences —
+// notably role (string) and permissions (string[]). Checking only `typeof user
+// === 'object'` is NOT enough: `user:{}` or `user:[]` (typeof [] === 'object')
+// would pass, isAuthenticated would flip true, then the router guard would crash
+// at `user.permissions.includes(...)` (permissions.ts). Narrows from unknown so
+// every field access below is a real runtime check, not an erased cast.
+const isAuthUser = (data: unknown): data is AuthUser =>
+    typeof data === 'object'
+    && data !== null
+    && Array.isArray(data) === false
+    && 'id' in data
+    && typeof data.id === 'string'
+    && 'nickname' in data
+    && typeof data.nickname === 'string'
+    && 'email' in data
+    && typeof data.email === 'string'
+    && 'role' in data
+    && typeof data.role === 'string'
+    && data.role !== ''
+    && 'permissions' in data
+    && Array.isArray(data.permissions) === true;
+
+// parseResponse casts the body to LoginResponse, but a 200 with an empty or
+// partial body yields null / a missing field at runtime. Guard the shape before
+// trusting it: without this, setAccessToken(undefined) + scheduleRefresh(NaN)
+// would spin a hot refresh loop. Narrows from unknown (no `as`) so the runtime
+// checks are real rather than erased by the optimistic cast.
+const isLoginResponse = (data: unknown): data is LoginResponse =>
+    typeof data === 'object'
+    && data !== null
+    && 'access_token' in data
+    && typeof data.access_token === 'string'
+    && data.access_token !== ''
+    && 'access_expiration' in data
+    && typeof data.access_expiration === 'number'
+    && Number.isFinite(data.access_expiration) === true
+    && 'user' in data
+    && isAuthUser(data.user);
+
+// establishSession validates a login/refresh 200 body and, if it is a usable
+// session, installs it (access token, user, isAuthenticated, scheduled rotation)
+// and returns true. A malformed/partial 200 (empty access_token, missing/void
+// fields) installs NOTHING and returns false — so neither login nor refresh can
+// flip isAuthenticated on a bogus body (the asymmetry that let login trust an
+// unvalidated body). onExpiry is the caller's refresh trigger, passed in to avoid
+// the state <-> refresh circular import.
+export const establishSession = (data: unknown, onExpiry: () => void): boolean => {
+    if (isLoginResponse(data) === false) {
+        return false;
+    }
+    setAccessToken(data.access_token);
+    user.value = data.user;
+    isAuthenticated.value = true;
+    scheduleRefresh(data.access_expiration * 1_000, onExpiry);
+
+    return true;
 };
 
 // Wipes every trace of a session — called on logout, refresh failure, and when
