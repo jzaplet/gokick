@@ -232,7 +232,7 @@ func TestLoginHandler_AccountLockedEventCarriesLockedUntilMetadata(t *testing.T)
 	}
 }
 
-// raceTokenRepo is a stub token.TokenRepository that simulates a concurrent
+// raceTokenRepo is a stub token.Repository that simulates a concurrent
 // rotation race: FindByHash returns a valid, unused, unexpired token, but
 // MarkUsed reports (false, nil) — i.e. another request already flipped used_at
 // first. Only the methods the refresh handler calls on this path are

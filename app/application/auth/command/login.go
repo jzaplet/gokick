@@ -36,7 +36,7 @@ type LoginResult struct {
 
 type LoginHandler struct {
 	users     user.Repository
-	tokens    token.TokenRepository
+	tokens    token.Repository
 	password  shared.PasswordHasher
 	jwt       shared.TokenService
 	dummyHash string
@@ -59,7 +59,7 @@ const (
 
 func NewLoginHandler(
 	users user.Repository,
-	tokens token.TokenRepository,
+	tokens token.Repository,
 	password shared.PasswordHasher,
 	jwt shared.TokenService,
 ) *LoginHandler {

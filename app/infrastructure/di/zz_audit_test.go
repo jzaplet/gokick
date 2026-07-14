@@ -416,7 +416,7 @@ func rateCode(lim *httpmw.RateLimiter, realIP, remoteAddr string) int {
 	return rec.Code
 }
 
-// deleteExpiredSpy is a TokenRepository that records DeleteExpired invocations,
+// deleteExpiredSpy is a Repository that records DeleteExpired invocations,
 // proving the scheduler job's Fn is wired to token.DeleteExpired. (Named
 // distinctly from scheduler_test.go's stubTokens to avoid a redeclaration.)
 type deleteExpiredSpy struct{ calls atomic.Int32 }
@@ -434,6 +434,6 @@ func (s *deleteExpiredSpy) DeleteExpired(context.Context) error {
 
 // Compile-time guards: the spies must satisfy the real domain interfaces.
 var (
-	_ token.TokenRepository = (*deleteExpiredSpy)(nil)
+	_ token.Repository = (*deleteExpiredSpy)(nil)
 	_ shared.DomainEvent    = rowVisibleEvent{}
 )

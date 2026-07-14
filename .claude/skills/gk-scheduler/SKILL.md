@@ -38,7 +38,7 @@ Balíček `app/infrastructure/scheduler/scheduler.go`:
 **Registrace** (jediné místo) je `provideSchedulerJobs` v `app/infrastructure/di/container_provider.go`. Dnes obsahuje jediný job:
 
 ```go
-func provideSchedulerJobs(tokens token.TokenRepository) []scheduler.Job {
+func provideSchedulerJobs(tokens token.Repository) []scheduler.Job {
     return []scheduler.Job{
         {
             Name:     "cleanup:expired-refresh-tokens",

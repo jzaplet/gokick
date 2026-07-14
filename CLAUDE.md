@@ -82,7 +82,7 @@ Bounded contexts in separate packages. **Never import between contexts** (e.g. `
 |---------|----------|
 | `domain/shared/` | `AuthClaims` (incl. `TenantID`), `ValidationError`, `AuthError`, `PermissionError`, `DomainEvent`, `EventCollector`, `AuditCollector` + `AuditEvent` / `AuditRecord`, `PermissionsRegistry`, `DefaultTenantID`, interfaces (`PasswordHasher`, `PermissionChecker`, `TokenService`, `TenantResolver`, `Transactor`, `Seeder`, `AuditLogger`, `RunDispatcher`) |
 | `domain/user/` | `User` entity, `Nickname`/`Role` (admin/user/**superadmin**) value objects, `Repository` interface, `PlatformRow` read model, `UserCreated` event |
-| `domain/token/` | `RefreshToken` entity, `TokenRepository` interface |
+| `domain/token/` | `RefreshToken` entity, `Repository` interface |
 | `domain/run/` | `Run` entity, `Repository` interface — the durable background-task primitive (runs OUTSIDE a tx; optional checkpoint, lease + heartbeat, owner-token fencing, cancel, per-attempt timeout) |
 | `domain/tenant/` | `Tenant` entity + `Overview` read model, `Repository` interface — row-level multitenancy boundary |
 
@@ -156,7 +156,7 @@ bus.Exec[[]user.User](ctx, h.queryBus.Bus, "ListUsers", q, func(ctx context.Cont
 | `database/` | `SqliteManager` (connection, WAL, `_txlock=immediate`, `busy_timeout`, `foreign_keys` via DSN), `MigrationManager` (Goose), transaction context (`BeginTx`/`Commit`/`Rollback`) |
 | `sqlite/` | `BaseRepository` (embed in repos for transparent tx support via `r.Conn(ctx)`) |
 | `sqlite/user/` | `user.Repository` impl (incl. `RecordFailedLogin` / `ResetFailedLogin` / `RecordLogin` raw-pool on purpose; tenant-scoped admin reads/writes + cross-tenant platform reads) |
-| `sqlite/token/` | `token.TokenRepository` implementation |
+| `sqlite/token/` | `token.Repository` implementation |
 | `sqlite/run/` | `run.Repository` implementation (owner-fenced; julianday/ms time discipline shared via `sqlite/sqltime.go`) |
 | `sqlite/tenant/` | `tenant.Repository` implementation (row-level multitenancy boundary) |
 | `sqlite/audit/` | `shared.AuditLogger` implementation (raw-pool — survives business rollback) |
@@ -176,7 +176,7 @@ func (r *Repository) Save(ctx context.Context, u *user.User) error {
 **Wire binding for interfaces:**
 ```go
 wire.Bind(new(user.Repository), new(*sqliteuser.Repository))
-wire.Bind(new(token.TokenRepository), new(*sqlitetoken.Repository))
+wire.Bind(new(token.Repository), new(*sqlitetoken.Repository))
 wire.Bind(new(shared.Seeder), new(*sqlite.Seeder))
 ```
 

@@ -304,7 +304,7 @@ func provideMultitenancy(cfg *config.Config) shared.Multitenancy {
 // provideSchedulerJobs is the single source of truth for periodic in-process
 // jobs — mirrors providePermissionsRegistry. Add
 // a new Job here; provideScheduler stays decoupled from job business.
-func provideSchedulerJobs(tokens token2.TokenRepository) []scheduler.Job {
+func provideSchedulerJobs(tokens token2.Repository) []scheduler.Job {
 	return []scheduler.Job{
 		{
 			Name:     "cleanup:expired-refresh-tokens",

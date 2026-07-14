@@ -2,7 +2,7 @@ package token
 
 import "context"
 
-type TokenRepository interface {
+type Repository interface {
 	Save(ctx context.Context, token *RefreshToken) error
 	FindByHash(ctx context.Context, hash string) (*RefreshToken, error)
 	// MarkUsed atomically flips a token's used_at from NULL to now. Returns

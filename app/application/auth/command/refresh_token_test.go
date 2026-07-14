@@ -24,11 +24,11 @@ func (s stubFindByIDUsers) FindByID(context.Context, string) (*user.User, error)
 	return nil, s.err
 }
 
-// stubSaveFailsTokens wraps a real token.TokenRepository but forces Save (the
+// stubSaveFailsTokens wraps a real token.Repository but forces Save (the
 // persist of the freshly-rotated token) to fail, to prove the rotation order:
 // the new token is saved BEFORE the old one is marked used.
 type stubSaveFailsTokens struct {
-	token.TokenRepository
+	token.Repository
 	err error
 }
 
@@ -36,11 +36,11 @@ func (s stubSaveFailsTokens) Save(context.Context, *token.RefreshToken) error {
 	return s.err
 }
 
-// stubDeleteFailsTokens wraps a real token.TokenRepository but forces
+// stubDeleteFailsTokens wraps a real token.Repository but forces
 // DeleteByUserID (the theft-response revocation) to fail, to prove a failed
 // revocation surfaces a raw error instead of a laundered AuthError.
 type stubDeleteFailsTokens struct {
-	token.TokenRepository
+	token.Repository
 	err error
 }
 
@@ -190,7 +190,7 @@ func TestRefreshTokenHandler_SaveFailureLeavesOldTokenUnconsumed(t *testing.T) {
 	dbBlip := errors.New("database is locked")
 	handler := NewRefreshTokenHandler(
 		fx.Users,
-		stubSaveFailsTokens{TokenRepository: fx.Tokens, err: dbBlip},
+		stubSaveFailsTokens{Repository: fx.Tokens, err: dbBlip},
 		fx.Jwt,
 	)
 
@@ -311,7 +311,7 @@ func TestRefreshTokenHandler_TheftDeleteFailureSurfacesErrorAndStillAudits(t *te
 	deleteBlip := errors.New("database is locked")
 	handler := NewRefreshTokenHandler(
 		fx.Users,
-		stubDeleteFailsTokens{TokenRepository: fx.Tokens, err: deleteBlip},
+		stubDeleteFailsTokens{Repository: fx.Tokens, err: deleteBlip},
 		fx.Jwt,
 	)
 	collector := &shared.AuditCollector{}

@@ -217,7 +217,7 @@ func provideMultitenancy(cfg *config.Config) shared.Multitenancy {
 // provideSchedulerJobs is the single source of truth for periodic in-process
 // jobs — mirrors providePermissionsRegistry. Add
 // a new Job here; provideScheduler stays decoupled from job business.
-func provideSchedulerJobs(tokens token.TokenRepository) []scheduler.Job {
+func provideSchedulerJobs(tokens token.Repository) []scheduler.Job {
 	return []scheduler.Job{
 		{
 			Name:     "cleanup:expired-refresh-tokens",
@@ -346,7 +346,7 @@ func CreateApplication(
 		wire.Bind(new(shared.TokenService), new(*security.JwtService)),
 		wire.Bind(new(user.Repository), new(*sqliteuser.Repository)),
 		wire.Bind(new(user.PlatformRepository), new(*sqliteuser.Repository)),
-		wire.Bind(new(token.TokenRepository), new(*sqlitetoken.Repository)),
+		wire.Bind(new(token.Repository), new(*sqlitetoken.Repository)),
 		wire.Bind(new(run.Repository), new(*sqliterun.Repository)),
 		wire.Bind(new(tenant.Repository), new(*sqlitetenant.Repository)),
 		wire.Bind(new(shared.Seeder), new(*sqliteseeder.Seeder)),

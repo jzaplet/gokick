@@ -49,7 +49,7 @@ wire_gen.go             # vygenerovaný kód (//go:build !wireinject) — NIKDY 
 3. **`wire.Bind(new(Iface), new(*Concrete))`** — řekne Wire „kdykoli někdo chce `Iface`, dej mu `*Concrete`". Bez toho Wire interface nepropojí.
    ```go
    wire.Bind(new(user.Repository), new(*sqliteuser.Repository))
-   wire.Bind(new(token.TokenRepository), new(*sqlitetoken.Repository))
+   wire.Bind(new(token.Repository), new(*sqlitetoken.Repository))
    wire.Bind(new(shared.AuditLogger), new(*sqliteaudit.Repository))
    ```
 

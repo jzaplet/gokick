@@ -12,9 +12,9 @@ import (
 	"gokick/app/internal/testfx"
 )
 
-// saveFailsTokenRepo is a TokenRepository whose Save always fails; the other
+// saveFailsTokenRepo is a Repository whose Save always fails; the other
 // methods are never called on the success login path under test.
-type saveFailsTokenRepo struct{ token.TokenRepository }
+type saveFailsTokenRepo struct{ token.Repository }
 
 func (saveFailsTokenRepo) Save(context.Context, *token.RefreshToken) error {
 	return errors.New("refresh token save failed")

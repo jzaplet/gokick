@@ -12,10 +12,10 @@ type LogoutCommand struct{}
 func (LogoutCommand) RequiredPermission() string { return "auth:logout" }
 
 type LogoutHandler struct {
-	tokens token.TokenRepository
+	tokens token.Repository
 }
 
-func NewLogoutHandler(tokens token.TokenRepository) *LogoutHandler {
+func NewLogoutHandler(tokens token.Repository) *LogoutHandler {
 	return &LogoutHandler{tokens: tokens}
 }
 

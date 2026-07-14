@@ -33,7 +33,7 @@ type Fixture struct {
 	DB            *database.SqliteManager
 	Users         user.Repository
 	PlatformUsers user.PlatformRepository // same concrete repo; the cross-tenant port for platform handler tests
-	Tokens        token.TokenRepository
+	Tokens        token.Repository
 	Runs          run.Repository
 	Tenants       tenant.Repository
 	Hasher        *security.PasswordHasher

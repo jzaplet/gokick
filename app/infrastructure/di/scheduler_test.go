@@ -9,7 +9,7 @@ import (
 	"gokick/app/domain/token"
 )
 
-// stubTokens is a no-op TokenRepository for invoking the production job
+// stubTokens is a no-op Repository for invoking the production job
 // collector without a real DB. We only care the registered slice validates.
 type stubTokens struct{}
 
