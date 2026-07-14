@@ -243,6 +243,45 @@ func TestRefreshTokenHandler_ReuseTriggersForceLogout(t *testing.T) {
 	}
 }
 
+// F-026: the theft-path force-logout must PERSIST when the command runs through
+// the real tx-wrapping CommandBus. revokeAllAsTheft calls tx-aware DeleteByUserID
+// then returns an AuthError; without SkipTransaction() on RefreshTokenCommand the
+// wrapping bus tx would roll that delete back on the error and quietly defeat the
+// force-logout. Dispatched through fx.NewBuses (the production chain), this fails
+// if SkipTransaction() is ever removed or renamed.
+func TestRefreshTokenHandler_TheftForceLogoutPersistsThroughBusTx(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "refresh_theft_bus.db"))
+	u := fx.SeedUser(t, "alice", "pwd", "user")
+	raw := fx.SeedRefreshToken(t, u.ID, time.Now().Add(24*time.Hour))
+
+	cmdBus, _, _ := fx.NewBuses()
+	handler := NewRefreshTokenHandler(fx.Users, fx.Tokens, fx.Jwt)
+	refresh := func() (LoginResult, error) {
+		return testfx.ExecCommand(ctx, cmdBus, "RefreshToken",
+			RefreshTokenCommand{RawToken: raw},
+			func(ctx context.Context) (LoginResult, error) {
+				return handler.Handle(ctx, RefreshTokenCommand{RawToken: raw})
+			})
+	}
+
+	// First rotation marks the old token used (through the bus, for realism).
+	if _, err := refresh(); err != nil {
+		t.Fatalf("first refresh through bus: %v", err)
+	}
+	fx.AssertTokenCount(t, 2) // old (used) + new
+
+	// Reuse the old token → theft → DeleteByUserID + AuthError, all inside the bus tx.
+	_, err := refresh()
+	var authErr *shared.AuthError
+	if !errors.As(err, &authErr) {
+		t.Fatalf("expected *shared.AuthError on reuse, got %T: %v", err, err)
+	}
+
+	// The force-logout must have COMMITTED despite the returned error.
+	fx.AssertTokenCount(t, 0)
+}
+
 // The theft path must emit auth.token.theft_detected with metadata {reason}
 // (audit.md table + app-events-audit-40). The behavioral test above proves the
 // force-logout; this proves the security event operators rely on to SEE it.
