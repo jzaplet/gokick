@@ -39,17 +39,14 @@ func (r *Repository) FindByHash(ctx context.Context, hash string) (*token.Refres
 // requests carrying the same raw token: the second request sees 0 rows
 // affected and returns false, letting the handler trigger theft detection.
 func (r *Repository) MarkUsed(ctx context.Context, hash string) (bool, error) {
+	// Reuse the shared exactly-one-row-affected → bool contract (same helper the
+	// run finalizers use) so this CAS can't drift into a silent zero-row success.
+	// Bind res/err first (not RowsAffectedBool(Exec(...)) inline) — matching the run
+	// repo's call style AND dodging a go-arch-lint deepScan panic on the f(g()) form.
 	res, err := r.Conn(ctx).ExecContext(ctx,
 		`UPDATE refresh_tokens SET used_at=datetime('now')
 		 WHERE token_hash=? AND used_at IS NULL`, hash)
-	if err != nil {
-		return false, err
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return false, err
-	}
-	return n == 1, nil
+	return sqlite.RowsAffectedBool(res, err)
 }
 
 func (r *Repository) DeleteByUserID(ctx context.Context, userID string) error {

@@ -16,12 +16,15 @@ const NowExpr = `strftime('%Y-%m-%d %H:%M:%f', 'now')`
 // in one place for every fenced queue.
 const LeaseExpr = `strftime('%Y-%m-%d %H:%M:%f', julianday('now') + ? / 86400.0)`
 
-// RowsAffectedBool turns an owner-checked UPDATE result into the fencing bool:
-// (true, nil) iff exactly one row was affected, (false, nil) when zero rows matched
-// (ownership lost / terminal — NOT an error), (false, err) on a real write failure.
-// This is the contract owner-fencing rests on — a finalizer that ignores sql.Result
-// would silently report success on a zero-row stale write. Shared so every fenced
-// repo (the SQLite run repo today, a Postgres one later) reuses one implementation.
+// RowsAffectedBool turns a conditional UPDATE result into the exactly-one-row
+// bool: (true, nil) iff exactly one row was affected, (false, nil) when zero rows
+// matched (contention lost / terminal — NOT an error), (false, err) on a real
+// write failure. This is the contract owner-fencing rests on — a finalizer that
+// ignores sql.Result would silently report success on a zero-row stale write —
+// and the same contract the refresh-token rotation CAS needs. Shared so every
+// exactly-one-row consumer (the run finalizers and the token MarkUsed CAS today,
+// a Postgres repo later) reuses one implementation and can't hand-roll a divergent
+// copy that re-introduces the silent zero-row trap.
 func RowsAffectedBool(res sql.Result, err error) (bool, error) {
 	if err != nil {
 		return false, err
