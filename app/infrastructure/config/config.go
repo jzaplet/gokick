@@ -124,12 +124,22 @@ func LoadConfig() (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid APP_JWT_ACCESS_EXPIRATION: %w", err)
 	}
+	// Sign guard sits with the parse (its sibling): a non-positive expiration parses
+	// fine but would mint already-expired / never-expiring tokens. The JwtService
+	// constructor stays unguarded on purpose — tests feed it a negative access
+	// expiration to exercise expired-token rejection; operator config is validated here.
+	if config.JWTAccessExpiration <= 0 {
+		return nil, fmt.Errorf("APP_JWT_ACCESS_EXPIRATION must be positive")
+	}
 
 	config.JWTRefreshExpiration, err = time.ParseDuration(
 		getEnv("APP_JWT_REFRESH_EXPIRATION", "168h"),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("invalid APP_JWT_REFRESH_EXPIRATION: %w", err)
+	}
+	if config.JWTRefreshExpiration <= 0 {
+		return nil, fmt.Errorf("APP_JWT_REFRESH_EXPIRATION must be positive")
 	}
 
 	for _, d := range []struct {

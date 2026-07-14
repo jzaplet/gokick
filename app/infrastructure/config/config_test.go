@@ -68,6 +68,24 @@ func TestLoadConfig_StrictBool_RejectsTypo(t *testing.T) {
 	}
 }
 
+// F-054: a non-positive JWT expiration parses fine but would mint already-expired
+// or never-expiring tokens — reject it fail-fast at load.
+func TestLoadConfig_RejectsNonPositiveJWTExpiration(t *testing.T) {
+	for _, tc := range []struct{ key, val string }{
+		{"APP_JWT_ACCESS_EXPIRATION", "0s"},
+		{"APP_JWT_ACCESS_EXPIRATION", "-5m"},
+		{"APP_JWT_REFRESH_EXPIRATION", "-1h"},
+	} {
+		t.Run(tc.key+"="+tc.val, func(t *testing.T) {
+			t.Setenv(tc.key, tc.val)
+			_, err := LoadConfig()
+			if err == nil || !strings.Contains(err.Error(), tc.key+" must be positive") {
+				t.Fatalf("expected positive-required error for %s=%s, got %v", tc.key, tc.val, err)
+			}
+		})
+	}
+}
+
 func TestLoadConfig_StrictBool_ParsesBothLiterals(t *testing.T) {
 	t.Setenv("APP_MULTITENANCY", "true")
 	t.Setenv("APP_COOKIE_SECURE", "false")
