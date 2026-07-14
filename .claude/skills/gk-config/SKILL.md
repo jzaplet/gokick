@@ -50,6 +50,7 @@ Pozn.: `APP_SENTRY_ENVIRONMENT` čtou **oba** structy (BE reporter ze `StartupCo
 | `APP_HTTP_PORT` | `3000` | |
 | `APP_DB_PATH` | `./data/app.db` | |
 | `APP_DB_JOURNAL_MODE` | `WAL` | `.env.example` má `DELETE` (bind-mount dev DB) |
+| `APP_DB_MAX_CONNS` | `0` = auto | Pool cap. Auto = `clamp(2×NumCPU, 4, 32)`. SQLite serializuje zápisy → jde o paměť/backpressure, ne throughput |
 | `APP_JWT_SECRET` | `""` | povinný, validuje `NewJwtService` (ne config) |
 | `APP_JWT_ACCESS_EXPIRATION` | `15m` | parsuje `time.ParseDuration` |
 | `APP_JWT_REFRESH_EXPIRATION` | `168h` | parsuje `time.ParseDuration` |

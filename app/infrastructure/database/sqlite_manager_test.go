@@ -3,6 +3,7 @@ package database_test
 import (
 	"context"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -12,6 +13,38 @@ import (
 	"gokick/app/infrastructure/config"
 	"gokick/app/infrastructure/database"
 )
+
+// F-047: the connection pool must be BOUNDED (a write burst can otherwise inflate
+// WASM SQLite connections unbounded → OOM). An explicit APP_DB_MAX_CONNS wins;
+// unset auto-scales from CPU count, clamped to [4, 32].
+func TestSqliteManager_PoolCap(t *testing.T) {
+	explicit := &config.Config{DBPath: filepath.Join(t.TempDir(), "cap.db"), DBMaxConns: 7}
+	mgr, err := database.NewSqliteManager(explicit)
+	if err != nil {
+		t.Fatalf("open explicit: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+	if got := mgr.DB().Stats().MaxOpenConnections; got != 7 {
+		t.Fatalf("explicit cap: got %d want 7", got)
+	}
+
+	auto := &config.Config{DBPath: filepath.Join(t.TempDir(), "auto.db")} // DBMaxConns 0 → auto
+	mgrAuto, err := database.NewSqliteManager(auto)
+	if err != nil {
+		t.Fatalf("open auto: %v", err)
+	}
+	t.Cleanup(func() { _ = mgrAuto.Close() })
+	want := 2 * runtime.NumCPU()
+	if want < 4 {
+		want = 4
+	}
+	if want > 32 {
+		want = 32
+	}
+	if got := mgrAuto.DB().Stats().MaxOpenConnections; got != want {
+		t.Fatalf("auto cap: got %d want %d (clamp 2×NumCPU to [4,32])", got, want)
+	}
+}
 
 // The no-transaction zone guard: BeginTx must fail closed when ctx is marked by
 // shared.ContextForbidTx (a durable run handler ctx), so an accidental transaction

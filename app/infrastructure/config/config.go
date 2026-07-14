@@ -10,9 +10,12 @@ import (
 )
 
 type Config struct {
-	HTTPPort             string
-	DBPath               string
-	DBJournalMode        string
+	HTTPPort      string
+	DBPath        string
+	DBJournalMode string
+	// DBMaxConns caps the SQLite connection pool. <= 0 means auto (NewSqliteManager
+	// derives it from CPU count). APP_DB_MAX_CONNS overrides.
+	DBMaxConns           int
 	JWTSecret            string
 	JWTAccessExpiration  time.Duration
 	JWTRefreshExpiration time.Duration
@@ -148,6 +151,21 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("APP_JWT_REFRESH_EXPIRATION must be positive")
 	}
 
+	// 0 = auto (NewSqliteManager derives the cap from CPU count).
+	if config.DBMaxConns, err = getEnvInt("APP_DB_MAX_CONNS", 0); err != nil {
+		return nil, fmt.Errorf("invalid APP_DB_MAX_CONNS: %w", err)
+	}
+
+	if err := loadRunWorkerConfig(config); err != nil {
+		return nil, err
+	}
+
+	return config, nil
+}
+
+// loadRunWorkerConfig parses the durable-run worker knobs onto config, split out
+// of LoadConfig to keep it under the length gate.
+func loadRunWorkerConfig(config *Config) error {
 	for _, d := range []struct {
 		dst *time.Duration
 		key string
@@ -158,19 +176,20 @@ func LoadConfig() (*Config, error) {
 		{&config.RunWorkerPoll, "APP_RUN_WORKER_POLL", "1s"},
 		{&config.RunWorkerDrainTimeout, "APP_RUN_WORKER_DRAIN_TIMEOUT", "10s"},
 	} {
+		var err error
 		if *d.dst, err = time.ParseDuration(getEnv(d.key, d.def)); err != nil {
-			return nil, fmt.Errorf("invalid %s: %w", d.key, err)
+			return fmt.Errorf("invalid %s: %w", d.key, err)
 		}
 	}
 
+	var err error
 	if config.RunWorkerMaxInFlight, err = getEnvInt("APP_RUN_WORKER_MAX_IN_FLIGHT", 8); err != nil {
-		return nil, fmt.Errorf("invalid APP_RUN_WORKER_MAX_IN_FLIGHT: %w", err)
+		return fmt.Errorf("invalid APP_RUN_WORKER_MAX_IN_FLIGHT: %w", err)
 	}
 	if config.RunWorkerMaxReclaims, err = getEnvInt("APP_RUN_WORKER_MAX_RECLAIMS", 20); err != nil {
-		return nil, fmt.Errorf("invalid APP_RUN_WORKER_MAX_RECLAIMS: %w", err)
+		return fmt.Errorf("invalid APP_RUN_WORKER_MAX_RECLAIMS: %w", err)
 	}
-
-	return config, nil
+	return nil
 }
 
 // StartupConfig is the slice of configuration read at the very start of main —
