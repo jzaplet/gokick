@@ -103,7 +103,7 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (LoginResul
 	// "locked", "wrong password", and "unknown user" — without this,
 	// a locked-account response would skip Verify and become measurably
 	// faster, leaking lock state.
-	locked := u != nil && u.LockedUntil.Valid && time.Now().Before(u.LockedUntil.Time)
+	locked := u != nil && u.LockedUntil != nil && time.Now().Before(*u.LockedUntil)
 
 	if u == nil || verifyErr != nil {
 		h.handleFailedLogin(ctx, audit, cmd.Nickname, u, locked)

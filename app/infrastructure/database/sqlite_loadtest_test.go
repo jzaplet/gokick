@@ -282,4 +282,12 @@ func ms(d time.Duration) string { return fmt.Sprintf("%dms", d.Milliseconds()) }
 //   - Caveats: dev Mac (a prod VPS is ≈ ½–¼ of this); 256B state (large agent
 //     context → fewer writes/s, so keep checkpoints small / store big blobs out
 //     of band); excludes the app's own HTTP write traffic (shares the writer).
+//
+// 2026-07-14 · Apple M1 Max, 64GB · same config · re-run to VERIFY F-013 (moving
+// User's nullable time columns from sql.NullTime to *time.Time). Matched the
+// baseline: ok/s tracked (8000 → 7141, ceiling ~8000/s), ZERO busy/timeout/other
+// through 8000 agents, STRAIN at 16000. The run pattern already scans nullable
+// DATETIME TEXT into *time.Time under this exact load with no error → the *time.Time
+// round-trip (nil for NULL, ms precision via strftime %f) is safe; Jiří's recalled
+// bulk-write time truncation does NOT reproduce. Details in F-013.
 // ─────────────────────────────────────────────────────────────────────────────

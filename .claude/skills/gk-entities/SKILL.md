@@ -49,10 +49,12 @@ importovat** (`user/` nesmí znát `token/`); sdílené typy žijí v `domain/sh
 - ID je `string` (UUID). `User`/`RefreshToken` používají `uuid.New().String()`,
   `Run` `uuid.NewString()` (UUIDv7).
 - Entita nemá metody se side-effecty (žádné `Save`/`Load`) — to dělá repository.
-- Nullable sloupce: `Run.CompletedAt *time.Time` (nil = nehotovo),
-  `RefreshToken.UsedAt *time.Time` (marker theft detection). U `User` jsou
-  brute-force pole `sql.NullTime` schválně — SQLite je píše jako TEXT a stdlib
-  scanner `sql.NullTime` zvládne i string-z-DB i NULL.
+- Nullable časové sloupce: `*time.Time` (nil = unset) napříč VŠEMI kontexty —
+  `Run.CompletedAt`, `RefreshToken.UsedAt` (marker theft detection),
+  `User.LockedUntil` / `LastLoginAt` / `LastFailedLoginAt`. ncruces driver skenuje
+  nullable DATETIME TEXT sloupec do `*time.Time` bez custom typu (žádný
+  `sql.NullTime`); zápisy stampují ms přesnost (`strftime %f`), round-trip ověřen
+  pod zátěží (sqlite_loadtest).
 
 **Factory funkce** (`NewUser`, `NewRun`):
 - Přijímají **value objects, ne raw stringy** — `NewUser(nickname Nickname,

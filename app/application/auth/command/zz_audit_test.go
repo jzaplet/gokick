@@ -36,7 +36,7 @@ func TestLoginHandler_LockDurationIs15Minutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("find user: %v", err)
 	}
-	if !got.LockedUntil.Valid {
+	if got.LockedUntil == nil {
 		t.Fatal("account must be locked after threshold reached")
 	}
 
@@ -44,7 +44,7 @@ func TestLoginHandler_LockDurationIs15Minutes(t *testing.T) {
 	// and we only care about the instant, not the location.
 	wantLowerBound := start.UTC().Add(loginLockDuration)
 	wantUpperBound := time.Now().UTC().Add(loginLockDuration)
-	gotLocked := got.LockedUntil.Time.UTC()
+	gotLocked := got.LockedUntil.UTC()
 
 	if gotLocked.Before(wantLowerBound.Add(-time.Second)) ||
 		gotLocked.After(wantUpperBound.Add(time.Second)) {

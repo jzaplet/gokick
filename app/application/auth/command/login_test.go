@@ -311,11 +311,11 @@ func TestLoginHandler_WrongPasswordWhileLockedDoesNotExtendLock(t *testing.T) {
 	}
 
 	locked, _ := fx.Users.FindByID(ctx, u.ID)
-	if !locked.LockedUntil.Valid {
+	if locked.LockedUntil == nil {
 		t.Fatal("setup: account should be locked after threshold")
 	}
 	beforeCounter := locked.FailedLoginAttempts
-	beforeLockedUntil := locked.LockedUntil.Time
+	beforeLockedUntil := *locked.LockedUntil
 
 	// One more wrong attempt while locked.
 	_, _ = handler.Handle(ctx, LoginCommand{Nickname: "nina", Password: "wrong"})
@@ -328,10 +328,10 @@ func TestLoginHandler_WrongPasswordWhileLockedDoesNotExtendLock(t *testing.T) {
 			beforeCounter,
 		)
 	}
-	if !after.LockedUntil.Time.Equal(beforeLockedUntil) {
+	if !after.LockedUntil.Equal(beforeLockedUntil) {
 		t.Fatalf(
 			"lock must not be extended while locked: got %v want %v",
-			after.LockedUntil.Time,
+			*after.LockedUntil,
 			beforeLockedUntil,
 		)
 	}

@@ -219,8 +219,8 @@ func (h *PlatformHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 
 func toPlatformUserDTO(row user.PlatformRow) platformUserDTO {
 	var lastLogin *string
-	if row.LastLoginAt.Valid {
-		s := row.LastLoginAt.Time.Format(time.RFC3339)
+	if row.LastLoginAt != nil {
+		s := row.LastLoginAt.Format(time.RFC3339)
 		lastLogin = &s
 	}
 

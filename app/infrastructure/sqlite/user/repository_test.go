@@ -25,7 +25,7 @@ func TestRecordFailedLogin_IncrementsBelowThreshold(t *testing.T) {
 	if got.FailedLoginAttempts != 1 {
 		t.Fatalf("counter: got %d want 1", got.FailedLoginAttempts)
 	}
-	if got.LockedUntil.Valid {
+	if got.LockedUntil != nil {
 		t.Fatal("LockedUntil must be NULL below threshold")
 	}
 }
@@ -45,7 +45,7 @@ func TestRecordFailedLogin_LocksAtThreshold(t *testing.T) {
 	if got.FailedLoginAttempts != threshold-1 {
 		t.Fatalf("pre-lock counter: got %d want %d", got.FailedLoginAttempts, threshold-1)
 	}
-	if got.LockedUntil.Valid {
+	if got.LockedUntil != nil {
 		t.Fatal("must not lock before threshold")
 	}
 
@@ -58,7 +58,7 @@ func TestRecordFailedLogin_LocksAtThreshold(t *testing.T) {
 		t.Fatal("threshold attempt must return non-nil locked_until")
 	}
 	got, _ = fx.Users.FindByID(ctx, u.ID)
-	if !got.LockedUntil.Valid {
+	if got.LockedUntil == nil {
 		t.Fatal("LockedUntil must be set after threshold reached")
 	}
 	if got.FailedLoginAttempts != 0 {
@@ -97,7 +97,7 @@ func TestResetFailedLogin_ClearsCounterAndLock(t *testing.T) {
 		_, _ = fx.Users.RecordFailedLogin(ctx, u.ID, 3, time.Minute, time.Hour)
 	}
 	got, _ := fx.Users.FindByID(ctx, u.ID)
-	if !got.LockedUntil.Valid {
+	if got.LockedUntil == nil {
 		t.Fatal("setup: account should be locked")
 	}
 
@@ -105,7 +105,7 @@ func TestResetFailedLogin_ClearsCounterAndLock(t *testing.T) {
 		t.Fatalf("reset: %v", err)
 	}
 	got, _ = fx.Users.FindByID(ctx, u.ID)
-	if got.FailedLoginAttempts != 0 || got.LockedUntil.Valid {
+	if got.FailedLoginAttempts != 0 || got.LockedUntil != nil {
 		t.Fatalf("after reset: counter=%d locked_until=%v",
 			got.FailedLoginAttempts, got.LockedUntil)
 	}
