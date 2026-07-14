@@ -236,6 +236,54 @@ func TestCommandBus_EventsDispatchOnCommitNotRollback(t *testing.T) {
 	}
 }
 
+// F-008: SystemChain includes RunDispatcherMiddleware, so a durable run enqueued
+// from the operator-trusted CLI bus is a real, persisted INSERT — not the silent
+// no-op it was when SystemChain omitted the dispatcher. SystemChain runs
+// DispatchEvents and an event handler is explicitly steered at
+// RunDispatcherFromContext(ctx).Enqueue, so the dispatcher must be present; the
+// enqueue is durable (the CLI process can exit and a serve/worker picks the run
+// up). Without RunDispatcherMiddleware in SystemChain, RunDispatcherFromContext
+// returns the no-op and this run vanishes — the count stays 0 and this fails.
+func TestSystemCommandBus_RunEnqueueIsDurable(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "system_enqueue.db"))
+
+	registry, err := runapp.NewHandlerRegistry(map[string]runapp.Registration{
+		"test.run": {
+			Handler: func(context.Context, *run.Run, runapp.Checkpointer) error { return nil },
+		},
+	}, time.Second)
+	if err != nil {
+		t.Fatalf("registry: %v", err)
+	}
+	dispatcher := runapp.NewDispatcher(fx.Runs, registry)
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	eventBus := provideEventBus(logger, provideEventHandlers(), shared.NopReporter{})
+	sysBus := provideSystemCommandBus(
+		logger,
+		fx.DB,
+		eventBus,
+		sqliteaudit.NewRepository(fx.DB),
+		dispatcher,
+		shared.NopReporter{},
+	)
+
+	if e := bus.ExecVoid(ctx, sysBus.Bus, "CliEnqueueRun", skipPermCmd{}, func(ctx context.Context) error {
+		return shared.RunDispatcherFromContext(ctx).Enqueue(ctx, "test.run", 0, map[string]any{"x": 1})
+	}); e != nil {
+		t.Fatalf("system enqueue: %v", e)
+	}
+
+	var n int
+	if e := fx.DB.DB().GetContext(ctx, &n, `SELECT COUNT(*) FROM runs`); e != nil {
+		t.Fatalf("count runs: %v", e)
+	}
+	if n != 1 {
+		t.Fatalf("run enqueued via the system bus must persist durably, got %d run rows", n)
+	}
+}
+
 // Tenant spine: TenantMiddleware (in BaseChain) must thread the resolved tenant
 // into the handler's ctx through the REAL production command chain — proving the
 // spine is wired, not just unit-correct. Single-tenant mode yields the default

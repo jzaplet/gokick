@@ -125,7 +125,7 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	seedAdminTenant := provideSeedAdminTenant(configConfig)
 	multitenant := provideMultitenant(configConfig)
 	seederSeeder := seeder.NewSeeder(userRepository, tenantRepository, passwordHasher, seedAdminPassword, seedSuperAdminPassword, seedAdminTenant, multitenant, logger)
-	systemCommandBus := provideSystemCommandBus(logger, sqliteManager, eventBus, auditRepository, reporter)
+	systemCommandBus := provideSystemCommandBus(logger, sqliteManager, eventBus, auditRepository, runDispatcher, reporter)
 	seedCommand := console.NewSeedCommand(seederSeeder, systemCommandBus)
 	createTenantHandler := command5.NewCreateTenantHandler(tenantRepository)
 	getTenantHandler := query5.NewGetTenantHandler(tenantRepository)
@@ -182,17 +182,20 @@ func provideCommandBus(
 
 // provideSystemCommandBus wires the OPERATOR-TRUSTED write bus for the CLI
 // create-* commands. It is the CommandBus chain MINUS Authorize and Tenant (no
-// principal, no JWT-resolved tenant) and minus RunDispatcher (these commands
-// enqueue nothing). Audit still wraps OUTSIDE Transaction and DispatchEvents
-// still wraps it, so the ordering invariants hold. See bus.SystemCommandBus.
+// principal, no JWT-resolved tenant). Audit still wraps OUTSIDE Transaction and
+// DispatchEvents still wraps it, and RunDispatcher sits between them so an event
+// handler on this bus can durably enqueue a follow-up run (F-008). See
+// bus.SystemCommandBus.
 func provideSystemCommandBus(
 	logger *slog.Logger,
 	db *database.SqliteManager,
 	eventBus *bus.EventBus, audit2 shared.AuditLogger,
 
+	runDispatcher shared.RunDispatcher,
 	reporter shared.ErrorReporter,
 ) *bus.SystemCommandBus {
-	return bus.NewSystemCommandBus(middleware.SystemChain(logger, db, eventBus, audit2, reporter)...)
+	return bus.NewSystemCommandBus(middleware.SystemChain(logger, db, eventBus, audit2, runDispatcher, reporter)...,
+	)
 }
 
 func provideQueryBus(

@@ -90,17 +90,21 @@ func provideCommandBus(
 
 // provideSystemCommandBus wires the OPERATOR-TRUSTED write bus for the CLI
 // create-* commands. It is the CommandBus chain MINUS Authorize and Tenant (no
-// principal, no JWT-resolved tenant) and minus RunDispatcher (these commands
-// enqueue nothing). Audit still wraps OUTSIDE Transaction and DispatchEvents
-// still wraps it, so the ordering invariants hold. See bus.SystemCommandBus.
+// principal, no JWT-resolved tenant). Audit still wraps OUTSIDE Transaction and
+// DispatchEvents still wraps it, and RunDispatcher sits between them so an event
+// handler on this bus can durably enqueue a follow-up run (F-008). See
+// bus.SystemCommandBus.
 func provideSystemCommandBus(
 	logger *slog.Logger,
 	db *database.SqliteManager,
 	eventBus *bus.EventBus,
 	audit shared.AuditLogger,
+	runDispatcher shared.RunDispatcher,
 	reporter shared.ErrorReporter,
 ) *bus.SystemCommandBus {
-	return bus.NewSystemCommandBus(busmw.SystemChain(logger, db, eventBus, audit, reporter)...)
+	return bus.NewSystemCommandBus(
+		busmw.SystemChain(logger, db, eventBus, audit, runDispatcher, reporter)...,
+	)
 }
 
 func provideQueryBus(

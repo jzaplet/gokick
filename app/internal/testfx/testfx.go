@@ -153,8 +153,16 @@ func (f *Fixture) NewSystemBus() *bus.SystemCommandBus {
 		busmw.LoggingMiddleware(logger),
 	)
 
+	// Throwaway no-op run dispatcher, same as NewBuses: no CLI command's event
+	// handler enqueues today, and importing the real application/run dispatcher
+	// here would cycle (its test imports testfx). A test that needs a real enqueue
+	// via the system bus builds its own SystemChain with a live dispatcher.
+	runDispatcher := shared.RunDispatcherFromContext(context.Background())
+
 	return bus.NewSystemCommandBus(
-		busmw.SystemChain(logger, f.DB, eventBus, sqliteaudit.NewRepository(f.DB), reporter)...,
+		busmw.SystemChain(
+			logger, f.DB, eventBus, sqliteaudit.NewRepository(f.DB), runDispatcher, reporter,
+		)...,
 	)
 }
 

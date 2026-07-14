@@ -52,27 +52,33 @@ func CommandChain(
 
 // SystemChain is the middleware chain for the SystemCommandBus — the
 // operator-trusted CLI commands (create-*, seed). It is the CommandBus chain
-// MINUS Authorize and Tenant (no principal, no JWT-resolved tenant) and minus
-// the RunDispatcher (these commands enqueue nothing):
+// MINUS Authorize and Tenant (no principal, no JWT-resolved tenant):
 //
-//	Recovery → Logging → Audit → DispatchEvents → Transaction
+//	Recovery → Logging → Audit → RunDispatcher → DispatchEvents → Transaction
 //
 // Audit wraps OUTSIDE Transaction (failure events survive rollback) and
-// DispatchEvents wraps it (events fire post-commit). This is the SINGLE source of
-// the chain: the DI provider (provideSystemCommandBus) and testfx (NewSystemBus)
-// both call it, so the production and test buses can never drift. It takes
-// interfaces only, so both the infrastructure and test layers can build it.
+// DispatchEvents wraps it (events fire post-commit). RunDispatcher sits between
+// them, exactly as in CommandChain: this chain runs DispatchEvents, and an event
+// handler is explicitly steered at RunDispatcherFromContext(ctx).Enqueue, so it
+// must be present or that enqueue silently no-ops (F-008). The enqueue is a
+// durable INSERT — the CLI process can exit and a serve/worker picks the run up.
+// This is the SINGLE source of the chain: the DI provider (provideSystemCommandBus)
+// and testfx (NewSystemBus) both call it, so the production and test buses can
+// never drift. It takes interfaces only, so both the infrastructure and test
+// layers can build it.
 func SystemChain(
 	logger *slog.Logger,
 	tx shared.Transactor,
 	eventBus *bus.EventBus,
 	audit shared.AuditLogger,
+	runDispatcher shared.RunDispatcher,
 	reporter shared.ErrorReporter,
 ) []bus.Middleware {
 	return []bus.Middleware{
 		RecoveryMiddleware(logger, reporter),
 		LoggingMiddleware(logger),
 		AuditMiddleware(logger, audit),
+		RunDispatcherMiddleware(runDispatcher),
 		DispatchEventsMiddleware(logger, eventBus),
 		TransactionMiddleware(tx),
 	}
