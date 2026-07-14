@@ -1,6 +1,9 @@
-// Mirrors backend RequiredPermission() declarations across
-// app/application/**/(command|query)/*.go. Keep both sides in sync — backend
-// is authoritative.
+// Mirrors the FE-reachable backend permissions — those the PermissionsRegistry
+// surfaces to the frontend (login / profile responses). CLI-only permissions
+// (shared.CLIOnly: create-superadmin, create-tenant, get-tenant) are deliberately
+// excluded — the frontend can never invoke them. Kept in sync by hand for now;
+// backend is authoritative. Automating this mirror is the BE↔FE codegen
+// follow-up (see gokick-roadmap).
 
 export const Permission = {
     AuthLogout: 'auth:logout',
@@ -15,8 +18,6 @@ export const Permission = {
     PlatformOverview: 'platform:overview',
     PlatformUsersUpdate: 'platform:users:update',
     PlatformUsersDelete: 'platform:users:delete',
-    PlatformTenantsCreate: 'platform:tenants:create',
-    PlatformTenantsRead: 'platform:tenants:read',
 } as const;
 
 export type Permission = typeof Permission[keyof typeof Permission];

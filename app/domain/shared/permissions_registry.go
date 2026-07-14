@@ -11,12 +11,16 @@ type PermissionsRegistry struct {
 }
 
 // NewPermissionsRegistry collects RequiredPermission() values from items,
-// deduplicates and sorts them.
+// deduplicates and sorts them. Items implementing CLIOnly are skipped — their
+// permission is CLI/SystemCommandBus-only and must not reach the FE-facing list.
 func NewPermissionsRegistry(items []Permissioned) *PermissionsRegistry {
 	seen := map[string]struct{}{}
 	all := []string{}
 
 	for _, p := range items {
+		if _, cliOnly := p.(CLIOnly); cliOnly {
+			continue // CLI-only: enforced via SystemCommandBus, never FE-facing
+		}
 		perm := p.RequiredPermission()
 		if _, exists := seen[perm]; exists {
 			continue

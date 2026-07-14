@@ -21,6 +21,10 @@ type CreateSuperAdminCommand struct {
 
 func (CreateSuperAdminCommand) RequiredPermission() string { return "platform:users:create" }
 
+// CLIOnly: create-superadmin runs only via the CLI/SystemCommandBus (no HTTP
+// route), so its permission stays out of the FE-facing registry. See shared.CLIOnly.
+func (CreateSuperAdminCommand) CLIOnly() {}
+
 type CreateSuperAdminHandler struct {
 	users    user.Repository
 	password shared.PasswordHasher

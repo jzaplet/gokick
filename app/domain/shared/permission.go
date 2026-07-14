@@ -13,6 +13,17 @@ type SkipPermission interface {
 	SkipPermissionCheck()
 }
 
+// CLIOnly marks a Permissioned that is dispatched ONLY through the operator-
+// trusted SystemCommandBus (a CLI create/seed path) and has no HTTP route. The
+// system bus skips AuthorizeMiddleware, so its RequiredPermission is never
+// enforced against a caller — it names the operation but nothing checks it. Such
+// a permission must NOT leak into the FE-facing PermissionsRegistry: the frontend
+// can never invoke the operation, so surfacing the permission would advertise a
+// phantom capability. NewPermissionsRegistry excludes any item implementing this.
+type CLIOnly interface {
+	CLIOnly()
+}
+
 type PermissionChecker interface {
 	Check(ctx context.Context, permission string) error
 }

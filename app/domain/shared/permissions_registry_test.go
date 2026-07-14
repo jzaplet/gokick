@@ -10,6 +10,28 @@ type fakePermissioned string
 
 func (f fakePermissioned) RequiredPermission() string { return string(f) }
 
+// fakeCLIOnly is Permissioned AND CLIOnly — the registry must skip it.
+type fakeCLIOnly string
+
+func (f fakeCLIOnly) RequiredPermission() string { return string(f) }
+func (f fakeCLIOnly) CLIOnly()                   {}
+
+// CLI-only items (shared.CLIOnly) are excluded from the FE-facing registry — the
+// filter mechanism behind F-037. The di package has the outcome test over the
+// real provider; this pins the filter itself.
+func TestPermissionsRegistry_ExcludesCLIOnly(t *testing.T) {
+	reg := NewPermissionsRegistry([]Permissioned{
+		fakePermissioned("profile:read"),
+		fakeCLIOnly("platform:tenants:create"),
+		fakePermissioned("admin:users:read"),
+	})
+
+	want := []string{"admin:users:read", "profile:read"}
+	if got := reg.All(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("CLI-only must be excluded:\n got: %v\nwant: %v", got, want)
+	}
+}
+
 func TestPermissionsRegistry_AllIsSortedAndDeduplicated(t *testing.T) {
 	reg := NewPermissionsRegistry([]Permissioned{
 		fakePermissioned("profile:read"),

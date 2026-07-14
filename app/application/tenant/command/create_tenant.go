@@ -15,6 +15,10 @@ type CreateTenantCommand struct {
 
 func (CreateTenantCommand) RequiredPermission() string { return "platform:tenants:create" }
 
+// CLIOnly: create-tenant runs only via the CLI/SystemCommandBus (no HTTP route),
+// so its permission stays out of the FE-facing registry. See shared.CLIOnly.
+func (CreateTenantCommand) CLIOnly() {}
+
 type CreateTenantHandler struct {
 	tenants tenant.Repository
 }

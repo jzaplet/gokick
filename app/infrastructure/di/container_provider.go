@@ -302,6 +302,10 @@ func providePermissionsRegistry() *shared.PermissionsRegistry {
 		platformqry.GetStatsQuery{},
 		platformcmd.UpdatePlatformUserCommand{},
 		platformcmd.DeletePlatformUserCommand{},
+		// CLI-only (shared.CLIOnly): dispatched via the SystemCommandBus, no HTTP
+		// route. NewPermissionsRegistry filters them out so their permission never
+		// reaches the FE-facing list. Listed here so the marker is the single
+		// exclusion mechanism (drop the marker → the di outcome test fails).
 		platformcmd.CreateSuperAdminCommand{},
 		tenantcmd.CreateTenantCommand{},
 		tenantqry.GetTenantQuery{},
