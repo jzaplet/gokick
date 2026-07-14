@@ -8,11 +8,11 @@ import (
 	"gokick/app/internal/testfx"
 )
 
-// FindAllWithUserCount is the cross-tenant GROUP BY aggregate behind
+// OverviewAcrossTenants is the cross-tenant GROUP BY aggregate behind
 // the superadmin tenant overview. It must count each tenant's users correctly,
 // INCLUDING a tenant with zero users (the LEFT JOIN must yield 0, not drop it) —
 // the exact shape the product reuses to SUM the tenant_usage ledger.
-func TestTenantRepository_FindAllWithUserCount(t *testing.T) {
+func TestTenantRepository_OverviewAcrossTenants(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_overview.db"))
 
@@ -23,9 +23,9 @@ func TestTenantRepository_FindAllWithUserCount(t *testing.T) {
 	fx.SeedUserInTenant(t, "anna", "user", tenantA.ID)
 	fx.SeedUserInTenant(t, "bob", "admin", tenantB.ID)
 
-	rows, err := fx.Tenants.FindAllWithUserCount(ctx)
+	rows, err := fx.PlatformTenants.OverviewAcrossTenants(ctx)
 	if err != nil {
-		t.Fatalf("FindAllWithUserCount: %v", err)
+		t.Fatalf("OverviewAcrossTenants: %v", err)
 	}
 
 	counts := map[string]int{}
