@@ -76,12 +76,10 @@ func TestLogoutHandler_RecordsAuditEvent(t *testing.T) {
 	u := fx.SeedUser(t, "alice", "pwd", "user")
 	fx.SeedRefreshToken(t, u.ID, time.Now().Add(24*time.Hour))
 
-	collector := &shared.AuditCollector{}
-	authCtx := shared.ContextWithAuditCollector(
+	authCtx, collector := shared.ContextWithAuditCollector(
 		shared.ContextWithClaims(ctx, &shared.AuthClaims{
 			UserID: u.ID, Role: "user", Nickname: u.Nickname,
 		}),
-		collector,
 	)
 
 	handler := NewLogoutHandler(fx.Tokens)
@@ -89,7 +87,7 @@ func TestLogoutHandler_RecordsAuditEvent(t *testing.T) {
 		t.Fatalf("logout: %v", err)
 	}
 
-	events := collector.Drain()
+	events := collector.Flush()
 	if len(events) != 1 {
 		t.Fatalf("expected exactly one audit event, got %d: %+v", len(events), events)
 	}

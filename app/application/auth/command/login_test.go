@@ -148,15 +148,14 @@ func TestLoginHandler_RecordsSuccessfulLogin(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_audit_ok.db"))
 	u := fx.SeedUser(t, "gina", "correct-pw", "user")
 
-	collector := &shared.AuditCollector{}
-	ctx = shared.ContextWithAuditCollector(ctx, collector)
+	ctx, collector := shared.ContextWithAuditCollector(ctx)
 
 	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
 	if _, err := handler.Handle(ctx, LoginCommand{Nickname: "gina", Password: "correct-pw"}); err != nil {
 		t.Fatalf("login: %v", err)
 	}
 
-	events := collector.Drain()
+	events := collector.Flush()
 	if len(events) != 1 || events[0].Action != "auth.login.succeeded" ||
 		events[0].TargetID != u.ID {
 		t.Fatalf("expected 1 auth.login.succeeded for %s, got %+v", u.ID, events)
@@ -168,13 +167,12 @@ func TestLoginHandler_RecordsFailedLoginWithNickname(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_audit_fail.db"))
 	fx.SeedUser(t, "henry", "correct-pw", "user")
 
-	collector := &shared.AuditCollector{}
-	ctx = shared.ContextWithAuditCollector(ctx, collector)
+	ctx, collector := shared.ContextWithAuditCollector(ctx)
 
 	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
 	_, _ = handler.Handle(ctx, LoginCommand{Nickname: "henry", Password: "wrong"})
 
-	events := collector.Drain()
+	events := collector.Flush()
 	if len(events) != 1 || events[0].Action != "auth.login.failed" {
 		t.Fatalf("expected 1 auth.login.failed, got %+v", events)
 	}
@@ -188,8 +186,7 @@ func TestLoginHandler_RecordsAccountLockedWhenThresholdReached(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_audit_lock.db"))
 	fx.SeedUser(t, "ivan", "correct-pw", "user")
 
-	collector := &shared.AuditCollector{}
-	ctx = shared.ContextWithAuditCollector(ctx, collector)
+	ctx, collector := shared.ContextWithAuditCollector(ctx)
 
 	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
 	for i := 0; i < loginLockThreshold; i++ {
@@ -197,7 +194,7 @@ func TestLoginHandler_RecordsAccountLockedWhenThresholdReached(t *testing.T) {
 	}
 
 	var lockEvents int
-	for _, e := range collector.Drain() {
+	for _, e := range collector.Flush() {
 		if e.Action == "auth.account.locked" {
 			lockEvents++
 		}
@@ -282,15 +279,14 @@ func TestLoginHandler_BlockedWhileLockedEmitsAudit(t *testing.T) {
 	}
 
 	// Correct password, but the account is locked → blocked_while_locked.
-	collector := &shared.AuditCollector{}
-	lockedCtx := shared.ContextWithAuditCollector(ctx, collector)
+	lockedCtx, collector := shared.ContextWithAuditCollector(ctx)
 	_, err := handler.Handle(lockedCtx, LoginCommand{Nickname: "mona", Password: "correct-pw"})
 	var authErr *shared.AuthError
 	if !errors.As(err, &authErr) {
 		t.Fatalf("locked account must return *shared.AuthError, got %T: %v", err, err)
 	}
 	var blocked int
-	for _, e := range collector.Drain() {
+	for _, e := range collector.Flush() {
 		if e.Action == "auth.login.blocked_while_locked" && e.TargetID == u.ID {
 			blocked++
 		}
@@ -352,15 +348,14 @@ func TestLoginHandler_NoSuccessAuditWhenTokenSaveFails(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_save_fails.db"))
 	fx.SeedUser(t, "olga", "correct-pw", "user")
 
-	collector := &shared.AuditCollector{}
-	ctx = shared.ContextWithAuditCollector(ctx, collector)
+	ctx, collector := shared.ContextWithAuditCollector(ctx)
 
 	handler := NewLoginHandler(fx.Users, saveFailsTokenRepo{}, fx.Hasher, fx.Jwt)
 	if _, err := handler.Handle(ctx, LoginCommand{Nickname: "olga", Password: "correct-pw"}); err == nil {
 		t.Fatal("expected the refresh-token Save failure to propagate")
 	}
 
-	for _, e := range collector.Drain() {
+	for _, e := range collector.Flush() {
 		if e.Action == "auth.login.succeeded" {
 			t.Fatal("must NOT record auth.login.succeeded when no token was issued")
 		}

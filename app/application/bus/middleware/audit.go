@@ -30,12 +30,11 @@ func AuditMiddleware(logger *slog.Logger, audit shared.AuditLogger) bus.Middlewa
 		cmd any,
 		next func(ctx context.Context) (any, error),
 	) (any, error) {
-		collector := &shared.AuditCollector{}
-		ctxWithCollector := shared.ContextWithAuditCollector(ctx, collector)
+		ctxWithCollector, collector := shared.ContextWithAuditCollector(ctx)
 
 		result, handlerErr := next(ctxWithCollector)
 
-		events := collector.Drain()
+		events := collector.Flush()
 		if len(events) == 0 {
 			return result, handlerErr
 		}

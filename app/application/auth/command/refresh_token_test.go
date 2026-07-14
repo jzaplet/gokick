@@ -260,14 +260,13 @@ func TestRefreshTokenHandler_ReuseRecordsTheftAudit(t *testing.T) {
 	}
 
 	// Reuse the already-rotated token with a collector attached.
-	collector := &shared.AuditCollector{}
-	auditCtx := shared.ContextWithAuditCollector(ctx, collector)
+	auditCtx, collector := shared.ContextWithAuditCollector(ctx)
 	if _, err := handler.Handle(auditCtx, RefreshTokenCommand{RawToken: raw}); err == nil {
 		t.Fatal("expected AuthError on token reuse")
 	}
 
 	var theft *shared.AuditEvent
-	for _, e := range collector.Drain() {
+	for _, e := range collector.Flush() {
 		if e.Action == "auth.token.theft_detected" {
 			ev := e
 			theft = &ev
@@ -314,8 +313,7 @@ func TestRefreshTokenHandler_TheftDeleteFailureSurfacesErrorAndStillAudits(t *te
 		stubDeleteFailsTokens{Repository: fx.Tokens, err: deleteBlip},
 		fx.Jwt,
 	)
-	collector := &shared.AuditCollector{}
-	auditCtx := shared.ContextWithAuditCollector(ctx, collector)
+	auditCtx, collector := shared.ContextWithAuditCollector(ctx)
 
 	_, err := handler.Handle(auditCtx, RefreshTokenCommand{RawToken: raw})
 
@@ -330,7 +328,7 @@ func TestRefreshTokenHandler_TheftDeleteFailureSurfacesErrorAndStillAudits(t *te
 	}
 	// The theft was audited regardless — recorded BEFORE the delete was attempted.
 	var sawTheft bool
-	for _, e := range collector.Drain() {
+	for _, e := range collector.Flush() {
 		if e.Action == "auth.token.theft_detected" {
 			sawTheft = true
 		}

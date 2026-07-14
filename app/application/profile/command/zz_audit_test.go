@@ -23,8 +23,7 @@ func TestChangePasswordHandler_RecordsAuditEvent(t *testing.T) {
 	authCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{
 		UserID: u.ID, Role: u.Role, Nickname: u.Nickname,
 	})
-	collector := &shared.AuditCollector{}
-	auditCtx := shared.ContextWithAuditCollector(authCtx, collector)
+	auditCtx, collector := shared.ContextWithAuditCollector(authCtx)
 
 	handler := NewChangePasswordHandler(fx.Users, fx.Hasher)
 	err := handler.Handle(auditCtx, ChangePasswordCommand{
@@ -37,7 +36,7 @@ func TestChangePasswordHandler_RecordsAuditEvent(t *testing.T) {
 		t.Fatalf("change password: %v", err)
 	}
 
-	drained := collector.Drain()
+	drained := collector.Flush()
 	if len(drained) != 1 {
 		t.Fatalf("expected exactly 1 audit event, got %d: %+v", len(drained), drained)
 	}

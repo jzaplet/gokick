@@ -47,13 +47,19 @@ type AuditCollector struct {
 	events []AuditEvent
 }
 
+func NewAuditCollector() *AuditCollector {
+	return &AuditCollector{}
+}
+
 func (c *AuditCollector) Record(event AuditEvent) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.events = append(c.events, event)
 }
 
-func (c *AuditCollector) Drain() []AuditEvent {
+// Flush returns the buffered events and clears the collector (take-and-clear) —
+// same name as EventCollector.Flush for the identical operation.
+func (c *AuditCollector) Flush() []AuditEvent {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	out := c.events
@@ -65,8 +71,12 @@ type auditCollectorKeyType struct{}
 
 var auditCollectorKey = auditCollectorKeyType{}
 
-func ContextWithAuditCollector(ctx context.Context, c *AuditCollector) context.Context {
-	return context.WithValue(ctx, auditCollectorKey, c)
+// ContextWithAuditCollector creates a fresh collector, installs it in ctx and
+// returns both — the same create-and-return shape as ContextWithEventCollector,
+// so the two per-request collectors are used identically.
+func ContextWithAuditCollector(ctx context.Context) (context.Context, *AuditCollector) {
+	c := NewAuditCollector()
+	return context.WithValue(ctx, auditCollectorKey, c), c
 }
 
 // AuditCollectorFromContext returns the request-scoped collector when
@@ -76,7 +86,7 @@ func AuditCollectorFromContext(ctx context.Context) *AuditCollector {
 	if c, ok := ctx.Value(auditCollectorKey).(*AuditCollector); ok {
 		return c
 	}
-	return &AuditCollector{}
+	return NewAuditCollector()
 }
 
 type actorIPKeyType struct{}
