@@ -9,6 +9,35 @@ import (
 	"gokick/app/internal/testfx"
 )
 
+// F-045: after a lock EXPIRES, a single below-threshold failure must return nil —
+// not the stale past locked_until the CASE's ELSE branch keeps. Returning it would
+// be mis-read by the login handler as a fresh lock and emit a phantom
+// auth.account.locked audit. This fails against the old `RETURNING locked_until`.
+func TestRecordFailedLogin_ExpiredLockDoesNotReturnStale(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "lock_stale.db"))
+	u := fx.SeedUser(t, "alice", "secret12", "user")
+
+	// A lock that has since expired: locked_until in the past.
+	past := time.Now().Add(-time.Hour)
+	if _, err := fx.DB.DB().ExecContext(ctx,
+		`UPDATE users SET locked_until = ? WHERE id = ?`, past, u.ID); err != nil {
+		t.Fatalf("seed expired lock: %v", err)
+	}
+
+	// One below-threshold failure → does NOT lock → must return nil, not the stale past.
+	locked, err := fx.Users.RecordFailedLogin(ctx, u.ID, 5, time.Minute, time.Hour)
+	if err != nil {
+		t.Fatalf("RecordFailedLogin: %v", err)
+	}
+	if locked != nil {
+		t.Fatalf(
+			"expired lock + below-threshold failure must return nil, got %v (phantom lock)",
+			locked,
+		)
+	}
+}
+
 func TestRecordFailedLogin_IncrementsBelowThreshold(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "lock_inc.db"))

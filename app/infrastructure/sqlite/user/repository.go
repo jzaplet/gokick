@@ -222,7 +222,15 @@ func (r *Repository) RecordFailedLogin(
 	if err != nil {
 		return nil, err
 	}
-	if !locked.Valid {
+	// Return locked_until ONLY when THIS attempt produced an ACTIVE lock (the port
+	// contract: "the new lock, else nil"). The filter is in Go, not SQL, because a
+	// RETURNING CASE expression loses the column's datetime affinity and comes back
+	// as a raw string. RecordFailedLogin runs only when the account is NOT already
+	// locked (login.go guards on the locked flag), so a FUTURE locked_until here can
+	// only be one this attempt set; a stale PAST value left by an expired lock (the
+	// ELSE branch keeps it) is NOT a fresh lock — returning it would be mis-read as
+	// one and emit a phantom auth.account.locked audit event (F-045).
+	if !locked.Valid || !locked.Time.After(time.Now()) {
 		return nil, nil
 	}
 	return &locked.Time, nil
