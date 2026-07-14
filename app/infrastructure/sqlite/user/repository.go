@@ -82,14 +82,23 @@ func (r *Repository) UpdatePassword(
 // exact id. The enumerable list leak is closed (FindAll is tenant-scoped) and the
 // mutate paths are scoped (Update/Delete), so a targeted by-id read is a known,
 // smaller surface — not an oversight. Scope it too if that surface matters.
+//
+// Not-found returns (nil, nil) — the repository idiom every other lookup already
+// follows (FindByNickname, token/run/tenant FindByID). Application handlers own
+// the not-found *response*: each decides whether a missing user is a 400
+// (admin edits a stale id), a 401 (the authenticated user's own row is gone), or
+// a force-logout (refresh). See the contract on user.Repository.FindByID (F-011).
 func (r *Repository) FindByID(ctx context.Context, id string) (*user.User, error) {
 	var u user.User
 	err := r.Conn(ctx).GetContext(ctx, &u,
 		`SELECT * FROM users WHERE id=? /* tenant-scope-exempt: identity load by id */`, id)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, &shared.ValidationError{Field: "id", Message: "user not found"}
+		return nil, nil
 	}
-	return &u, err
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
 }
 
 // FindByNickname is the login lookup — it runs before any tenant is resolved,
@@ -254,7 +263,8 @@ func (r *Repository) ResetFailedLogin(ctx context.Context, userID string) error 
 // caller emit a phantom audit event for a write that never happened (F-023 phantom
 // role_changed, F-039 superadmin self-password no-op). Unlike sqlite.RowsAffectedBool
 // (owner-fencing, where 0 rows is a normal terminal outcome), here 0 rows is ALWAYS
-// an error. Field "id" mirrors FindByID's not-found so it maps to the same 400.
+// an error. Field "id" matches the not-found ValidationError the admin/platform
+// handlers return on a missing user, so both map to the same 400.
 func requireOneRow(res sql.Result, err error) error {
 	if err != nil {
 		return err

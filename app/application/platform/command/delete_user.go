@@ -38,6 +38,9 @@ func (h *DeletePlatformUserHandler) Handle(
 	if err != nil {
 		return err
 	}
+	if target == nil {
+		return &shared.ValidationError{Field: "id", Message: "user not found"}
+	}
 
 	// A superadmin (platform) account is never deletable through the API — the
 	// repo delete also excludes superadmin rows.

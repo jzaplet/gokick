@@ -42,6 +42,9 @@ func (h *UpdatePlatformUserHandler) Handle(
 	if err != nil {
 		return err
 	}
+	if target == nil {
+		return &shared.ValidationError{Field: "id", Message: "user not found"}
+	}
 
 	// No self-demote guard on the platform plane (a superadmin editing tenant
 	// users can't lock itself out), so guard is nil. The cross-tenant

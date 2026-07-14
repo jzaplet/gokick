@@ -35,6 +35,9 @@ func (h *DeleteUserHandler) Handle(ctx context.Context, cmd DeleteUserCommand) e
 	if err != nil {
 		return err
 	}
+	if target == nil {
+		return &shared.ValidationError{Field: "id", Message: "user not found"}
+	}
 
 	// A superadmin (platform) account is managed out-of-band — mirror the platform
 	// delete handler. Without this the repo's role != 'superadmin' filter turns the

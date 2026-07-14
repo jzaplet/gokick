@@ -40,6 +40,9 @@ func (h *UpdateUserHandler) Handle(ctx context.Context, cmd UpdateUserCommand) e
 	if err != nil {
 		return err
 	}
+	if target == nil {
+		return &shared.ValidationError{Field: "id", Message: "user not found"}
+	}
 
 	// Admin-only guard: don't let an admin demote themselves out of admin and lock
 	// the org out of admin ops (self-update of nickname/password/email stays OK).

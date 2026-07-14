@@ -41,6 +41,12 @@ func (h *ChangePasswordHandler) Handle(ctx context.Context, cmd ChangePasswordCo
 	if err != nil {
 		return err
 	}
+	if u == nil {
+		// Self-lookup by the authenticated id; a gone row is the same rare
+		// mid-session-deletion edge as get_profile. Preserve the pre-F-011 400
+		// here (this is a form submit, not a session read) rather than 401.
+		return &shared.ValidationError{Field: "id", Message: "user not found"}
+	}
 
 	if err := h.password.Verify(cmd.OldPassword, u.PasswordHash); err != nil {
 		return &shared.AuthError{Message: "current password is incorrect"}

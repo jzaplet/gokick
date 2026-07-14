@@ -14,6 +14,12 @@ type Repository interface {
 	// admin editing OTHERS — a self password change can't escalate). Errors on 0 rows.
 	UpdatePassword(ctx context.Context, userID, passwordHash string, updatedAt time.Time) error
 	Delete(ctx context.Context, id string) error
+	// FindByID returns (nil, nil) when no user has that id — the same not-found
+	// idiom as FindByNickname and the token/run/tenant ports. It is NOT the
+	// handler's job to distinguish not-found via an error type: a nil user IS the
+	// not-found signal, and any non-nil error is a genuine (transient) failure to
+	// propagate. Each caller maps a nil user to its own response (400 for an admin
+	// editing a stale id, 401/force-logout for a vanished authenticated user).
 	FindByID(ctx context.Context, id string) (*User, error)
 	FindByNickname(ctx context.Context, nickname string) (*User, error)
 	FindAll(ctx context.Context) ([]User, error)

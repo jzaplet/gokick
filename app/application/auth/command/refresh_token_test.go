@@ -13,8 +13,13 @@ import (
 	"gokick/app/internal/testfx"
 )
 
-// stubFindByIDUsers wraps a real user.Repository but forces FindByID to fail with
-// a transient (non-ValidationError) error, to exercise the durable-logout guard.
+// stubFindByIDUsers wraps a real user.Repository but forces FindByID to return a
+// fixed (nil, err) pair. With a non-nil transient err it exercises the
+// durable-logout guard (must propagate raw, not launder into AuthError); with
+// err == nil it returns the (nil, nil) not-found the F-011 contract defines, to
+// exercise the u == nil → AuthError branch with a still-valid refresh token
+// (the plain fx.Users.Delete path can't reach it — user delete cascades to the
+// token, so the handler bails at FindByHash before ever calling FindByID).
 type stubFindByIDUsers struct {
 	user.Repository
 	err error
@@ -138,6 +143,29 @@ func TestRefreshTokenHandler_UserDeletedAfterIssue(t *testing.T) {
 	var authErr *shared.AuthError
 	if !errors.As(err, &authErr) {
 		t.Fatalf("expected *shared.AuthError, got %T: %v", err, err)
+	}
+}
+
+// The F-011 not-found branch in isolation: the refresh token is STILL VALID but
+// FindByID reports the user is gone as (nil, nil). The handler must map that to
+// AuthError (end the session), NOT panic on a nil deref. The UserDeletedAfterIssue
+// test above cannot cover this — deleting the user cascade-deletes the token, so
+// that path exits at FindByHash. Here the stub returns (nil, nil) with err == nil.
+func TestRefreshTokenHandler_UserVanishedNilNilReturnsAuthError(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "refresh_user_vanished.db"))
+	u := fx.SeedUser(t, "alice", "pwd", "user")
+	raw := fx.SeedRefreshToken(t, u.ID, time.Now().Add(24*time.Hour))
+
+	handler := NewRefreshTokenHandler(
+		stubFindByIDUsers{Repository: fx.Users, err: nil}, // (nil, nil) not-found
+		fx.Tokens, fx.Jwt,
+	)
+
+	_, err := handler.Handle(ctx, RefreshTokenCommand{RawToken: raw})
+	var authErr *shared.AuthError
+	if !errors.As(err, &authErr) {
+		t.Fatalf("vanished user (nil,nil) must map to *shared.AuthError, got %T: %v", err, err)
 	}
 }
 

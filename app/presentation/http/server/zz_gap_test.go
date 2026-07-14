@@ -316,7 +316,7 @@ func TestRegisterRoutes_BindsAdminAndDashboardRoutesToHandlers(t *testing.T) {
 				rec.Body.String(),
 			)
 		}
-		if _, err := fx.Users.FindByID(context.Background(), target.ID); err == nil {
+		if got, _ := fx.Users.FindByID(context.Background(), target.ID); got != nil {
 			t.Fatal("target user still present after DELETE — route updated instead of deleting")
 		}
 	})

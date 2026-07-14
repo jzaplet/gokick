@@ -2,7 +2,6 @@ package command
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"gokick/app/domain/shared"
@@ -79,19 +78,17 @@ func (h *RefreshTokenHandler) Handle(
 
 	u, err := h.users.FindByID(ctx, existing.UserID)
 	if err != nil {
-		// Only a genuine "user deleted" is a definitive auth failure that should
-		// end the session: FindByID returns *ValidationError on not-found, and the
-		// raw driver error for anything transient (SQLITE_BUSY, cancelled ctx). A
-		// transient error must propagate raw → 5xx → the refresh cookie is kept,
-		// or a momentary blip during this lookup would clear the cookie + hint and
-		// durably log out a still-valid session — the very regression this fix
-		// prevents on every OTHER branch of this handler.
-		var notFound *shared.ValidationError
-		if errors.As(err, &notFound) {
-			return LoginResult{}, &shared.AuthError{Message: "user no longer exists"}
-		}
-
+		// A transient failure (SQLITE_BUSY, cancelled ctx) must propagate raw →
+		// 5xx → the refresh cookie is KEPT. A momentary blip during this lookup
+		// must never end the session, or it durably logs out a still-valid client
+		// — the very regression this handler guards on every other branch. Only a
+		// genuine "user is gone" (u == nil below) is a definitive auth failure.
 		return LoginResult{}, err
+	}
+	if u == nil {
+		// FindByID's not-found contract is (nil, nil): the user's row is genuinely
+		// gone. That IS a definitive auth failure — end the session.
+		return LoginResult{}, &shared.AuthError{Message: "user no longer exists"}
 	}
 
 	// Mint the replacement token pair and persist the new refresh token FIRST,

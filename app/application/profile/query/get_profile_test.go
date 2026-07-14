@@ -50,7 +50,10 @@ func TestGetProfileHandler_WithoutClaimsReturnsAuthError(t *testing.T) {
 }
 
 func TestGetProfileHandler_UnknownUser(t *testing.T) {
-	// Valid claims but user no longer exists in DB (e.g. deleted after token issued).
+	// Valid claims but user no longer exists in DB (deleted after token issued).
+	// F-011: FindByID now returns (nil, nil); the handler maps a vanished session
+	// subject to AuthError → 401 (client clears its session and re-logs), instead
+	// of the pre-F-011 bogus 400 {"id":"user not found"} shown to a valid JWT.
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "profile_unknown.db"))
 
@@ -61,9 +64,9 @@ func TestGetProfileHandler_UnknownUser(t *testing.T) {
 	handler := NewGetProfileHandler(fx.Users)
 	_, err := handler.Handle(authCtx, GetProfileQuery{})
 
-	var validationErr *shared.ValidationError
-	if !errors.As(err, &validationErr) {
-		t.Fatalf("expected *shared.ValidationError, got %T: %v", err, err)
+	var authErr *shared.AuthError
+	if !errors.As(err, &authErr) {
+		t.Fatalf("expected *shared.AuthError (401 for a vanished user), got %T: %v", err, err)
 	}
 }
 
