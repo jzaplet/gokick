@@ -13,6 +13,15 @@ type SkipPermission interface {
 	SkipPermissionCheck()
 }
 
+// SkipsTransaction is the command-level opt-out marker for commands that MUST run
+// outside the bus-managed transaction. It lives here with the other command
+// declaration markers (Permissioned / SkipPermission) rather than in the bus
+// middleware, so the three share one home. The WHY (raw-pool self-deadlock,
+// force-logout persistence) is documented at TransactionMiddleware, the enforcer.
+type SkipsTransaction interface {
+	SkipTransaction()
+}
+
 // CLIOnly marks a Permissioned that is dispatched ONLY through the operator-
 // trusted SystemCommandBus (a CLI create/seed path) and has no HTTP route. The
 // system bus skips AuthorizeMiddleware, so its RequiredPermission is never
