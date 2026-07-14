@@ -16,12 +16,12 @@ type EventHandlerEntry struct {
 }
 
 type EventBus struct {
-	*Bus
+	inner    *Bus
 	handlers map[string][]EventHandler
 }
 
 func NewEventBus(middlewares ...Middleware) *EventBus {
-	return &EventBus{Bus: newBus(middlewares...), handlers: make(map[string][]EventHandler)}
+	return &EventBus{inner: newBus(middlewares...), handlers: make(map[string][]EventHandler)}
 }
 
 // Register must only be called during DI wiring (single-goroutine init).
@@ -38,7 +38,7 @@ func (eb *EventBus) Dispatch(ctx context.Context, event shared.DomainEvent) {
 
 	handlers := eb.handlers[event.EventName()]
 	for _, h := range handlers {
-		_ = ExecVoid(ctx, eb.Bus, event.EventName(), event, func(ctx context.Context) error {
+		_ = execVoid(ctx, eb.inner, event.EventName(), event, func(ctx context.Context) error {
 			return h(ctx, event)
 		})
 	}

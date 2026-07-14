@@ -75,9 +75,9 @@ func TestCommandBus_AuditSurvivesBusinessRollback(t *testing.T) {
 
 	cmdBus := newProductionCommandBus(t, fx, noopDispatcher{})
 
-	err := bus.ExecVoid(
+	err := bus.DispatchVoid(
 		ctx,
-		cmdBus.Bus,
+		cmdBus,
 		"TamperUser",
 		skipPermCmd{},
 		func(ctx context.Context) error {
@@ -153,9 +153,9 @@ func TestCommandBus_RunEnqueueJoinsBusinessTransaction(t *testing.T) {
 
 	// Rollback case: enqueue a run then fail → the run row must NOT persist,
 	// proving the enqueue joined the rolled-back business tx.
-	_ = bus.ExecVoid(
+	_ = bus.DispatchVoid(
 		ctx,
-		cmdBus.Bus,
+		cmdBus,
 		"EnqueueRunThenFail",
 		skipPermCmd{},
 		func(ctx context.Context) error {
@@ -170,7 +170,7 @@ func TestCommandBus_RunEnqueueJoinsBusinessTransaction(t *testing.T) {
 	}
 
 	// Commit case: enqueue a run then succeed → the run row persists.
-	if e := bus.ExecVoid(ctx, cmdBus.Bus, "EnqueueRunThenCommit", skipPermCmd{}, func(ctx context.Context) error {
+	if e := bus.DispatchVoid(ctx, cmdBus, "EnqueueRunThenCommit", skipPermCmd{}, func(ctx context.Context) error {
 		return shared.RunDispatcherFromContext(ctx).Enqueue(ctx, "test.run", 0, map[string]any{"x": 2})
 	}); e != nil {
 		t.Fatalf("enqueue+commit: %v", e)
@@ -210,9 +210,9 @@ func TestCommandBus_EventsDispatchOnCommitNotRollback(t *testing.T) {
 	)
 
 	// Rollback case: collect an event then fail → the handler must NOT fire.
-	_ = bus.ExecVoid(
+	_ = bus.DispatchVoid(
 		ctx,
-		cmdBus.Bus,
+		cmdBus,
 		"CollectThenFail",
 		skipPermCmd{},
 		func(ctx context.Context) error {
@@ -225,7 +225,7 @@ func TestCommandBus_EventsDispatchOnCommitNotRollback(t *testing.T) {
 	}
 
 	// Commit case: collect an event then succeed → the handler fires exactly once.
-	if e := bus.ExecVoid(ctx, cmdBus.Bus, "CollectThenCommit", skipPermCmd{}, func(ctx context.Context) error {
+	if e := bus.DispatchVoid(ctx, cmdBus, "CollectThenCommit", skipPermCmd{}, func(ctx context.Context) error {
 		shared.EventCollectorFromContext(ctx).Collect(testEvent{})
 		return nil
 	}); e != nil {
@@ -269,7 +269,7 @@ func TestSystemCommandBus_RunEnqueueIsDurable(t *testing.T) {
 		shared.NopReporter{},
 	)
 
-	if e := bus.ExecVoid(ctx, sysBus.Bus, "CliEnqueueRun", skipPermCmd{}, func(ctx context.Context) error {
+	if e := bus.SystemDispatchVoid(ctx, sysBus, "CliEnqueueRun", skipPermCmd{}, func(ctx context.Context) error {
 		return shared.RunDispatcherFromContext(ctx).Enqueue(ctx, "test.run", 0, map[string]any{"x": 1})
 	}); e != nil {
 		t.Fatalf("system enqueue: %v", e)
@@ -294,9 +294,9 @@ func TestCommandBus_InjectsTenantIntoHandlerContext(t *testing.T) {
 	cmdBus := newProductionCommandBus(t, fx, noopDispatcher{})
 
 	var seen string
-	err := bus.ExecVoid(
+	err := bus.DispatchVoid(
 		ctx,
-		cmdBus.Bus,
+		cmdBus,
 		"ReadTenant",
 		skipPermCmd{},
 		func(ctx context.Context) error {

@@ -84,9 +84,9 @@ type platformUserRequest struct {
 func (h *PlatformHandler) Stats(w http.ResponseWriter, r *http.Request) {
 	q := platformqry.GetStatsQuery{}
 
-	stats, err := bus.Exec(
+	stats, err := bus.Query(
 		r.Context(),
-		h.queryBus.Bus,
+		h.queryBus,
 		"PlatformStats",
 		q,
 		func(ctx context.Context) (platformqry.PlatformStats, error) {
@@ -108,9 +108,9 @@ func (h *PlatformHandler) Stats(w http.ResponseWriter, r *http.Request) {
 func (h *PlatformHandler) Users(w http.ResponseWriter, r *http.Request) {
 	q := platformqry.ListAllUsersQuery{}
 
-	rows, err := bus.Exec(
+	rows, err := bus.Query(
 		r.Context(),
-		h.queryBus.Bus,
+		h.queryBus,
 		"PlatformListUsers",
 		q,
 		func(ctx context.Context) ([]user.PlatformRow, error) {
@@ -134,9 +134,9 @@ func (h *PlatformHandler) Users(w http.ResponseWriter, r *http.Request) {
 func (h *PlatformHandler) Tenants(w http.ResponseWriter, r *http.Request) {
 	q := platformqry.ListTenantsQuery{}
 
-	rows, err := bus.Exec(
+	rows, err := bus.Query(
 		r.Context(),
-		h.queryBus.Bus,
+		h.queryBus,
 		"PlatformListTenants",
 		q,
 		func(ctx context.Context) ([]tenant.Overview, error) {
@@ -178,9 +178,9 @@ func (h *PlatformHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		Role:     body.Role,
 	}
 
-	err := bus.ExecVoid(
+	err := bus.DispatchVoid(
 		r.Context(),
-		h.commandBus.Bus,
+		h.commandBus,
 		"PlatformUpdateUser",
 		cmd,
 		func(ctx context.Context) error {
@@ -199,9 +199,9 @@ func (h *PlatformHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 func (h *PlatformHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	cmd := platformcmd.DeletePlatformUserCommand{ID: r.PathValue("id")}
 
-	err := bus.ExecVoid(
+	err := bus.DispatchVoid(
 		r.Context(),
-		h.commandBus.Bus,
+		h.commandBus,
 		"PlatformDeleteUser",
 		cmd,
 		func(ctx context.Context) error {

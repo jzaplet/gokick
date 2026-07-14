@@ -67,9 +67,9 @@ type updateUserRequest struct {
 func (h *AdminUsersHandler) List(w http.ResponseWriter, r *http.Request) {
 	q := userqry.ListUsersQuery{}
 
-	users, err := bus.Exec(
+	users, err := bus.Query(
 		r.Context(),
-		h.queryBus.Bus,
+		h.queryBus,
 		"ListUsers",
 		q,
 		func(ctx context.Context) ([]user.User, error) {
@@ -105,9 +105,9 @@ func (h *AdminUsersHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Role:     body.Role,
 	}
 
-	err := bus.ExecVoid(
+	err := bus.DispatchVoid(
 		r.Context(),
-		h.commandBus.Bus,
+		h.commandBus,
 		"CreateUser",
 		cmd,
 		func(ctx context.Context) error {
@@ -139,9 +139,9 @@ func (h *AdminUsersHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Role:     body.Role,
 	}
 
-	err := bus.ExecVoid(
+	err := bus.DispatchVoid(
 		r.Context(),
-		h.commandBus.Bus,
+		h.commandBus,
 		"UpdateUser",
 		cmd,
 		func(ctx context.Context) error {
@@ -160,9 +160,9 @@ func (h *AdminUsersHandler) Update(w http.ResponseWriter, r *http.Request) {
 func (h *AdminUsersHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	cmd := usercmd.DeleteUserCommand{ID: r.PathValue("id")}
 
-	err := bus.ExecVoid(
+	err := bus.DispatchVoid(
 		r.Context(),
-		h.commandBus.Bus,
+		h.commandBus,
 		"DeleteUser",
 		cmd,
 		func(ctx context.Context) error {

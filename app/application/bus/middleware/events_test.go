@@ -66,9 +66,9 @@ func TestDispatchEventsMiddleware_PerRequestIsolation(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			cmd := noopCommand{dispatchID: i}
-			err := bus.ExecVoid(
+			err := bus.DispatchVoid(
 				context.Background(),
-				commandBus.Bus,
+				commandBus,
 				"Noop",
 				cmd,
 				func(ctx context.Context) error {

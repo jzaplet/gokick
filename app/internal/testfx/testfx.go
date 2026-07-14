@@ -180,7 +180,7 @@ func ExecCommand[R any](
 	cmd any,
 	handlerFn func(ctx context.Context) (R, error),
 ) (R, error) {
-	return bus.Exec(ctx, cmdBus.Bus, name, cmd, handlerFn)
+	return bus.Dispatch(ctx, cmdBus, name, cmd, handlerFn)
 }
 
 // ExecQuery is ExecCommand's read-side twin: it dispatches q through queryBus so
@@ -194,7 +194,7 @@ func ExecQuery[R any](
 	q any,
 	handlerFn func(ctx context.Context) (R, error),
 ) (R, error) {
-	return bus.Exec(ctx, queryBus.Bus, name, q, handlerFn)
+	return bus.Query(ctx, queryBus, name, q, handlerFn)
 }
 
 // NewJwt returns a JwtService configured with the given access expiration.

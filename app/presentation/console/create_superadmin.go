@@ -57,9 +57,9 @@ func (c *CreateSuperAdminCommand) run(ctx context.Context, nickname, password, e
 		Email:    email,
 	}
 
-	err := bus.ExecVoid(
+	err := bus.SystemDispatchVoid(
 		ctx,
-		c.sysBus.Bus,
+		c.sysBus,
 		"CreateSuperAdmin",
 		cmd,
 		func(ctx context.Context) error {

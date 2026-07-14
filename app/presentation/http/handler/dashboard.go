@@ -35,9 +35,9 @@ type dashboardDTO struct {
 func (h *DashboardHandler) User(w http.ResponseWriter, r *http.Request) {
 	q := dashboardqry.GetUserDashboardQuery{}
 
-	result, err := bus.Exec(
+	result, err := bus.Query(
 		r.Context(),
-		h.queryBus.Bus,
+		h.queryBus,
 		"GetUserDashboard",
 		q,
 		func(ctx context.Context) (dashboardqry.UserDashboard, error) {
@@ -56,9 +56,9 @@ func (h *DashboardHandler) User(w http.ResponseWriter, r *http.Request) {
 func (h *DashboardHandler) Admin(w http.ResponseWriter, r *http.Request) {
 	q := dashboardqry.GetAdminDashboardQuery{}
 
-	result, err := bus.Exec(
+	result, err := bus.Query(
 		r.Context(),
-		h.queryBus.Bus,
+		h.queryBus,
 		"GetAdminDashboard",
 		q,
 		func(ctx context.Context) (dashboardqry.AdminDashboard, error) {

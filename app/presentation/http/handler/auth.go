@@ -90,9 +90,9 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	cmd := authcmd.LoginCommand{Nickname: body.Nickname, Password: body.Password}
 
-	result, err := bus.Exec(
+	result, err := bus.Dispatch(
 		r.Context(),
-		h.commandBus.Bus,
+		h.commandBus,
 		"Login",
 		cmd,
 		func(ctx context.Context) (authcmd.LoginResult, error) {
@@ -118,9 +118,9 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	cmd := authcmd.RefreshTokenCommand{RawToken: cookie.Value}
 
-	result, err := bus.Exec(
+	result, err := bus.Dispatch(
 		r.Context(),
-		h.commandBus.Bus,
+		h.commandBus,
 		"RefreshToken",
 		cmd,
 		func(ctx context.Context) (authcmd.LoginResult, error) {
@@ -148,9 +148,9 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	cmd := authcmd.LogoutCommand{}
 
-	err := bus.ExecVoid(
+	err := bus.DispatchVoid(
 		r.Context(),
-		h.commandBus.Bus,
+		h.commandBus,
 		"Logout",
 		cmd,
 		func(ctx context.Context) error {

@@ -140,7 +140,7 @@ func TestServer_SPAFallbackServesIndexForUnknownPath(t *testing.T) {
 // are never hit here). registerRoutes wraps every protected route in AuthMiddleware(jwt), so
 // the test must send a valid admin Bearer for the handler to run.
 //
-// The bus AuthorizeMiddleware (inside each handler's bus.Exec) reads the role straight from
+// The bus AuthorizeMiddleware (inside each handler's bus.Dispatch/Query) reads the role straight from
 // the JWT claims, so the actor user need not exist in the DB — an admin role passes every
 // admin:* permission. Targets that commands mutate by id (Update/Delete) ARE seeded.
 func boundServer(t *testing.T) (*Server, *testfx.Fixture) {

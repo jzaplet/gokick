@@ -48,7 +48,7 @@ func (c *CreateTenantCommand) Command() *cobra.Command {
 func (c *CreateTenantCommand) run(ctx context.Context, name string) error {
 	cmd := tenantcmd.CreateTenantCommand{Name: name}
 
-	t, err := bus.Exec(ctx, c.sysBus.Bus, "CreateTenant", cmd,
+	t, err := bus.SystemDispatch(ctx, c.sysBus, "CreateTenant", cmd,
 		func(ctx context.Context) (*tenant.Tenant, error) {
 			return c.handler.Handle(ctx, cmd)
 		})

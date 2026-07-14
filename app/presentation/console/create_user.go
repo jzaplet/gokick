@@ -110,16 +110,22 @@ func (c *CreateUserCommand) run(ctx context.Context, a createUserArgs) error {
 	// AuditMiddleware persists the user.created record; RecoveryMiddleware reports
 	// a panic to Sentry. The chain has no Authorize/Tenant — the operator is
 	// trusted and the tenant is injected explicitly inside the unit of work.
-	err := bus.ExecVoid(ctx, c.sysBus.Bus, "CreateUser", cmd, func(ctx context.Context) error {
-		tenantID, err := c.resolveTenant(ctx, a.tenantID, a.tenantName)
-		if err != nil {
-			return err
-		}
-		if tenantID != "" {
-			ctx = shared.ContextWithTenantID(ctx, tenantID)
-		}
-		return c.createUser.Handle(ctx, cmd)
-	})
+	err := bus.SystemDispatchVoid(
+		ctx,
+		c.sysBus,
+		"CreateUser",
+		cmd,
+		func(ctx context.Context) error {
+			tenantID, err := c.resolveTenant(ctx, a.tenantID, a.tenantName)
+			if err != nil {
+				return err
+			}
+			if tenantID != "" {
+				ctx = shared.ContextWithTenantID(ctx, tenantID)
+			}
+			return c.createUser.Handle(ctx, cmd)
+		},
+	)
 	if err != nil {
 		return err
 	}
