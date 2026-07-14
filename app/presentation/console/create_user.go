@@ -173,6 +173,14 @@ func (c *CreateUserCommand) resolveTenant(
 	return "", nil
 }
 
+// validateUserInput is a DELIBERATE lightweight mirror of CreateUserHandler's
+// value-object validation, run as a CLI pre-flight so bad input fails before the
+// bus creates a --tenant-name tenant. It is an OPTIMISATION, not the safety net:
+// the handler re-validates authoritatively, and the bus transaction — not this —
+// is what guarantees no orphan tenant on failure (run's dispatch comment). So it
+// need not track the handler's field ORDER (the CLI prints one error, no FE field
+// routing); if a new rule is added to the handler and missed here, the only cost
+// is a tenant create+rollback, never a correctness gap.
 func validateUserInput(nickname, password, email, role string) error {
 	if _, err := user.NewNickname(nickname); err != nil {
 		return err
