@@ -126,6 +126,63 @@ func Update(
 	return nil
 }
 
+// Create is the shared body of the two user-creation paths (admin CreateUser and
+// the CLI CreateSuperAdmin). Each caller validates the raw inputs into value
+// objects in ITS OWN order (so per-handler ValidationError precedence is
+// preserved) and decides the role + tenant, then hands them here. Create enforces
+// nickname uniqueness, hashes the password (AFTER the uniqueness check, so a taken
+// nickname skips the bcrypt cost), persists the user, and announces it ONCE — a
+// user.UserCreated event + a user.created audit record. Single-sourcing the
+// announcement is the point (F-031): superadmin creation previously skipped the
+// event, and a copy-paste body is exactly what let that drift.
+func Create(
+	ctx context.Context,
+	repo user.Repository,
+	hasher shared.PasswordHasher,
+	nickname user.Nickname,
+	password user.Password,
+	email user.Email,
+	role user.Role,
+	tenantID string,
+) (*user.User, error) {
+	existing, err := repo.FindByNickname(ctx, string(nickname))
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, &shared.ValidationError{
+			Field:   "nickname",
+			Message: "user with this nickname already exists",
+		}
+	}
+
+	hash, err := hasher.Hash(string(password))
+	if err != nil {
+		return nil, err
+	}
+
+	u := user.NewUser(nickname, hash, email, role, tenantID)
+	if err := repo.Save(ctx, u); err != nil {
+		return nil, err
+	}
+
+	shared.EventCollectorFromContext(ctx).Collect(user.UserCreated{
+		UserID:    u.ID,
+		Nickname:  u.Nickname,
+		Email:     u.Email,
+		Role:      u.Role,
+		Timestamp: time.Now(),
+	})
+	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
+		Action:     "user.created",
+		TargetType: "user",
+		TargetID:   u.ID,
+		Metadata:   map[string]any{"role": u.Role},
+	})
+
+	return u, nil
+}
+
 // ensureNicknameFree rejects a rename that collides with another user's nickname
 // (nickname is globally unique). An unchanged nickname is a no-op.
 func ensureNicknameFree(

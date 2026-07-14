@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/user"
 	"gokick/app/internal/testfx"
 )
 
@@ -205,6 +206,35 @@ func TestCreateSuperAdminHandler_CreatesSuperAdmin(t *testing.T) {
 	}
 	if err := fx.Hasher.Verify("secret12", got.PasswordHash); err != nil {
 		t.Fatalf("password verify: %v", err)
+	}
+}
+
+// F-031: superadmin creation must announce a UserCreated event, the same as
+// CreateUser. The shared userwrite.Create body single-sources the announcement so
+// it can't silently skip the event again (it used to).
+func TestCreateSuperAdminHandler_EmitsUserCreatedEvent(t *testing.T) {
+	ctx, collector := shared.ContextWithEventCollector(context.Background())
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_superadmin_event.db"))
+
+	h := NewCreateSuperAdminHandler(fx.Users, fx.Hasher)
+	if err := h.Handle(ctx, CreateSuperAdminCommand{
+		Nickname: "root",
+		Password: "secret12",
+		Email:    "root@example.com",
+	}); err != nil {
+		t.Fatalf("create superadmin: %v", err)
+	}
+
+	events := collector.Flush()
+	if len(events) != 1 {
+		t.Fatalf("events: got %d want 1", len(events))
+	}
+	ev, ok := events[0].(user.UserCreated)
+	if !ok {
+		t.Fatalf("expected UserCreated event, got %T", events[0])
+	}
+	if ev.Role != "superadmin" {
+		t.Fatalf("event role: got %q want superadmin", ev.Role)
 	}
 }
 

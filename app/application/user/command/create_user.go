@@ -2,8 +2,8 @@ package command
 
 import (
 	"context"
-	"time"
 
+	"gokick/app/application/userwrite"
 	"gokick/app/domain/shared"
 	"gokick/app/domain/user"
 )
@@ -62,22 +62,6 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
 		return err
 	}
 
-	existing, err := h.users.FindByNickname(ctx, string(nickname))
-	if err != nil {
-		return err
-	}
-	if existing != nil {
-		return &shared.ValidationError{
-			Field:   "nickname",
-			Message: "user with this nickname already exists",
-		}
-	}
-
-	hash, err := h.password.Hash(string(password))
-	if err != nil {
-		return err
-	}
-
 	// Resolve the tenant the user lands in: the bus's TenantMiddleware always puts
 	// the caller's resolved tenant in ctx (HTTP), so an admin creates users in their
 	// OWN tenant. An empty value means the handler ran outside the bus (the CLI
@@ -88,26 +72,9 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
 	if err != nil {
 		return err
 	}
-	u := user.NewUser(nickname, hash, email, role, tenantID)
 
-	if err := h.users.Save(ctx, u); err != nil {
-		return err
-	}
-
-	shared.EventCollectorFromContext(ctx).Collect(user.UserCreated{
-		UserID:    u.ID,
-		Nickname:  u.Nickname,
-		Email:     u.Email,
-		Role:      u.Role,
-		Timestamp: time.Now(),
-	})
-
-	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
-		Action:     "user.created",
-		TargetType: "user",
-		TargetID:   u.ID,
-		Metadata:   map[string]any{"role": u.Role},
-	})
-
-	return nil
+	// Uniqueness + hash + persist + announce (user.created audit & UserCreated event)
+	// are the shared create body — same as CreateSuperAdmin, so the event can't drift.
+	_, err = userwrite.Create(ctx, h.users, h.password, nickname, password, email, role, tenantID)
+	return err
 }

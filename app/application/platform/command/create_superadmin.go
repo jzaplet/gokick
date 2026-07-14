@@ -3,6 +3,7 @@ package command
 import (
 	"context"
 
+	"gokick/app/application/userwrite"
 	"gokick/app/domain/shared"
 	"gokick/app/domain/user"
 )
@@ -53,38 +54,20 @@ func (h *CreateSuperAdminHandler) Handle(ctx context.Context, cmd CreateSuperAdm
 		return err
 	}
 
-	existing, err := h.users.FindByNickname(ctx, string(nickname))
-	if err != nil {
-		return err
-	}
-	if existing != nil {
-		return &shared.ValidationError{
-			Field:   "nickname",
-			Message: "user with this nickname already exists",
-		}
-	}
-
-	hash, err := h.password.Hash(string(password))
-	if err != nil {
-		return err
-	}
-
 	// A superadmin is a cross-tenant identity; home it in the default tenant
-	// explicitly (its own tenant is immaterial to the platform plane).
-	u := user.NewUser(nickname, hash, email, user.RoleSuperAdmin, shared.DefaultTenantID)
-	if err := h.users.Save(ctx, u); err != nil {
-		return err
-	}
-
-	// Mirrors CreateUserHandler's audit. Outside the bus (no AuditMiddleware) the
-	// collector is a throwaway; through the SystemCommandBus it persists the trail
-	// of minting a cross-tenant account.
-	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
-		Action:     "user.created",
-		TargetType: "user",
-		TargetID:   u.ID,
-		Metadata:   map[string]any{"role": u.Role},
-	})
-
-	return nil
+	// explicitly (its own tenant is immaterial to the platform plane). Uniqueness +
+	// hash + persist + announce go through the shared create body — the same one
+	// CreateUser uses — so the user.created audit AND the UserCreated event fire for
+	// a superadmin too (previously the event was silently skipped; F-031).
+	_, err = userwrite.Create(
+		ctx,
+		h.users,
+		h.password,
+		nickname,
+		password,
+		email,
+		user.RoleSuperAdmin,
+		shared.DefaultTenantID,
+	)
+	return err
 }
