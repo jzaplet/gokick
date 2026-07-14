@@ -16,7 +16,7 @@ import (
 // and Cancel sets the operator signal on the row.
 func TestDebugRunHandler_EnqueueGetCancel(t *testing.T) {
 	fx := testfx.New(t, t.TempDir()+"/debugrun.db")
-	h := NewDebugRunHandler(fx.Runs)
+	h := NewDebugRunHandler(testResponder(), fx.Runs)
 
 	// --- Enqueue ---
 	req := httptest.NewRequest(
@@ -87,7 +87,7 @@ func TestDebugRunHandler_EnqueueGetCancel(t *testing.T) {
 // max_retries must be a non-negative integer.
 func TestDebugRunHandler_Enqueue_RejectsBadMaxRetries(t *testing.T) {
 	fx := testfx.New(t, t.TempDir()+"/debugrun_bad.db")
-	h := NewDebugRunHandler(fx.Runs)
+	h := NewDebugRunHandler(testResponder(), fx.Runs)
 	req := httptest.NewRequest(http.MethodPost, "/debug/runs/e2e:succeed?max_retries=-1", nil)
 	req.SetPathValue("kind", "e2e:succeed")
 	rec := httptest.NewRecorder()

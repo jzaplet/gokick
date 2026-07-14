@@ -18,6 +18,7 @@ import (
 // (gated platform:overview) plus cross-tenant user management (platform:users:*).
 // Superadmin only; an admin is denied at the bus.
 type PlatformHandler struct {
+	resp        *response.Responder
 	queryBus    *bus.QueryBus
 	commandBus  *bus.CommandBus
 	getStats    *platformqry.GetStatsHandler
@@ -28,6 +29,7 @@ type PlatformHandler struct {
 }
 
 func NewPlatformHandler(
+	resp *response.Responder,
 	queryBus *bus.QueryBus,
 	commandBus *bus.CommandBus,
 	getStats *platformqry.GetStatsHandler,
@@ -37,6 +39,7 @@ func NewPlatformHandler(
 	deleteUser *platformcmd.DeletePlatformUserHandler,
 ) *PlatformHandler {
 	return &PlatformHandler{
+		resp:        resp,
 		queryBus:    queryBus,
 		commandBus:  commandBus,
 		getStats:    getStats,
@@ -94,12 +97,12 @@ func (h *PlatformHandler) Stats(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
 
-	response.JSON(w, http.StatusOK, platformStatsDTO{
+	h.resp.JSON(r.Context(), w, http.StatusOK, platformStatsDTO{
 		TenantCount: stats.TenantCount,
 		UserCount:   stats.UserCount,
 	})
@@ -118,7 +121,7 @@ func (h *PlatformHandler) Users(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
@@ -128,7 +131,7 @@ func (h *PlatformHandler) Users(w http.ResponseWriter, r *http.Request) {
 		dtos[i] = toPlatformUserDTO(row)
 	}
 
-	response.JSON(w, http.StatusOK, dtos)
+	h.resp.JSON(r.Context(), w, http.StatusOK, dtos)
 }
 
 func (h *PlatformHandler) Tenants(w http.ResponseWriter, r *http.Request) {
@@ -144,7 +147,7 @@ func (h *PlatformHandler) Tenants(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
@@ -159,13 +162,13 @@ func (h *PlatformHandler) Tenants(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	response.JSON(w, http.StatusOK, dtos)
+	h.resp.JSON(r.Context(), w, http.StatusOK, dtos)
 }
 
 func (h *PlatformHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	var body platformUserRequest
 	if err := request.DecodeJSON(w, r, &body); err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
@@ -188,7 +191,7 @@ func (h *PlatformHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
@@ -209,7 +212,7 @@ func (h *PlatformHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}

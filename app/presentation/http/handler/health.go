@@ -5,10 +5,12 @@ import (
 	"net/http"
 )
 
-type HealthHandler struct{}
+type HealthHandler struct {
+	resp *response.Responder
+}
 
-func NewHealthHandler() *HealthHandler {
-	return &HealthHandler{}
+func NewHealthHandler(resp *response.Responder) *HealthHandler {
+	return &HealthHandler{resp: resp}
 }
 
 // healthResponse is intentionally NOT under tsgen (no //gkts): the /health
@@ -19,6 +21,6 @@ type healthResponse struct {
 	Status string `json:"status"`
 }
 
-func (h *HealthHandler) Check(w http.ResponseWriter, _ *http.Request) {
-	response.JSON(w, http.StatusOK, healthResponse{Status: "ok"})
+func (h *HealthHandler) Check(w http.ResponseWriter, r *http.Request) {
+	h.resp.JSON(r.Context(), w, http.StatusOK, healthResponse{Status: "ok"})
 }

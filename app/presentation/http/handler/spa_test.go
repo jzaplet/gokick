@@ -9,11 +9,17 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	"gokick/app/presentation/http/response"
 )
 
 // discardLogger is a throwaway logger for SPA handler tests that don't assert on
 // log output (the warn-and-degrade path has its own buffer-backed logger).
 func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
+
+// testResponder is a Responder over a discard logger for handler tests that
+// don't assert on the (rare) encode-failure log line.
+func testResponder() *response.Responder { return response.NewResponder(discardLogger()) }
 
 // injectRuntimeConfig must tolerate the realistic ways a template's <head> can
 // be written — attributes, casing, whitespace — so a routine index.html edit in
@@ -98,7 +104,7 @@ func TestSPAHandler_Serve_Routing(t *testing.T) {
 		"index.html": &fstest.MapFile{Data: []byte("<html><head></head><body>app</body></html>")},
 		"app.js":     &fstest.MapFile{Data: []byte("console.log(1)")},
 	}
-	h := NewSPAHandler(discardLogger(), fsys, SPAConfig{})
+	h := NewSPAHandler(testResponder(), discardLogger(), fsys, SPAConfig{})
 
 	t.Run("unknown /api path is a JSON 404", func(t *testing.T) {
 		t.Parallel()
@@ -149,7 +155,12 @@ func TestNewSPAHandler_WarnsButServesWhenNoHead(t *testing.T) {
 		"index.html": &fstest.MapFile{Data: []byte("<html><body>no head here</body></html>")},
 	}
 
-	h := NewSPAHandler(logger, fsys, SPAConfig{SentryDSN: "https://k@example.com/1"})
+	h := NewSPAHandler(
+		testResponder(),
+		logger,
+		fsys,
+		SPAConfig{SentryDSN: "https://k@example.com/1"},
+	)
 
 	rec := httptest.NewRecorder()
 	h.Serve(rec, httptest.NewRequest(http.MethodGet, "/", nil))

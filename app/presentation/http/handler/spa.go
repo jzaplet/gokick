@@ -32,16 +32,23 @@ type SPAConfig struct {
 }
 
 type SPAHandler struct {
+	resp  *response.Responder
 	fs    http.Handler
 	index []byte
 }
 
-func NewSPAHandler(logger *slog.Logger, publicFS fs.FS, cfg SPAConfig) *SPAHandler {
+func NewSPAHandler(
+	resp *response.Responder,
+	logger *slog.Logger,
+	publicFS fs.FS,
+	cfg SPAConfig,
+) *SPAHandler {
 	index, err := fs.ReadFile(publicFS, "index.html")
 	if err != nil {
 		// Not-built fallback: no <head>, no runtime config to inject.
 		return &SPAHandler{
-			fs: http.FileServerFS(publicFS),
+			resp: resp,
+			fs:   http.FileServerFS(publicFS),
 			index: []byte(
 				"<!doctype html><html><body>Frontend not built. Run: yarn build</body></html>",
 			),
@@ -61,6 +68,7 @@ func NewSPAHandler(logger *slog.Logger, publicFS fs.FS, cfg SPAConfig) *SPAHandl
 	}
 
 	return &SPAHandler{
+		resp:  resp,
 		fs:    http.FileServerFS(publicFS),
 		index: injected,
 	}
@@ -185,7 +193,7 @@ func (h *SPAHandler) Serve(w http.ResponseWriter, r *http.Request) {
 	// mistyped API call should get a JSON 404, not a 200 text/html page it can't
 	// parse (which masks the real error as a confusing "unexpected token <").
 	if strings.HasPrefix(path, "/api/") {
-		response.Error(w, http.StatusNotFound, errors.New("not found"))
+		h.resp.Error(r.Context(), w, http.StatusNotFound, errors.New("not found"))
 		return
 	}
 

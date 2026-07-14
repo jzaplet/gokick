@@ -39,6 +39,7 @@ import (
 	"gokick/app/presentation/console"
 	"gokick/app/presentation/http/handler"
 	middleware2 "gokick/app/presentation/http/middleware"
+	"gokick/app/presentation/http/response"
 	"gokick/app/presentation/http/server"
 	"gokick/public"
 	"io/fs"
@@ -57,15 +58,16 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	if err != nil {
 		return nil, err
 	}
+	responder := response.NewResponder(logger)
 	ipExtractor := provideIPExtractor(configConfig)
 	rateLimiters, err := provideRateLimiters(configConfig, ipExtractor, logger)
 	if err != nil {
 		return nil, err
 	}
-	healthHandler := handler.NewHealthHandler()
+	healthHandler := handler.NewHealthHandler(responder)
 	fs := providePublicFS()
 	spaConfig := provideSPAConfig(configConfig)
-	spaHandler := handler.NewSPAHandler(logger, fs, spaConfig)
+	spaHandler := handler.NewSPAHandler(responder, logger, fs, spaConfig)
 	cookieSecure := provideCookieSecure(configConfig)
 	sqliteManager, err := database.NewSqliteManager(configConfig)
 	if err != nil {
@@ -90,29 +92,29 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	refreshTokenHandler := command.NewRefreshTokenHandler(userRepository, tokenRepository, jwtService)
 	logoutHandler := command.NewLogoutHandler(tokenRepository)
 	permissionsRegistry := providePermissionsRegistry()
-	authHandler := handler.NewAuthHandler(cookieSecure, commandBus, loginHandler, refreshTokenHandler, logoutHandler, permissionsRegistry)
+	authHandler := handler.NewAuthHandler(responder, cookieSecure, commandBus, loginHandler, refreshTokenHandler, logoutHandler, permissionsRegistry)
 	queryBus := provideQueryBus(logger, permissionChecker, reporter, tenantResolver)
 	getProfileHandler := query.NewGetProfileHandler(userRepository)
 	changePasswordHandler := command2.NewChangePasswordHandler(userRepository, passwordHasher)
-	profileHandler := handler.NewProfileHandler(commandBus, queryBus, getProfileHandler, changePasswordHandler, permissionsRegistry)
+	profileHandler := handler.NewProfileHandler(responder, commandBus, queryBus, getProfileHandler, changePasswordHandler, permissionsRegistry)
 	listUsersHandler := query2.NewListUsersHandler(userRepository)
 	multitenancy := provideMultitenancy(configConfig)
 	createUserHandler := command3.NewCreateUserHandler(userRepository, passwordHasher, multitenancy)
 	updateUserHandler := command3.NewUpdateUserHandler(userRepository, passwordHasher)
 	deleteUserHandler := command3.NewDeleteUserHandler(userRepository)
-	adminUsersHandler := handler.NewAdminUsersHandler(commandBus, queryBus, listUsersHandler, createUserHandler, updateUserHandler, deleteUserHandler)
+	adminUsersHandler := handler.NewAdminUsersHandler(responder, commandBus, queryBus, listUsersHandler, createUserHandler, updateUserHandler, deleteUserHandler)
 	getUserDashboardHandler := query3.NewGetUserDashboardHandler()
 	getAdminDashboardHandler := query3.NewGetAdminDashboardHandler()
-	dashboardHandler := handler.NewDashboardHandler(queryBus, getUserDashboardHandler, getAdminDashboardHandler)
+	dashboardHandler := handler.NewDashboardHandler(responder, queryBus, getUserDashboardHandler, getAdminDashboardHandler)
 	tenantRepository := tenant.NewRepository(sqliteManager)
 	getStatsHandler := query4.NewGetStatsHandler(tenantRepository, userRepository)
 	listAllUsersHandler := query4.NewListAllUsersHandler(userRepository)
 	listTenantsHandler := query4.NewListTenantsHandler(tenantRepository)
 	updatePlatformUserHandler := command4.NewUpdatePlatformUserHandler(userRepository, passwordHasher)
 	deletePlatformUserHandler := command4.NewDeletePlatformUserHandler(userRepository)
-	platformHandler := handler.NewPlatformHandler(queryBus, commandBus, getStatsHandler, listAllUsersHandler, listTenantsHandler, updatePlatformUserHandler, deletePlatformUserHandler)
-	debugRunHandler := handler.NewDebugRunHandler(repository)
-	serverServer := server.NewServer(configConfig, logger, reporter, jwtService, rateLimiters, ipExtractor, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler, platformHandler, debugRunHandler)
+	platformHandler := handler.NewPlatformHandler(responder, queryBus, commandBus, getStatsHandler, listAllUsersHandler, listTenantsHandler, updatePlatformUserHandler, deletePlatformUserHandler)
+	debugRunHandler := handler.NewDebugRunHandler(responder, repository)
+	serverServer := server.NewServer(configConfig, logger, reporter, jwtService, responder, rateLimiters, ipExtractor, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler, platformHandler, debugRunHandler)
 	v2 := provideSchedulerJobs(tokenRepository)
 	scheduler, err := provideScheduler(logger, v2)
 	if err != nil {

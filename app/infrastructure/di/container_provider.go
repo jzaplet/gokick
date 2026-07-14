@@ -37,6 +37,7 @@ import (
 	"gokick/app/presentation/console"
 	"gokick/app/presentation/http/handler"
 	httpmw "gokick/app/presentation/http/middleware"
+	"gokick/app/presentation/http/response"
 	"gokick/app/presentation/http/server"
 	"gokick/public"
 	"io/fs"
@@ -386,6 +387,7 @@ func CreateApplication(
 		dashboardqry.NewGetAdminDashboardHandler,
 		providePublicFS,
 		provideSPAConfig,
+		response.NewResponder,
 		handler.NewSPAHandler,
 		handler.NewHealthHandler,
 		handler.NewAuthHandler,

@@ -11,6 +11,7 @@ import (
 	"gokick/app/infrastructure/config"
 	"gokick/app/presentation/http/handler"
 	"gokick/app/presentation/http/middleware"
+	"gokick/app/presentation/http/response"
 )
 
 const (
@@ -56,6 +57,7 @@ type Server struct {
 	logger     *slog.Logger
 	reporter   shared.ErrorReporter
 	jwt        shared.TokenService
+	resp       *response.Responder
 	limiters   *RateLimiters
 	ipExtract  middleware.IPExtractor
 	health     *handler.HealthHandler
@@ -73,6 +75,7 @@ func NewServer(
 	logger *slog.Logger,
 	reporter shared.ErrorReporter,
 	jwt shared.TokenService,
+	resp *response.Responder,
 	limiters *RateLimiters,
 	ipExtract middleware.IPExtractor,
 	health *handler.HealthHandler,
@@ -89,6 +92,7 @@ func NewServer(
 		logger:     logger,
 		reporter:   reporter,
 		jwt:        jwt,
+		resp:       resp,
 		limiters:   limiters,
 		ipExtract:  ipExtract,
 		health:     health,
@@ -217,7 +221,7 @@ func (s *Server) registerRoutes() *http.ServeMux {
 
 	// Protected — JWT Bearer required (AuthMiddleware populates claims,
 	// bus AuthorizeMiddleware then enforces the per-command permission).
-	authed := middleware.AuthMiddleware(s.jwt)
+	authed := middleware.AuthMiddleware(s.jwt, s.resp)
 	mux.Handle("POST /api/v1/auth/logout", authed(http.HandlerFunc(s.auth.Logout)))
 	mux.Handle("GET /api/v1/profile", authed(http.HandlerFunc(s.profile.Get)))
 	mux.Handle("PUT /api/v1/profile/password", authed(http.HandlerFunc(s.profile.ChangePassword)))

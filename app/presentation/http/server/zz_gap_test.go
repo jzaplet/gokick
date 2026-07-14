@@ -152,7 +152,7 @@ func boundServer(t *testing.T) (*Server, *testfx.Fixture) {
 	extract := middleware.NewIPExtractor(false)
 	rule := middleware.RateRule{Tokens: 1000, Per: time.Minute}
 
-	adminUsers := handler.NewAdminUsersHandler(
+	adminUsers := handler.NewAdminUsersHandler(testResponder(),
 		cmdBus,
 		qryBus,
 		userqry.NewListUsersHandler(fx.Users),
@@ -160,7 +160,7 @@ func boundServer(t *testing.T) (*Server, *testfx.Fixture) {
 		usercmd.NewUpdateUserHandler(fx.Users, fx.Hasher),
 		usercmd.NewDeleteUserHandler(fx.Users),
 	)
-	dashboard := handler.NewDashboardHandler(
+	dashboard := handler.NewDashboardHandler(testResponder(),
 		qryBus,
 		dashboardqry.NewGetUserDashboardHandler(),
 		dashboardqry.NewGetAdminDashboardHandler(),
@@ -171,6 +171,7 @@ func boundServer(t *testing.T) (*Server, *testfx.Fixture) {
 		logger:    logger,
 		reporter:  shared.NopReporter{},
 		jwt:       fx.Jwt,
+		resp:      testResponder(),
 		ipExtract: extract,
 		limiters: &RateLimiters{
 			Login:   middleware.NewRateLimiter(rule, extract, logger),

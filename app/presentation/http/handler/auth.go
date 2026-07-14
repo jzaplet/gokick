@@ -28,6 +28,7 @@ const refreshCookiePath = "/api/v1/auth"
 const sessionHintCookieName = "gk_session"
 
 type AuthHandler struct {
+	resp         *response.Responder
 	cookieSecure bool
 	commandBus   *bus.CommandBus
 	login        *authcmd.LoginHandler
@@ -41,6 +42,7 @@ type AuthHandler struct {
 type CookieSecure bool
 
 func NewAuthHandler(
+	resp *response.Responder,
 	cookieSecure CookieSecure,
 	commandBus *bus.CommandBus,
 	login *authcmd.LoginHandler,
@@ -49,6 +51,7 @@ func NewAuthHandler(
 	registry *shared.PermissionsRegistry,
 ) *AuthHandler {
 	return &AuthHandler{
+		resp:         resp,
 		cookieSecure: bool(cookieSecure),
 		commandBus:   commandBus,
 		login:        login,
@@ -83,7 +86,7 @@ type loginResponse struct {
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var body loginRequest
 	if err := request.DecodeJSON(w, r, &body); err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
@@ -100,18 +103,18 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
 
-	h.writeAuthResponse(w, result)
+	h.writeAuthResponse(r.Context(), w, result)
 }
 
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(refreshCookieName)
 	if err != nil {
-		response.HandleError(w, &shared.AuthError{Message: "missing refresh token"})
+		h.resp.HandleError(r.Context(), w, &shared.AuthError{Message: "missing refresh token"})
 
 		return
 	}
@@ -137,12 +140,12 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		if errors.As(err, &authErr) {
 			h.clearRefreshCookie(w)
 		}
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
 
-	h.writeAuthResponse(w, result)
+	h.writeAuthResponse(r.Context(), w, result)
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
@@ -166,7 +169,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		// state and the session hint in a finally, so the UX is "logged out" either
 		// way; this only governs whether we lie about server-side revocation (and a
 		// 5xx lets the FE/next attempt re-try the revocation).
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
@@ -176,7 +179,11 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *AuthHandler) writeAuthResponse(w http.ResponseWriter, result authcmd.LoginResult) {
+func (h *AuthHandler) writeAuthResponse(
+	ctx context.Context,
+	w http.ResponseWriter,
+	result authcmd.LoginResult,
+) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     refreshCookieName,
 		Value:    result.RefreshToken,
@@ -198,7 +205,7 @@ func (h *AuthHandler) writeAuthResponse(w http.ResponseWriter, result authcmd.Lo
 		Expires:  result.RefreshExpiresAt,
 	})
 
-	response.JSON(w, http.StatusOK, loginResponse{
+	h.resp.JSON(ctx, w, http.StatusOK, loginResponse{
 		AccessToken:      result.AccessToken,
 		AccessExpiration: int(result.AccessExpiresIn.Seconds()),
 		User: userDTO{

@@ -13,6 +13,7 @@ import (
 )
 
 type AdminUsersHandler struct {
+	resp       *response.Responder
 	commandBus *bus.CommandBus
 	queryBus   *bus.QueryBus
 	listUsers  *userqry.ListUsersHandler
@@ -22,6 +23,7 @@ type AdminUsersHandler struct {
 }
 
 func NewAdminUsersHandler(
+	resp *response.Responder,
 	commandBus *bus.CommandBus,
 	queryBus *bus.QueryBus,
 	listUsers *userqry.ListUsersHandler,
@@ -30,6 +32,7 @@ func NewAdminUsersHandler(
 	deleteUser *usercmd.DeleteUserHandler,
 ) *AdminUsersHandler {
 	return &AdminUsersHandler{
+		resp:       resp,
 		commandBus: commandBus,
 		queryBus:   queryBus,
 		listUsers:  listUsers,
@@ -77,7 +80,7 @@ func (h *AdminUsersHandler) List(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
@@ -87,13 +90,13 @@ func (h *AdminUsersHandler) List(w http.ResponseWriter, r *http.Request) {
 		dtos[i] = toAdminUserDTO(u)
 	}
 
-	response.JSON(w, http.StatusOK, dtos)
+	h.resp.JSON(r.Context(), w, http.StatusOK, dtos)
 }
 
 func (h *AdminUsersHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var body createUserRequest
 	if err := request.DecodeJSON(w, r, &body); err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
@@ -115,7 +118,7 @@ func (h *AdminUsersHandler) Create(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
@@ -126,7 +129,7 @@ func (h *AdminUsersHandler) Create(w http.ResponseWriter, r *http.Request) {
 func (h *AdminUsersHandler) Update(w http.ResponseWriter, r *http.Request) {
 	var body updateUserRequest
 	if err := request.DecodeJSON(w, r, &body); err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
@@ -149,7 +152,7 @@ func (h *AdminUsersHandler) Update(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
@@ -170,7 +173,7 @@ func (h *AdminUsersHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}

@@ -105,9 +105,10 @@ func serveTestServer(logger *slog.Logger) *server.Server {
 		logger,
 		shared.NopReporter{},
 		nil, // jwt — only used by registerRoutes' AuthMiddleware wrapper, never invoked
+		testResponder(),
 		limiters,
 		extract,
-		handler.NewHealthHandler(),
+		handler.NewHealthHandler(testResponder()),
 		nil, nil, nil, nil, nil, nil, nil,
 	)
 }

@@ -14,6 +14,7 @@ import (
 	"gokick/app/internal/testfx"
 	"gokick/app/presentation/http/handler"
 	"gokick/app/presentation/http/middleware"
+	"gokick/app/presentation/http/response"
 )
 
 // silentLogger returns a slog.Logger that discards everything — keeps test
@@ -21,6 +22,9 @@ import (
 func silentLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
+
+// testResponder is a Responder over a discard logger for server route tests.
+func testResponder() *response.Responder { return response.NewResponder(silentLogger()) }
 
 // chainOnlyServer builds a Server populated with just the fields
 // buildMiddlewareChain touches (config, logger, ipExtract). The route/handler
@@ -152,15 +156,16 @@ func routingServer(t *testing.T) *Server {
 		logger:    logger,
 		reporter:  shared.NopReporter{},
 		jwt:       jwt,
+		resp:      testResponder(),
 		ipExtract: extract,
 		limiters: &RateLimiters{
 			Login:   middleware.NewRateLimiter(rule, extract, logger),
 			Refresh: middleware.NewRateLimiter(rule, extract, logger),
 		},
-		health: handler.NewHealthHandler(),
+		health: handler.NewHealthHandler(testResponder()),
 		// fstest.MapFS has no index.html; NewSPAHandler falls back to a
 		// built-in default index, so the catch-all never panics.
-		spa: handler.NewSPAHandler(logger, fstest.MapFS{}, handler.SPAConfig{}),
+		spa: handler.NewSPAHandler(testResponder(), logger, fstest.MapFS{}, handler.SPAConfig{}),
 	}
 }
 

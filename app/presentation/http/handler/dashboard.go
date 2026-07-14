@@ -10,17 +10,20 @@ import (
 )
 
 type DashboardHandler struct {
+	resp      *response.Responder
 	queryBus  *bus.QueryBus
 	userDash  *dashboardqry.GetUserDashboardHandler
 	adminDash *dashboardqry.GetAdminDashboardHandler
 }
 
 func NewDashboardHandler(
+	resp *response.Responder,
 	queryBus *bus.QueryBus,
 	userDash *dashboardqry.GetUserDashboardHandler,
 	adminDash *dashboardqry.GetAdminDashboardHandler,
 ) *DashboardHandler {
 	return &DashboardHandler{
+		resp:      resp,
 		queryBus:  queryBus,
 		userDash:  userDash,
 		adminDash: adminDash,
@@ -45,12 +48,12 @@ func (h *DashboardHandler) User(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
 
-	response.JSON(w, http.StatusOK, dashboardDTO{Message: result.Message})
+	h.resp.JSON(r.Context(), w, http.StatusOK, dashboardDTO{Message: result.Message})
 }
 
 func (h *DashboardHandler) Admin(w http.ResponseWriter, r *http.Request) {
@@ -66,10 +69,10 @@ func (h *DashboardHandler) Admin(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
 
-	response.JSON(w, http.StatusOK, dashboardDTO{Message: result.Message})
+	h.resp.JSON(r.Context(), w, http.StatusOK, dashboardDTO{Message: result.Message})
 }

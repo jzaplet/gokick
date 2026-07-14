@@ -244,11 +244,14 @@ deps:
       - response
       - testfx
   response:
+    mayDependOn:
+      - domain_shared
     anyVendorDeps: true
   server:
     mayDependOn:
       - handler
       - http_middleware
+      - response
       - config
   console:
     mayDependOn:
