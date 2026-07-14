@@ -19,22 +19,14 @@ export const isSuperAdmin = (): boolean => {
 };
 
 export const hasPermission = (permission: Permission): boolean => {
+    // The server ships the authoritative, role-filtered permission list
+    // (PermissionsRegistry.ForRole → user.permissions on every login/refresh), so
+    // the FE does a UNIFORM membership check for every role instead of
+    // re-implementing the backend role ladder here (which silently drifted from
+    // IsPermissionAllowedForRole — admin/superadmin ignored the list entirely).
+    // List completeness is enforced by the di registry-conformance gate (F-040).
     if (user.value === null) {
         return false;
-    }
-
-    if (user.value.role === Role.SuperAdmin) {
-        return true;
-    }
-
-    // platform:* is the platform plane — superadmin only. An admin's
-    // "everything below" must not swallow it (mirrors the backend gate order).
-    if (permission.startsWith('platform:') === true) {
-        return false;
-    }
-
-    if (user.value.role === Role.Admin) {
-        return true;
     }
 
     return user.value.permissions.includes(permission);

@@ -83,8 +83,8 @@ describe('authGuard', () => {
         expect(router.currentRoute.value.name).toBe('home');
     });
 
-    it('allows admin into any protected route (has-permission short-circuit)', async (): Promise<void> => {
-        setLoggedIn('admin');
+    it('allows admin into a route whose permission the server listed', async (): Promise<void> => {
+        setLoggedIn('admin', ['admin:users:read']);
         const router = makeTestRouter();
 
         await router.push('/admin/users');
@@ -102,7 +102,7 @@ describe('authGuard', () => {
     });
 
     it('allows superadmin into the platform route', async (): Promise<void> => {
-        setLoggedIn('superadmin');
+        setLoggedIn('superadmin', ['platform:overview']);
         const router = makeTestRouter();
 
         await router.push('/platform/users');
@@ -111,7 +111,7 @@ describe('authGuard', () => {
     });
 
     it('denies admin the platform route (superadmin-only) → /home', async (): Promise<void> => {
-        setLoggedIn('admin');
+        setLoggedIn('admin', ['admin:users:read']); // server omits platform:* for admin
         const router = makeTestRouter();
 
         await router.push('/platform/users');
