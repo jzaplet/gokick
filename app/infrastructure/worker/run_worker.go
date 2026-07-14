@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Run-worker-local log keys (logKeyKinds/logKeyPanic/logKeyStack live in common.go).
+// Run-worker-local log keys (logKeyKinds lives in common.go; panic/stack use shared.LogKey*).
 const (
 	logKeyRunID       = "run_id"
 	logKeyOwner       = "owner"

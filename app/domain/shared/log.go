@@ -21,6 +21,10 @@ const (
 	LogKeyError      = "error"
 	LogKeyEvent      = "event"
 	LogKeyRunKind    = "run_kind"
+	// Panic/stack are cross-cutting: every recovery site (bus, scheduler, run
+	// worker, HTTP) logs the recovered value + goroutine stack under one vocabulary.
+	LogKeyPanic = "panic"
+	LogKeyStack = "stack"
 )
 
 // HTTP request keys. Cross-cutting because they travel from the presentation

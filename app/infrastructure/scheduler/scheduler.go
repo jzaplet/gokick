@@ -21,10 +21,8 @@ import (
 // Scheduler-local structured-log keys (cross-cutting ones live in
 // shared.LogKey*). sloglint's no-raw-keys forbids bare string keys.
 const (
-	logKeyName  = "name"
-	logKeyJobs  = "jobs"
-	logKeyPanic = "panic"
-	logKeyStack = "stack"
+	logKeyName = "name"
+	logKeyJobs = "jobs"
 )
 
 type JobFunc func(ctx context.Context) error
@@ -116,8 +114,8 @@ func (s *Scheduler) tick(ctx context.Context, j Job) {
 			// not the faulting line.
 			s.logger.LogAttrs(ctx, slog.LevelError, "scheduler: job panicked",
 				slog.String(logKeyName, j.Name),
-				slog.Any(logKeyPanic, r),
-				slog.String(logKeyStack, string(debug.Stack())),
+				slog.Any(shared.LogKeyPanic, r),
+				slog.String(shared.LogKeyStack, string(debug.Stack())),
 			)
 		}
 	}()

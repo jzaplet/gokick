@@ -9,13 +9,6 @@ import (
 	"gokick/app/domain/shared"
 )
 
-// HTTP-recovery-local log keys (method/path/url/user_agent live in
-// shared.LogKey*, shared with the Sentry adapter).
-const (
-	logKeyPanic = "panic"
-	logKeyStack = "stack"
-)
-
 // RecoveryMiddleware catches panics that escape an HTTP handler — anything the
 // bus RecoveryMiddleware did not already recover (a panic before bus dispatch,
 // or inside another middleware). It logs the panic with a stack trace, reports
@@ -47,8 +40,8 @@ func RecoveryMiddleware(
 						slog.String(shared.LogKeyMethod, r.Method),
 						slog.String(shared.LogKeyPath, r.URL.Path),
 						slog.String(logKeyIP, shared.ActorIPFromContext(ctx)),
-						slog.Any(logKeyPanic, rec),
-						slog.String(logKeyStack, string(debug.Stack())),
+						slog.Any(shared.LogKeyPanic, rec),
+						slog.String(shared.LogKeyStack, string(debug.Stack())),
 					)...)
 
 				err := &shared.PanicError{

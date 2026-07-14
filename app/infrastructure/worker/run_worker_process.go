@@ -24,8 +24,16 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 	log := w.logger.With(logKeyRunID, r.ID, shared.LogKeyRunKind, r.Kind, logKeyOwner, owner)
 	defer func() {
 		if rec := recover(); rec != nil {
-			log.LogAttrs(workerCtx, slog.LevelError, "run worker: process panicked",
-				slog.Any(logKeyPanic, rec), slog.String(logKeyStack, string(debug.Stack())))
+			log.LogAttrs(
+				workerCtx,
+				slog.LevelError,
+				"run worker: process panicked",
+				slog.Any(
+					shared.LogKeyPanic,
+					rec,
+				),
+				slog.String(shared.LogKeyStack, string(debug.Stack())),
+			)
 			w.reporter.Capture(workerCtx,
 				&shared.PanicError{Value: rec, Message: fmt.Sprintf("run process panic: %v", rec)},
 				slog.String(logKeyRunID, r.ID), slog.String(shared.LogKeyRunKind, r.Kind))
@@ -197,8 +205,16 @@ func (w *RunWorker) runHandler(
 ) (err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			w.logger.LogAttrs(ctx, slog.LevelError, "run worker: handler panicked",
-				slog.Any(logKeyPanic, rec), slog.String(logKeyStack, string(debug.Stack())))
+			w.logger.LogAttrs(
+				ctx,
+				slog.LevelError,
+				"run worker: handler panicked",
+				slog.Any(
+					shared.LogKeyPanic,
+					rec,
+				),
+				slog.String(shared.LogKeyStack, string(debug.Stack())),
+			)
 			err = &shared.PanicError{Value: rec, Message: fmt.Sprintf("handler panic: %v", rec)}
 		}
 	}()
@@ -224,8 +240,16 @@ func (w *RunWorker) startHeartbeat(
 		defer close(hbDone)
 		defer func() {
 			if rec := recover(); rec != nil {
-				w.logger.LogAttrs(hbCtx, slog.LevelError, "run worker: heartbeat panicked",
-					slog.Any(logKeyPanic, rec), slog.String(logKeyStack, string(debug.Stack())))
+				w.logger.LogAttrs(
+					hbCtx,
+					slog.LevelError,
+					"run worker: heartbeat panicked",
+					slog.Any(
+						shared.LogKeyPanic,
+						rec,
+					),
+					slog.String(shared.LogKeyStack, string(debug.Stack())),
+				)
 				w.reporter.Capture(
 					hbCtx,
 					&shared.PanicError{
