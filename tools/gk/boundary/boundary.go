@@ -10,6 +10,13 @@
 // must be a named struct carrying a //gkts: directive (slices/pointers of one
 // are fine — tsgen maps them). Everything else fails the lint.
 //
+// Both rules match on TYPE identity (the method's receiver / the function's
+// package), never on variable names — `h.resp.JSON`, `r.JSON`, any alias is
+// caught. And going AROUND the boundary inside the wire layer
+// (presentation/http/** minus the response/ and request/ plumbing) fails too:
+// direct encoding/json calls and package-level response.* functions are
+// violations, so a handler cannot hand-encode a payload the gate never sees.
+//
 // Escape hatch — same discipline as the raw-pool exemptions: a comment
 //
 //	//gkts:ignore <reason>
@@ -42,7 +49,9 @@ import (
 
 const (
 	responderPath = "gokick/app/presentation/http/response"
-	decodeJSONFn  = "gokick/app/presentation/http/request.DecodeJSON"
+	requestPath   = "gokick/app/presentation/http/request"
+	wireLayer     = "gokick/app/presentation/http/"
+	decodeJSONFn  = requestPath + ".DecodeJSON"
 	ignoreMarker  = "gkts:ignore"
 	gktsMarker    = "gkts:"
 )
@@ -131,44 +140,110 @@ func hasMarker(doc *ast.CommentGroup, marker string) bool {
 }
 
 // check walks every loaded file for the two boundary calls and validates the
-// payload type. Returns the violation messages and the number of call sites
-// seen (for the zero-sites guard).
+// payload type. In the wire layer (presentation/http/** minus the sanctioned
+// response/ and request/ plumbing) it additionally forbids going AROUND the
+// boundary: direct encoding/json calls, and calls to package-level response
+// functions (a hypothetical response.JSON(...) free function would dodge the
+// method check — there is none today, and this keeps it that way). Returns
+// the violation messages and the number of boundary call sites seen (for the
+// zero-sites guard).
 func check(pkgs []*packages.Package, gkts map[types.Object]bool) ([]string, int) {
 	var violations []string
 	sites := 0
 	for _, pkg := range pkgs {
+		inWire := strings.HasPrefix(pkg.PkgPath, wireLayer) &&
+			pkg.PkgPath != responderPath && pkg.PkgPath != requestPath
 		for _, f := range pkg.Syntax {
 			ignores := ignoreLines(pkg.Fset, f)
+			report := func(call *ast.CallExpr, msg string) {
+				pos := pkg.Fset.Position(call.Pos())
+				if reason, exempt := ignores[pos.Line]; exempt {
+					if strings.TrimSpace(reason) == "" {
+						violations = append(violations, fmt.Sprintf(
+							"%s:%d: //gkts:ignore without a reason — say WHY this "+
+								"endpoint may bypass the codegen", pos.Filename, pos.Line))
+					}
+					return
+				}
+				violations = append(
+					violations,
+					fmt.Sprintf("%s:%d: %s", pos.Filename, pos.Line, msg),
+				)
+			}
 			ast.Inspect(f, func(n ast.Node) bool {
 				call, ok := n.(*ast.CallExpr)
 				if !ok {
 					return true
 				}
-				arg, kind := boundaryArg(pkg, call)
-				if arg == nil {
+				if arg, kind := boundaryArg(pkg, call); arg != nil {
+					sites++
+					if ok, why := payloadOK(pkg, arg, gkts); !ok {
+						report(call, fmt.Sprintf(
+							"%s payload %s — wire types must be named structs with a "+
+								"//gkts: directive (or //gkts:ignore <reason> for non-SPA endpoints)",
+							kind, why))
+					}
 					return true
 				}
-				sites++
-				if ok, why := payloadOK(pkg, arg, gkts); !ok {
-					pos := pkg.Fset.Position(call.Pos())
-					if reason, exempt := ignores[pos.Line]; exempt {
-						if strings.TrimSpace(reason) == "" {
-							violations = append(violations, fmt.Sprintf(
-								"%s:%d: //gkts:ignore without a reason — say WHY this "+
-									"endpoint may bypass the codegen", pos.Filename, pos.Line))
-						}
-						return true
+				if inWire {
+					if bypass := bypassCall(pkg, call); bypass != "" {
+						report(call, bypass)
 					}
-					violations = append(violations, fmt.Sprintf(
-						"%s:%d: %s payload %s — wire types must be named structs with a "+
-							"//gkts: directive (or //gkts:ignore <reason> for non-SPA endpoints)",
-						pos.Filename, pos.Line, kind, why))
 				}
 				return true
 			})
 		}
 	}
 	return violations, sites
+}
+
+// bypassCall names the violation when a wire-layer call goes around the typed
+// boundary: any encoding/json call (Marshal, NewEncoder(w).Encode, …) or a
+// package-level function of the response package. Returns "" when fine.
+func bypassCall(pkg *packages.Package, call *ast.CallExpr) string {
+	var ident *ast.Ident
+	switch fun := call.Fun.(type) {
+	case *ast.SelectorExpr:
+		ident = fun.Sel
+	case *ast.Ident:
+		ident = fun
+	default:
+		return ""
+	}
+	fn, ok := pkg.TypesInfo.Uses[ident].(*types.Func)
+	if !ok || fn.Pkg() == nil {
+		return ""
+	}
+	switch fn.Pkg().Path() {
+	case "encoding/json":
+		return fmt.Sprintf(
+			"direct encoding/json call (%s) in the wire layer — encode/decode must go "+
+				"through resp.JSON / request.DecodeJSON so payloads stay gkts-typed",
+			fn.Name())
+	case responderPath:
+		sig, ok := fn.Type().(*types.Signature)
+		if ok && sig.Recv() == nil && !returnsResponder(sig) {
+			return fmt.Sprintf(
+				"package-level response.%s call — the wire boundary is the *Responder "+
+					"methods; a free function would dodge the payload check", fn.Name())
+		}
+	}
+	return ""
+}
+
+// returnsResponder reports whether the signature returns a *Responder —
+// constructors (NewResponder) hand out the boundary, they don't write to it.
+func returnsResponder(sig *types.Signature) bool {
+	for i := range sig.Results().Len() {
+		t := sig.Results().At(i).Type()
+		if ptr, ok := t.(*types.Pointer); ok {
+			t = ptr.Elem()
+		}
+		if named, ok := t.(*types.Named); ok && named.Obj().Name() == "Responder" {
+			return true
+		}
+	}
+	return false
 }
 
 // boundaryArg returns the payload argument of a boundary call (and which kind
