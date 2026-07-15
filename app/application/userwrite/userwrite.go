@@ -15,6 +15,31 @@ import (
 	"gokick/app/domain/user"
 )
 
+// Deps is the dependency pair every userwrite body needs — the repository the
+// reads/writes go through and the password hasher.
+type Deps struct {
+	Repo   user.Repository
+	Hasher shared.PasswordHasher
+}
+
+// Plane carries the two spots where the admin and platform planes legitimately
+// diverge (see Update's doc): the plane-specific guard (nil = none) and the
+// save closure (tenant-scoped Update vs cross-tenant UpdateAcrossTenants).
+type Plane struct {
+	Guard func(user.Role) error
+	Save  func(context.Context, *user.User) error
+}
+
+// CreateSpec is the validated input of Create — value objects only, so an
+// unvalidated string can't reach the shared body.
+type CreateSpec struct {
+	Nickname user.Nickname
+	Password user.Password
+	Email    user.Email
+	Role     user.Role
+	TenantID string
+}
+
 // Fields carries the mutable attributes an update command sends. An empty
 // Password means "unchanged"; an empty Email means "no email".
 type Fields struct {
@@ -46,12 +71,10 @@ type Fields struct {
 // form carries no active flag, so a missing field must not deactivate the user).
 func Update(
 	ctx context.Context,
-	repo user.Repository,
-	hasher shared.PasswordHasher,
+	d Deps,
 	target *user.User,
 	f Fields,
-	guard func(user.Role) error,
-	save func(context.Context, *user.User) error,
+	plane Plane,
 ) error {
 	// A superadmin (platform) account is managed out-of-band, never via the API.
 	// The repo write also excludes superadmin rows; this refuses up front with a
@@ -80,8 +103,8 @@ func Update(
 
 	// Plane-specific guard (admin: block self-demote), run once the new role is
 	// known and before any further work — preserves the admin handler's order.
-	if guard != nil {
-		if err := guard(role); err != nil {
+	if plane.Guard != nil {
+		if err := plane.Guard(role); err != nil {
 			return err
 		}
 	}
@@ -91,12 +114,12 @@ func Update(
 		return err
 	}
 
-	if err := ensureNicknameFree(ctx, repo, string(nickname), target); err != nil {
+	if err := ensureNicknameFree(ctx, d.Repo, string(nickname), target); err != nil {
 		return err
 	}
 
 	if f.Password != "" {
-		hash, err := user.HashNewPassword(f.Password, hasher)
+		hash, err := user.HashNewPassword(f.Password, d.Hasher)
 		if err != nil {
 			return err
 		}
@@ -110,7 +133,7 @@ func Update(
 	target.Role = string(role)
 	target.UpdatedAt = time.Now()
 
-	if err := save(ctx, target); err != nil {
+	if err := plane.Save(ctx, target); err != nil {
 		return err
 	}
 
@@ -135,17 +158,8 @@ func Update(
 // user.UserCreated event + a user.created audit record. Single-sourcing the
 // announcement is the point (F-031): superadmin creation previously skipped the
 // event, and a copy-paste body is exactly what let that drift.
-func Create(
-	ctx context.Context,
-	repo user.Repository,
-	hasher shared.PasswordHasher,
-	nickname user.Nickname,
-	password user.Password,
-	email user.Email,
-	role user.Role,
-	tenantID string,
-) (*user.User, error) {
-	existing, err := repo.FindByNickname(ctx, string(nickname))
+func Create(ctx context.Context, d Deps, spec CreateSpec) (*user.User, error) {
+	existing, err := d.Repo.FindByNickname(ctx, string(spec.Nickname))
 	if err != nil {
 		return nil, err
 	}
@@ -156,13 +170,13 @@ func Create(
 		}
 	}
 
-	hash, err := hasher.Hash(string(password))
+	hash, err := d.Hasher.Hash(string(spec.Password))
 	if err != nil {
 		return nil, err
 	}
 
-	u := user.NewUser(nickname, hash, email, role, tenantID)
-	if err := repo.Save(ctx, u); err != nil {
+	u := user.NewUser(spec.Nickname, hash, spec.Email, spec.Role, spec.TenantID)
+	if err := d.Repo.Save(ctx, u); err != nil {
 		return nil, err
 	}
 

@@ -50,10 +50,16 @@ func (h *UpdatePlatformUserHandler) Handle(
 	// users can't lock itself out), so guard is nil. The cross-tenant
 	// UpdateAcrossTenants is the only divergence from the admin handler; the
 	// shared body (incl. leaving target.Active untouched) lives in userwrite.
-	return userwrite.Update(ctx, h.users, h.password, target, userwrite.Fields{
-		Nickname: cmd.Nickname,
-		Email:    cmd.Email,
-		Role:     cmd.Role,
-		Password: cmd.Password,
-	}, nil, h.users.UpdateAcrossTenants)
+	return userwrite.Update(
+		ctx,
+		userwrite.Deps{Repo: h.users, Hasher: h.password},
+		target,
+		userwrite.Fields{
+			Nickname: cmd.Nickname,
+			Email:    cmd.Email,
+			Role:     cmd.Role,
+			Password: cmd.Password,
+		},
+		userwrite.Plane{Save: h.users.UpdateAcrossTenants},
+	)
 }

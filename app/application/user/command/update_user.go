@@ -58,10 +58,16 @@ func (h *UpdateUserHandler) Handle(ctx context.Context, cmd UpdateUserCommand) e
 		return nil
 	}
 
-	return userwrite.Update(ctx, h.users, h.password, target, userwrite.Fields{
-		Nickname: cmd.Nickname,
-		Email:    cmd.Email,
-		Role:     cmd.Role,
-		Password: cmd.Password,
-	}, selfDemoteGuard, h.users.Update)
+	return userwrite.Update(
+		ctx,
+		userwrite.Deps{Repo: h.users, Hasher: h.password},
+		target,
+		userwrite.Fields{
+			Nickname: cmd.Nickname,
+			Email:    cmd.Email,
+			Role:     cmd.Role,
+			Password: cmd.Password,
+		},
+		userwrite.Plane{Guard: selfDemoteGuard, Save: h.users.Update},
+	)
 }

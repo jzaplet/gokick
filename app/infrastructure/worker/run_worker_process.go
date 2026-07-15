@@ -80,16 +80,13 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 	}
 
 	var abandon, cancelled atomic.Bool
-	hbDone := w.startHeartbeat(
-		hbCtx,
-		execCtx,
-		r,
-		owner,
-		kindLease,
-		cancelHandler,
-		&abandon,
-		&cancelled,
-	)
+	hb := hbHandles{
+		execCtx:       execCtx,
+		cancelHandler: cancelHandler,
+		abandon:       &abandon,
+		cancelled:     &cancelled,
+	}
+	hbDone := w.startHeartbeat(hbCtx, r, owner, kindLease, hb)
 
 	// Honor a cancel already requested at claim time (immutable claimed-row value;
 	// no shared state read).
@@ -115,17 +112,13 @@ func (w *RunWorker) process(workerCtx context.Context, r *run.Run, owner string)
 	// otherwise-healthy over-running attempt.
 	timedOut := kindTimeout > 0 && errors.Is(execCtx.Err(), context.DeadlineExceeded)
 
-	w.finalize(
-		workerCtx,
-		log,
-		r,
-		owner,
-		hErr,
-		abandon.Load(),
-		cancelled.Load(),
-		timedOut,
-		time.Since(start),
-	)
+	w.finalize(workerCtx, log, r, owner, runOutcome{
+		err:       hErr,
+		abandon:   abandon.Load(),
+		cancelled: cancelled.Load(),
+		timedOut:  timedOut,
+		duration:  time.Since(start),
+	})
 }
 
 // failIfPoison enforces the poison-crash-loop bound at the CLAIM boundary: a run
@@ -244,12 +237,11 @@ func (w *RunWorker) runHandler(
 // heartbeat (e.g. a repo call) must not crash the pool: it is recovered, reported,
 // and the run is abandoned (left for lease-lapse reclaim).
 func (w *RunWorker) startHeartbeat(
-	hbCtx, execCtx context.Context,
+	hbCtx context.Context,
 	r *run.Run,
 	owner string,
 	lease time.Duration,
-	cancelHandler context.CancelFunc,
-	abandon, cancelled *atomic.Bool,
+	hb hbHandles,
 ) <-chan struct{} {
 	hbDone := make(chan struct{})
 	go func() {
@@ -274,11 +266,11 @@ func (w *RunWorker) startHeartbeat(
 					},
 					slog.String(logKeyRunID, r.ID),
 				)
-				abandon.Store(true)
-				cancelHandler()
+				hb.abandon.Store(true)
+				hb.cancelHandler()
 			}
 		}()
-		w.heartbeat(hbCtx, r.ID, owner, lease, execCtx, cancelHandler, abandon, cancelled)
+		w.heartbeat(hbCtx, r.ID, owner, lease, hb)
 	}()
 	return hbDone
 }
@@ -292,20 +284,30 @@ func (w *RunWorker) startHeartbeat(
 // its deadline is a retryable failure (handleFailure), not a completion, even if the
 // handler returned nil. Every finalizer is owner-checked; a false return means the
 // lease was lost at the last moment → abandon.
+// runOutcome is what one handler attempt ended with: the returned error, the
+// heartbeat verdicts (read only AFTER the <-hbDone join), whether the
+// per-attempt deadline fired, and the measured duration. finalize and
+// handleFailure consume it as one value.
+type runOutcome struct {
+	err       error
+	abandon   bool
+	cancelled bool
+	timedOut  bool
+	duration  time.Duration
+}
+
 func (w *RunWorker) finalize(
 	workerCtx context.Context,
 	log *slog.Logger,
 	r *run.Run,
 	owner string,
-	hErr error,
-	abandon, cancelled, timedOut bool,
-	dur time.Duration,
+	out runOutcome,
 ) {
 	switch {
-	case abandon:
+	case out.abandon:
 		log.Warn(
 			"run worker: lease lost/uncertain, abandoning for reclaim",
-			shared.DurationMsAttr(dur),
+			shared.DurationMsAttr(out.duration),
 		)
 	case workerCtx.Err() != nil:
 		// Graceful shutdown interrupted an unfinished run. Abandon — even if a
@@ -313,9 +315,9 @@ func (w *RunWorker) finalize(
 		// re-observes it and finalizes cleanly).
 		log.Info(
 			"run worker: shutdown, abandoning in-flight run for reclaim",
-			shared.DurationMsAttr(dur),
+			shared.DurationMsAttr(out.duration),
 		)
-	case cancelled:
+	case out.cancelled:
 		ok, err := w.repo.MarkCancelled(workerCtx, r.ID, owner)
 		switch {
 		case err != nil:
@@ -323,24 +325,19 @@ func (w *RunWorker) finalize(
 		case !ok:
 			log.Warn("run worker: lease lost at cancel finalize, abandoning")
 		default:
-			log.Info("run worker: run cancelled", shared.DurationMsAttr(dur))
+			log.Info("run worker: run cancelled", shared.DurationMsAttr(out.duration))
 		}
-	case timedOut:
+	case out.timedOut:
 		// A blown per-attempt deadline → retryable failure (reschedule with backoff, or
 		// terminal once the retry budget is spent). Ranked above success so a handler
 		// that returned nil exactly as the deadline fired is still treated as timed out.
-		w.handleFailure(
-			workerCtx,
-			log,
-			r,
-			owner,
-			fmt.Errorf(
-				"run timed out (exceeded per-attempt deadline) after %s",
-				dur.Round(time.Millisecond),
-			),
-			dur,
+		timeoutOut := out
+		timeoutOut.err = fmt.Errorf(
+			"run timed out (exceeded per-attempt deadline) after %s",
+			out.duration.Round(time.Millisecond),
 		)
-	case hErr == nil:
+		w.handleFailure(workerCtx, log, r, owner, timeoutOut)
+	case out.err == nil:
 		ok, err := w.repo.MarkComplete(workerCtx, r.ID, owner)
 		switch {
 		case err != nil:
@@ -348,10 +345,10 @@ func (w *RunWorker) finalize(
 		case !ok:
 			log.Warn("run worker: lease lost at complete finalize, abandoning")
 		default:
-			log.Info("run worker: run completed", shared.DurationMsAttr(dur))
+			log.Info("run worker: run completed", shared.DurationMsAttr(out.duration))
 		}
 	default:
-		w.handleFailure(workerCtx, log, r, owner, hErr, dur)
+		w.handleFailure(workerCtx, log, r, owner, out)
 	}
 }
 
@@ -364,11 +361,10 @@ func (w *RunWorker) handleFailure(
 	log *slog.Logger,
 	r *run.Run,
 	owner string,
-	hErr error,
-	dur time.Duration,
+	out runOutcome,
 ) {
 	if r.Attempts >= r.MaxRetries {
-		ok, err := w.repo.MarkFailed(ctx, r.ID, owner, hErr.Error())
+		ok, err := w.repo.MarkFailed(ctx, r.ID, owner, out.err.Error())
 		switch {
 		case err != nil:
 			log.Error("run worker: mark-failed errored", shared.LogKeyError, err)
@@ -376,8 +372,8 @@ func (w *RunWorker) handleFailure(
 			log.Warn("run worker: lease lost at fail finalize, abandoning")
 		default:
 			log.Error("run worker: run exhausted retries, failed",
-				shared.DurationMsAttr(dur), slog.Any(shared.LogKeyError, hErr))
-			w.reporter.Capture(ctx, fmt.Errorf("run %q exhausted retries: %w", r.Kind, hErr),
+				shared.DurationMsAttr(out.duration), slog.Any(shared.LogKeyError, out.err))
+			w.reporter.Capture(ctx, fmt.Errorf("run %q exhausted retries: %w", r.Kind, out.err),
 				slog.String(logKeyRunID, r.ID), slog.String(shared.LogKeyRunKind, r.Kind))
 		}
 		return
@@ -386,7 +382,7 @@ func (w *RunWorker) handleFailure(
 	// +1: runs count attempts post-Reschedule (0 at first failure), so shift the
 	// curve so the first two retries are base then 2×base, not base then base.
 	delay := backoff(r.Attempts + 1)
-	ok, err := w.repo.Reschedule(ctx, r.ID, owner, time.Now().Add(delay), hErr.Error())
+	ok, err := w.repo.Reschedule(ctx, r.ID, owner, time.Now().Add(delay), out.err.Error())
 	switch {
 	case err != nil:
 		log.Error("run worker: reschedule errored", shared.LogKeyError, err)
@@ -394,8 +390,8 @@ func (w *RunWorker) handleFailure(
 		log.Warn("run worker: lease lost at reschedule, abandoning")
 	default:
 		log.Warn("run worker: run failed, retry scheduled",
-			shared.DurationMsAttr(dur), shared.MillisAttr(shared.LogKeyRetryInMs, delay),
-			slog.Any(shared.LogKeyError, hErr))
+			shared.DurationMsAttr(out.duration), shared.MillisAttr(shared.LogKeyRetryInMs, delay),
+			slog.Any(shared.LogKeyError, out.err))
 	}
 }
 

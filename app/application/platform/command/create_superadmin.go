@@ -61,13 +61,14 @@ func (h *CreateSuperAdminHandler) Handle(ctx context.Context, cmd CreateSuperAdm
 	// a superadmin too (previously the event was silently skipped; F-031).
 	_, err = userwrite.Create(
 		ctx,
-		h.users,
-		h.password,
-		nickname,
-		password,
-		email,
-		user.RoleSuperAdmin,
-		shared.DefaultTenantID,
+		userwrite.Deps{Repo: h.users, Hasher: h.password},
+		userwrite.CreateSpec{
+			Nickname: nickname,
+			Password: password,
+			Email:    email,
+			Role:     user.RoleSuperAdmin,
+			TenantID: shared.DefaultTenantID,
+		},
 	)
 	return err
 }

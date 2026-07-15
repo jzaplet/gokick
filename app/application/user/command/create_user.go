@@ -75,6 +75,16 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
 
 	// Uniqueness + hash + persist + announce (user.created audit & UserCreated event)
 	// are the shared create body — same as CreateSuperAdmin, so the event can't drift.
-	_, err = userwrite.Create(ctx, h.users, h.password, nickname, password, email, role, tenantID)
+	_, err = userwrite.Create(
+		ctx,
+		userwrite.Deps{Repo: h.users, Hasher: h.password},
+		userwrite.CreateSpec{
+			Nickname: nickname,
+			Password: password,
+			Email:    email,
+			Role:     role,
+			TenantID: tenantID,
+		},
+	)
 	return err
 }
