@@ -21,13 +21,28 @@
 //
 //	//gkerrf:exempt <reason>
 //
-// on the line directly above the `Field:` literal. The reason is mandatory.
+// standing ALONE on the line directly above the statement holding the literal
+// (the same semantics as //gkts:ignore — a trailing marker is a violation, a
+// reasonless one too, and so is a marker that exempts nothing, so stale
+// escapes cannot rot in place). The exemption is keyed on the line where the
+// COMPOSITE LITERAL starts, so a golines rewrap of a long literal does not
+// silently detach it.
+//
+// The collector matches by type NAME (plain parser, no type-checking — cheap),
+// which two tripwires keep honest: declaring another `type ValidationError`
+// under app/ outside domain/shared, or a `NewValidationError` constructor
+// (whose call sites the literal scan could never see), is a violation until
+// this tool is taught about them.
 //
 // Zero-sites guards: finding no Field literals, or no *Errors files, fails the
-// check — a gate that sees nothing must scream, not stay green.
+// check — a gate that sees nothing must scream, not stay green. And an
+// *Errors-shaped type declared OUTSIDE a *Errors.ts file is a violation: the
+// FE scan only reads *Errors.ts files, so an inline type would silently dodge
+// the parity check.
 package errfields
 
 import (
+	"bytes"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -36,7 +51,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+
+	"gokick-gk/internal/tool"
 )
 
 const exemptMarker = "gkerrf:exempt"
@@ -46,9 +64,12 @@ func Run(args []string) {
 	if len(args) > 0 {
 		fatal("unknown argument %q (gk errfields takes none)", args[0])
 	}
-	root := repoRoot()
+	root, err := tool.RepoRoot()
+	if err != nil {
+		fatal("%v", err)
+	}
 
-	goFields, err := collectGoFields(filepath.Join(root, "app"))
+	goFields, violations, err := collectGoFields(filepath.Join(root, "app"))
 	if err != nil {
 		fatal("collect Go fields: %v", err)
 	}
@@ -64,7 +85,13 @@ func Run(args []string) {
 		fatal("no *Errors.ts types found under assets/ — the scan is broken")
 	}
 
-	violations := diff(goFields, feKeys)
+	stray, err := strayErrorsTypes(filepath.Join(root, "assets"))
+	if err != nil {
+		fatal("scan for stray *Errors types: %v", err)
+	}
+	violations = append(violations, stray...)
+
+	violations = append(violations, diff(goFields, feKeys)...)
 	if len(violations) > 0 {
 		sort.Strings(violations)
 		fmt.Fprintf(os.Stderr, "errfields: %d violation(s):\n  %s\n",
@@ -82,10 +109,13 @@ type fieldRef struct {
 }
 
 // collectGoFields parses every non-test .go file under dir and returns the
-// Field literals of shared.ValidationError composite literals, minus the
-// //gkerrf:exempt-ed ones. An exempt without a reason is an error.
-func collectGoFields(dir string) ([]fieldRef, error) {
+// Field literals of shared.ValidationError composite literals (minus the
+// //gkerrf:exempt-ed ones) plus the violations found on the way: marker
+// misuse, dynamic or positional literals the scan cannot see, and the two
+// name-matching tripwires.
+func collectGoFields(dir string) ([]fieldRef, []string, error) {
 	var refs []fieldRef
+	var violations []string
 	fset := token.NewFileSet()
 	err := filepath.WalkDir(dir, func(path string, e os.DirEntry, err error) error {
 		if err != nil {
@@ -94,57 +124,147 @@ func collectGoFields(dir string) ([]fieldRef, error) {
 		if e.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
-		f, perr := parser.ParseFile(fset, path, nil, parser.ParseComments)
+		src, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return rerr
+		}
+		// Cheap prefilter: most files can contribute neither a literal, a
+		// tripwire, nor a marker — skip the parse entirely.
+		if !bytes.Contains(src, []byte("ValidationError")) &&
+			!bytes.Contains(src, []byte(exemptMarker)) {
+			return nil
+		}
+		f, perr := parser.ParseFile(fset, path, src, parser.ParseComments)
 		if perr != nil {
 			return fmt.Errorf("parse %s: %w", path, perr)
 		}
-		exempts, eerr := exemptLines(fset, f, path)
-		if eerr != nil {
-			return eerr
-		}
-		var walkErr error
-		ast.Inspect(f, func(n ast.Node) bool {
-			lit, ok := n.(*ast.CompositeLit)
-			if !ok || !isValidationError(lit.Type) {
-				return true
-			}
-			for _, elt := range lit.Elts {
-				kv, ok := elt.(*ast.KeyValueExpr)
-				if !ok {
-					continue
-				}
-				key, ok := kv.Key.(*ast.Ident)
-				if !ok || key.Name != "Field" {
-					continue
-				}
-				pos := fset.Position(kv.Pos())
-				if exempts[pos.Line] {
-					continue
-				}
-				val, ok := kv.Value.(*ast.BasicLit)
-				if !ok || val.Kind != token.STRING {
-					walkErr = fmt.Errorf(
-						"%s:%d: ValidationError.Field is not a string literal — the parity "+
-							"check cannot see a dynamic field name; use a literal or "+
-							"//gkerrf:exempt <reason>", path, pos.Line)
-					return false
-				}
-				key2 := strings.Trim(val.Value, `"`)
-				if key2 == "" {
-					// Field "" routes to the FE `general` slot by convention —
-					// always a valid home.
-					continue
-				}
-				refs = append(refs, fieldRef{
-					key: key2,
-					pos: fmt.Sprintf("%s:%d", path, pos.Line),
-				})
-			}
-			return true
-		})
-		return walkErr
+		fileRefs, fileViolations := collectFile(fset, f, path, src)
+		refs = append(refs, fileRefs...)
+		violations = append(violations, fileViolations...)
+		return nil
 	})
-	return refs, err
+	return refs, violations, err
+}
+
+func collectFile(
+	fset *token.FileSet,
+	f *ast.File,
+	path string,
+	src []byte,
+) (refs []fieldRef, violations []string) {
+	exempts, misplaced := tool.EscapeLines(fset, f, src, exemptMarker)
+	for _, line := range misplaced {
+		violations = append(violations, fmt.Sprintf(
+			"%s:%d: //gkerrf:exempt must stand alone on the line above the literal",
+			path, line))
+	}
+	for _, esc := range exempts {
+		if esc.Reason == "" {
+			violations = append(violations, fmt.Sprintf(
+				"%s:%d: //gkerrf:exempt without a reason — say WHY this field never "+
+					"renders in a form", path, esc.MarkerLine))
+		}
+	}
+	consumed := map[int]bool{}
+	ast.Inspect(f, func(n ast.Node) bool {
+		if v := tripwire(fset, n, path); v != "" {
+			violations = append(violations, v)
+			return true
+		}
+		lit, ok := n.(*ast.CompositeLit)
+		if !ok || !isValidationError(lit.Type) {
+			return true
+		}
+		litLine := fset.Position(lit.Pos()).Line
+		if esc, ok := exempts[litLine]; ok {
+			consumed[esc.MarkerLine] = true
+			return true
+		}
+		r, v := literalField(fset, lit, path)
+		if v != "" {
+			violations = append(violations, v)
+		} else if r.key != "" {
+			refs = append(refs, r)
+		}
+		return true
+	})
+	for _, esc := range exempts {
+		if esc.Reason != "" && !consumed[esc.MarkerLine] {
+			violations = append(violations, fmt.Sprintf(
+				"%s:%d: unused //gkerrf:exempt — no ValidationError literal starts on "+
+					"the next line; remove the stale marker", path, esc.MarkerLine))
+		}
+	}
+	return refs, violations
+}
+
+// literalField extracts the Field key of one ValidationError composite
+// literal; a shape the scan cannot see (positional elements, a dynamic Field
+// expression, a non-plain string literal) is a violation. Field "" routes to
+// the FE `general` slot by convention and returns an empty ref.
+func literalField(
+	fset *token.FileSet,
+	lit *ast.CompositeLit,
+	path string,
+) (fieldRef, string) {
+	for _, elt := range lit.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			return fieldRef{}, fmt.Sprintf(
+				"%s:%d: positional ValidationError literal — the parity check can only "+
+					"see keyed fields; write Field:/Message: explicitly",
+				path, fset.Position(lit.Pos()).Line)
+		}
+		key, ok := kv.Key.(*ast.Ident)
+		if !ok || key.Name != "Field" {
+			continue
+		}
+		pos := fset.Position(kv.Pos())
+		val, ok := kv.Value.(*ast.BasicLit)
+		if !ok || val.Kind != token.STRING {
+			return fieldRef{}, fmt.Sprintf(
+				"%s:%d: ValidationError.Field is not a string literal — the parity "+
+					"check cannot see a dynamic field name; use a literal or "+
+					"//gkerrf:exempt <reason>", path, pos.Line)
+		}
+		name, uerr := strconv.Unquote(val.Value)
+		if uerr != nil {
+			return fieldRef{}, fmt.Sprintf(
+				"%s:%d: cannot unquote Field literal %s: %v", path, pos.Line, val.Value, uerr)
+		}
+		if name == "" {
+			// Field "" routes to the FE `general` slot by convention —
+			// always a valid home.
+			return fieldRef{}, ""
+		}
+		return fieldRef{key: name, pos: fmt.Sprintf("%s:%d", path, pos.Line)}, ""
+	}
+	return fieldRef{}, ""
+}
+
+// tripwire guards the name-based matching: a second ValidationError type
+// under app/ (outside domain/shared) would inject foreign fields, and a
+// NewValidationError constructor would make its call sites invisible to the
+// literal scan. Both are violations until the tool is taught about them.
+func tripwire(fset *token.FileSet, n ast.Node, path string) string {
+	switch d := n.(type) {
+	case *ast.TypeSpec:
+		if d.Name.Name == "ValidationError" &&
+			!strings.Contains(filepath.ToSlash(path), "domain/shared/") {
+			return fmt.Sprintf(
+				"%s:%d: a second ValidationError type — the parity check matches by "+
+					"name and would collect its fields too; rename it or teach gk errfields",
+				path, fset.Position(d.Pos()).Line)
+		}
+	case *ast.FuncDecl:
+		if d.Name.Name == "NewValidationError" {
+			return fmt.Sprintf(
+				"%s:%d: NewValidationError constructor — its call sites are invisible "+
+					"to the literal scan; keep constructing ValidationError literals "+
+					"inline or teach gk errfields", path, fset.Position(d.Pos()).Line)
+		}
+	}
+	return ""
 }
 
 func isValidationError(t ast.Expr) bool {
@@ -158,29 +278,6 @@ func isValidationError(t ast.Expr) bool {
 	}
 }
 
-// exemptLines maps line numbers exempted by a //gkerrf:exempt comment — the
-// marker exempts the line DIRECTLY below it. A bare marker (no reason) errors.
-func exemptLines(fset *token.FileSet, f *ast.File, path string) (map[int]bool, error) {
-	lines := map[int]bool{}
-	for _, cg := range f.Comments {
-		for _, c := range cg.List {
-			text := strings.TrimPrefix(c.Text, "//")
-			if !strings.HasPrefix(text, exemptMarker) {
-				continue
-			}
-			reason := strings.TrimSpace(strings.TrimPrefix(text, exemptMarker))
-			line := fset.Position(c.Pos()).Line
-			if reason == "" {
-				return nil, fmt.Errorf(
-					"%s:%d: //gkerrf:exempt without a reason — say WHY this field "+
-						"never renders in a form", path, line)
-			}
-			lines[line+1] = true
-		}
-	}
-	return lines, nil
-}
-
 // errorsKeyRe matches one optional key line of an *Errors type, e.g.
 // "    nickname?: string;". The FE convention (gk-frontend-forms) is exactly
 // this shape; anything else in an *Errors file is a parse error on purpose.
@@ -189,10 +286,14 @@ var errorsKeyRe = regexp.MustCompile(`^\s{4}([A-Za-z_][A-Za-z0-9_]*)\?: string;$
 // structuralRe matches the non-key lines an *Errors file may contain.
 var structuralRe = regexp.MustCompile(`^(//.*|export type \w+Errors = \{|\};|)$`)
 
-// collectFeKeys reads every assets/**/types/*Errors.ts and returns the union
-// of declared keys with the positions declaring them.
-func collectFeKeys(dir string) (map[string][]string, error) {
-	keys := map[string][]string{}
+// strayErrorsRe finds an *Errors type declared outside a *Errors.ts file —
+// line-anchored so `import { type XxxErrors }` lines don't match.
+var strayErrorsRe = regexp.MustCompile(`^\s*(?:export\s+)?(?:type|interface)\s+\w*Errors\b`)
+
+// collectFeKeys reads every *Errors.ts under dir and returns the declared
+// keys, each with the first position declaring it.
+func collectFeKeys(dir string) (map[string]string, error) {
+	keys := map[string]string{}
 	err := filepath.WalkDir(dir, func(path string, e os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -206,7 +307,9 @@ func collectFeKeys(dir string) (map[string][]string, error) {
 		}
 		for i, line := range strings.Split(string(content), "\n") {
 			if m := errorsKeyRe.FindStringSubmatch(line); m != nil {
-				keys[m[1]] = append(keys[m[1]], fmt.Sprintf("%s:%d", path, i+1))
+				if _, ok := keys[m[1]]; !ok {
+					keys[m[1]] = fmt.Sprintf("%s:%d", path, i+1)
+				}
 				continue
 			}
 			if !structuralRe.MatchString(strings.TrimRight(line, "\r")) {
@@ -220,8 +323,37 @@ func collectFeKeys(dir string) (map[string][]string, error) {
 	return keys, err
 }
 
+// strayErrorsTypes flags *Errors-shaped type declarations outside *Errors.ts
+// files: collectFeKeys never reads those, so an inline declaration would
+// silently dodge the parity check.
+func strayErrorsTypes(dir string) ([]string, error) {
+	var violations []string
+	err := filepath.WalkDir(dir, func(path string, e os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		isTS := strings.HasSuffix(path, ".ts") || strings.HasSuffix(path, ".vue")
+		if e.IsDir() || !isTS || strings.HasSuffix(path, "Errors.ts") {
+			return nil
+		}
+		content, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return rerr
+		}
+		for i, line := range strings.Split(string(content), "\n") {
+			if strayErrorsRe.MatchString(line) {
+				violations = append(violations, fmt.Sprintf(
+					"%s:%d: *Errors type declared outside a *Errors.ts file — the parity "+
+						"check only reads *Errors.ts; move it to <Domain>/types/", path, i+1))
+			}
+		}
+		return nil
+	})
+	return violations, err
+}
+
 // diff runs both directions of the parity check.
-func diff(goFields []fieldRef, feKeys map[string][]string) []string {
+func diff(goFields []fieldRef, feKeys map[string]string) []string {
 	var violations []string
 	goSet := map[string]bool{}
 	for _, r := range goFields {
@@ -233,41 +365,19 @@ func diff(goFields []fieldRef, feKeys map[string][]string) []string {
 					"never reaches a form)", r.pos, r.key))
 		}
 	}
-	for key, positions := range feKeys {
+	for key, position := range feKeys {
 		if key == "general" {
 			continue // the conventional catch-all — always produced (Field "" + synthesized failures)
 		}
 		if !goSet[key] {
 			violations = append(violations, fmt.Sprintf(
 				"%s: FE error key %q has no Go ValidationError{Field: ...} producer — "+
-					"a phantom key that can never light up", positions[0], key))
+					"a phantom key that can never light up", position, key))
 		}
 	}
 	return violations
 }
 
-// repoRoot resolves the gokick module root by walking up from the working
-// directory (gk runs from tools/gk).
-func repoRoot() string {
-	dir, err := os.Getwd()
-	if err != nil {
-		fatal("getwd: %v", err)
-	}
-	for {
-		mod := filepath.Join(dir, "go.mod")
-		if b, err := os.ReadFile(mod); err == nil &&
-			strings.Contains(string(b), "module gokick\n") {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			fatal("could not find gokick go.mod above %s", dir)
-		}
-		dir = parent
-	}
-}
-
 func fatal(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "errfields: "+format+"\n", args...)
-	os.Exit(1)
+	tool.Fatalf("errfields", format, args...)
 }

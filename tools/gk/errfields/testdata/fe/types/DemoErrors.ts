@@ -4,5 +4,7 @@ export type DemoErrors = {
     nickname?: string;
     email?: string;
     role?: string;
+    rawfield?: string;
+    escaped?: string;
     phantom?: string;
 };
