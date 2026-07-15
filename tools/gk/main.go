@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"os"
 
+	"gokick-gk/boundary"
+	"gokick-gk/errfields"
 	"gokick-gk/tsgen"
 )
 
@@ -20,6 +22,10 @@ func main() {
 	switch tool, args := os.Args[1], os.Args[2:]; tool {
 	case "tsgen":
 		tsgen.Run(args)
+	case "boundary":
+		boundary.Run(args)
+	case "errfields":
+		errfields.Run(args)
 	default:
 		fmt.Fprintf(os.Stderr, "gk: unknown tool %q\n\n", tool)
 		usage()
@@ -31,6 +37,8 @@ func usage() {
 
 tools:
   tsgen generate|check   TypeScript types from //gkts-annotated Go DTOs
+  boundary               wire payloads must be //gkts-annotated named structs
+  errfields              Go ValidationError fields ↔ FE *Errors keys parity
 `)
 	os.Exit(2)
 }

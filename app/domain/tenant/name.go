@@ -16,6 +16,7 @@ type Name string
 func NewName(s string) (Name, error) {
 	trimmed := strings.TrimSpace(s)
 	if trimmed == "" {
+		//gkerrf:exempt tenant name is CLI-only today (create-tenant); no FE tenant form exists
 		return "", &shared.ValidationError{Field: "name", Message: "tenant name is required"}
 	}
 

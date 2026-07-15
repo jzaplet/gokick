@@ -78,6 +78,8 @@ lint:
 	$(MAKE) arch-check
 	$(MAKE) format-check
 	$(MAKE) ts-check
+	$(MAKE) boundary-check
+	$(MAKE) errfields-check
 	$(MAKE) documan-lint
 
 # Fail if any Go file is not golines-formatted. golines is not covered by
@@ -112,6 +114,19 @@ ts-gen:
 ts-check:
 	cd tools/gk && go run . tsgen check
 
+# Wire-boundary gate (closes the tsgen opt-in gap): every Responder.JSON payload
+# and DecodeJSON target must be a named struct with a //gkts: directive, or carry
+# a call-site `//gkts:ignore <reason>` (non-SPA endpoints only).
+boundary-check:
+	cd tools/gk && go run . boundary
+
+# Error-key parity (the static half of follow-up ④): every Go
+# ValidationError{Field: "..."} literal must have a home key in some FE
+# *Errors type and vice versa (general is the conventional catch-all).
+# Escape: //gkerrf:exempt <reason> for fields that never render in a form.
+errfields-check:
+	cd tools/gk && go run . errfields
+
 # Migrations
 migrate-create:
 	$(GOOSE) -dir migrations create $(NAME) sql
@@ -139,9 +154,13 @@ fe-clean:
 	rm -rf public/assets public/index.html
 
 # Quality
+# No output filtering here on purpose: piping go test through grep makes the
+# recipe's exit status grep's, and grep exits 0 whenever FAIL lines pass the
+# filter — test failures could never fail the target.
 test:
 	yarn test
-	go test ./app/... ./cmd/... 2>&1 | grep -v '\[no test files\]'
+	go test ./app/... ./cmd/...
+	cd tools/gk && go test ./...
 
 # Local durable-run E2E — process-lifecycle guarantees an in-process test can't reach
 # (kill -9 / SIGTERM + persistent SQLite). Each builds bin/app and spawns real serve

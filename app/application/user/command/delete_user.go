@@ -36,6 +36,7 @@ func (h *DeleteUserHandler) Handle(ctx context.Context, cmd DeleteUserCommand) e
 		return err
 	}
 	if target == nil {
+		//gkerrf:exempt path-param lookup - the list view toasts on failure, no form field maps id
 		return &shared.ValidationError{Field: "id", Message: "user not found"}
 	}
 
