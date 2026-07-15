@@ -191,8 +191,8 @@ export default tseslint.config(
     rules: {
       'no-restricted-syntax': ['error',
         {
-          selector: 'CallExpression[callee.name=/^(authFetch|apiFetch)$/]:not([typeArguments])',
-          message: 'Declare explicit generics — authFetch<Res, Err[, Req]> — with the tsgen-generated types; inference lets an untyped payload through.',
+          selector: 'CallExpression[callee.name=/^(authFetch|apiFetch|apiUpload)$/]:not([typeArguments])',
+          message: 'Declare explicit generics — authFetch<Res, Err[, Req]> / apiUpload<Res, Err> — with the tsgen-generated types; inference lets an untyped payload through.',
         },
         {
           selector: 'CallExpression[callee.name=/^(authFetch|apiFetch)$/] > ObjectExpression.arguments > Property[key.name=\'body\'] > :matches(ObjectExpression, ArrayExpression).value',
