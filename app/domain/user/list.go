@@ -152,5 +152,5 @@ type BulkSelection struct {
 }
 
 func (s BulkSelection) IsEmpty() bool {
-	return s.AllFiltered == false && len(s.IDs) == 0
+	return !s.AllFiltered && len(s.IDs) == 0
 }

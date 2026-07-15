@@ -2,19 +2,26 @@
 import type { GridColumn, GridSort } from '@/app-ui/DataGrid/createGridState';
 import ScrollShadow from '@/app-ui/ScrollShadow/ScrollShadow.vue';
 import Spinner from '@/app-ui/Loading/Spinner.vue';
+import CheckBox from '@/app-ui/Inputs/CheckBox.vue';
 
 // The presentational half of the grid: header with sort affordances, loading
 // row, card chrome and horizontal-scroll shadows. Rows are the CONSUMER's —
 // the #rows slot renders domain <tr> components, so the grid never dictates
 // cell markup (ported from aibobr).
-const { columns, sort, isLoading } = defineProps<{
+const { columns, sort, isLoading, selectable, allSelected } = defineProps<{
     columns: GridColumn[];
     sort: GridSort;
     isLoading: boolean;
+    // Selection UI: the header checkbox toggles the current page (the grid
+    // state owns WHICH ids that means); row checkboxes live in the consumer's
+    // row components, same as all cell markup.
+    selectable?: boolean;
+    allSelected?: boolean;
 }>();
 
 const emit = defineEmits<{
     sort: [column: string];
+    togglePage: [];
 }>();
 
 const handleHeaderClick = (column: GridColumn): void => {
@@ -30,6 +37,16 @@ const handleHeaderClick = (column: GridColumn): void => {
             <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                     <tr>
+                        <th
+                            v-if="selectable === true"
+                            class="px-3 sm:px-6 py-3 w-10"
+                        >
+                            <CheckBox
+                                :model-value="allSelected"
+                                sr-label="Select page"
+                                @update:model-value="emit('togglePage')"
+                            />
+                        </th>
                         <th
                             v-for="column in columns"
                             :key="column.key"
@@ -65,7 +82,7 @@ const handleHeaderClick = (column: GridColumn): void => {
                 <tbody class="bg-white divide-y divide-gray-200">
                     <tr v-if="isLoading === true">
                         <td
-                            :colspan="columns.length"
+                            :colspan="selectable === true ? columns.length + 1 : columns.length"
                             class="px-6 py-8 text-center"
                         >
                             <Spinner />

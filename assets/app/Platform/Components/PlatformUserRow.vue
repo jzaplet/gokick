@@ -1,53 +1,43 @@
 <script setup lang="ts">
-import type { AdminUser } from '@/app/Admin/types/AdminUser';
-import { useAuth } from '@/app-ui/Auth';
+import type { PlatformUser } from '@/app/Platform/types/PlatformUser';
+import { Role } from '@/app/Auth/enums/roles';
 import { roleBadge } from '@/app-ui/Users/roleBadge';
 import Button from '@/app-ui/Buttons/Button.vue';
-import CheckBox from '@/app-ui/Inputs/CheckBox.vue';
 import EditIcon from '@/app-ui/Icons/EditIcon.vue';
 import TrashIcon from '@/app-ui/Icons/TrashIcon.vue';
 
-// One admin-list row, rendered into DataGrid's #rows slot (the grid never
-// dictates cell markup). Self-delete stays disabled — an admin must not saw
-// off the branch they sit on.
-const { user, selectable, selected } = defineProps<{
-    user: AdminUser;
-    selectable?: boolean;
-    selected?: boolean;
+// One platform-list row (cross-tenant), rendered into DataGrid's #rows slot.
+const { user } = defineProps<{
+    user: PlatformUser;
 }>();
 
 defineEmits<{
-    edit: [user: AdminUser];
-    delete: [user: AdminUser];
-    toggleSelect: [user: AdminUser];
+    edit: [user: PlatformUser];
+    delete: [user: PlatformUser];
 }>();
 
-const { user: currentUser } = useAuth();
+const formatLastLogin = (value: string | null): string => {
+    if (value === null) {
+        return 'Never';
+    }
 
-const isSelf = (): boolean => {
-    return currentUser.value !== null && currentUser.value.id === user.id;
+    return new Date(value).toLocaleString();
+};
+
+// A superadmin row is managed out-of-band — the backend rejects edit/delete on
+// it, so the actions are disabled here to match.
+const isManageable = (): boolean => {
+    return user.role !== Role.SuperAdmin;
 };
 </script>
 
 <template>
     <tr class="hover:bg-gray-50">
-        <td
-            v-if="selectable === true"
-            class="px-3 sm:px-6 py-4 w-10"
-        >
-            <CheckBox
-                :model-value="selected"
-                :disabled="isSelf()"
-                :sr-label="`Select ${user.nickname}`"
-                @update:model-value="$emit('toggleSelect', user)"
-            />
-        </td>
         <td class="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+            {{ user.tenant_name }}
+        </td>
+        <td class="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
             {{ user.nickname }}
-            <span
-                v-if="isSelf() === true"
-                class="ml-2 text-xs text-gray-400"
-            >(you)</span>
             <span
                 v-if="user.active === false"
                 :class="[
@@ -75,11 +65,15 @@ const isSelf = (): boolean => {
                 {{ user.role }}
             </span>
         </td>
+        <td class="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+            {{ formatLastLogin(user.last_login_at) }}
+        </td>
         <td class="px-3 sm:px-6 py-4 whitespace-nowrap text-right text-sm">
             <div class="flex items-center justify-end gap-1 sm:gap-2">
                 <Button
                     variant="ghost"
                     size="sm"
+                    :disabled="isManageable() === false"
                     @click="$emit('edit', user)"
                 >
                     <EditIcon />
@@ -87,7 +81,7 @@ const isSelf = (): boolean => {
                 <Button
                     variant="ghost"
                     size="sm"
-                    :disabled="isSelf()"
+                    :disabled="isManageable() === false"
                     @click="$emit('delete', user)"
                 >
                     <TrashIcon />
