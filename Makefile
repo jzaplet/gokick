@@ -78,6 +78,7 @@ lint:
 	$(MAKE) arch-check
 	$(MAKE) format-check
 	$(MAKE) ts-check
+	$(MAKE) boundary-check
 	$(MAKE) documan-lint
 
 # Fail if any Go file is not golines-formatted. golines is not covered by
@@ -111,6 +112,12 @@ ts-gen:
 
 ts-check:
 	cd tools/gk && go run . tsgen check
+
+# Wire-boundary gate (closes the tsgen opt-in gap): every Responder.JSON payload
+# and DecodeJSON target must be a named struct with a //gkts: directive, or carry
+# a call-site `//gkts:ignore <reason>` (non-SPA endpoints only).
+boundary-check:
+	cd tools/gk && go run . boundary
 
 # Migrations
 migrate-create:
