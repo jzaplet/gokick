@@ -270,9 +270,11 @@ wire.Bind(new(shared.Seeder), new(*sqliteseeder.Seeder))
   };
   ```
 - Requests:
-  - **Protected endpoints** → `authFetch<Data, Errors, Body>('POST', '/api/v1/...', { body })` from `@/app-ui/Auth`.
+  - **Protected endpoints** → `authFetch<Data, Errors, Body>('POST', '/api/v1/...', { body, validate })` from `@/app-ui/Auth`.
   - **Public endpoints** → `apiFetch<Data, Errors, Body>` from `@/app-ui/Fetch`.
   - **Body requires its generic.** `FetchOptions<TBody = never>` — passing `body` without declaring the third generic does not compile. Declare it with the tsgen-generated request type (`UserFormData`, `LoginRequest`, …); ESLint additionally requires explicit generics on every `authFetch`/`apiFetch` call and forbids inline `body` literals (pass a typed variable). GET/DELETE calls without a body stay two-generic.
+  - **Data endpoints require `validate`.** When `Data ≠ null`, options must carry `validate:` — the tsgen-generated guard (`isAdminUser`, `arrayOf(isAdminUser)`, `isLoginResponse`, …) — or the call does not compile; the 2xx body is then checked against the generated contract at runtime. A contract-violating body becomes a `{ general }` failure and reports to Sentry. 204 endpoints (`Data = null`) take no guard.
+  - **Failures always merge.** A failure `data` is `TErrors | { general: string }`: the API error body when one arrived, or the synthesized `{ general: … }` for network errors / malformed bodies / contract violations (same `general` key the backend uses for non-field errors). Every `*Errors` type has `general?: string`, so `errors.value = result.data;` stays the one-line merge — no narrowing.
 - **Backend error response shape** (via `Responder.Error()` + `FieldError` interface):
   - `ValidationError{Field: "nickname"}` → `{ "nickname": "..." }` — routed to specific field.
   - Any other error → `{ "general": "..." }`.

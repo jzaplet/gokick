@@ -33,7 +33,7 @@ Validace je **server-side**; frontend jen propisuje. Klíčový je vzor **kdo vl
 
 **Datový tok (oba vzory stejný):**
 - `errors` je `ref<TErrors>({})` — prázdný objekt = bez chyb, klíč existuje = pole má chybu.
-- Odpověď `authFetch` je rozlišená podle `result.success` (`ApiSuccess` / `ApiError` v `assets/app-ui/Fetch/types/`); na chybě z backendu je v `result.data` přesně objekt `{ <pole>: <hláška> }` (transportní selhání a rozbité 2xx tělo chodí unionem taky jako chyba, ale s `{ message: … }` — viz `/gk-frontend-fetch`).
+- Odpověď `authFetch` je rozlišená podle `result.success` (`ApiSuccess` / `ApiError` v `assets/app-ui/Fetch/types/`); na chybě z backendu je v `result.data` přesně objekt `{ <pole>: <hláška> }` (transportní selhání, rozbité 2xx tělo i porušený guard chodí unionem taky jako chyba, syntetizované jako `{ general: … }` — stejný klíč, kterým BE posílá ne-field chyby; viz `/gk-frontend-fetch`).
 - `errors.value = result.data` — jedna řádka, žádné mapování. Klíče z backendu sedí 1:1 na typ `TErrors`.
 - Render: per-field chyba → `<Input :error="errors.<pole>" />` (`assets/app-ui/Inputs/Input.vue`, příp. `Select.vue`); obecná → `<ErrorAlert :message="errors.general" />` (`assets/app-ui/Alerts/ErrorAlert.vue`).
 

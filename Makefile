@@ -153,7 +153,9 @@ fe-build:
 fe-clean:
 	rm -rf public/assets public/index.html
 
-# Quality
+# Quality — app + cmd, FE vitest, and the dev-tooling module (tsgen golden
+# tests pin the generator's exact emission; regenerate deliberately with
+# `cd tools/gk && go test ./tsgen -update`).
 # No output filtering here on purpose: piping go test through grep makes the
 # recipe's exit status grep's, and grep exits 0 whenever FAIL lines pass the
 # filter — test failures could never fail the target.

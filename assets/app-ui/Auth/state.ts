@@ -1,6 +1,6 @@
 import { ref } from 'vue';
 import type { AuthUser } from '@/app-ui/Auth/types/AuthUser';
-import type { LoginResponse } from '@/app-ui/Auth/types/LoginResponse';
+import { isLoginResponse } from '@/app-ui/Auth/types/LoginResponse';
 import { setAccessToken } from '@/app-ui/Fetch/accessToken';
 
 // Reactive session state — single source of truth for views.
@@ -44,45 +44,6 @@ export const scheduleRetry = (delayMs: number, fn: () => void): void => {
     armRefreshTimer(delayMs, fn);
 };
 
-// Validates the user principal carries the fields the app later dereferences —
-// notably role (string) and permissions (string[]). Checking only `typeof user
-// === 'object'` is NOT enough: `user:{}` or `user:[]` (typeof [] === 'object')
-// would pass, isAuthenticated would flip true, then the router guard would crash
-// at `user.permissions.includes(...)` (permissions.ts). Narrows from unknown so
-// every field access below is a real runtime check, not an erased cast.
-const isAuthUser = (data: unknown): data is AuthUser =>
-    typeof data === 'object'
-    && data !== null
-    && Array.isArray(data) === false
-    && 'id' in data
-    && typeof data.id === 'string'
-    && 'nickname' in data
-    && typeof data.nickname === 'string'
-    && 'email' in data
-    && typeof data.email === 'string'
-    && 'role' in data
-    && typeof data.role === 'string'
-    && data.role !== ''
-    && 'permissions' in data
-    && Array.isArray(data.permissions) === true;
-
-// parseResponse casts the body to LoginResponse, but a 200 with an empty or
-// partial body yields null / a missing field at runtime. Guard the shape before
-// trusting it: without this, setAccessToken(undefined) + scheduleRefresh(NaN)
-// would spin a hot refresh loop. Narrows from unknown (no `as`) so the runtime
-// checks are real rather than erased by the optimistic cast.
-const isLoginResponse = (data: unknown): data is LoginResponse =>
-    typeof data === 'object'
-    && data !== null
-    && 'access_token' in data
-    && typeof data.access_token === 'string'
-    && data.access_token !== ''
-    && 'access_expiration' in data
-    && typeof data.access_expiration === 'number'
-    && Number.isFinite(data.access_expiration) === true
-    && 'user' in data
-    && isAuthUser(data.user);
-
 // establishSession validates a login/refresh 200 body and, if it is a usable
 // session, installs it (access token, user, isAuthenticated, scheduled rotation)
 // and returns true. A malformed/partial 200 (empty access_token, missing/void
@@ -91,7 +52,18 @@ const isLoginResponse = (data: unknown): data is LoginResponse =>
 // unvalidated body). onExpiry is the caller's refresh trigger, passed in to avoid
 // the state <-> refresh circular import.
 export const establishSession = (data: unknown, onExpiry: () => void): boolean => {
-    if (isLoginResponse(data) === false) {
+    // Structure comes from the GENERATED guard (the same one login/refresh pass
+    // to the fetch layer — this re-check keeps the seam safe when called
+    // directly, e.g. from tests). The extra checks are SEMANTIC: an empty
+    // token, a non-finite expiration or an empty role is structurally valid
+    // but not a usable session (setAccessToken('') + scheduleRefresh(NaN)
+    // would spin a hot refresh loop).
+    if (
+        isLoginResponse(data) === false
+        || data.access_token === ''
+        || Number.isFinite(data.access_expiration) === false
+        || data.user.role === ''
+    ) {
         return false;
     }
     setAccessToken(data.access_token);

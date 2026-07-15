@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DashboardResponse } from '@/app/Dashboard/types/DashboardResponse';
+import { isDashboardResponse } from '@/app/Dashboard/types/DashboardResponse';
 import { onMounted, ref } from 'vue';
 import { authFetch } from '@/app-ui/Auth';
 import { useToast } from '@/app-ui/Toast/useToast';
@@ -18,7 +19,7 @@ const message = ref('');
 const isLoading = ref(true);
 
 onMounted(async (): Promise<void> => {
-    const result = await authFetch<DashboardResponse>('GET', endpoint);
+    const result = await authFetch<DashboardResponse>('GET', endpoint, { validate: isDashboardResponse });
 
     isLoading.value = false;
 

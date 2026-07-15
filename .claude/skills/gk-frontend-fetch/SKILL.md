@@ -37,6 +37,10 @@ Dvě vrstvy. **Fetch** (`assets/app-ui/Fetch/`) = surový transport bez retry. *
 
 **`TBody` je povinný, jakmile posíláš body** — default je `never` a `body?: NoInfer<TBody>` brání kompilátoru odvodit typ z argumentu, takže `{ body: x }` bez třetí generiky se nezkompiluje v žádném tvaru volání (i přes alias/namespace import, kam ESLint nevidí). Deklaruj ho **generovaným** request typem (`UserFormData`, `LoginRequest`, …) — payload je pak strukturálně kontrolovaný proti Go DTO, které handler dekóduje (FE polovina wire hranice; BE polovinu hlídá `gk boundary`); že sáhneš po generovaném a ne ad-hoc typu, je konvence viditelná v review. ESLint navíc vyžaduje explicitní generiky na každém volání a zakazuje inline `body` literály — payload teče z typované proměnné. GET/DELETE bez body zůstávají dvougenerické.
 
+**`validate` je povinné, jakmile data PŘIJÍMÁŠ** (`TData ≠ null`) — předej **generovaný guard** (`validate: isAdminUser`, pro seznamy `arrayOf(isAdminUser)`); bez něj se volání nezkompiluje a párování guard↔generika hlídá kompilátor (`Guard<TData>`). 2xx tělo se za běhu ověří proti generovanému kontraktu: porušení = `{ general }` failure + **Sentry report** (BE prokazatelně posílá anotované DTO, takže neshoda = bug — typicky špatné spárování URL↔typ na call site). 204 endpointy (`TData = null`) guard nemají.
+
+**Selhání vždy jednořádkově merguješ** — `data` na failure je `TErrors | { general: string }`: chybové tělo z API, když přišlo, jinak syntetizované `{ general: … }` (síť / rozbité tělo / porušený kontrakt — stejný klíč `general`, kterým BE posílá ne-field chyby). Každý `*Errors` typ má `general?: string`, takže `errors.value = result.data;` funguje bez zužování a network error se uživateli ukáže v general slotu formuláře.
+
 **Access token** (`Fetch/accessToken.ts`) — jediná modulová proměnná `let accessToken`, `get/setAccessToken`. Jen v paměti, XSS-resistentní. Po hard-refreshi je prázdná → obnoví ji bootstrap.
 
 **`ApiResponse<TData, TError>`** (`Fetch/types/ApiResponse.ts`) — discriminated union (rozlišená podle `success`):
@@ -45,7 +49,7 @@ const r = await authFetch<UserProfile, ValidationError>('GET', '/api/v1/profile'
 if (r.success === true)  { r.data; }   // ApiSuccess<TData>: { success:true,  status, data }
 if (r.success === false) { r.data; }   // ApiError<TError>:   { success:false, status, data }
 ```
-`parseResponse` (`Fetch/parseResponse.ts`) staví union podle `response.ok` — s výjimkou 2xx s nenaparsovatelným tělem, které vrací jako failure (`{ message: 'Malformed response body (status <status>)' }`), ne fake success; 2xx s prázdným tělem je success s `data: null`. Chybí-li JSON tělo u chybového statusu, doplní `{ message: 'Error <status>' }`. Síťovou/transportní chybu vrací `apiFetch` taky přes union: `{ success: false, status: 0 }` (nikdy nehodí výjimku). Default `TError` je `{ message: string }`. Default `TError` je `{ message: string }`.
+`parseResponse` (`Fetch/parseResponse.ts`) staví union podle `response.ok`. Všechna selhání bez použitelného chybového JSON objektu syntetizuje jako `{ general: … }` (helper `generalFailure`, sdílený i apiFetchCore/apiUpload): 2xx s nenaparsovatelným tělem (`Malformed response body`), 2xx porušující guard (`Invalid response shape` + Sentry, URL v reportu normalizované — UUID → `:id`, ať se jeden bug negrupuje na issue per entita), chybový status s prázdným/ne-objektovým tělem (`Error <status>`; holý JSON string od proxy se použije jako hláška) i síťová chyba (`status: 0`, nikdy výjimka). Chybové tělo se předá jako `TError` jen když je to skutečný JSON objekt (`isRecord`). 2xx s prázdným tělem bez guardu je success s `data: null`. Default `TError` je `ApiGeneralError` (`{ general: string }`) — jediný tvar, který selhání reálně produkují; oba fasády sdílí jeden kontrakt `TypedFetchFn` (`Fetch/types/TypedFetchFn.ts`), takže se nemůžou rozjet. `apiFetchCore` (volná implementace pod fasádami) je pro aplikační kód zakázaný import (ESLint `no-restricted-imports`) — obcházel by celou validate↔TData disciplínu.
 
 **Single-flight refresh** žije v `refresh()` (`Auth/refresh.ts`), v `inFlight` guardu — **ne** v authFetch. Bootstrap, časovač 30 s před expirací, jeho retry i 401-retry z authFetch **sdílí jednu rotaci** cookie. Je to **bezpečnostní vlastnost**: paralelní rotace téže cookie backend (compare-and-swap nad `used_at`) vyhodnotí jako krádež tokenu a session natvrdo odhlásí.
 
@@ -66,18 +70,18 @@ Asymetrie hintu JE ten self-heal: `clearAuth` (`Auth/state.ts`) schválně **nem
 ## Recipe
 
 ### Recipe: zavolat chráněný endpoint z komponenty
-1. Importuj: `import { authFetch } from '@/app-ui/Auth';`
-2. Zavolej s typy dat i chyby: `const r = await authFetch<UserList, ValidationError>('GET', '/api/v1/users');`
+1. Importuj: `import { authFetch } from '@/app-ui/Auth';` + generovaný guard: `import { isAdminUser } from '@/app/Admin/types/AdminUser';` a `arrayOf` z `@/app-ui/Fetch/guards`.
+2. Zavolej s typy i guardem: `const r = await authFetch<AdminUser[], UserFormErrors>('GET', '/api/v1/admin/users', { validate: arrayOf(isAdminUser) });` — bez `validate` se volání s `TData ≠ null` nezkompiluje.
 3. Větvi přes `if (r.success === true)` / `=== false` (nikdy `if (!r…)` — viz CLAUDE.md FE pravidla).
 4. Chybu napoj na formulářové pole: backend keyuje chyby podle pole → `errors.value = r.data;` (detail v `/gk-errors`).
 
 ### Recipe: public endpoint (bez nutnosti session)
 1. `import { apiFetch } from '@/app-ui/Fetch';`
-2. `const r = await apiFetch<{ status: string }>('GET', '/health');` — token se přiloží jen pokud existuje, ale na 401 se NEretrí. (Typ si napiš inline/vlastní — `/health` je infra-only a schválně stojí mimo tsgen, žádný generovaný `HealthResponse` neexistuje.)
+2. `const r = await apiFetch<{ status: string }, ApiGeneralError>('GET', '/health', { validate: isHealth });` — token se přiloží jen pokud existuje, ale na 401 se NEretrí. (`/health` je infra-only a schválně stojí mimo tsgen — typ i mini-guard `isHealth` si napiš vlastní přes primitiva z `@/app-ui/Fetch/guards`.)
 
 ### Recipe: upload s progressem
 1. `import { apiUpload } from '@/app-ui/Fetch';`
-2. `await apiUpload<Result>('/api/v1/files', formData, (s) => { s.percent; s.loaded; s.total; });`
+2. `await apiUpload<Result>('/api/v1/files', formData, { validate: isResult, onProgress: (s) => { s.percent; s.loaded; s.total; } });` — `validate` je u uploadu povinné vždy (response je v paritní smyčce).
 
 ## Invariants & pitfalls
 

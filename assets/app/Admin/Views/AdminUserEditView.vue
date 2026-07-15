@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AdminUser } from '@/app/Admin/types/AdminUser';
+import { isAdminUser } from '@/app/Admin/types/AdminUser';
 import type { UserFormData } from '@/app/Admin/types/UserFormData';
 import type { UserFormErrors } from '@/app/Admin/types/UserFormErrors';
 import { onMounted, ref } from 'vue';
@@ -64,7 +65,9 @@ const handleCancel = (): void => {
 };
 
 onMounted(async (): Promise<void> => {
-    const result = await authFetch<AdminUser>('GET', `/api/v1/admin/users/${userId}`);
+    const result = await authFetch<AdminUser>('GET', `/api/v1/admin/users/${userId}`, {
+        validate: isAdminUser,
+    });
 
     isFetching.value = false;
 

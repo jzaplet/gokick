@@ -202,6 +202,23 @@ export default tseslint.config(
     },
   },
 
+  // apiFetchCore is the LOOSE implementation (validate optional, TBody
+  // inferrable) — importable only by the two facades that re-add the
+  // contract. Anywhere else it would bypass the whole validate↔TData
+  // discipline with zero diagnostics.
+  {
+    files: ['assets/**/*.{ts,vue}'],
+    ignores: ['assets/app-ui/Fetch/apiFetch.ts', 'assets/app-ui/Auth/authFetch.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [{
+          name: '@/app-ui/Fetch/apiFetchCore',
+          message: 'Import apiFetch (public) or authFetch (protected) instead — apiFetchCore is the unguarded implementation behind the facades.',
+        }],
+      }],
+    },
+  },
+
   // --- Ignored paths ---
   {
     ignores: ['public/**', 'node_modules/**', '*.config.*'],
