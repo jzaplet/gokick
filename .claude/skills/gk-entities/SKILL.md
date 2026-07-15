@@ -19,7 +19,9 @@ a **value objects** (typy, které se nedají vyrobit v nevalidním stavu).
 - Sáhni sem, když přidáváš nový doménový typ (entitu jako `User`/`Run`, nebo
   value object jako `Nickname`), píšeš factory funkci (`NewUser`), nebo řešíš
   „kde má žít validace formátu vs. business pravidlo".
-Nahradit ve všech výskytech: `/gk-database` → `/gk-repositories`, `/gk-events` → `/gk-domain-events`, `/gk-forms` → `/gk-frontend-forms` (ř. 22, 24, 70, 93, 117, 119, 120).
+- NEtýká se: repozitářů (to je infrastruktura — `/gk-repositories`), command/query
+  handlerů a permissions (`/gk-commands`, `/gk-queries`), ani doménových
+  událostí na bus (`/gk-domain-events`).
 
 ## For non-tech / juniors
 **Entita** je doménový objekt, který má identitu (ID) a něco v životě reprezentuje
@@ -37,7 +39,7 @@ nevyplníš správnou hodnotu. Entita je celý vyplněný formulář s razítkem
 
 ## How it works
 **Bounded contexts** — každá entita má vlastní balíček pod `app/domain/`:
-`domain/user/`, `domain/token/`, `domain/run/`, `domain/tenant/`. Mezi konteyty se **nesmí
+`domain/user/`, `domain/token/`, `domain/run/`, `domain/tenant/`. Mezi kontexty se **nesmí
 importovat** (`user/` nesmí znát `token/`); sdílené typy žijí v `domain/shared/`.
 
 **Entity** (`app/domain/user/user.go`, `domain/token/refresh_token.go`,
@@ -68,7 +70,7 @@ importovat** (`user/` nesmí znát `token/`); sdílené typy žijí v `domain/sh
 - Typ je `type Nickname string` + konstruktor `func NewNickname(s string)
   (Nickname, error)`.
 - Při nevalidním vstupu vrací `*shared.ValidationError{Field, Message}` —
-  `Field` se na FE mapuje na konkrétní políčko (viz `/gk-forms`).
+  `Field` se na FE mapuje na konkrétní políčko (viz `/gk-frontend-forms`).
 - Konkrétně:
   - `Nickname`: povinný, max 50 znaků.
   - `Role`: enum `RoleSuperAdmin`/`RoleAdmin`/`RoleUser` (konverze kanonických
@@ -96,7 +98,7 @@ importovat** (`user/` nesmí znát `token/`); sdílené typy žijí v `domain/sh
    ID jako `string`.
 2. Factory `New<Entity>(...)` přijímající value objects, ne raw stringy.
 3. Repository **interface** ve stejném balíčku (`repository.go`) — viz
-   `/gk-database` pro implementaci a `.go-arch-lint.yml` (nový context = nová
+   `/gk-repositories` pro implementaci a `.go-arch-lint.yml` (nový context = nová
    `domain_<context>` komponenta + `mayDependOn` granty).
 
 ## Invariants & pitfalls
@@ -123,10 +125,10 @@ importovat** (`user/` nesmí znát `token/`); sdílené typy žijí v `domain/sh
   pro zmizelého přihlášeného uživatele).
 
 ## Related
-- Sousední skills: `/gk-database` (repository implementace, `r.Conn(ctx)`),
+- Sousední skills: `/gk-repositories` (repository implementace, `r.Conn(ctx)`),
   `/gk-commands` + `/gk-queries` (handlery, permissions, kde žijí business
-  pravidla), `/gk-forms` (mapování `ValidationError.Field` na FE políčka),
-  `/gk-events` (doménové události jako `UserCreated`).
+  pravidla), `/gk-frontend-forms` (mapování `ValidationError.Field` na FE políčka),
+  `/gk-domain-events` (doménové události jako `UserCreated`).
 - Kód: `app/domain/user/` (`user.go`, `nickname.go`, `role.go`, `email.go`,
   `password.go`, `user_created.go`, `repository.go`), `app/domain/token/`
   (`refresh_token.go`, `repository.go`), `app/domain/run/` (`run.go`,

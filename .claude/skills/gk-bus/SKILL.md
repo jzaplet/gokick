@@ -153,7 +153,7 @@ err := bus.DispatchVoid(
   pohodlný útěk z transakce.
 
 ## Related
-- Skills: `/gk-commands`, `/gk-queries` (psaní handlerů), `/gk-events`
+- Skills: `/gk-commands`, `/gk-queries` (psaní handlerů), `/gk-domain-events`
   (domain eventy), `/gk-audit` (audit trail), `/gk-runs` (durable runs),
   `/gk-wire` (DI registrace busů)
 - Kód: `app/application/bus/` (`bus.go`, `command.go`, `system_command.go`, `query.go`, `event.go`, `dispatch.go`, `exec.go`, `void.go`), `app/application/bus/middleware/` (`base.go`,
