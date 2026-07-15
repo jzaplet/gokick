@@ -105,7 +105,7 @@ func Run(args []string) {
 		fatal("%v", err)
 	}
 
-	files, err := render(dtos, byGo)
+	files, err := render(dtos, byGo, probeOptionalHelper(root))
 	if err != nil {
 		fatal("render: %v", err)
 	}
@@ -333,7 +333,7 @@ func mapType(expr ast.Expr) (tsType, dep string, sh fieldShape, err error) {
 
 // render groups DTOs by output file and produces the file contents. It resolves
 // each nested dependency to the TS name + import path of the type it maps to.
-func render(dtos []dto, byGo map[string]directive) (map[string]string, error) {
+func render(dtos []dto, byGo map[string]directive, optionalReady bool) (map[string]string, error) {
 	// Group the DTOs targeting each file, in the order encountered.
 	byFile := map[string][]dto{}
 	var order []string
@@ -372,7 +372,14 @@ func render(dtos []dto, byGo map[string]directive) (map[string]string, error) {
 				continue
 			}
 			body.WriteString("\n")
-			if err := renderGuard(&body, d, byGo, localNames, valueImports, helpers); err != nil {
+			g := &guardRender{
+				byGo:          byGo,
+				localNames:    localNames,
+				valueImports:  valueImports,
+				helpers:       helpers,
+				optionalReady: optionalReady,
+			}
+			if err := g.render(&body, d); err != nil {
 				return nil, fmt.Errorf("%s: %w", path, err)
 			}
 		}
@@ -498,64 +505,92 @@ func renderType(
 // (undeclared) properties are deliberately tolerated: the backend may add
 // fields without breaking older readers; missing or mistyped DECLARED fields
 // fail.
-func renderGuard(
-	sb *strings.Builder,
-	d dto,
-	byGo map[string]directive,
-	localNames map[string]bool,
-	valueImports map[string]string,
-	helpers map[string]bool,
-) error {
-	helpers["isRecord"] = true
+type guardRender struct {
+	byGo         map[string]directive
+	localNames   map[string]bool
+	valueImports map[string]string
+	helpers      map[string]bool
+	// optionalReady mirrors whether guards.ts exports `optional` (probed by
+	// Run). The helper is deliberately absent until the first omitempty DTO
+	// exists (knip flags dead exports) — emitting a call to a non-existent
+	// helper would surface as a confusing vue-tsc error inside generated
+	// code, so refuse loudly here instead; the check self-disarms the day
+	// the helper is uncommented, with no tsgen edit needed.
+	optionalReady bool
+}
+
+func (g *guardRender) render(sb *strings.Builder, d dto) error {
+	g.helpers["isRecord"] = true
 	fmt.Fprintf(sb, "export const is%s = (v: unknown): v is %s =>\n", d.dir.tsName, d.dir.tsName)
 	sb.WriteString("    isRecord(v)")
 	for _, f := range d.fields {
-		var base string
-		switch f.shape.kind {
-		case "string":
-			base = "isString"
-		case "number":
-			base = "isNumber"
-		case "boolean":
-			base = "isBoolean"
-		case "named":
-			ref, ok := byGo[f.dep]
-			if !ok {
-				return fmt.Errorf(
-					"guard field %q references Go type %q with no //gkts: directive", f.name, f.dep)
-			}
-			if ref.noguard {
-				return fmt.Errorf(
-					"guard field %q references %s, which is marked noguard — a validated type "+
-						"cannot nest an unvalidatable one", f.name, ref.tsName)
-			}
-			base = "is" + ref.tsName
-			if !localNames[ref.tsName] {
-				valueImports[base] = importSpec(ref.tsPath)
-			}
-		default:
-			return fmt.Errorf("guard field %q has unknown shape kind %q", f.name, f.shape.kind)
-		}
-		if f.shape.kind != "named" {
-			helpers[base] = true
-		}
-		expr := base
-		if f.shape.array {
-			helpers["arrayOf"] = true
-			expr = "arrayOf(" + expr + ")"
-		}
-		if f.shape.nullable {
-			helpers["nullable"] = true
-			expr = "nullable(" + expr + ")"
-		}
-		if f.optional {
-			helpers["optional"] = true
-			expr = "optional(" + expr + ")"
+		expr, err := g.fieldExpr(f)
+		if err != nil {
+			return err
 		}
 		fmt.Fprintf(sb, "\n    && %s(v['%s'])", expr, f.name)
 	}
 	sb.WriteString(";\n")
 	return nil
+}
+
+func (g *guardRender) fieldExpr(f dtoField) (string, error) {
+	var base string
+	switch f.shape.kind {
+	case "string":
+		base = "isString"
+	case "number":
+		base = "isNumber"
+	case "boolean":
+		base = "isBoolean"
+	case "named":
+		ref, ok := g.byGo[f.dep]
+		if !ok {
+			return "", fmt.Errorf(
+				"guard field %q references Go type %q with no //gkts: directive", f.name, f.dep)
+		}
+		if ref.noguard {
+			return "", fmt.Errorf(
+				"guard field %q references %s, which is marked noguard — a validated type "+
+					"cannot nest an unvalidatable one", f.name, ref.tsName)
+		}
+		base = "is" + ref.tsName
+		if !g.localNames[ref.tsName] {
+			g.valueImports[base] = importSpec(ref.tsPath)
+		}
+	default:
+		return "", fmt.Errorf("guard field %q has unknown shape kind %q", f.name, f.shape.kind)
+	}
+	if f.shape.kind != "named" {
+		g.helpers[base] = true
+	}
+	expr := base
+	if f.shape.array {
+		g.helpers["arrayOf"] = true
+		expr = "arrayOf(" + expr + ")"
+	}
+	if f.shape.nullable {
+		g.helpers["nullable"] = true
+		expr = "nullable(" + expr + ")"
+	}
+	if f.optional {
+		if !g.optionalReady {
+			return "", fmt.Errorf(
+				"guard field %q is omitempty, but guards.ts does not export the `optional` "+
+					"helper yet — uncomment it in assets/app-ui/Fetch/guards.ts first "+
+					"(or mark the DTO `noguard`)", f.name)
+		}
+		g.helpers["optional"] = true
+		expr = "optional(" + expr + ")"
+	}
+	return expr, nil
+}
+
+// probeOptionalHelper reports whether guards.ts already exports the `optional`
+// helper — see guardRender.optionalReady.
+func probeOptionalHelper(root string) bool {
+	b, err := os.ReadFile(filepath.Join(root, "assets", "app-ui", "Fetch", "guards.ts"))
+	return err == nil && strings.Contains(string(b), "export const optional")
 }
 
 // importSpec turns a repo-relative TS path into the '@/...' alias the frontend uses.

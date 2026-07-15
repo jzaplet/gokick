@@ -1,8 +1,9 @@
+import type { ApiGeneralError } from '@/app-ui/Fetch/types/ApiGeneralError';
 import type { ApiResponse } from '@/app-ui/Fetch/types/ApiResponse';
 import type { Guard } from '@/app-ui/Fetch/guards';
 import type { UploadProgress } from '@/app-ui/Fetch/types/UploadProgress';
 import { buildAuthHeaders } from '@/app-ui/Fetch/buildHeaders';
-import { parseResponse } from '@/app-ui/Fetch/parseResponse';
+import { generalFailure, parseResponse } from '@/app-ui/Fetch/parseResponse';
 
 type UploadOptions<TData> = {
     // The upload's JSON response takes part in the parity loop like any other:
@@ -15,7 +16,7 @@ type UploadOptions<TData> = {
 // multipart/form-data upload via XMLHttpRequest — fetch() has no progress API
 // yet (as of 2026), so XHR is still the pragmatic choice when progress is
 // needed. Browser sets the Content-Type boundary automatically.
-export const apiUpload = async <TData, TError = { message: string }>(
+export const apiUpload = async <TData, TError = ApiGeneralError>(
     url: string,
     formData: FormData,
     options: UploadOptions<TData>,
@@ -38,20 +39,24 @@ export const apiUpload = async <TData, TError = { message: string }>(
         }
 
         xhr.onload = (): void => {
-            const response = new Response(xhr.responseText, {
-                status: xhr.status,
-                statusText: xhr.statusText,
-            });
+            // A null-body status (204/205/304) REJECTS a non-null body — even ''
+            // — with a TypeError, and a throw inside an XHR event handler never
+            // reaches this promise: it would stay pending forever. Hand null to
+            // the Response instead; parseResponse already treats an empty body
+            // as a legitimate bodyless success.
+            const response = new Response(
+                xhr.responseText === '' ? null : xhr.responseText,
+                {
+                    status: xhr.status,
+                    statusText: xhr.statusText,
+                },
+            );
 
             void parseResponse<TData, TError>(response, options.validate).then(resolve);
         };
 
         xhr.onerror = (): void => {
-            resolve({
-                success: false,
-                status: xhr.status,
-                data: { general: xhr.responseText || 'Network error' },
-            });
+            resolve(generalFailure<TError>(xhr.status, 'Network error'));
         };
 
         xhr.open('POST', url);

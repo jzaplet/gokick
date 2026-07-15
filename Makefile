@@ -141,10 +141,13 @@ fe-clean:
 # Quality — app + cmd, FE vitest, and the dev-tooling module (tsgen golden
 # tests pin the generator's exact emission; regenerate deliberately with
 # `cd tools/gk && go test ./tsgen -update`).
+# No output filtering here on purpose: piping go test through grep makes the
+# recipe's exit status grep's, and grep exits 0 whenever FAIL lines pass the
+# filter — test failures could never fail the target.
 test:
 	yarn test
-	go test ./app/... ./cmd/... 2>&1 | grep -v '\[no test files\]'
-	cd tools/gk && go test ./... 2>&1 | grep -v '\[no test files\]'
+	go test ./app/... ./cmd/...
+	cd tools/gk && go test ./...
 
 # Local durable-run E2E — process-lifecycle guarantees an in-process test can't reach
 # (kill -9 / SIGTERM + persistent SQLite). Each builds bin/app and spawns real serve

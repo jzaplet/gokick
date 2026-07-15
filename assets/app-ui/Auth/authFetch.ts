@@ -1,12 +1,14 @@
 import type { ApiResponse } from '@/app-ui/Fetch/types/ApiResponse';
 import type { FetchOptions } from '@/app-ui/Fetch/types/FetchOptions';
 import type { Guard } from '@/app-ui/Fetch/guards';
+import type { TypedFetchFn } from '@/app-ui/Fetch/types/TypedFetchFn';
 import { apiFetchCore } from '@/app-ui/Fetch/apiFetchCore';
 import { refresh } from '@/app-ui/Auth/refresh';
 
 // apiFetch wrapped with one-shot auto-refresh on 401. Use for every protected
 // endpoint; use plain apiFetch directly for endpoints that should never be
-// retried (public routes).
+// retried (public routes). Both facades share the ONE TypedFetchFn contract
+// (validate required whenever TData ≠ null), so they cannot drift apart.
 //
 // Single-flight lives inside refresh() itself, so concurrent 401s here — and the
 // background auto-refresh timer — all share ONE rotation of the cookie. Racing
@@ -17,23 +19,7 @@ import { refresh } from '@/app-ui/Auth/refresh';
 //   - /login 401 means wrong credentials (refresh can't help)
 //   - /refresh retrying would infinite-loop
 //   - /logout is a one-shot cleanup
-//
-// Same contract as apiFetch: TData ≠ null requires `validate` (the generated
-// guard); TData = null (204 endpoints) takes none.
-type AuthFetchFn = {
-    <TData extends null, TError = { message: string }, TBody = never>(
-        method: string,
-        url: string,
-        options?: FetchOptions<TBody> & { validate?: never },
-    ): Promise<ApiResponse<TData, TError>>;
-    <TData, TError = { message: string }, TBody = never>(
-        method: string,
-        url: string,
-        options: FetchOptions<TBody> & { validate: Guard<TData> },
-    ): Promise<ApiResponse<TData, TError>>;
-};
-
-export const authFetch: AuthFetchFn = async <TData, TError, TBody>(
+export const authFetch: TypedFetchFn = async <TData, TError, TBody>(
     method: string,
     url: string,
     options: FetchOptions<TBody> & { validate?: Guard<TData> } = {},

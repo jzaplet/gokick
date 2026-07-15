@@ -163,6 +163,26 @@ describe('apiUpload', () => {
         }
     });
 
+    // Regression: `new Response('', { status: 204 })` throws (null-body status
+    // + non-null body) and a throw inside an XHR handler never settles the
+    // promise — the await would hang forever with isLoading stuck. The settled
+    // result is a guard failure: an upload declares TData via its mandatory
+    // guard, so an empty body genuinely violates the declared contract.
+    it('settles (not hangs) on a bodyless 204 response', async (): Promise<void> => {
+        const promise = apiUpload<UploadData>('/api/v1/files', new FormData(), { validate: isUploadData });
+
+        lastXhr().fireLoad(204, '');
+
+        const result = await promise;
+
+        expect(result.status).toBe(204);
+        expect(result.success).toBe(false);
+
+        if (result.success === false) {
+            expect(result.data).toEqual({ general: 'Invalid response shape' });
+        }
+    });
+
     it('works without an onProgress callback (no upload handler attached)', async (): Promise<void> => {
         const promise = apiUpload<UploadData>('/api/v1/files', new FormData(), { validate: isUploadData });
 

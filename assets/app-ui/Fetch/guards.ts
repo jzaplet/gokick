@@ -13,6 +13,10 @@ export const isNumber = (v: unknown): v is number => typeof v === 'number';
 
 export const isBoolean = (v: unknown): v is boolean => typeof v === 'boolean';
 
+// arrayOf expects a real JSON array. A nil Go slice marshals to `null`, so a
+// guarded DTO slice field must be make()/literal-initialized on the BE — the
+// repo-wide convention (every current producer complies). A null here fails
+// the guard loudly (+ Sentry) instead of letting the type lie.
 export const arrayOf = <T>(guard: Guard<T>): Guard<T[]> =>
     (v: unknown): v is T[] => Array.isArray(v) && v.every((e: unknown) => guard(e));
 

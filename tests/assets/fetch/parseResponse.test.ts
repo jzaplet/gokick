@@ -76,4 +76,29 @@ describe('parseResponse', () => {
             expect(out.data).toEqual({ general: 'Error 502' });
         }
     });
+
+    // A proxy/middlebox can answer with a valid-JSON SCALAR body ("rate
+    // limited"). Cast as TError it would land in errors.value as a primitive
+    // and render nowhere — it must merge as { general } instead.
+    it('a non-2xx scalar JSON body becomes a { general } failure, not a fake TError', async () => {
+        const out = await parseResponse<unknown, { nickname?: string }>(
+            new Response(JSON.stringify('rate limited'), { status: 429 }),
+        );
+
+        expect(out.success).toBe(false);
+        if (out.success === false) {
+            expect(out.data).toEqual({ general: 'rate limited' });
+        }
+    });
+
+    it('a non-2xx ARRAY body becomes a { general } failure too', async () => {
+        const out = await parseResponse<unknown, { nickname?: string }>(
+            new Response(JSON.stringify(['a', 'b']), { status: 400 }),
+        );
+
+        expect(out.success).toBe(false);
+        if (out.success === false) {
+            expect(out.data).toEqual({ general: 'Error 400' });
+        }
+    });
 });
