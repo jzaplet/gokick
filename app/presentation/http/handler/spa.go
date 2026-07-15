@@ -200,5 +200,6 @@ func (h *SPAHandler) Serve(w http.ResponseWriter, r *http.Request) {
 	// SPA fallback — serve index.html for all other routes
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
+	//gkts:ignore static SPA shell — embedded index.html bytes, not a JSON payload
 	_, _ = w.Write(h.index)
 }
