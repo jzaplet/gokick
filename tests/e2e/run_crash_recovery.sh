@@ -7,7 +7,7 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=lib.sh
-source "$ROOT/test/e2e/lib.sh"
+source "$ROOT/tests/e2e/lib.sh"
 APP="$ROOT/bin/app"; WORK="$(mktemp -d)"; LEASE="3s"
 SECRET="e2e-crash-recovery-jwt-secret-0123456789"
 P1=18081; P2=18082; PID1=""; PID2=""

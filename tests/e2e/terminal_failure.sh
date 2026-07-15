@@ -13,7 +13,7 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=lib.sh
-source "$ROOT/test/e2e/lib.sh"
+source "$ROOT/tests/e2e/lib.sh"
 APP="$ROOT/bin/app"; WORK="$(mktemp -d)"; LEASE="3s"
 SECRET="e2e-terminal-failure-jwt-secret-01234567"
 P1=18087; PID1=""

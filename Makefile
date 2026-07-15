@@ -146,17 +146,17 @@ test:
 # Local durable-run E2E — process-lifecycle guarantees an in-process test can't reach
 # (kill -9 / SIGTERM + persistent SQLite). Each builds bin/app and spawns real serve
 # processes; needs jq (at-least-once also sqlite3). NOT part of `test` — run on demand.
-# See test/e2e/README.md.
+# See tests/e2e/README.md.
 e2e: e2e-crash-recovery e2e-at-least-once e2e-sigterm-drain e2e-terminal-failure
 
 e2e-crash-recovery:      ## kill -9 mid-run → cold restart resumes from checkpoint
-	./test/e2e/run_crash_recovery.sh
+	./tests/e2e/run_crash_recovery.sh
 e2e-at-least-once:       ## crash after a side-effect, before complete → effect re-fires
-	./test/e2e/at_least_once.sh
+	./tests/e2e/at_least_once.sh
 e2e-sigterm-drain:       ## graceful stop abandons cleanly (attempts=0) → reclaim + resume
-	./test/e2e/sigterm_drain.sh
+	./tests/e2e/sigterm_drain.sh
 e2e-terminal-failure:    ## a failed run fires the Sentry terminal path (local half only)
-	./test/e2e/terminal_failure.sh
+	./tests/e2e/terminal_failure.sh
 
 arch-check:
 	$(GO_ARCH_LINT) check

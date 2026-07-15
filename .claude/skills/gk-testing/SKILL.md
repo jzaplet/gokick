@@ -40,6 +40,18 @@ ověří, že všechno (styl, architektura, testy) je v pořádku, než to pošl
 
 ## How it works
 
+### Kde testy žijí (layout)
+
+- **Go testy** (`_test.go`) — VŽDY vedle svého balíčku (`app/**`), nikdy v `tests/`.
+  Jazykový idiom, ne preference: white-box testy potřebují package scope
+  (neexportované symboly) a `zz_*` konformanční gaty skenují vlastní adresář
+  přes `runtime.Caller`. Přesun by je rozbil.
+- **`tests/assets/`** — FE vitest testy (jediné místo, kde testy žijí mimo
+  testovaný kód; Vue SFC nemá package-local konvenci).
+- **`tests/e2e/`** — shell E2E harness durable-run engine (`make e2e`,
+  proces-lifecycle: crash/drain/at-least-once/terminal).
+
+
 ### testfx — reálná DB v testu
 `app/internal/testfx/testfx.go`, import path `gokick/app/internal/testfx`.
 `testfx.New(t, dbPath)` otevře izolovanou SQLite na `dbPath`, spustí migrace a
@@ -77,7 +89,7 @@ svůj produkční balíček (vypadá to jako cyklus), jsou v `.go-arch-lint.yml`
 ### Quality gate
 `make test` = `yarn test` (vitest) + `go test ./app/... ./cmd/...`.
 `make lint` = ESLint + `vue-tsc` (type-check) + `knip` (dead code) + `golangci-lint` + `make arch-check` (go-arch-lint) + `format-check` (golines) + `ts-check` (Go→TS parita typů) + `documan-lint`.
-CI (`.github/workflows/validate.yml`): job `validate` = `make install` → `make lint` → `make test` → `make build`, se `SKIP_DOCUMAN=1` (dokumentaci v CI validuje samostatný `.github/workflows/documan.yml` přes `docker/documan/Dockerfile`); paralelní job `e2e` spouští `make e2e` (durable-run process-lifecycle testy, viz `test/e2e/README.md`).
+CI (`.github/workflows/validate.yml`): job `validate` = `make install` → `make lint` → `make test` → `make build`, se `SKIP_DOCUMAN=1` (dokumentaci v CI validuje samostatný `.github/workflows/documan.yml` přes `docker/documan/Dockerfile`); paralelní job `e2e` spouští `make e2e` (durable-run process-lifecycle testy, viz `tests/e2e/README.md`).
 
 ## Recipe
 

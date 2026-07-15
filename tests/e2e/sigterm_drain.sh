@@ -12,7 +12,7 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=lib.sh
-source "$ROOT/test/e2e/lib.sh"
+source "$ROOT/tests/e2e/lib.sh"
 APP="$ROOT/bin/app"; WORK="$(mktemp -d)"; LEASE="3s"
 SECRET="e2e-sigterm-drain-jwt-secret-0123456789012"
 P1=18085; P2=18086; PID1=""; PID2=""
