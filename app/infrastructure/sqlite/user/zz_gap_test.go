@@ -32,8 +32,8 @@ func rawInsertUser(t *testing.T, fx *testfx.Fixture, nickname, role string) erro
 
 // TestUsersTableConstraints pins the users-table schema guards from
 // infra-db-security-10: role is CHECK(role IN ('superadmin','admin','user')) and nickname
-// is NOT NULL UNIQUE. Removing either constraint from the final users-table rebuild
-// (20260622000003_users_role_superadmin.sql) would let these raw inserts succeed
+// is NOT NULL UNIQUE. Removing either constraint from the init migration
+// (20260327000001_init_schema.sql) would let these raw inserts succeed
 // and fail the test.
 func TestUsersTableConstraints(t *testing.T) {
 	t.Run("role CHECK rejects an unknown role", func(t *testing.T) {

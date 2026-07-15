@@ -40,7 +40,7 @@ Goose si značí, u kterého kroku jsi skončil, a dorazí jen ty zbývající.
 
 ## How it works
 Migrace žijí v `migrations/` jako `YYYYMMDDHHMMSS_<name>.sql` (Goose SQL formát).
-Aktuální sada (12 souborů): od `20260327000001_init_schema.sql` (tabulky `users`, `refresh_tokens`) přes lockout a audit (`20260517000002_add_user_lock_columns.sql`, `20260517000003_create_audit_log.sql`), multitenancy (`20260618000001_create_tenants_and_user_tenant.sql` + čtveřice `20260622*` — tenant FK, role superadmin, platform overview) a `20260625144133_create_runs_table.sql` (tabulka `runs` — durable engine; tabulka `jobs` vznikla v `20260517000001` a `20260629000001` ji zase dropnul) až po `20260713000001_add_users_tenant_id_index.sql` (index `users(tenant_id, nickname)`). Vyšší timestamp = běží později.
+Aktuální sada = **jediný squashed init** `20260327000001_init_schema.sql` (tabulky `tenants` + seed Default tenantu, `users`, `refresh_tokens`, `audit_log`, `runs` + všechny indexy) — jako boilerplate gokick dodává finální schéma jedním krokem; inkrementální historie (12 kroků vč. vzniku a dropu tabulky `jobs`) byla 2026-07-15 squashnuta. Nasazení, která starou historii už aplikovala, mají verzi zapsanou a soubor přeskočí. Projektové migrace přidávej jako NOVÉ soubory za init (`make migrate-create`); vyšší timestamp = běží později.
 
 Existují **dvě oddělené cesty**, jak se migrace spustí:
 
