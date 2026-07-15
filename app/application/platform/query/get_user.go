@@ -33,6 +33,7 @@ func (h *GetUserHandler) Handle(ctx context.Context, q GetUserQuery) (*user.Plat
 	if row == nil {
 		// Not-found as a 400 with Field "id" — mirrors the admin read-one and the
 		// platform Update/Delete paths, so the HTTP handler needs no nil-check.
+		//gkerrf:exempt path-param lookup - the edit view redirects on failure, no form field maps id
 		return nil, &shared.ValidationError{Field: "id", Message: "user not found"}
 	}
 	return row, nil

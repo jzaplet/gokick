@@ -79,6 +79,7 @@ lint:
 	$(MAKE) format-check
 	$(MAKE) ts-check
 	$(MAKE) boundary-check
+	$(MAKE) errfields-check
 	$(MAKE) documan-lint
 
 # Fail if any Go file is not golines-formatted. golines is not covered by
@@ -118,6 +119,13 @@ ts-check:
 # a call-site `//gkts:ignore <reason>` (non-SPA endpoints only).
 boundary-check:
 	cd tools/gk && go run . boundary
+
+# Error-key parity (the static half of follow-up ④): every Go
+# ValidationError{Field: "..."} literal must have a home key in some FE
+# *Errors type and vice versa (general is the conventional catch-all).
+# Escape: //gkerrf:exempt <reason> for fields that never render in a form.
+errfields-check:
+	cd tools/gk && go run . errfields
 
 # Migrations
 migrate-create:
