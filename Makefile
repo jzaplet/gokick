@@ -105,9 +105,9 @@ di:
 	cd app/infrastructure/di && $(WIRE)
 
 # Go->TS type parity (F-082). Generate the frontend request/response types from
-# the annotated Go DTOs (//gkts:<Name> <path> directives) — mirrors `make di` for
-# wire. Run after changing a DTO. `ts-check` (wired into `make lint`) fails CI if
-# the committed TS has drifted from the Go source.
+# the annotated Go DTOs (path-first //gkts:<path> <TSName> directives) — mirrors
+# `make di` for wire. Run after changing a DTO. `ts-check` (wired into `make
+# lint`) fails CI if the committed TS has drifted from the Go source.
 ts-gen:
 	cd tools/gk && go run . tsgen generate
 

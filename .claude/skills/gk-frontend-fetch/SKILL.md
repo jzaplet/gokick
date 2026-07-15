@@ -45,7 +45,7 @@ Dvě vrstvy. **Fetch** (`assets/app-ui/Fetch/`) = surový transport bez retry. *
 
 **`ApiResponse<TData, TError>`** (`Fetch/types/ApiResponse.ts`) — discriminated union (rozlišená podle `success`):
 ```typescript
-const r = await authFetch<UserProfile, ValidationError>('GET', '/api/v1/profile');
+const r = await authFetch<AdminUser, UserFormErrors>('GET', `/api/v1/admin/users/${id}`, { validate: isAdminUser });
 if (r.success === true)  { r.data; }   // ApiSuccess<TData>: { success:true,  status, data }
 if (r.success === false) { r.data; }   // ApiError<TError>:   { success:false, status, data }
 ```
@@ -65,7 +65,7 @@ Asymetrie hintu JE ten self-heal: `clearAuth` (`Auth/state.ts`) schválně **nem
 
 **Bootstrap** (`assets/app.ts` → `bootstrap()`) — při hard-refreshi: pokud `hasSessionHint() === true`, zavolá `await refresh()` ještě před mountem routeru, takže se session tiše obnoví z cookie. `gk_session=1` je čitelná cookie vedle HttpOnly refresh cookie (JS HttpOnly nevidí) — ušetří zbytečný 401, když session zjevně není.
 
-**Upload / download** (`Fetch/apiUpload.ts`, `Fetch/apiDownload.ts`) — `apiUpload(url, formData, onProgress?)` běží přes `XMLHttpRequest` (kvůli progress eventům), `apiDownload(url, fallbackFilename)` stáhne Blob a spustí browser dialog (filename z `Content-Disposition`, fallback parametr). Oba přikládají token přes `buildAuthHeaders`, ale jsou ve Fetch vrstvě — **bez 401 refreshe**.
+**Upload / download** (`Fetch/apiUpload.ts`, `Fetch/apiDownload.ts`) — `apiUpload<TData>(url, formData, { validate, onProgress? })` běží přes `XMLHttpRequest` (kvůli progress eventům; `validate` je povinné — response je v paritní smyčce), `apiDownload(url, fallbackFilename)` stáhne Blob a spustí browser dialog (filename z `Content-Disposition`, fallback parametr). Oba přikládají token přes `buildAuthHeaders`, ale jsou ve Fetch vrstvě — **bez 401 refreshe**.
 
 ## Recipe
 

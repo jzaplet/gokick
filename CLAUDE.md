@@ -32,7 +32,7 @@ Migrations live in `migrations/` (Goose SQL format, embedded into binary). Migra
 ### Quality
 
 ```bash
-make test                                        # vitest + go test (app/ + cmd/ only)
+make test                                        # vitest + go test (app/ + cmd/ + tools/gk)
 make lint                                        # ESLint + vue-tsc + knip + golangci-lint + go-arch-lint + golines format-check + ts-check + boundary-check + errfields-check + documan-lint
 make format                                      # ESLint Stylistic fix + golines + documan-fix
 go test ./app/infrastructure/security/ -run TestHash  # Single Go test
