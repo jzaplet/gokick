@@ -56,7 +56,10 @@ heslo nastaví nanovo.
   se FE (`assets/app.ts:bootstrap` → `hasSessionHint()` z `assets/app-ui/Auth/sessionHint.ts`)
   rozhodne, jestli refresh při startu vůbec zkoušet.
 
-**Rotace + theft detection** (`app/application/auth/command/refresh_token.go`): starý token
+**Rotace + theft detection** — stavový automat žije v doméně jako `token.Rotator`
+(`app/domain/token/rotator.go`) a vrací typovaný výsledek (rotated/invalid/expired/theft
+{reason}); handler (`app/application/auth/command/refresh_token.go`) zůstává orchestrace —
+dodá vydání nové session a mapuje výsledek na `AuthError`/theft response. Starý token
 se při refreshi nemaže, jen označí `used_at = now` (atomicky přes `MarkUsed`, CAS z NULL).
 Nový token se **uloží (`Save`) DŘÍV**, než se starý označí jako použitý. Dvě cesty ke krádeži:
 
