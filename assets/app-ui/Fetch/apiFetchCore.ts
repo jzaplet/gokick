@@ -33,11 +33,11 @@ export const apiFetchCore = async <TData, TError, TBody>(
         response = await fetch(url, init);
     } catch {
         // Transport/network failure (offline, DNS, CORS, aborted) — surface it
-        // as an ApiTransport so every failure consumer fires (toast, clear
-        // isLoading) instead of an unhandled promise rejection. status:0 marks
-        // "never reached the server"; refresh() treats it as a transient
-        // failure that keeps the session.
-        return { success: false, transport: true, status: 0, message: 'network error' };
+        // as a synthesized { general } failure so every failure consumer fires
+        // (field merge, toast, clear isLoading) instead of an unhandled promise
+        // rejection. status:0 marks "never reached the server"; refresh()
+        // treats it as a transient failure that keeps the session.
+        return { success: false, status: 0, data: { general: 'network error' } };
     }
 
     return parseResponse<TData, TError>(response, options.validate);

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { PlatformUser } from '@/app/Platform/types/PlatformUser';
 import { isPlatformUser } from '@/app/Platform/types/PlatformUser';
-import { isTransport } from '@/app-ui/Fetch';
 import type { PlatformUserFormData } from '@/app/Platform/types/PlatformUserFormData';
 import type { PlatformUserFormErrors } from '@/app/Platform/types/PlatformUserFormErrors';
 import { onMounted, ref } from 'vue';
@@ -39,7 +38,7 @@ const handleSubmit = async (data: PlatformUserFormData): Promise<void> => {
     isLoading.value = false;
 
     if (result.success === false) {
-        errors.value = isTransport(result) ? { general: result.message } : result.data;
+        errors.value = result.data;
 
         return;
     }

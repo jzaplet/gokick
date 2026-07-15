@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { LoginErrors } from '@/app/Auth/types/LoginErrors';
-import { isTransport } from '@/app-ui/Fetch';
 import type { LoginRequest } from '@/app-ui/Auth';
 import { Role } from '@/app/Auth/enums/roles';
 import { reactive, ref } from 'vue';
@@ -32,7 +31,7 @@ const handleSubmit = async (): Promise<void> => {
 
     if (result.success === false) {
         isLoading.value = false;
-        errors.value = isTransport(result) ? { general: result.message } : result.data;
+        errors.value = result.data;
 
         return;
     }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { PlatformUser } from '@/app/Platform/types/PlatformUser';
 import { isPlatformUser } from '@/app/Platform/types/PlatformUser';
-import { arrayOf, isTransport } from '@/app-ui/Fetch';
+import { arrayOf } from '@/app-ui/Fetch';
 import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { authFetch } from '@/app-ui/Auth';
@@ -61,7 +61,7 @@ const confirmDelete = async (): Promise<void> => {
     );
 
     if (result.success === false) {
-        error(isTransport(result) ? result.message : result.data.general ?? 'Delete failed.');
+        error(result.data.general ?? 'Delete failed.');
 
         return;
     }

@@ -1,13 +1,14 @@
+import type { ApiError } from '@/app-ui/Fetch/types/ApiError';
 import type { ApiResponse } from '@/app-ui/Fetch/types/ApiResponse';
-import type { ApiTransport } from '@/app-ui/Fetch/types/ApiTransport';
 import type { Guard } from '@/app-ui/Fetch/guards';
 import { reportUnexpected } from '@/app-ui/Sentry/reportUnexpected';
 
-const transport = (status: number, message: string): ApiTransport => ({
+// A failure with no API error body — synthesized in the mergeable
+// ApiGeneralError shape (see its doc), NOT pretending to be TError.
+const generalFailure = <TError>(status: number, general: string): ApiError<TError> => ({
     success: false,
-    transport: true,
     status,
-    message,
+    data: { general },
 });
 
 // Converts a raw fetch Response into the discriminated-union ApiResponse.
@@ -17,7 +18,8 @@ const transport = (status: number, message: string): ApiTransport => ({
 // that shape (gk boundary + tsgen), so a mismatch here is an unexpected bug
 // (wrong URL↔type pairing on the call site, a middlebox, version skew), not
 // a handled 4xx. Without a guard (TData = null, 204 endpoints) a 2xx body is
-// not inspected and data is null.
+// not inspected and data is null. Failures with no API error body come back as
+// { general: ... } — mergeable into every form's *Errors shape (see ApiError).
 export const parseResponse = async <TData, TError>(
     response: Response,
     validate?: Guard<TData>,
@@ -48,7 +50,7 @@ export const parseResponse = async <TData, TError>(
 
     if (response.ok) {
         if (parseFailed === true) {
-            return transport(
+            return generalFailure<TError>(
                 response.status,
                 `Malformed response body (status ${String(response.status)})`,
             );
@@ -62,7 +64,7 @@ export const parseResponse = async <TData, TError>(
                 `Response shape violates its generated contract: ${response.url === '' ? 'unknown url' : response.url} (status ${String(response.status)})`,
             );
 
-            return transport(response.status, 'Invalid response shape');
+            return generalFailure<TError>(response.status, 'Invalid response shape');
         }
 
         // No guard = a TData `null` endpoint (204/no-content): nothing to
@@ -72,7 +74,7 @@ export const parseResponse = async <TData, TError>(
 
     if (json === null) {
         // An error status with an empty/unparseable body has no TError to carry.
-        return transport(response.status, `Error ${String(response.status)}`);
+        return generalFailure<TError>(response.status, `Error ${String(response.status)}`);
     }
 
     // A real JSON error body, declared (not validated) as the endpoint's TError —

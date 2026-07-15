@@ -100,14 +100,9 @@ func Run(args []string) {
 		fatal("no //gkts: directives found under app/ — nothing to generate")
 	}
 
-	// Index by Go type name so a nested field (e.g. userDTO) resolves to the TS
-	// name + import path of the type it maps to.
-	byGo := make(map[string]directive, len(dtos))
-	for _, d := range dtos {
-		if prev, ok := byGo[d.goName]; ok && prev != d.dir {
-			fatal("Go type %q carries two conflicting //gkts: directives", d.goName)
-		}
-		byGo[d.goName] = d.dir
+	byGo, err := indexDTOs(dtos)
+	if err != nil {
+		fatal("%v", err)
 	}
 
 	files, err := render(dtos, byGo)
@@ -123,6 +118,20 @@ func Run(args []string) {
 	default:
 		fatal("unknown mode %q (want: generate | check)", mode)
 	}
+}
+
+// indexDTOs indexes the DTOs by Go type name so a nested field (e.g. userDTO)
+// resolves to the TS name + import path of the type it maps to.
+func indexDTOs(dtos []dto) (map[string]directive, error) {
+	byGo := make(map[string]directive, len(dtos))
+	for _, d := range dtos {
+		if prev, ok := byGo[d.goName]; ok && prev != d.dir {
+			return nil, fmt.Errorf(
+				"Go type %q carries two conflicting //gkts: directives", d.goName)
+		}
+		byGo[d.goName] = d.dir
+	}
+	return byGo, nil
 }
 
 // collect parses every non-test .go file under dir and returns the annotated DTOs.
@@ -156,7 +165,10 @@ func collect(dir string) ([]dto, error) {
 				}
 				// The directive sits on the type's own doc, or (for a single-spec
 				// `type X struct`) on the GenDecl's doc.
-				dir, ok := parseDirective(ts.Doc, gd.Doc)
+				dir, ok, derr := parseDirective(ts.Doc, gd.Doc)
+				if derr != nil {
+					return fmt.Errorf("%s: %w", path, derr)
+				}
 				if !ok {
 					continue
 				}
@@ -172,10 +184,10 @@ func collect(dir string) ([]dto, error) {
 	return dtos, err
 }
 
-// parseDirective looks for a //gkts:<path> <Name> line in the given comment groups.
-// Path first (lowercase after the colon) keeps it a gofmt/golines directive so the
-// formatter never rewrites it — see the package doc.
-func parseDirective(groups ...*ast.CommentGroup) (directive, bool) {
+// parseDirective looks for a //gkts:<path> <Name>[ noguard] line in the given
+// comment groups. Path first (lowercase after the colon) keeps it a gofmt/golines
+// directive so the formatter never rewrites it — see the package doc.
+func parseDirective(groups ...*ast.CommentGroup) (directive, bool, error) {
 	for _, g := range groups {
 		if g == nil {
 			continue
@@ -189,18 +201,19 @@ func parseDirective(groups ...*ast.CommentGroup) (directive, bool) {
 			f := strings.Fields(rest)
 			switch {
 			case len(f) == 2:
-				return directive{tsName: f[1], tsPath: f[0]}, true
+				return directive{tsName: f[1], tsPath: f[0]}, true, nil
 			// Guards are emitted BY DEFAULT (a response type without one would
 			// silently skip runtime validation); `noguard` opts a request-only
 			// DTO out so knip never sees an uncalled guard.
 			case len(f) == 3 && f[2] == "noguard":
-				return directive{tsName: f[1], tsPath: f[0], noguard: true}, true
+				return directive{tsName: f[1], tsPath: f[0], noguard: true}, true, nil
 			default:
-				fatal("malformed directive %q (want: //gkts:<path> <TSName>[ noguard])", c.Text)
+				return directive{}, false, fmt.Errorf(
+					"malformed directive %q (want: //gkts:<path> <TSName>[ noguard])", c.Text)
 			}
 		}
 	}
-	return directive{}, false
+	return directive{}, false, nil
 }
 
 // structFields resolves each json-serialized field to its TS shape. It errors on

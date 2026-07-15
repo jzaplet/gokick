@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { parseResponse } from '@/app-ui/Fetch/parseResponse';
-import { isTransport } from '@/app-ui/Fetch';
 
 type IdBody = { id: string };
 
@@ -29,32 +28,30 @@ describe('parseResponse', () => {
     });
 
     // The runtime half of the parity loop: a 2xx body that fails its generated
-    // guard is a contract violation — a transport-level failure, never data.
-    it('a 2xx body failing its guard is a transport failure, not data', async () => {
+    // guard is a contract violation — a mergeable { general } failure, never data.
+    it('a 2xx body failing its guard is a general failure, not data', async () => {
         const out = await parseResponse<IdBody, { message: string }>(
             new Response(JSON.stringify({ id: 42 }), { status: 200 }),
             isIdBody,
         );
 
         expect(out.success).toBe(false);
-        expect(isTransport(out)).toBe(true);
-        if (isTransport(out)) {
-            expect(out.message).toContain('Invalid response shape');
+        if (out.success === false) {
+            expect(out.data).toEqual({ general: 'Invalid response shape' });
         }
     });
 
     // F-081: a 200 that carries a malformed body is NOT a session — it must be a
     // failure, not swallowed into a fake success with null data.
-    it('a malformed 2xx body is a transport failure, not a swallowed fake success', async () => {
+    it('a malformed 2xx body is a general failure, not a swallowed fake success', async () => {
         const out = await parseResponse<IdBody, { message: string }>(
             new Response('{ not json', { status: 200 }),
             isIdBody,
         );
 
         expect(out.success).toBe(false);
-        expect(isTransport(out)).toBe(true);
-        if (isTransport(out)) {
-            expect(out.message).toContain('Malformed');
+        if (out.success === false) {
+            expect('general' in out.data ? out.data.general : '').toContain('Malformed');
         }
     });
 
@@ -64,21 +61,19 @@ describe('parseResponse', () => {
         );
 
         expect(out.success).toBe(false);
-        expect(isTransport(out)).toBe(false);
-        if (out.success === false && isTransport(out) === false) {
-            expect(out.data.message).toBe('nope');
+        if (out.success === false) {
+            expect(out.data).toEqual({ message: 'nope' });
         }
     });
 
-    it('a non-2xx EMPTY body has no TError to carry — transport failure', async () => {
+    it('a non-2xx EMPTY body has no TError to carry — general failure', async () => {
         const out = await parseResponse<unknown, { message: string }>(
             new Response(null, { status: 502 }),
         );
 
         expect(out.success).toBe(false);
-        expect(isTransport(out)).toBe(true);
-        if (isTransport(out)) {
-            expect(out.message).toBe('Error 502');
+        if (out.success === false) {
+            expect(out.data).toEqual({ general: 'Error 502' });
         }
     });
 });

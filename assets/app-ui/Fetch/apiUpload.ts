@@ -49,9 +49,8 @@ export const apiUpload = async <TData, TError = { message: string }>(
         xhr.onerror = (): void => {
             resolve({
                 success: false,
-                transport: true,
                 status: xhr.status,
-                message: xhr.responseText || 'Network error',
+                data: { general: xhr.responseText || 'Network error' },
             });
         };
 

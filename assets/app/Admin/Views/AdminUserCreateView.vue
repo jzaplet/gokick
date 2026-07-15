@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { UserFormData } from '@/app/Admin/types/UserFormData';
-import { isTransport } from '@/app-ui/Fetch';
 import type { UserFormErrors } from '@/app/Admin/types/UserFormErrors';
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
@@ -32,7 +31,7 @@ const handleSubmit = async (data: UserFormData): Promise<void> => {
     isLoading.value = false;
 
     if (result.success === false) {
-        errors.value = isTransport(result) ? { general: result.message } : result.data;
+        errors.value = result.data;
 
         return;
     }

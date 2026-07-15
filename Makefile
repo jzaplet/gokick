@@ -138,10 +138,13 @@ fe-build:
 fe-clean:
 	rm -rf public/assets public/index.html
 
-# Quality
+# Quality — app + cmd, FE vitest, and the dev-tooling module (tsgen golden
+# tests pin the generator's exact emission; regenerate deliberately with
+# `cd tools/gk && go test ./tsgen -update`).
 test:
 	yarn test
 	go test ./app/... ./cmd/... 2>&1 | grep -v '\[no test files\]'
+	cd tools/gk && go test ./... 2>&1 | grep -v '\[no test files\]'
 
 # Local durable-run E2E — process-lifecycle guarantees an in-process test can't reach
 # (kill -9 / SIGTERM + persistent SQLite). Each builds bin/app and spawns real serve

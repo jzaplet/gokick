@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { apiFetch, isTransport, setAccessToken } from '@/app-ui/Fetch';
+import { apiFetch, setAccessToken } from '@/app-ui/Fetch';
 
 type HealthResponse = {
     status: string;
@@ -39,8 +39,8 @@ describe('apiFetch', () => {
         expect(result.success).toBe(false);
         expect(result.status).toBe(401);
 
-        if (result.success === false && isTransport(result) === false) {
-            expect(result.data.message).toBe('Unauthorized');
+        if (result.success === false) {
+            expect(result.data).toEqual({ message: 'Unauthorized' });
         }
     });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { apiUpload, isTransport } from '@/app-ui/Fetch';
+import { apiUpload } from '@/app-ui/Fetch';
 import { setAccessToken } from '@/app-ui/Fetch/accessToken';
 import type { UploadProgress } from '@/app-ui/Fetch/types/UploadProgress';
 
@@ -202,8 +202,7 @@ describe('apiUpload', () => {
         expect(result.success).toBe(false);
 
         if (result.success === false) {
-            expect(isTransport(result)).toBe(true);
-            expect(isTransport(result) ? result.message : '').toBe('Network error');
+            expect(result.data).toEqual({ general: 'Network error' });
         }
     });
 });
