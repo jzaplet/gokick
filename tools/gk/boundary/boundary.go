@@ -7,31 +7,44 @@
 //   - every payload passed to (*response.Responder).JSON, and
 //   - every destination passed to request.DecodeJSON
 //
-// must be a named struct carrying a //gkts: directive (slices/pointers of one
-// are fine — tsgen maps them). Everything else fails the lint.
+// must be a named struct carrying a //gkts: directive (slices/pointers/aliases
+// of one are fine — tsgen maps them). Everything else fails the lint.
 //
 // Both rules match on TYPE identity (the method's receiver / the function's
 // package), never on variable names — `h.resp.JSON`, `r.JSON`, any alias is
-// caught. And going AROUND the boundary inside the wire layer
-// (presentation/http/** minus the response/ and request/ plumbing) fails too:
-// direct encoding/json calls and package-level response.* functions are
-// violations, so a handler cannot hand-encode a payload the gate never sees.
+// caught, and taking a METHOD VALUE (`send := resp.JSON`) is a violation in
+// itself, because a payload sent through the copied value would dodge the
+// check. Going AROUND the boundary inside the wire layer (presentation/http/**
+// minus the response/ and request/ plumbing) fails too: direct encoding/json
+// calls and package-level response.* functions are violations, and inside
+// handler/** so are raw writes to the http.ResponseWriter (w.Write,
+// io.WriteString, fmt.Fprint*) — a handler cannot hand-encode a payload the
+// gate never sees.
 //
 // Escape hatch — same discipline as the raw-pool exemptions: a comment
 //
 //	//gkts:ignore <reason>
 //
-// on the line directly above the offending call. The reason is mandatory; a
-// bare marker fails. CALL-SITE ONLY, deliberately: a type-level ignore would
-// sit in the type's doc where tsgen parses directives, and tsgen would read
-// "ignore" as an output path. Intended for wire responses the SPA never
-// consumes (infra /health, APP_RUN_DEBUG E2E endpoints) — NOT for skipping
-// the codegen on real app endpoints.
+// standing ALONE on the line directly above the offending call. The reason is
+// mandatory and a marker that shields nothing is itself a violation, so stale
+// escapes cannot rot in place. The escape covers payload-shape violations and
+// raw handler writes (non-SPA endpoints: infra /health, APP_RUN_DEBUG E2E
+// endpoints, the embedded SPA shell) — it does NOT silence encoding/json or
+// package-level response.* bypasses, which have no legitimate wire-layer use.
+// CALL-SITE ONLY, deliberately: a type-level ignore would sit in the type's
+// doc where tsgen parses directives, and tsgen would read "ignore" as an
+// output path.
 //
-// Zero-sites guard: if the scan finds no JSON/DecodeJSON call sites at all,
-// the check FAILS instead of passing silently — a gate that sees nothing
-// (moved packages, renamed methods) must scream, not stay green (the same
-// lesson as tsgen's orphan-file pruning).
+// Drift guards — a gate that sees nothing must scream, not stay green:
+//
+//   - zero Responder.JSON sites or zero DecodeJSON sites is a hard failure
+//     (per kind — losing one kind to a rename/move must not hide behind the
+//     other kind's count),
+//   - a JSON/DecodeJSON call whose arity is not the expected one is a
+//     violation (signature drift would otherwise silently unpin the matcher),
+//   - a new exported Responder method with an `any` parameter is a violation
+//     until this gate is taught about it (a payload route the gate does not
+//     check must not exist).
 package boundary
 
 import (
@@ -40,20 +53,25 @@ import (
 	"go/token"
 	"go/types"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
+
+	"gokick-gk/internal/tool"
 )
 
 const (
 	responderPath = "gokick/app/presentation/http/response"
 	requestPath   = "gokick/app/presentation/http/request"
 	wireLayer     = "gokick/app/presentation/http/"
+	handlerPath   = "gokick/app/presentation/http/handler"
 	decodeJSONFn  = requestPath + ".DecodeJSON"
 	ignoreMarker  = "gkts:ignore"
 	gktsMarker    = "gkts:"
+
+	jsonArity   = 4 // JSON(ctx, w, status, payload)
+	decodeArity = 3 // DecodeJSON(w, r, dst)
 )
 
 // Run is the `gk boundary` entrypoint; args are the words after "boundary".
@@ -61,35 +79,126 @@ func Run(args []string) {
 	if len(args) > 0 {
 		fatal("unknown argument %q (gk boundary takes none)", args[0])
 	}
-	pkgs := load()
-	gkts := annotatedTypes(pkgs)
-	violations, sites := check(pkgs, gkts)
-	if sites == 0 {
-		fatal("no JSON/DecodeJSON call sites found — the scan is broken, not the code")
+	root, err := tool.RepoRoot()
+	if err != nil {
+		fatal("%v", err)
 	}
-	if len(violations) > 0 {
-		sort.Strings(violations)
+	result, err := run(root)
+	if err != nil {
+		fatal("%v", err)
+	}
+	if result.jsonSites == 0 {
+		fatal("no Responder.JSON call sites found — the scan is broken, not the code")
+	}
+	if result.decodeSites == 0 {
+		fatal("no request.DecodeJSON call sites found — the scan is broken, not the code")
+	}
+	if len(result.violations) > 0 {
+		sort.Strings(result.violations)
 		fmt.Fprintf(os.Stderr, "boundary: %d violation(s):\n  %s\n",
-			len(violations), strings.Join(violations, "\n  "))
+			len(result.violations), strings.Join(result.violations, "\n  "))
 		os.Exit(1)
 	}
-	fmt.Printf("boundary: %d wire call site(s) OK\n", sites)
+	fmt.Printf("boundary: %d wire call site(s) OK\n", result.jsonSites+result.decodeSites)
 }
 
-func load() []*packages.Package {
+type result struct {
+	violations  []string
+	jsonSites   int
+	decodeSites int
+}
+
+// run loads the app packages rooted at root and returns every violation plus
+// the per-kind site counts. Split from Run so the whole pipeline is testable
+// against a fixture module.
+func run(root string) (*result, error) {
+	pkgs, err := load(root)
+	if err != nil {
+		return nil, err
+	}
+	res := &result{}
+	res.violations = append(res.violations, responderSurface(pkgs)...)
+	gkts := annotatedTypes(pkgs)
+	check(pkgs, gkts, res)
+	return res, nil
+}
+
+func load(root string) ([]*packages.Package, error) {
 	cfg := &packages.Config{
+		// No NeedDeps on purpose: only the root gokick/app/... packages are
+		// walked, and cross-package type identity resolves via export data —
+		// type-checking the whole dependency closure was measured ~8x slower
+		// for an identical result.
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |
-			packages.NeedTypes | packages.NeedTypesInfo | packages.NeedDeps,
-		Dir: repoRoot(),
+			packages.NeedTypes | packages.NeedTypesInfo,
+		Dir: root,
 	}
 	pkgs, err := packages.Load(cfg, "gokick/app/...")
 	if err != nil {
-		fatal("load: %v", err)
+		return nil, fmt.Errorf("load: %w", err)
 	}
 	if packages.PrintErrors(pkgs) > 0 {
-		fatal("packages contain errors")
+		return nil, fmt.Errorf("packages contain errors")
 	}
-	return pkgs
+	return pkgs, nil
+}
+
+// responderSurface guards the matcher's anchor: the Responder must expose
+// exactly one payload-carrying method (JSON, with the pinned arity). A new
+// exported method with an `any` parameter would be a payload route this gate
+// never checks, so it is a violation until the gate is taught about it.
+func responderSurface(pkgs []*packages.Package) []string {
+	var violations []string
+	for _, pkg := range pkgs {
+		if pkg.PkgPath != responderPath {
+			continue
+		}
+		obj := pkg.Types.Scope().Lookup("Responder")
+		if obj == nil {
+			violations = append(violations,
+				responderPath+": type Responder not found — the boundary anchor moved")
+			continue
+		}
+		named, ok := types.Unalias(obj.Type()).(*types.Named)
+		if !ok {
+			continue
+		}
+		for i := range named.NumMethods() {
+			m := named.Method(i)
+			if !m.Exported() {
+				continue
+			}
+			sig, ok := m.Type().(*types.Signature)
+			if !ok {
+				continue
+			}
+			if m.Name() == "JSON" {
+				if sig.Params().Len() != jsonArity {
+					violations = append(violations, fmt.Sprintf(
+						"%s.JSON has %d parameters, gk boundary expects %d — "+
+							"update the matcher before changing the signature",
+						"Responder", sig.Params().Len(), jsonArity))
+				}
+				continue
+			}
+			if hasAnyParam(sig) {
+				violations = append(violations, fmt.Sprintf(
+					"Responder.%s takes an `any` parameter but gk boundary only checks "+
+						"JSON — teach the gate about the new payload method", m.Name()))
+			}
+		}
+	}
+	return violations
+}
+
+func hasAnyParam(sig *types.Signature) bool {
+	for i := range sig.Params().Len() {
+		if iface, ok := types.Unalias(sig.Params().At(i).Type()).(*types.Interface); ok &&
+			iface.Empty() {
+			return true
+		}
+	}
+	return false
 }
 
 // annotatedTypes collects every named type whose declaration carries a real
@@ -111,7 +220,7 @@ func annotatedTypes(pkgs []*packages.Package) map[types.Object]bool {
 					if !ok {
 						continue
 					}
-					if !hasMarker(gd.Doc, gktsMarker) && !hasMarker(ts.Doc, gktsMarker) {
+					if !hasGktsDirective(gd.Doc) && !hasGktsDirective(ts.Doc) {
 						continue
 					}
 					if obj := pkg.TypesInfo.Defs[ts.Name]; obj != nil {
@@ -124,15 +233,17 @@ func annotatedTypes(pkgs []*packages.Package) map[types.Object]bool {
 	return marked
 }
 
-// hasMarker reports whether the comment group contains a //gkts:<path>
-// directive. //gkts:ignore is explicitly NOT a directive here.
-func hasMarker(doc *ast.CommentGroup, marker string) bool {
+// hasGktsDirective reports whether the comment group contains a //gkts:<path>
+// directive. //gkts:ignore is explicitly NOT a directive here. The text is
+// whitespace-trimmed exactly like tsgen's parseDirective, so the two tools
+// can never disagree on what counts as a directive.
+func hasGktsDirective(doc *ast.CommentGroup) bool {
 	if doc == nil {
 		return false
 	}
 	for _, c := range doc.List {
-		text := strings.TrimPrefix(c.Text, "//")
-		if strings.HasPrefix(text, marker) && !strings.HasPrefix(text, ignoreMarker) {
+		text := strings.TrimSpace(strings.TrimPrefix(c.Text, "//"))
+		if strings.HasPrefix(text, gktsMarker) && !strings.HasPrefix(text, ignoreMarker) {
 			return true
 		}
 	}
@@ -140,61 +251,171 @@ func hasMarker(doc *ast.CommentGroup, marker string) bool {
 }
 
 // check walks every loaded file for the two boundary calls and validates the
-// payload type. In the wire layer (presentation/http/** minus the sanctioned
-// response/ and request/ plumbing) it additionally forbids going AROUND the
-// boundary: direct encoding/json calls, and calls to package-level response
-// functions (a hypothetical response.JSON(...) free function would dodge the
-// method check — there is none today, and this keeps it that way). Returns
-// the violation messages and the number of boundary call sites seen (for the
-// zero-sites guard).
-func check(pkgs []*packages.Package, gkts map[types.Object]bool) ([]string, int) {
-	var violations []string
-	sites := 0
+// payload type; in the wire layer it also hunts the ways around the boundary.
+func check(pkgs []*packages.Package, gkts map[types.Object]bool, res *result) {
 	for _, pkg := range pkgs {
 		inWire := strings.HasPrefix(pkg.PkgPath, wireLayer) &&
 			pkg.PkgPath != responderPath && pkg.PkgPath != requestPath
+		inHandler := pkg.PkgPath == handlerPath
 		for _, f := range pkg.Syntax {
-			ignores := ignoreLines(pkg.Fset, f)
-			report := func(call *ast.CallExpr, msg string) {
-				pos := pkg.Fset.Position(call.Pos())
-				if reason, exempt := ignores[pos.Line]; exempt {
-					if strings.TrimSpace(reason) == "" {
-						violations = append(violations, fmt.Sprintf(
-							"%s:%d: //gkts:ignore without a reason — say WHY this "+
-								"endpoint may bypass the codegen", pos.Filename, pos.Line))
-					}
-					return
-				}
-				violations = append(
-					violations,
-					fmt.Sprintf("%s:%d: %s", pos.Filename, pos.Line, msg),
-				)
-			}
-			ast.Inspect(f, func(n ast.Node) bool {
-				call, ok := n.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				if arg, kind := boundaryArg(pkg, call); arg != nil {
-					sites++
-					if ok, why := payloadOK(pkg, arg, gkts); !ok {
-						report(call, fmt.Sprintf(
-							"%s payload %s — wire types must be named structs with a "+
-								"//gkts: directive (or //gkts:ignore <reason> for non-SPA endpoints)",
-							kind, why))
-					}
-					return true
-				}
-				if inWire {
-					if bypass := bypassCall(pkg, call); bypass != "" {
-						report(call, bypass)
-					}
-				}
-				return true
+			checkFile(&fileCheck{
+				pkg:       pkg,
+				file:      f,
+				gkts:      gkts,
+				inWire:    inWire,
+				inHandler: inHandler,
+				res:       res,
 			})
 		}
 	}
-	return violations, sites
+}
+
+type fileCheck struct {
+	pkg       *packages.Package
+	file      *ast.File
+	gkts      map[types.Object]bool
+	inWire    bool
+	inHandler bool
+	res       *result
+}
+
+func checkFile(fc *fileCheck) {
+	fset := fc.pkg.Fset
+	filename := fset.Position(fc.file.Pos()).Filename
+	src, err := os.ReadFile(filename)
+	if err != nil {
+		fc.res.violations = append(fc.res.violations,
+			fmt.Sprintf("%s: cannot re-read source for escape markers: %v", filename, err))
+		return
+	}
+	ignores, misplaced := tool.EscapeLines(fset, fc.file, src, ignoreMarker)
+	for _, line := range misplaced {
+		fc.res.violations = append(fc.res.violations, fmt.Sprintf(
+			"%s:%d: //gkts:ignore must stand alone on the line above the call — "+
+				"a trailing marker would silently cover the NEXT line too", filename, line))
+	}
+	for _, esc := range ignores {
+		if esc.Reason == "" {
+			fc.res.violations = append(fc.res.violations, fmt.Sprintf(
+				"%s:%d: //gkts:ignore without a reason — say WHY this endpoint may "+
+					"bypass the codegen", filename, esc.MarkerLine))
+		}
+	}
+	consumed := map[int]bool{}
+	// report records a violation unless an escape covers it. Only ignorable
+	// violation kinds (payload shape, raw handler writes) honor the escape —
+	// encoding/json and free-function bypasses stay violations regardless.
+	report := func(pos token.Position, msg string, ignorable bool) {
+		if esc, ok := ignores[pos.Line]; ok && ignorable {
+			consumed[esc.MarkerLine] = true
+			return // reasonless markers were already reported above
+		}
+		fc.res.violations = append(fc.res.violations,
+			fmt.Sprintf("%s:%d: %s", pos.Filename, pos.Line, msg))
+	}
+	fc.walk(report)
+	for _, esc := range ignores {
+		if esc.Reason != "" && !consumed[esc.MarkerLine] {
+			fc.res.violations = append(fc.res.violations, fmt.Sprintf(
+				"%s:%d: unused //gkts:ignore — nothing on the next line needs it; "+
+					"remove the stale marker", filename, esc.MarkerLine))
+		}
+	}
+}
+
+func (fc *fileCheck) walk(report func(token.Position, string, bool)) {
+	fset := fc.pkg.Fset
+	callFuns := map[*ast.SelectorExpr]bool{}
+	ast.Inspect(fc.file, func(n ast.Node) bool {
+		if sel, ok := n.(*ast.SelectorExpr); ok && !callFuns[sel] {
+			if kind := boundaryFn(fc.pkg, sel); kind != "" {
+				report(fset.Position(sel.Pos()), fmt.Sprintf(
+					"method value of %s — a payload sent through the copied value "+
+						"dodges the gate; call it directly", kind), false)
+			}
+			return true
+		}
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+			callFuns[sel] = true
+		}
+		if fc.checkBoundaryCall(call, report) {
+			return true
+		}
+		if fc.inWire {
+			if bypass := bypassCall(fc.pkg, call); bypass != "" {
+				report(fset.Position(call.Pos()), bypass, false)
+			}
+		}
+		if fc.inHandler {
+			if raw := rawWrite(fc.pkg, call); raw != "" {
+				report(fset.Position(call.Pos()), raw, true)
+			}
+		}
+		return true
+	})
+}
+
+// checkBoundaryCall handles a Responder.JSON / request.DecodeJSON call; it
+// reports true when the call was one (so the walker skips the bypass rules).
+func (fc *fileCheck) checkBoundaryCall(
+	call *ast.CallExpr,
+	report func(token.Position, string, bool),
+) bool {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	kind := boundaryFn(fc.pkg, sel)
+	if kind == "" {
+		return false
+	}
+	pos := fc.pkg.Fset.Position(call.Pos())
+	arity := jsonArity
+	payloadIdx := 3
+	if kind == "request.DecodeJSON" {
+		arity = decodeArity
+		payloadIdx = 2
+	}
+	if len(call.Args) != arity {
+		report(pos, fmt.Sprintf(
+			"%s call with %d args, gk boundary expects %d — signature drift would "+
+				"silently unpin the matcher; update the gate", kind, len(call.Args), arity),
+			false)
+		return true
+	}
+	if kind == "Responder.JSON" {
+		fc.res.jsonSites++
+	} else {
+		fc.res.decodeSites++
+	}
+	if ok, why := payloadOK(fc.pkg, call.Args[payloadIdx], fc.gkts); !ok {
+		report(pos, fmt.Sprintf(
+			"%s payload %s — wire types must be named structs with a "+
+				"//gkts: directive (or //gkts:ignore <reason> for non-SPA endpoints)",
+			kind, why), true)
+	}
+	return true
+}
+
+// boundaryFn classifies a selector as one of the two boundary functions by
+// type identity ("" when it is neither) — shared by the call matcher and the
+// method-value detector.
+func boundaryFn(pkg *packages.Package, sel *ast.SelectorExpr) string {
+	fn, ok := pkg.TypesInfo.Uses[sel.Sel].(*types.Func)
+	if !ok {
+		return ""
+	}
+	switch {
+	case fn.Name() == "JSON" && receiverIsResponder(fn):
+		return "Responder.JSON"
+	case fn.FullName() == decodeJSONFn:
+		return "request.DecodeJSON"
+	}
+	return ""
 }
 
 // bypassCall names the violation when a wire-layer call goes around the typed
@@ -231,13 +452,55 @@ func bypassCall(pkg *packages.Package, call *ast.CallExpr) string {
 	return ""
 }
 
+// rawWrite names the violation when handler code writes to the
+// http.ResponseWriter directly (w.Write, io.WriteString, fmt.Fprint*) — a
+// hand-built payload the gate never sees. Middleware is deliberately out of
+// scope: ResponseWriter wrappers and the recovery panic path write raw by
+// design.
+func rawWrite(pkg *packages.Package, call *ast.CallExpr) string {
+	switch fun := call.Fun.(type) {
+	case *ast.SelectorExpr:
+		fn, ok := pkg.TypesInfo.Uses[fun.Sel].(*types.Func)
+		if !ok {
+			return ""
+		}
+		if fn.Name() == "Write" && isResponseWriter(pkg, fun.X) {
+			return "raw w.Write in a handler — JSON payloads must go through resp.JSON " +
+				"(//gkts:ignore <reason> for non-JSON responses like the SPA shell)"
+		}
+		if fn.Pkg() == nil {
+			return ""
+		}
+		pkgPath, name := fn.Pkg().Path(), fn.Name()
+		writer := pkgPath == "io" && name == "WriteString"
+		printer := pkgPath == "fmt" && strings.HasPrefix(name, "Fprint")
+		if (writer || printer) && len(call.Args) > 0 && isResponseWriter(pkg, call.Args[0]) {
+			return fmt.Sprintf(
+				"raw %s.%s to the ResponseWriter in a handler — JSON payloads must go "+
+					"through resp.JSON (//gkts:ignore <reason> for non-JSON responses)",
+				pkgPath, name)
+		}
+	}
+	return ""
+}
+
+func isResponseWriter(pkg *packages.Package, e ast.Expr) bool {
+	t := pkg.TypesInfo.TypeOf(e)
+	if t == nil {
+		return false
+	}
+	named, ok := types.Unalias(t).(*types.Named)
+	return ok && named.Obj().Name() == "ResponseWriter" &&
+		named.Obj().Pkg() != nil && named.Obj().Pkg().Path() == "net/http"
+}
+
 // returnsResponder reports whether the signature returns a *Responder —
 // constructors (NewResponder) hand out the boundary, they don't write to it.
 func returnsResponder(sig *types.Signature) bool {
 	for i := range sig.Results().Len() {
-		t := sig.Results().At(i).Type()
+		t := types.Unalias(sig.Results().At(i).Type())
 		if ptr, ok := t.(*types.Pointer); ok {
-			t = ptr.Elem()
+			t = types.Unalias(ptr.Elem())
 		}
 		if named, ok := t.(*types.Named); ok && named.Obj().Name() == "Responder" {
 			return true
@@ -246,45 +509,21 @@ func returnsResponder(sig *types.Signature) bool {
 	return false
 }
 
-// boundaryArg returns the payload argument of a boundary call (and which kind
-// of call it is), or nil when the call is not one of the two boundary calls.
-func boundaryArg(pkg *packages.Package, call *ast.CallExpr) (ast.Expr, string) {
-	sel, ok := call.Fun.(*ast.SelectorExpr)
-	if !ok {
-		return nil, ""
-	}
-	obj := pkg.TypesInfo.Uses[sel.Sel]
-	if obj == nil {
-		return nil, ""
-	}
-	fn, ok := obj.(*types.Func)
-	if !ok {
-		return nil, ""
-	}
-	switch {
-	case fn.Name() == "JSON" && receiverIsResponder(fn) && len(call.Args) == 4:
-		return call.Args[3], "Responder.JSON"
-	case fn.FullName() == decodeJSONFn && len(call.Args) == 3:
-		return call.Args[2], "request.DecodeJSON"
-	}
-	return nil, ""
-}
-
 func receiverIsResponder(fn *types.Func) bool {
 	sig, ok := fn.Type().(*types.Signature)
 	if !ok || sig.Recv() == nil {
 		return false
 	}
-	t := sig.Recv().Type()
+	t := types.Unalias(sig.Recv().Type())
 	if ptr, ok := t.(*types.Pointer); ok {
-		t = ptr.Elem()
+		t = types.Unalias(ptr.Elem())
 	}
 	named, ok := t.(*types.Named)
 	return ok && named.Obj().Name() == "Responder" &&
 		named.Obj().Pkg() != nil && named.Obj().Pkg().Path() == responderPath
 }
 
-// payloadOK unwraps pointers/slices and requires a named struct whose
+// payloadOK unwraps pointers/slices/aliases and requires a named struct whose
 // declaration carries a //gkts: directive. Returns why not on failure.
 func payloadOK(pkg *packages.Package, arg ast.Expr, gkts map[types.Object]bool) (bool, string) {
 	t := pkg.TypesInfo.TypeOf(arg)
@@ -293,6 +532,7 @@ func payloadOK(pkg *packages.Package, arg ast.Expr, gkts map[types.Object]bool) 
 	}
 	orig := t
 	for unwrapping := true; unwrapping; {
+		t = types.Unalias(t)
 		switch u := t.(type) {
 		case *types.Pointer:
 			t = u.Elem()
@@ -317,48 +557,6 @@ func payloadOK(pkg *packages.Package, arg ast.Expr, gkts map[types.Object]bool) 
 	return true, ""
 }
 
-// ignoreLines maps each line covered by a //gkts:ignore comment — the marker
-// line itself and the line right after it — to the ignore reason, so a marker
-// directly above a call (or a multi-line call starting there) exempts it.
-func ignoreLines(fset *token.FileSet, f *ast.File) map[int]string {
-	lines := map[int]string{}
-	for _, cg := range f.Comments {
-		for _, c := range cg.List {
-			text := strings.TrimPrefix(c.Text, "//")
-			if !strings.HasPrefix(text, ignoreMarker) {
-				continue
-			}
-			reason := strings.TrimPrefix(text, ignoreMarker)
-			line := fset.Position(c.Pos()).Line
-			lines[line] = reason
-			lines[line+1] = reason
-		}
-	}
-	return lines
-}
-
-// repoRoot resolves the gokick module root by walking up from the working
-// directory (gk runs from tools/gk).
-func repoRoot() string {
-	dir, err := os.Getwd()
-	if err != nil {
-		fatal("getwd: %v", err)
-	}
-	for {
-		mod := filepath.Join(dir, "go.mod")
-		if b, err := os.ReadFile(mod); err == nil &&
-			strings.Contains(string(b), "module gokick\n") {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			fatal("could not find gokick go.mod above %s", dir)
-		}
-		dir = parent
-	}
-}
-
 func fatal(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "boundary: "+format+"\n", args...)
-	os.Exit(1)
+	tool.Fatalf("boundary", format, args...)
 }
