@@ -28,7 +28,7 @@ const handleSubmit = async (data: PlatformUserFormData): Promise<void> => {
     isLoading.value = true;
     errors.value = {};
 
-    const result = await authFetch<null, PlatformUserFormErrors>(
+    const result = await authFetch<null, PlatformUserFormErrors, PlatformUserFormData>(
         'PUT',
         `/api/v1/platform/users/${userId}`,
         { body: data },

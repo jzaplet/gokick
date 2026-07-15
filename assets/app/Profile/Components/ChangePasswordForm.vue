@@ -32,7 +32,7 @@ const handleSubmit = async (): Promise<void> => {
     isLoading.value = true;
     errors.value = {};
 
-    const result = await authFetch<null, ChangePasswordErrors>(
+    const result = await authFetch<null, ChangePasswordErrors, ChangePasswordFormData>(
         'PUT',
         '/api/v1/profile/password',
         { body: form },

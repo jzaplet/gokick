@@ -58,7 +58,7 @@ Přidáváš/upravuješ formulář (vzor self-contained):
    const handleSubmit = async (): Promise<void> => {
        isLoading.value = true;
        errors.value = {};
-       const result = await authFetch<null, ChangePasswordErrors>('PUT', '/api/v1/profile/password', { body: form });
+       const result = await authFetch<null, ChangePasswordErrors, ChangePasswordFormData>('PUT', '/api/v1/profile/password', { body: form });
        isLoading.value = false;
        if (result.success === false) {
            errors.value = result.data; // backend klíče = klíče typu

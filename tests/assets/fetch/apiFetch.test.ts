@@ -89,9 +89,11 @@ describe('apiFetch', () => {
 
         const credentials: LoginRequest = { nickname: 'admin', password: 'secret' };
 
-        await apiFetch<HealthResponse>('POST', '/api/v1/auth/login', {
-            body: credentials,
-        });
+        await apiFetch<HealthResponse, { message: string }, LoginRequest>(
+            'POST',
+            '/api/v1/auth/login',
+            { body: credentials },
+        );
 
         const requestInit = fetchSpy.mock.calls[0]?.[1];
 

@@ -80,9 +80,12 @@ describe('authFetch', () => {
             new Response(JSON.stringify({ message: 'invalid credentials' }), { status: 401 }),
         );
 
-        const result = await authFetch<HealthResponse>('POST', '/api/v1/auth/login', {
-            body: { nickname: 'x', password: 'y' },
-        });
+        type LoginBody = { nickname: string; password: string };
+        const result = await authFetch<HealthResponse, { message: string }, LoginBody>(
+            'POST',
+            '/api/v1/auth/login',
+            { body: { nickname: 'x', password: 'y' } },
+        );
 
         expect(fetchSpy).toHaveBeenCalledTimes(1);
         expect(result.success).toBe(false);
