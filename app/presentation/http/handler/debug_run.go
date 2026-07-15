@@ -66,6 +66,7 @@ func (h *DebugRunHandler) Enqueue(w http.ResponseWriter, r *http.Request) {
 		h.resp.HandleError(r.Context(), w, err)
 		return
 	}
+	//gkts:ignore APP_RUN_DEBUG e2e-only endpoint, consumed by the shell harness, not the SPA
 	h.resp.JSON(
 		r.Context(),
 		w,
@@ -86,6 +87,7 @@ func (h *DebugRunHandler) Get(w http.ResponseWriter, r *http.Request) {
 		h.resp.Error(r.Context(), w, http.StatusNotFound, errRunNotFound)
 		return
 	}
+	//gkts:ignore APP_RUN_DEBUG e2e-only endpoint, consumed by the shell harness, not the SPA
 	h.resp.JSON(r.Context(), w, http.StatusOK, viewRun(rn))
 }
 
@@ -95,6 +97,7 @@ func (h *DebugRunHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		h.resp.HandleError(r.Context(), w, err)
 		return
 	}
+	//gkts:ignore APP_RUN_DEBUG e2e-only endpoint, consumed by the shell harness, not the SPA
 	h.resp.JSON(
 		r.Context(),
 		w,

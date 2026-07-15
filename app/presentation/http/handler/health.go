@@ -22,5 +22,6 @@ type healthResponse struct {
 }
 
 func (h *HealthHandler) Check(w http.ResponseWriter, r *http.Request) {
+	//gkts:ignore infra-only endpoint (probes) — the Vue app never calls /health, see healthResponse doc
 	h.resp.JSON(r.Context(), w, http.StatusOK, healthResponse{Status: "ok"})
 }
