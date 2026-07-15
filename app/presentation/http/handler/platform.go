@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"time"
 
 	"gokick/app/application/bus"
@@ -79,6 +80,18 @@ type platformTenantDTO struct {
 	UserCount int    `json:"user_count"`
 }
 
+//gkts:assets/app/Platform/types/PlatformUserListResponse.ts PlatformUserListResponse
+type platformUserListResponse struct {
+	Items []platformUserDTO `json:"items"`
+	Total int               `json:"total"`
+}
+
+//gkts:assets/app/Platform/types/PlatformTenantListResponse.ts PlatformTenantListResponse
+type platformTenantListResponse struct {
+	Items []platformTenantDTO `json:"items"`
+	Total int                 `json:"total"`
+}
+
 //gkts:assets/app/Platform/types/PlatformUserFormData.ts PlatformUserFormData noguard
 type platformUserRequest struct {
 	Nickname string `json:"nickname"`
@@ -112,14 +125,27 @@ func (h *PlatformHandler) Stats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PlatformHandler) Users(w http.ResponseWriter, r *http.Request) {
-	q := platformqry.ListAllUsersQuery{}
+	qs := r.URL.Query()
+	page, _ := strconv.Atoi(qs.Get("page"))
+	perPage, _ := strconv.Atoi(qs.Get("per_page"))
+	q := platformqry.ListAllUsersQuery{
+		Page:     page,
+		PerPage:  perPage,
+		SortBy:   qs.Get("sort_by"),
+		SortDir:  qs.Get("sort_dir"),
+		Nickname: qs.Get("nickname"),
+		Email:    qs.Get("email"),
+		Role:     qs.Get("role"),
+		Active:   qs.Get("active"),
+		Tenant:   qs.Get("tenant"),
+	}
 
-	rows, err := bus.Query(
+	result, err := bus.Query(
 		r.Context(),
 		h.queryBus,
 		"PlatformListUsers",
 		q,
-		func(ctx context.Context) ([]user.PlatformRow, error) {
+		func(ctx context.Context) (user.PlatformListPage, error) {
 			return h.listUsers.Handle(ctx, q)
 		},
 	)
@@ -129,12 +155,15 @@ func (h *PlatformHandler) Users(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dtos := make([]platformUserDTO, len(rows))
-	for i, row := range rows {
+	dtos := make([]platformUserDTO, len(result.Items))
+	for i, row := range result.Items {
 		dtos[i] = toPlatformUserDTO(row)
 	}
 
-	h.resp.JSON(r.Context(), w, http.StatusOK, dtos)
+	h.resp.JSON(r.Context(), w, http.StatusOK, platformUserListResponse{
+		Items: dtos,
+		Total: result.Total,
+	})
 }
 
 // GetUser returns one user in ANY tenant (GET /platform/users/{id}) — the
@@ -163,14 +192,23 @@ func (h *PlatformHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PlatformHandler) Tenants(w http.ResponseWriter, r *http.Request) {
-	q := platformqry.ListTenantsQuery{}
+	qs := r.URL.Query()
+	page, _ := strconv.Atoi(qs.Get("page"))
+	perPage, _ := strconv.Atoi(qs.Get("per_page"))
+	q := platformqry.ListTenantsQuery{
+		Page:    page,
+		PerPage: perPage,
+		SortBy:  qs.Get("sort_by"),
+		SortDir: qs.Get("sort_dir"),
+		Name:    qs.Get("name"),
+	}
 
-	rows, err := bus.Query(
+	result, err := bus.Query(
 		r.Context(),
 		h.queryBus,
 		"PlatformListTenants",
 		q,
-		func(ctx context.Context) ([]tenant.Overview, error) {
+		func(ctx context.Context) (tenant.ListPage, error) {
 			return h.listTenants.Handle(ctx, q)
 		},
 	)
@@ -180,8 +218,8 @@ func (h *PlatformHandler) Tenants(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dtos := make([]platformTenantDTO, len(rows))
-	for i, t := range rows {
+	dtos := make([]platformTenantDTO, len(result.Items))
+	for i, t := range result.Items {
 		dtos[i] = platformTenantDTO{
 			ID:        t.ID,
 			Name:      t.Name,
@@ -190,7 +228,10 @@ func (h *PlatformHandler) Tenants(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.resp.JSON(r.Context(), w, http.StatusOK, dtos)
+	h.resp.JSON(r.Context(), w, http.StatusOK, platformTenantListResponse{
+		Items: dtos,
+		Total: result.Total,
+	})
 }
 
 func (h *PlatformHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {

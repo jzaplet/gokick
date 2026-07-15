@@ -28,6 +28,10 @@ type PlatformRepository interface {
 	// superadmin platform overview (platform:overview). Cross-tenant by design.
 	OverviewAcrossTenants(ctx context.Context) ([]Overview, error)
 
+	// OverviewPage is the paged/filtered/sorted platform tenants grid read —
+	// OverviewAcrossTenants' aggregate with the grid criteria shape.
+	OverviewPage(ctx context.Context, criteria ListCriteria) (ListPage, error)
+
 	// CountAcrossTenants returns the total number of tenants (platform dashboard).
 	CountAcrossTenants(ctx context.Context) (int, error)
 }

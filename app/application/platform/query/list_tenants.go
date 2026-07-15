@@ -3,12 +3,21 @@ package query
 import (
 	"context"
 
+	"gokick/app/domain/shared"
 	"gokick/app/domain/tenant"
 )
 
-// ListTenantsQuery lists every tenant with its user count — the superadmin
-// platform overview. platform:overview is superadmin-only.
-type ListTenantsQuery struct{}
+// ListTenantsQuery lists tenants with their user counts — the superadmin
+// platform grid. Same wire discipline as the user grids: raw values in,
+// whitelisted sort (name/users) + clamped paging out.
+// platform:overview is superadmin-only.
+type ListTenantsQuery struct {
+	Page    int
+	PerPage int
+	SortBy  string
+	SortDir string
+	Name    string
+}
 
 func (ListTenantsQuery) RequiredPermission() string { return "platform:overview" }
 
@@ -22,7 +31,15 @@ func NewListTenantsHandler(tenants tenant.PlatformRepository) *ListTenantsHandle
 
 func (h *ListTenantsHandler) Handle(
 	ctx context.Context,
-	_ ListTenantsQuery,
-) ([]tenant.Overview, error) {
-	return h.tenants.OverviewAcrossTenants(ctx)
+	q ListTenantsQuery,
+) (tenant.ListPage, error) {
+	criteria := tenant.ListCriteria{
+		Page:    q.Page,
+		PerPage: q.PerPage,
+		Sort:    tenant.SortColumnFrom(q.SortBy),
+		SortDir: shared.SortDirectionFrom(q.SortDir),
+		Filters: tenant.ListFilters{Name: q.Name},
+	}.Normalize()
+
+	return h.tenants.OverviewPage(ctx, criteria)
 }

@@ -3,6 +3,7 @@ package query
 import (
 	"context"
 
+	"gokick/app/domain/shared"
 	"gokick/app/domain/user"
 )
 
@@ -36,7 +37,7 @@ func (h *ListUsersHandler) Handle(ctx context.Context, q ListUsersQuery) (user.L
 		Page:    q.Page,
 		PerPage: q.PerPage,
 		Sort:    user.SortColumnFrom(q.SortBy),
-		SortDir: user.SortDirectionFrom(q.SortDir),
+		SortDir: shared.SortDirectionFrom(q.SortDir),
 		Filters: user.ListFilters{
 			Nickname: q.Nickname,
 			Email:    q.Email,

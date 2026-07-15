@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"gokick/app/domain/tenant"
 	"gokick/app/infrastructure/database"
@@ -66,4 +67,44 @@ func (r *Repository) OverviewAcrossTenants(ctx context.Context) ([]tenant.Overvi
 		  GROUP BY t.id, t.name, t.plan
 		  ORDER BY t.name`)
 	return rows, err
+}
+
+var overviewSortSQL = map[tenant.SortColumn]string{
+	tenant.SortByName:  "t.name",
+	tenant.SortByUsers: "user_count",
+}
+
+// OverviewPage is the platform tenants grid read — OverviewAcrossTenants'
+// aggregate with paging, a name filter and a whitelisted sort. The COUNT runs
+// over tenants alone (the aggregate join would distort it); the page query
+// keeps the LEFT JOIN for the user_count column.
+func (r *Repository) OverviewPage(
+	ctx context.Context,
+	c tenant.ListCriteria,
+) (tenant.ListPage, error) {
+	where := ""
+	args := []any{}
+	if c.Filters.Name != "" {
+		where = ` WHERE t.name LIKE ?`
+		args = append(args, "%"+c.Filters.Name+"%")
+	}
+
+	page := tenant.ListPage{Items: []tenant.Overview{}}
+	if err := r.Conn(ctx).GetContext(ctx, &page.Total,
+		`SELECT COUNT(*) FROM tenants t`+where, args...); err != nil {
+		return tenant.ListPage{}, err
+	}
+
+	col, ok := overviewSortSQL[c.Sort]
+	if !ok {
+		col = "t.name"
+	}
+	orderBy := fmt.Sprintf(` ORDER BY %s %s, t.name ASC`, col, c.SortDir)
+	err := r.Conn(ctx).SelectContext(ctx, &page.Items,
+		`SELECT t.id, t.name, t.plan, COUNT(u.id) AS user_count
+		   FROM tenants t
+		   LEFT JOIN users u ON u.tenant_id = t.id /* tenant-scope-exempt: platform superadmin */`+
+			where+` GROUP BY t.id, t.name, t.plan`+orderBy+` LIMIT ? OFFSET ?`,
+		append(args, c.PerPage, c.Offset())...)
+	return page, err
 }

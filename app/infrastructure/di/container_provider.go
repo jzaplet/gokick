@@ -381,6 +381,8 @@ func CreateApplication(
 		usercmd.NewCreateUserHandler,
 		usercmd.NewUpdateUserHandler,
 		usercmd.NewDeleteUserHandler,
+		usercmd.NewBulkDeleteUsersHandler,
+		usercmd.NewBulkSetUsersActiveHandler,
 		userqry.NewListUsersHandler,
 		userqry.NewGetUserHandler,
 		platformqry.NewListAllUsersHandler,

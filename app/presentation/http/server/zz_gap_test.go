@@ -208,6 +208,8 @@ func boundServer(t *testing.T) (*Server, *testfx.Fixture) {
 		usercmd.NewCreateUserHandler(fx.Users, fx.Hasher, false),
 		usercmd.NewUpdateUserHandler(fx.Users, fx.Hasher),
 		usercmd.NewDeleteUserHandler(fx.Users),
+		usercmd.NewBulkDeleteUsersHandler(fx.Users),
+		usercmd.NewBulkSetUsersActiveHandler(fx.Users),
 	)
 	dashboard := handler.NewDashboardHandler(testResponder(),
 		qryBus,

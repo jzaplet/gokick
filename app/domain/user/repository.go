@@ -37,6 +37,16 @@ type Repository interface {
 	// page carries the filtered total for the client-side pager.
 	FindPage(ctx context.Context, criteria ListCriteria) (ListPage, error)
 
+	// BulkDelete removes every selected non-superadmin user in the caller's
+	// tenant EXCEPT the selection's ExcludeID (the acting admin) and returns the
+	// affected count. Selection is dual-mode: explicit ids, or the filter set
+	// when AllFiltered is on.
+	BulkDelete(ctx context.Context, sel BulkSelection) (int64, error)
+
+	// BulkSetActive flips the active flag for the selection — same scoping and
+	// self-exclusion as BulkDelete.
+	BulkSetActive(ctx context.Context, sel BulkSelection, active bool) (int64, error)
+
 	// RecordLogin stamps last_login_at = now for the user on a successful login.
 	// Best-effort analytics; raw pool like ResetFailedLogin (login runs outside
 	// the bus tx by design), so it neither blocks login nor ties the stamp to
@@ -81,6 +91,14 @@ type PlatformRepository interface {
 	// The query carries a tenant-scope-exempt marker so the conformance gate
 	// admits it consciously.
 	FindAllAcrossTenants(ctx context.Context) ([]PlatformRow, error)
+
+	// FindPageAcrossTenants is the paged/filtered/sorted platform users grid
+	// read — FindAllAcrossTenants' scope with FindPage's shape (criteria
+	// pre-normalized, filtered total included).
+	FindPageAcrossTenants(
+		ctx context.Context,
+		criteria PlatformListCriteria,
+	) (PlatformListPage, error)
 
 	// FindByIDAcrossTenants is the cross-tenant read-one behind the platform
 	// read-one endpoint (GET /platform/users/{id}) — the by-id INVERSE of

@@ -233,6 +233,14 @@ func (s *Server) registerRoutes() *http.ServeMux {
 	mux.Handle("GET /api/v1/admin/users", authed(http.HandlerFunc(s.adminUsers.List)))
 	mux.Handle("GET /api/v1/admin/users/{id}", authed(http.HandlerFunc(s.adminUsers.Get)))
 	mux.Handle("POST /api/v1/admin/users", authed(http.HandlerFunc(s.adminUsers.Create)))
+	mux.Handle(
+		"POST /api/v1/admin/users/bulk-delete",
+		authed(http.HandlerFunc(s.adminUsers.BulkDelete)),
+	)
+	mux.Handle(
+		"POST /api/v1/admin/users/bulk-active",
+		authed(http.HandlerFunc(s.adminUsers.BulkActive)),
+	)
 	mux.Handle("PUT /api/v1/admin/users/{id}", authed(http.HandlerFunc(s.adminUsers.Update)))
 	mux.Handle("DELETE /api/v1/admin/users/{id}", authed(http.HandlerFunc(s.adminUsers.Delete)))
 

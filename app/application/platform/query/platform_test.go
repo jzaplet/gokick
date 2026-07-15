@@ -29,8 +29,9 @@ func TestListAllUsers_SuperadminSeesAllTenants_AdminDenied(t *testing.T) {
 	h := NewListAllUsersHandler(fx.PlatformUsers)
 	q := ListAllUsersQuery{}
 	dispatch := func(ctx context.Context) ([]user.PlatformRow, error) {
-		return testfx.ExecQuery(ctx, queryBus, "PlatformListUsers", q,
-			func(ctx context.Context) ([]user.PlatformRow, error) { return h.Handle(ctx, q) })
+		page, err := testfx.ExecQuery(ctx, queryBus, "PlatformListUsers", q,
+			func(ctx context.Context) (user.PlatformListPage, error) { return h.Handle(ctx, q) })
+		return page.Items, err
 	}
 
 	// Superadmin → sees both tenants' users, each carrying its tenant NAME.
