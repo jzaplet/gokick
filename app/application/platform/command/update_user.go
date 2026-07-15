@@ -43,6 +43,7 @@ func (h *UpdatePlatformUserHandler) Handle(
 		return err
 	}
 	if target == nil {
+		//gkerrf:exempt path-param lookup - the edit view redirects on failure, no form field maps id
 		return &shared.ValidationError{Field: "id", Message: "user not found"}
 	}
 

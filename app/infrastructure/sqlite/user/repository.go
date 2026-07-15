@@ -322,6 +322,7 @@ func requireOneRow(res sql.Result, err error) error {
 		return err
 	}
 	if n == 0 {
+		//gkerrf:exempt requireOneRow guard - by-id mutations surface via redirect/toast, no form field maps id
 		return &shared.ValidationError{Field: "id", Message: "user not found"}
 	}
 	return nil

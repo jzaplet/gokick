@@ -33,6 +33,7 @@ func (h *GetUserHandler) Handle(ctx context.Context, q GetUserQuery) (*user.User
 		// Not-found as a 400 with Field "id" — the SAME shape the Update/Delete
 		// paths return via requireOneRow, so every "no such user" response is
 		// consistent and the HTTP handler needs no nil-check before building the DTO.
+		//gkerrf:exempt path-param lookup - the edit view redirects on failure, no form field maps id
 		return nil, &shared.ValidationError{Field: "id", Message: "user not found"}
 	}
 	return u, nil
