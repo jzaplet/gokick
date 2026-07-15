@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { apiUpload } from '@/app-ui/Fetch';
+import { apiUpload, isTransport } from '@/app-ui/Fetch';
 import { setAccessToken } from '@/app-ui/Fetch/accessToken';
 import type { UploadProgress } from '@/app-ui/Fetch/types/UploadProgress';
 
@@ -73,6 +73,9 @@ const lastXhr = (): FakeXhr => {
 
 type UploadData = { id: string };
 
+const isUploadData = (v: unknown): v is UploadData =>
+    typeof v === 'object' && v !== null && typeof (v as Record<string, unknown>)['id'] === 'string';
+
 describe('apiUpload', () => {
     let originalXhr: typeof XMLHttpRequest;
 
@@ -91,9 +94,9 @@ describe('apiUpload', () => {
 
     it('reports progress with percent (0-100), loaded and total bytes', async (): Promise<void> => {
         const seen: UploadProgress[] = [];
-        const promise = apiUpload<UploadData>('/api/v1/files', new FormData(), (stats) => {
+        const promise = apiUpload<UploadData>('/api/v1/files', new FormData(), { validate: isUploadData, onProgress: (stats) => {
             seen.push(stats);
-        });
+        } });
 
         const xhr = lastXhr();
 
@@ -112,9 +115,9 @@ describe('apiUpload', () => {
 
     it('computes percent as (loaded / total) * 100 for non-round values', async (): Promise<void> => {
         const seen: UploadProgress[] = [];
-        const promise = apiUpload<UploadData>('/api/v1/files', new FormData(), (stats) => {
+        const promise = apiUpload<UploadData>('/api/v1/files', new FormData(), { validate: isUploadData, onProgress: (stats) => {
             seen.push(stats);
-        });
+        } });
 
         const xhr = lastXhr();
 
@@ -133,7 +136,7 @@ describe('apiUpload', () => {
 
     it('does NOT invoke onProgress when length is not computable', async (): Promise<void> => {
         const onProgress = vi.fn();
-        const promise = apiUpload<UploadData>('/api/v1/files', new FormData(), onProgress);
+        const promise = apiUpload<UploadData>('/api/v1/files', new FormData(), { validate: isUploadData, onProgress });
 
         const xhr = lastXhr();
 
@@ -146,7 +149,7 @@ describe('apiUpload', () => {
     });
 
     it('resolves with the typed success payload on 2xx', async (): Promise<void> => {
-        const promise = apiUpload<UploadData>('/api/v1/files', new FormData());
+        const promise = apiUpload<UploadData>('/api/v1/files', new FormData(), { validate: isUploadData });
 
         lastXhr().fireLoad(201, JSON.stringify({ id: 'f-42' }));
 
@@ -161,7 +164,7 @@ describe('apiUpload', () => {
     });
 
     it('works without an onProgress callback (no upload handler attached)', async (): Promise<void> => {
-        const promise = apiUpload<UploadData>('/api/v1/files', new FormData());
+        const promise = apiUpload<UploadData>('/api/v1/files', new FormData(), { validate: isUploadData });
 
         const xhr = lastXhr();
 
@@ -178,7 +181,7 @@ describe('apiUpload', () => {
     it('attaches the Authorization header when an access token is set', async (): Promise<void> => {
         setAccessToken('upload-token');
 
-        const promise = apiUpload<UploadData>('/api/v1/files', new FormData());
+        const promise = apiUpload<UploadData>('/api/v1/files', new FormData(), { validate: isUploadData });
         const xhr = lastXhr();
 
         expect(xhr.method).toBe('POST');
@@ -190,7 +193,7 @@ describe('apiUpload', () => {
     });
 
     it('resolves a failure response on network error', async (): Promise<void> => {
-        const promise = apiUpload<UploadData>('/api/v1/files', new FormData());
+        const promise = apiUpload<UploadData>('/api/v1/files', new FormData(), { validate: isUploadData });
 
         lastXhr().fireError(0, '');
 
@@ -199,7 +202,8 @@ describe('apiUpload', () => {
         expect(result.success).toBe(false);
 
         if (result.success === false) {
-            expect(result.data.message).toBe('Network error');
+            expect(isTransport(result)).toBe(true);
+            expect(isTransport(result) ? result.message : '').toBe('Network error');
         }
     });
 });

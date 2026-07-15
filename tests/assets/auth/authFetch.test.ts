@@ -7,6 +7,9 @@ type HealthResponse = {
     status: string;
 };
 
+const isHealthResponse = (v: unknown): v is HealthResponse =>
+    typeof v === 'object' && v !== null && typeof (v as Record<string, unknown>)['status'] === 'string';
+
 // Integration-style: only fetch() is spied, everything else (refresh,
 // state, apiFetch) runs for real — which is exactly what the real flow
 // does at runtime.
@@ -21,7 +24,7 @@ describe('authFetch', () => {
             new Response(JSON.stringify({ status: 'ok' }), { status: 200 }),
         );
 
-        const result = await authFetch<HealthResponse>('GET', '/api/v1/profile');
+        const result = await authFetch<HealthResponse>('GET', '/api/v1/profile', { validate: isHealthResponse });
 
         expect(fetchSpy).toHaveBeenCalledTimes(1);
         expect(result.success).toBe(true);
@@ -44,7 +47,7 @@ describe('authFetch', () => {
 
         setAccessToken('stale-token');
 
-        const result = await authFetch<HealthResponse>('GET', '/api/v1/profile');
+        const result = await authFetch<HealthResponse>('GET', '/api/v1/profile', { validate: isHealthResponse });
 
         // 3 network calls: initial 401, /auth/refresh, retried /profile.
         expect(fetchSpy).toHaveBeenCalledTimes(3);
@@ -67,7 +70,7 @@ describe('authFetch', () => {
 
         setAccessToken('stale');
 
-        const result = await authFetch<HealthResponse>('GET', '/api/v1/profile');
+        const result = await authFetch<HealthResponse>('GET', '/api/v1/profile', { validate: isHealthResponse });
 
         // Initial call + refresh attempt, no retry (refresh failed).
         expect(fetchSpy).toHaveBeenCalledTimes(2);
@@ -84,7 +87,7 @@ describe('authFetch', () => {
         const result = await authFetch<HealthResponse, { message: string }, LoginBody>(
             'POST',
             '/api/v1/auth/login',
-            { body: { nickname: 'x', password: 'y' } },
+            { body: { nickname: 'x', password: 'y' }, validate: isHealthResponse },
         );
 
         expect(fetchSpy).toHaveBeenCalledTimes(1);
@@ -124,9 +127,9 @@ describe('authFetch', () => {
         setAccessToken('stale');
 
         const [a, b, c] = await Promise.all([
-            authFetch<HealthResponse>('GET', '/api/v1/profile'),
-            authFetch<HealthResponse>('GET', '/api/v1/admin/users'),
-            authFetch<HealthResponse>('GET', '/api/v1/settings'),
+            authFetch<HealthResponse>('GET', '/api/v1/profile', { validate: isHealthResponse }),
+            authFetch<HealthResponse>('GET', '/api/v1/admin/users', { validate: isHealthResponse }),
+            authFetch<HealthResponse>('GET', '/api/v1/settings', { validate: isHealthResponse }),
         ]);
 
         // 3 initial 401s + 1 shared refresh + 3 retries = 7 fetch calls.

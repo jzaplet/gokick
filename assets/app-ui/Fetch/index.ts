@@ -6,10 +6,14 @@ export { apiFetch } from '@/app-ui/Fetch/apiFetch';
 export { apiUpload } from '@/app-ui/Fetch/apiUpload';
 export { apiDownload } from '@/app-ui/Fetch/apiDownload';
 export { getAccessToken, setAccessToken } from '@/app-ui/Fetch/accessToken';
+export { isTransport } from '@/app-ui/Fetch/types/ApiResponse';
+export { arrayOf } from '@/app-ui/Fetch/guards';
 
 export type { ApiResponse } from '@/app-ui/Fetch/types/ApiResponse';
 export type { ApiSuccess } from '@/app-ui/Fetch/types/ApiSuccess';
 export type { ApiError } from '@/app-ui/Fetch/types/ApiError';
+export type { ApiTransport } from '@/app-ui/Fetch/types/ApiTransport';
+export type { Guard } from '@/app-ui/Fetch/guards';
 export type { FetchOptions } from '@/app-ui/Fetch/types/FetchOptions';
 export type { UploadProgress } from '@/app-ui/Fetch/types/UploadProgress';
 export type { DownloadResult } from '@/app-ui/Fetch/types/DownloadResult';

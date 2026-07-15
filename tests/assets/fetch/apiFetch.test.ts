@@ -1,9 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { apiFetch, setAccessToken } from '@/app-ui/Fetch';
+import { apiFetch, isTransport, setAccessToken } from '@/app-ui/Fetch';
 
 type HealthResponse = {
     status: string;
 };
+
+const isHealthResponse = (v: unknown): v is HealthResponse =>
+    typeof v === 'object' && v !== null && typeof (v as Record<string, unknown>)['status'] === 'string';
 
 describe('apiFetch', () => {
     beforeEach((): void => {
@@ -16,7 +19,7 @@ describe('apiFetch', () => {
             new Response(JSON.stringify({ status: 'ok' }), { status: 200 }),
         );
 
-        const result = await apiFetch<HealthResponse>('GET', '/health');
+        const result = await apiFetch<HealthResponse>('GET', '/health', { validate: isHealthResponse });
 
         expect(result.success).toBe(true);
         expect(result.status).toBe(200);
@@ -31,12 +34,12 @@ describe('apiFetch', () => {
             new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }),
         );
 
-        const result = await apiFetch<HealthResponse>('GET', '/api/v1/profile');
+        const result = await apiFetch<HealthResponse>('GET', '/api/v1/profile', { validate: isHealthResponse });
 
         expect(result.success).toBe(false);
         expect(result.status).toBe(401);
 
-        if (result.success === false) {
+        if (result.success === false && isTransport(result) === false) {
             expect(result.data.message).toBe('Unauthorized');
         }
     });
@@ -47,7 +50,7 @@ describe('apiFetch', () => {
         );
 
         setAccessToken('test-token-123');
-        await apiFetch<HealthResponse>('GET', '/health');
+        await apiFetch<HealthResponse>('GET', '/health', { validate: isHealthResponse });
 
         const requestInit = fetchSpy.mock.calls[0]?.[1];
         const headers = requestInit?.headers as Record<string, string> | undefined;
@@ -60,7 +63,7 @@ describe('apiFetch', () => {
             new Response(JSON.stringify({ status: 'ok' }), { status: 200 }),
         );
 
-        await apiFetch<HealthResponse>('GET', '/health');
+        await apiFetch<HealthResponse>('GET', '/health', { validate: isHealthResponse });
 
         const requestInit = fetchSpy.mock.calls[0]?.[1];
         const headers = requestInit?.headers as Record<string, string> | undefined;
@@ -73,7 +76,7 @@ describe('apiFetch', () => {
             new Response(JSON.stringify({}), { status: 200 }),
         );
 
-        await apiFetch<HealthResponse>('DELETE', '/api/v1/users/123');
+        await apiFetch<HealthResponse>('DELETE', '/api/v1/users/123', { validate: isHealthResponse });
 
         const requestInit = fetchSpy.mock.calls[0]?.[1];
 
@@ -92,7 +95,7 @@ describe('apiFetch', () => {
         await apiFetch<HealthResponse, { message: string }, LoginRequest>(
             'POST',
             '/api/v1/auth/login',
-            { body: credentials },
+            { body: credentials, validate: isHealthResponse },
         );
 
         const requestInit = fetchSpy.mock.calls[0]?.[1];
@@ -106,7 +109,7 @@ describe('apiFetch', () => {
         );
 
         setAccessToken('stale');
-        const result = await apiFetch<HealthResponse>('GET', '/api/v1/profile');
+        const result = await apiFetch<HealthResponse>('GET', '/api/v1/profile', { validate: isHealthResponse });
 
         expect(fetchSpy).toHaveBeenCalledTimes(1);
         expect(result.success).toBe(false);

@@ -1,6 +1,7 @@
 import type { ApiResponse } from '@/app-ui/Fetch/types/ApiResponse';
 import type { FetchOptions } from '@/app-ui/Fetch/types/FetchOptions';
-import { apiFetch } from '@/app-ui/Fetch/apiFetch';
+import type { Guard } from '@/app-ui/Fetch/guards';
+import { apiFetchCore } from '@/app-ui/Fetch/apiFetchCore';
 import { refresh } from '@/app-ui/Auth/refresh';
 
 // apiFetch wrapped with one-shot auto-refresh on 401. Use for every protected
@@ -16,12 +17,31 @@ import { refresh } from '@/app-ui/Auth/refresh';
 //   - /login 401 means wrong credentials (refresh can't help)
 //   - /refresh retrying would infinite-loop
 //   - /logout is a one-shot cleanup
-export const authFetch = async <TData, TError = { message: string }, TBody = never>(
+//
+// Same contract as apiFetch: TData ≠ null requires `validate` (the generated
+// guard); TData = null (204 endpoints) takes none.
+type AuthFetchFn = {
+    <TData extends null, TError = { message: string }, TBody = never>(
+        method: string,
+        url: string,
+        options?: FetchOptions<TBody> & { validate?: never },
+    ): Promise<ApiResponse<TData, TError>>;
+    <TData, TError = { message: string }, TBody = never>(
+        method: string,
+        url: string,
+        options: FetchOptions<TBody> & { validate: Guard<TData> },
+    ): Promise<ApiResponse<TData, TError>>;
+};
+
+export const authFetch: AuthFetchFn = async <TData, TError, TBody>(
     method: string,
     url: string,
-    options: FetchOptions<TBody> = {},
+    options: FetchOptions<TBody> & { validate?: Guard<TData> } = {},
 ): Promise<ApiResponse<TData, TError>> => {
-    const first = await apiFetch<TData, TError, TBody>(method, url, options);
+    // The loose implementation signature forwards without a cast; this
+    // function's own public overloads already enforce the validate↔TData
+    // contract at every call site.
+    const first = await apiFetchCore<TData, TError, TBody>(method, url, options);
 
     if (first.status !== 401) {
         return first;
@@ -37,5 +57,5 @@ export const authFetch = async <TData, TError = { message: string }, TBody = nev
         return first;
     }
 
-    return apiFetch<TData, TError, TBody>(method, url, options);
+    return apiFetchCore<TData, TError, TBody>(method, url, options);
 };

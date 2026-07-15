@@ -54,7 +54,7 @@ type adminUserDTO struct {
 	Active   bool   `json:"active"`
 }
 
-//gkts:assets/app/Admin/types/UserFormData.ts UserFormData
+//gkts:assets/app/Admin/types/UserFormData.ts UserFormData noguard
 type createUserRequest struct {
 	Nickname string `json:"nickname"`
 	Password string `json:"password"`
@@ -62,7 +62,7 @@ type createUserRequest struct {
 	Role     string `json:"role"`
 }
 
-//gkts:assets/app/Admin/types/UserFormData.ts UserFormData
+//gkts:assets/app/Admin/types/UserFormData.ts UserFormData noguard
 type updateUserRequest struct {
 	Nickname string `json:"nickname"`
 	Password string `json:"password"`

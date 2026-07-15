@@ -79,7 +79,7 @@ type platformTenantDTO struct {
 	UserCount int    `json:"user_count"`
 }
 
-//gkts:assets/app/Platform/types/PlatformUserFormData.ts PlatformUserFormData
+//gkts:assets/app/Platform/types/PlatformUserFormData.ts PlatformUserFormData noguard
 type platformUserRequest struct {
 	Nickname string `json:"nickname"`
 	Password string `json:"password"`

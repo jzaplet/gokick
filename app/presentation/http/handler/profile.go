@@ -40,7 +40,7 @@ func NewProfileHandler(
 	}
 }
 
-//gkts:assets/app/Profile/types/ChangePasswordFormData.ts ChangePasswordFormData
+//gkts:assets/app/Profile/types/ChangePasswordFormData.ts ChangePasswordFormData noguard
 type changePasswordRequest struct {
 	OldPassword string `json:"old_password"`
 	NewPassword string `json:"new_password"`

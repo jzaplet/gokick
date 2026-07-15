@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { PlatformStats } from '@/app/Platform/types/PlatformStats';
+import { isPlatformStats } from '@/app/Platform/types/PlatformStats';
 import { onMounted, ref } from 'vue';
 import { authFetch } from '@/app-ui/Auth';
 import { useToast } from '@/app-ui/Toast/useToast';
@@ -11,7 +12,9 @@ const stats = ref<PlatformStats | null>(null);
 const isLoading = ref(true);
 
 onMounted(async (): Promise<void> => {
-    const result = await authFetch<PlatformStats>('GET', '/api/v1/platform/stats');
+    const result = await authFetch<PlatformStats>('GET', '/api/v1/platform/stats', {
+        validate: isPlatformStats,
+    });
 
     isLoading.value = false;
 

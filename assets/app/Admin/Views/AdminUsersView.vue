@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { AdminUser } from '@/app/Admin/types/AdminUser';
+import { isAdminUser } from '@/app/Admin/types/AdminUser';
+import { arrayOf, isTransport } from '@/app-ui/Fetch';
 import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { authFetch } from '@/app-ui/Auth';
@@ -19,7 +21,9 @@ const userToDelete = ref<AdminUser | null>(null);
 
 const fetchUsers = async (): Promise<void> => {
     isLoading.value = true;
-    const result = await authFetch<AdminUser[]>('GET', '/api/v1/admin/users');
+    const result = await authFetch<AdminUser[]>('GET', '/api/v1/admin/users', {
+        validate: arrayOf(isAdminUser),
+    });
 
     isLoading.value = false;
 
@@ -63,7 +67,7 @@ const confirmDelete = async (): Promise<void> => {
     );
 
     if (result.success === false) {
-        error(result.data.general ?? 'Delete failed.');
+        error(isTransport(result) ? result.message : result.data.general ?? 'Delete failed.');
 
         return;
     }

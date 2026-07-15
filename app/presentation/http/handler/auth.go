@@ -61,7 +61,7 @@ func NewAuthHandler(
 	}
 }
 
-//gkts:assets/app-ui/Auth/types/LoginRequest.ts LoginRequest
+//gkts:assets/app-ui/Auth/types/LoginRequest.ts LoginRequest noguard
 type loginRequest struct {
 	Nickname string `json:"nickname"`
 	Password string `json:"password"`

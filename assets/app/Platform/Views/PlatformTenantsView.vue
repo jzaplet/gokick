@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { PlatformTenant } from '@/app/Platform/types/PlatformTenant';
+import { isPlatformTenant } from '@/app/Platform/types/PlatformTenant';
+import { arrayOf } from '@/app-ui/Fetch';
 import { onMounted, ref } from 'vue';
 import { authFetch } from '@/app-ui/Auth';
 import { useToast } from '@/app-ui/Toast/useToast';
@@ -12,7 +14,9 @@ const tenants = ref<PlatformTenant[]>([]);
 const isLoading = ref(true);
 
 onMounted(async (): Promise<void> => {
-    const result = await authFetch<PlatformTenant[]>('GET', '/api/v1/platform/tenants');
+    const result = await authFetch<PlatformTenant[]>('GET', '/api/v1/platform/tenants', {
+        validate: arrayOf(isPlatformTenant),
+    });
 
     isLoading.value = false;
 

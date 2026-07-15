@@ -1,4 +1,5 @@
 import { apiFetch } from '@/app-ui/Fetch/apiFetch';
+import { isLoginResponse } from '@/app-ui/Auth/types/LoginResponse';
 import type { LoginResponse } from '@/app-ui/Auth/types/LoginResponse';
 import { clearAuth, establishSession, isAuthenticated, scheduleRetry } from '@/app-ui/Auth/state';
 import { clearSessionHint } from '@/app-ui/Auth/sessionHint';
@@ -48,7 +49,9 @@ export const refresh = (): Promise<boolean> => {
 
 const runRefresh = async (): Promise<boolean> => {
     try {
-        const result = await apiFetch<LoginResponse>('POST', '/api/v1/auth/refresh');
+        const result = await apiFetch<LoginResponse>('POST', '/api/v1/auth/refresh', {
+            validate: isLoginResponse,
+        });
 
         if (result.success === true) {
             // A 200 with a malformed/partial body is not a usable session —

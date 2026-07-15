@@ -2,6 +2,7 @@ import type { ApiResponse } from '@/app-ui/Fetch/types/ApiResponse';
 import { apiFetch } from '@/app-ui/Fetch/apiFetch';
 import type { AuthError } from '@/app-ui/Auth/types/AuthError';
 import type { LoginRequest } from '@/app-ui/Auth/types/LoginRequest';
+import { isLoginResponse } from '@/app-ui/Auth/types/LoginResponse';
 import type { LoginResponse } from '@/app-ui/Auth/types/LoginResponse';
 import { establishSession } from '@/app-ui/Auth/state';
 import { refresh } from '@/app-ui/Auth/refresh';
@@ -14,6 +15,7 @@ export const login = async <TError extends AuthError>(
 ): Promise<ApiResponse<LoginResponse, TError>> => {
     const result = await apiFetch<LoginResponse, TError, LoginRequest>('POST', '/api/v1/auth/login', {
         body: credentials,
+        validate: isLoginResponse,
     });
 
     // establishSession shape-guards the 200 body before installing the session, so

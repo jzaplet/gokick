@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ChangePasswordErrors } from '@/app/Profile/types/ChangePasswordErrors';
+import { isTransport } from '@/app-ui/Fetch';
 import type { ChangePasswordFormData } from '@/app/Profile/types/ChangePasswordFormData';
 import { reactive, ref } from 'vue';
 import { authFetch } from '@/app-ui/Auth';
@@ -41,7 +42,7 @@ const handleSubmit = async (): Promise<void> => {
     isLoading.value = false;
 
     if (result.success === false) {
-        errors.value = result.data;
+        errors.value = isTransport(result) ? { general: result.message } : result.data;
 
         return;
     }

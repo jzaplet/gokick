@@ -37,6 +37,10 @@ Dvě vrstvy. **Fetch** (`assets/app-ui/Fetch/`) = surový transport bez retry. *
 
 **`TBody` je povinný, jakmile posíláš body** — default je `never`, takže `{ body: x }` bez třetí generiky se nezkompiluje. Deklaruj ho **generovaným** request typem (`UserFormData`, `LoginRequest`, …) — payload je pak strukturálně přibitý na Go DTO, které handler dekóduje (FE polovina wire hranice; BE polovinu hlídá `gk boundary`). ESLint navíc vyžaduje explicitní generiky na každém volání (inference by pustila neotypovaný payload) a zakazuje inline `body` literály — payload teče z typované proměnné. GET/DELETE bez body zůstávají dvougenerické.
 
+**`validate` je povinné, jakmile data PŘIJÍMÁŠ** (`TData ≠ null`) — předej **generovaný guard** (`validate: isAdminUser`, pro seznamy `arrayOf(isAdminUser)`); bez něj se volání nezkompiluje a párování guard↔generika hlídá kompilátor (`Guard<TData>`). 2xx tělo se za běhu ověří proti generovanému kontraktu: porušení = transport failure + **Sentry report** (BE prokazatelně posílá anotované DTO, takže neshoda = bug — typicky špatné spárování URL↔typ na call site). 204 endpointy (`TData = null`) guard nemají.
+
+**Selhání zužuj přes `isTransport`** — failure je buď `ApiError<TErrors>` (chybové tělo z API), nebo `ApiTransport` (síť / rozbité tělo / porušený kontrakt; nese jen top-level `message`, žádné `data`). Bez zúžení se na `result.data` nedostaneš (nezkompiluje se): `errors.value = isTransport(result) ? { general: result.message } : result.data;`.
+
 **Access token** (`Fetch/accessToken.ts`) — jediná modulová proměnná `let accessToken`, `get/setAccessToken`. Jen v paměti, XSS-resistentní. Po hard-refreshi je prázdná → obnoví ji bootstrap.
 
 **`ApiResponse<TData, TError>`** (`Fetch/types/ApiResponse.ts`) — discriminated union (rozlišená podle `success`):

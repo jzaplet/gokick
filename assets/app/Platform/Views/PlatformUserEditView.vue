@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { PlatformUser } from '@/app/Platform/types/PlatformUser';
+import { isPlatformUser } from '@/app/Platform/types/PlatformUser';
+import { isTransport } from '@/app-ui/Fetch';
 import type { PlatformUserFormData } from '@/app/Platform/types/PlatformUserFormData';
 import type { PlatformUserFormErrors } from '@/app/Platform/types/PlatformUserFormErrors';
 import { onMounted, ref } from 'vue';
@@ -37,7 +39,7 @@ const handleSubmit = async (data: PlatformUserFormData): Promise<void> => {
     isLoading.value = false;
 
     if (result.success === false) {
-        errors.value = result.data;
+        errors.value = isTransport(result) ? { general: result.message } : result.data;
 
         return;
     }
@@ -51,7 +53,9 @@ const handleCancel = (): void => {
 };
 
 onMounted(async (): Promise<void> => {
-    const result = await authFetch<PlatformUser>('GET', `/api/v1/platform/users/${userId}`);
+    const result = await authFetch<PlatformUser>('GET', `/api/v1/platform/users/${userId}`, {
+        validate: isPlatformUser,
+    });
 
     isFetching.value = false;
 
