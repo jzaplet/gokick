@@ -12,7 +12,7 @@ import { refresh } from '@/app-ui/Auth/refresh';
 export const login = async <TError extends AuthError>(
     credentials: LoginRequest,
 ): Promise<ApiResponse<LoginResponse, TError>> => {
-    const result = await apiFetch<LoginResponse, TError>('POST', '/api/v1/auth/login', {
+    const result = await apiFetch<LoginResponse, TError, LoginRequest>('POST', '/api/v1/auth/login', {
         body: credentials,
     });
 

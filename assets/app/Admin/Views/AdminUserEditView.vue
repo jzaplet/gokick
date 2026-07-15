@@ -29,7 +29,7 @@ const handleSubmit = async (data: UserFormData): Promise<void> => {
     isLoading.value = true;
     errors.value = {};
 
-    const result = await authFetch<null, UserFormErrors>(
+    const result = await authFetch<null, UserFormErrors, UserFormData>(
         'PUT',
         `/api/v1/admin/users/${userId}`,
         { body: data },

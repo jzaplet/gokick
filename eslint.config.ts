@@ -180,6 +180,28 @@ export default tseslint.config(
     },
   },
 
+  // --- Wire-boundary discipline (typová parita ③; the FE half of `gk boundary`) ---
+  // TBody = never already makes an UNDECLARED body a compile error; these rules
+  // close the inference loophole (zero type args => TS infers TData=unknown and
+  // TBody from the literal) and keep payloads flowing from typed variables, not
+  // ad-hoc literals. Scoped to assets/ — transport tests in tests/ exercise the
+  // mechanics with ad-hoc bodies on purpose.
+  {
+    files: ['assets/**/*.{ts,vue}'],
+    rules: {
+      'no-restricted-syntax': ['error',
+        {
+          selector: 'CallExpression[callee.name=/^(authFetch|apiFetch|apiUpload)$/]:not([typeArguments])',
+          message: 'Declare explicit generics — authFetch<Res, Err[, Req]> / apiUpload<Res, Err> — with the tsgen-generated types; inference lets an untyped payload through.',
+        },
+        {
+          selector: 'CallExpression[callee.name=/^(authFetch|apiFetch)$/] > ObjectExpression.arguments > Property[key.name=\'body\'] > :matches(ObjectExpression, ArrayExpression).value',
+          message: 'No inline body literals — pass a variable typed with the tsgen-generated request type (e.g. UserFormData), so the payload shape is pinned to the Go DTO.',
+        },
+      ],
+    },
+  },
+
   // --- Ignored paths ---
   {
     ignores: ['public/**', 'node_modules/**', '*.config.*'],

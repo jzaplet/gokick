@@ -16,12 +16,12 @@ import { refresh } from '@/app-ui/Auth/refresh';
 //   - /login 401 means wrong credentials (refresh can't help)
 //   - /refresh retrying would infinite-loop
 //   - /logout is a one-shot cleanup
-export const authFetch = async <TData, TError = { message: string }>(
+export const authFetch = async <TData, TError = { message: string }, TBody = never>(
     method: string,
     url: string,
-    options: FetchOptions = {},
+    options: FetchOptions<TBody> = {},
 ): Promise<ApiResponse<TData, TError>> => {
-    const first = await apiFetch<TData, TError>(method, url, options);
+    const first = await apiFetch<TData, TError, TBody>(method, url, options);
 
     if (first.status !== 401) {
         return first;
@@ -37,5 +37,5 @@ export const authFetch = async <TData, TError = { message: string }>(
         return first;
     }
 
-    return apiFetch<TData, TError>(method, url, options);
+    return apiFetch<TData, TError, TBody>(method, url, options);
 };

@@ -270,8 +270,9 @@ wire.Bind(new(shared.Seeder), new(*sqliteseeder.Seeder))
   };
   ```
 - Requests:
-  - **Protected endpoints** → `authFetch<Data, Errors>('POST', '/api/v1/...', { body })` from `@/app-ui/Auth`.
-  - **Public endpoints** → `apiFetch<Data, Errors>` from `@/app-ui/Fetch`.
+  - **Protected endpoints** → `authFetch<Data, Errors, Body>('POST', '/api/v1/...', { body })` from `@/app-ui/Auth`.
+  - **Public endpoints** → `apiFetch<Data, Errors, Body>` from `@/app-ui/Fetch`.
+  - **Body requires its generic.** `FetchOptions<TBody = never>` — passing `body` without declaring the third generic does not compile. Declare it with the tsgen-generated request type (`UserFormData`, `LoginRequest`, …); ESLint additionally requires explicit generics on every `authFetch`/`apiFetch` call and forbids inline `body` literals (pass a typed variable). GET/DELETE calls without a body stay two-generic.
 - **Backend error response shape** (via `Responder.Error()` + `FieldError` interface):
   - `ValidationError{Field: "nickname"}` → `{ "nickname": "..." }` — routed to specific field.
   - Any other error → `{ "general": "..." }`.
