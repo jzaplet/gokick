@@ -70,18 +70,18 @@ Asymetrie hintu JE ten self-heal: `clearAuth` (`Auth/state.ts`) schválně **nem
 ## Recipe
 
 ### Recipe: zavolat chráněný endpoint z komponenty
-1. Importuj: `import { authFetch } from '@/app-ui/Auth';`
-2. Zavolej s typy dat i chyby: `const r = await authFetch<UserList, ValidationError>('GET', '/api/v1/users');`
+1. Importuj: `import { authFetch } from '@/app-ui/Auth';` + generovaný guard: `import { isAdminUser } from '@/app/Admin/types/AdminUser';` a `arrayOf` z `@/app-ui/Fetch/guards`.
+2. Zavolej s typy i guardem: `const r = await authFetch<AdminUser[], UserFormErrors>('GET', '/api/v1/admin/users', { validate: arrayOf(isAdminUser) });` — bez `validate` se volání s `TData ≠ null` nezkompiluje.
 3. Větvi přes `if (r.success === true)` / `=== false` (nikdy `if (!r…)` — viz CLAUDE.md FE pravidla).
 4. Chybu napoj na formulářové pole: backend keyuje chyby podle pole → `errors.value = r.data;` (detail v `/gk-errors`).
 
 ### Recipe: public endpoint (bez nutnosti session)
 1. `import { apiFetch } from '@/app-ui/Fetch';`
-2. `const r = await apiFetch<{ status: string }>('GET', '/health');` — token se přiloží jen pokud existuje, ale na 401 se NEretrí. (Typ si napiš inline/vlastní — `/health` je infra-only a schválně stojí mimo tsgen, žádný generovaný `HealthResponse` neexistuje.)
+2. `const r = await apiFetch<{ status: string }, ApiGeneralError>('GET', '/health', { validate: isHealth });` — token se přiloží jen pokud existuje, ale na 401 se NEretrí. (`/health` je infra-only a schválně stojí mimo tsgen — typ i mini-guard `isHealth` si napiš vlastní přes primitiva z `@/app-ui/Fetch/guards`.)
 
 ### Recipe: upload s progressem
 1. `import { apiUpload } from '@/app-ui/Fetch';`
-2. `await apiUpload<Result>('/api/v1/files', formData, (s) => { s.percent; s.loaded; s.total; });`
+2. `await apiUpload<Result>('/api/v1/files', formData, { validate: isResult, onProgress: (s) => { s.percent; s.loaded; s.total; } });` — `validate` je u uploadu povinné vždy (response je v paritní smyčce).
 
 ## Invariants & pitfalls
 
