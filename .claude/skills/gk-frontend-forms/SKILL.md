@@ -74,7 +74,7 @@ Přidáváš/upravuješ formulář (vzor self-contained):
    };
    ```
    Na inputu: `@update:model-value="() => clearFieldError('new_password')"`.
-5. **Render** — `<Input :error="errors.old_password" … />` + `<ErrorAlert :message="errors.general" />`.
+5. **Render** — `<Input :error="errors.new_password" … />` + `<ErrorAlert :message="errors.general" />` (klíč musí existovat v `TErrors` — `old_password` tam není, špatné staré heslo chodí jako AuthError do `general`).
 
 **Varianta split (formulář na víc obrazovkách):** state a `authFetch` přesuň do View, formulářová komponenta dostane `errors`/`isLoading` přes props a místo `authFetch` vysílá `emit('submit', { ...form })`, `emit('cancel')`, `emit('clearError', field)`. View pak řeší, kam po úspěchu přesměrovat. Viz `UserForm.vue` + `AdminUserCreateView.vue`.
 
@@ -82,7 +82,7 @@ Přidáváš/upravuješ formulář (vzor self-contained):
 - **Nulová FE validace.** Single source of truth je doména. Frontend nikdy nekontroluje délku/formát/povinnost — jen `type` (nativní browser kontrola). Duplikát pravidel se rozejde a útočník ho obejde.
 - **`result.success === false`, ne `!result.success`.** Projekt vynucuje explicitní boolean check (CLAUDE.md). Stejně `=== true` u `if`.
 - **`authFetch` na chráněné, `apiFetch` na veřejné.** `authFetch` (z `@/app-ui/Auth`) navíc na 401 jednou auto-refreshne token — formulář se o auth stav nestará. Veřejné endpointy bez retry → `apiFetch` z `@/app-ui/Fetch`.
-- **Klíče `TErrors` musí sedět na názvy polí backendu — a hlídá to gate.** `make errfields-check` (v `make lint`, `gk errfields`) porovnává Go `ValidationError{Field: …}` literály s klíči všech `*Errors` typů obousměrně: field bez FE domova i fantomový FE klíč = fail; `general` je konvenční catch-all, ne-formulářové fieldy nesou `//gkerrf:exempt <důvod>` (sám na řádku nad literálem; trailing, bezdůvodný i nevyužitý marker = fail). `*Errors` typ deklarovaný mimo `*Errors.ts` soubor gate taky flagne — paritní scan čte jen `*Errors.ts`, takže typ patří do `<Domain>/types/XxxErrors.ts`. Pole, jehož jméno nemá v `TErrors` protějšek — a `ValidationError` s prázdným `Field` — spadne do `general` (fallback `body["general"]` v `app/presentation/http/response/response.go`). Když chyba „mizí" do alertu místo k poli, zkontroluj, že se klíče shodují.
+- **Klíče `TErrors` musí sedět na názvy polí backendu — a hlídá to gate.** `make errfields-check` (v `make lint`, `gk errfields`) porovnává Go `ValidationError{Field: …}` literály s klíči všech `*Errors` typů obousměrně: field bez FE domova i fantomový FE klíč = fail; `general` je konvenční catch-all, ne-formulářové fieldy nesou `//gkerrf:exempt <důvod>` (sám na řádku nad literálem; trailing, bezdůvodný i nevyužitý marker = fail). `*Errors` typ deklarovaný mimo `*Errors.ts` soubor gate taky flagne — paritní scan čte jen `*Errors.ts`, takže typ patří do `<Domain>/types/XxxErrors.ts`. Do `general` spadne jen `ValidationError` s prázdným `Field` a ne-field chyby (fallback `body["general"]` v `app/presentation/http/response/response.go`); field-klíč bez protějšku v `TErrors` by se nevykreslil **nikde** — přesně tuhle díru staticky chytá `gk errfields`. Když chyba „mizí" do alertu místo k poli, zkontroluj, že se klíče shodují.
 - **Jedna chyba, jeden klíč.** Backend vrací první chybu, na kterou narazí — víc klíčů najednou nechodí. Nepiš frontend tak, že čeká kolekci chyb.
 
 ## Related

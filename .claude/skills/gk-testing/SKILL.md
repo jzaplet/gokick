@@ -88,7 +88,7 @@ svůj produkční balíček (vypadá to jako cyklus), jsou v `.go-arch-lint.yml`
 
 ### Quality gate
 `make test` = `yarn test` (vitest) + `go test ./app/... ./cmd/...`.
-`make lint` = ESLint + `vue-tsc` (type-check) + `knip` (dead code) + `golangci-lint` + `make arch-check` (go-arch-lint) + `format-check` (golines) + `ts-check` (Go→TS parita typů) + `documan-lint`.
+`make lint` = ESLint + `vue-tsc` (type-check) + `knip` (dead code) + `golangci-lint` + `make arch-check` (go-arch-lint) + `format-check` (golines) + `ts-check` (Go→TS parita typů) + `boundary-check` (wire DTO hranice) + `errfields-check` (parita chybových polí) + `documan-lint`.
 CI (`.github/workflows/validate.yml`): job `validate` = `make install` → `make lint` → `make test` → `make build`, se `SKIP_DOCUMAN=1` (dokumentaci v CI validuje samostatný `.github/workflows/documan.yml` přes `docker/documan/Dockerfile`); paralelní job `e2e` spouští `make e2e` (durable-run process-lifecycle testy, viz `tests/e2e/README.md`).
 
 ## Recipe
@@ -103,7 +103,7 @@ CI (`.github/workflows/validate.yml`): job `validate` = `make install` → `make
 
 ### Než commitnu
 1. `make format` — srovná styl (ESLint Stylistic + golines).
-2. `make lint` — ESLint + tsc + knip + golangci-lint + arch-check + format-check + ts-check (+ documan lokálně).
+2. `make lint` — ESLint + tsc + knip + golangci-lint + arch-check + format-check + ts-check + boundary-check + errfields-check (+ documan lokálně).
 3. `make test` — vitest + `go test`.
 4. `go test -race ./app/... ./cmd/...` — **manuální** krok na souběh; **není**
    v `make test` ani v CI, ale spouští se lokálně před většími změnami.
