@@ -68,7 +68,7 @@ Recovery(→Sentry) → Logging → Audit → RunDispatcher → DispatchEvents �
 
 ## 🔗 BE↔FE typová parita — vynucení „nemáš kam uhnout" (post-audit follow-up)
 
-Dnes generuje `tools/tsgen` TypeScript typy z anotovaných Go DTO (direktiva `//gkts:<cesta> <TSName>` → přesná cílová `.ts` cesta per typ; cesta je první schválně — malé písmeno za dvojtečkou z ní dělá pravou gofmt/golines direktivu, takže ji formatter nechá být) a `make ts-check` v `make lint` hlídá, že vygenerované soubory nedriftnou. To řeší drift **anotovaných** typů, ale je to **opt-in** — a tím zůstává díra:
+Dnes generuje `gk tsgen` (modul `tools/gk`) TypeScript typy z anotovaných Go DTO (direktiva `//gkts:<cesta> <TSName>` → přesná cílová `.ts` cesta per typ; cesta je první schválně — malé písmeno za dvojtečkou z ní dělá pravou gofmt/golines direktivu, takže ji formatter nechá být) a `make ts-check` v `make lint` hlídá, že vygenerované soubory nedriftnou. To řeší drift **anotovaných** typů, ale je to **opt-in** — a tím zůstává díra:
 
 - Zapomenu dát `//gkts:` na nový response/request DTO → generátor mlčí.
 - Handler odpoví inline `map[string]any` místo pojmenovaného structu → nikdo to nechytí.
@@ -76,7 +76,7 @@ Dnes generuje `tools/tsgen` TypeScript typy z anotovaných Go DTO (direktiva `//
 
 Generátor umí říct „tenhle typ driftnul", ne „tady jsi typ zapomněl". **Cílový stav = uzavřená smyčka**, kde `//gkts:` na Go DTO je jediný zdroj pravdy a hranice drátu se vynutí staticky:
 
-- [x] **① Codegen (`tools/tsgen`)** — Go DTO → TS, drift = fail v `make lint`. *(hotovo — 12 wire DTO generováno a gate-ováno; `healthResponse` je z tsgen vědomě vyňatý — infra-only endpoint, FE typ by byl dead code)*
+- [x] **① Codegen (`gk tsgen`)** — Go DTO → TS, drift = fail v `make lint`. *(hotovo — 12 wire DTO generováno a gate-ováno; `healthResponse` je z tsgen vědomě vyňatý — infra-only endpoint, FE typ by byl dead code)*
 - [ ] **② BE boundary analyzer** — `go/analysis` linter: každý `resp.JSON(ctx, w, _, X)` (metoda na injektovaném `*response.Responder`) a `request.DecodeJSON(w, r, &X)` musí mít `X` = pojmenovaný struct s `//gkts:`. Inline mapa / `any` / neanotovaný typ = fail. Escape `//gkts:ignore` (stejná disciplína jako raw-pool výjimky) pro debug endpointy. Výsledek: **Go response nejde odeslat mimo generovaný DTO.**
 - [ ] **③ FE typovaný fetch + lint** — `authFetch<Res, Req, Err>` s **povinným** `Req` typem; ESLint pravidlo zakáže fetch bez explicitních generovaných typů i inline `body` literál. Výsledek: **fetch nejde poslat mimo generovaný typ.**
 - [ ] **④ Parita chybových polí (F-077)** — do smyčky patří i jména validačních polí: `ValidationError.Field` ↔ TS `Errors` klíč ↔ JSON klíč. Dnes jen konvence (a `change_password` ručně remapuje `password`→`new_password`, aby seděl na FE formulář). Řeší se stejným codegen mostem; do jeho příchodu je levná pojistka curated golden test „{Field hodnoty dosažitelné z endpointu} ⊆ {klíče v jeho TS Errors typu}".
@@ -87,12 +87,12 @@ Generátor umí říct „tenhle typ driftnul", ne „tady jsi typ zapomněl". *
 
 ### Sjednocení dev-tooling adresářů
 
-Vedlejší cíl: dnešní roztříštěnost (`cmd/` vs `tools/tsgen` vs `audit/tool`) je matoucí — kam sáhnout, co použít.
+Vedlejší cíl: roztříštěnost dev nástrojů (`cmd/` vs samostatný modul per nástroj vs `audit/tool`) je matoucí — kam sáhnout, co použít.
 
 - `cmd/` = samotná aplikace (zůstává — to je produkt).
 - `audit/tool` = **dočasný** tracker; teardown po dopracování backlogu → zmizí.
-- `tools/tsgen` → přejmenovat/rozšířit na **jeden `tools/gk` modul** se sub-příkazy (`ts-gen`, `ts-check`, `boundary-check`). Vlastní `go.mod` je nutnost — codegen píše na stdout i do souborů, což lint invarianty hlavního modulu (jediná logovací cesta) zakazují.
-- **Ustálený stav = dva moduly:** `cmd/` (app) + `tools/gk` (dev codegen/checks).
+- [x] `tools/tsgen` → **jeden `tools/gk` modul** se sub-příkazy (`gk tsgen generate|check`; budoucí `gk boundary` = analyzer ② výše přibude jako další subpackage + case v dispatcheru, ne další `go.mod`). Vlastní `go.mod` je nutnost — codegen píše na stdout i do souborů, což lint invarianty hlavního modulu (jediná logovací cesta) zakazují.
+- **Ustálený stav = dva moduly:** `cmd/` (app) + `tools/gk` (dev codegen/checks). *(platí už teď)*
 - **Make surface se nemění** — codegen se skládá do `make lint` (drift = fail); regen dává ruční `make ts-gen` (mirror `make di`), takže se vynutí sám; 5 hlavních příkazů v README zůstává jedinou plochou. *„Code-gen, na který si nikdy nevzpomeneš, protože se vynutí sám."*
 
 ### FE lint gaty (ratchet) — cognitive complexity čeká na TS7

@@ -107,10 +107,10 @@ di:
 # wire. Run after changing a DTO. `ts-check` (wired into `make lint`) fails CI if
 # the committed TS has drifted from the Go source.
 ts-gen:
-	cd tools/tsgen && go run . generate
+	cd tools/gk && go run . tsgen generate
 
 ts-check:
-	cd tools/tsgen && go run . check
+	cd tools/gk && go run . tsgen check
 
 # Migrations
 migrate-create:

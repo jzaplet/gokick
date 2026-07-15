@@ -1,6 +1,7 @@
-// Command tsgen generates TypeScript type definitions from annotated Go structs,
-// so the frontend request/response types can never silently drift from the Go
-// DTOs that actually cross the HTTP wire (audit finding F-082).
+// Package tsgen (the `gk tsgen` subcommand) generates TypeScript type
+// definitions from annotated Go structs, so the frontend request/response
+// types can never silently drift from the Go DTOs that actually cross the
+// HTTP wire (audit finding F-082).
 //
 // A Go struct opts in with a directive comment naming its exact output path and
 // the TS type to emit (the author places each type precisely where the frontend
@@ -15,9 +16,9 @@
 // so golines would rewrite it to "// gkts:<Name>" and silently break parsing.
 //
 // tsgen maps the struct's json-tagged fields to TS and writes (or, in `check`
-// mode, verifies) the target file. It is a separate module (own go.mod) so the
-// project linters — which forbid stdout and direct file writes — do not apply to
-// a tool whose whole job is exactly that.
+// mode, verifies) the target file. It lives in the gokick-gk dev-tooling
+// module (own go.mod) so the project linters — which forbid stdout and direct
+// file writes — do not apply to a tool whose whole job is exactly that.
 //
 // Type mapping is deliberately SMALL and fail-loud: it maps only the Go types the
 // DTOs actually use and ERRORS on anything else, rather than emitting `any` and
@@ -26,9 +27,9 @@
 //
 // Usage:
 //
-//	tsgen generate   # write the TS files (make ts-gen)
-//	tsgen check      # verify on-disk files match; exit 1 on drift (CI gate)
-package main
+//	gk tsgen generate   # write the TS files (make ts-gen)
+//	gk tsgen check      # verify on-disk files match; exit 1 on drift (CI gate)
+package tsgen
 
 import (
 	"fmt"
@@ -66,10 +67,11 @@ type dto struct {
 	fields []dtoField
 }
 
-func main() {
+// Run is the `gk tsgen` entrypoint; args are the words after "tsgen".
+func Run(args []string) {
 	mode := "generate"
-	if len(os.Args) > 1 {
-		mode = os.Args[1]
+	if len(args) > 0 {
+		mode = args[0]
 	}
 	root := repoRoot()
 
@@ -507,7 +509,7 @@ func mustRel(base, path string) string {
 }
 
 // repoRoot resolves the gokick module root by walking up from the working
-// directory (tsgen runs from tools/tsgen).
+// directory (gk runs from tools/gk).
 func repoRoot() string {
 	dir, err := os.Getwd()
 	if err != nil {
