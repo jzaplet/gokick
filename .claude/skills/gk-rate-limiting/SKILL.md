@@ -33,7 +33,7 @@ Tři vrstvy obrany auth endpointů: per-IP token bucket (počet requestů za ča
 
 - `RateRule{Tokens, Per}` = „N requestů za dobu". Parsuje se z configu přes `ParseRateRule` (formáty `N/sec`, `N/min`, `N/hour`, `N/Xs|Xm|Xh`). **Prázdný string → nulové `RateRule` = vypnuto** (middleware je pass-through).
 - `RateLimiter` drží `map[string]*bucket` (klíč = IP). `allow()` je pod jedním mutexem: doplní žetony podle uplynulého času, ořízne na strop, a když je `< 1`, vrátí `false`.
-- Při vyčerpání middleware nastaví `Retry-After` (= `int(Per.Seconds())`) a vrátí `429` přímo přes `response.Error` — **neprochází** doménovým error→HTTP mapováním (viz `/gk-errors`).
+- Při vyčerpání middleware nastaví `Retry-After` (= `int(Per.Seconds())`) a vrátí `429` přímo přes `Responder.Error` (limiter si drží injektovaný `*response.Responder`) — **neprochází** doménovým error→HTTP mapováním (viz `/gk-errors`).
 - **Janitor:** `Run(ctx, interval, dropAfter)` v goroutině maže buckety idle déle než `dropAfter`, aby mapa nerostla pod stuffing útokem. Server je pouští s `janitorSweepInterval = 1 min`, `janitorDropAfter = 5 min` (`server.go`).
 
 Buckety jsou **per-IP a per-endpoint** — login a refresh mají oddělené limitery (`server.RateLimiters{Login, Refresh}`). Aplikují se jen na ty dvě cesty (`server.go`):
@@ -45,7 +45,7 @@ mux.Handle("POST /api/v1/auth/refresh", refreshLimit(http.HandlerFunc(s.auth.Ref
 
 Defaulty (`config.go`): `APP_RATE_LIMIT_LOGIN = 10/min`, `APP_RATE_LIMIT_REFRESH = 60/min`.
 
-### Extrakce klientské IP (`app/presentation/http/middleware/ip.go`)
+### Extrakce klientské IP (`NewIPExtractor` v `app/presentation/http/middleware/ratelimit.go`, `IPMiddleware` v `ip.go`)
 
 `NewIPExtractor(trustProxy)` je **jediný zdroj pravdy** pro klientskou IP — sdílí ho rate limiter i audit, takže se jejich IP nikdy nerozejdou.
 

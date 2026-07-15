@@ -110,16 +110,22 @@ func (c *CreateUserCommand) run(ctx context.Context, a createUserArgs) error {
 	// AuditMiddleware persists the user.created record; RecoveryMiddleware reports
 	// a panic to Sentry. The chain has no Authorize/Tenant — the operator is
 	// trusted and the tenant is injected explicitly inside the unit of work.
-	err := bus.ExecVoid(ctx, c.sysBus.Bus, "CreateUser", cmd, func(ctx context.Context) error {
-		tenantID, err := c.resolveTenant(ctx, a.tenantID, a.tenantName)
-		if err != nil {
-			return err
-		}
-		if tenantID != "" {
-			ctx = shared.ContextWithTenantID(ctx, tenantID)
-		}
-		return c.createUser.Handle(ctx, cmd)
-	})
+	err := bus.SystemDispatchVoid(
+		ctx,
+		c.sysBus,
+		"CreateUser",
+		cmd,
+		func(ctx context.Context) error {
+			tenantID, err := c.resolveTenant(ctx, a.tenantID, a.tenantName)
+			if err != nil {
+				return err
+			}
+			if tenantID != "" {
+				ctx = shared.ContextWithTenantID(ctx, tenantID)
+			}
+			return c.createUser.Handle(ctx, cmd)
+		},
+	)
 	if err != nil {
 		return err
 	}
@@ -173,6 +179,14 @@ func (c *CreateUserCommand) resolveTenant(
 	return "", nil
 }
 
+// validateUserInput is a DELIBERATE lightweight mirror of CreateUserHandler's
+// value-object validation, run as a CLI pre-flight so bad input fails before the
+// bus creates a --tenant-name tenant. It is an OPTIMISATION, not the safety net:
+// the handler re-validates authoritatively, and the bus transaction — not this —
+// is what guarantees no orphan tenant on failure (run's dispatch comment). So it
+// need not track the handler's field ORDER (the CLI prints one error, no FE field
+// routing); if a new rule is added to the handler and missed here, the only cost
+// is a tenant create+rollback, never a correctness gap.
 func validateUserInput(nickname, password, email, role string) error {
 	if _, err := user.NewNickname(nickname); err != nil {
 		return err

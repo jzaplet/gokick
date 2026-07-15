@@ -57,7 +57,7 @@ func (e UserCreated) OccurredAt() time.Time { return e.Timestamp }
 commandu. Je thread-safe (mutex) a má příznak `forbidden`. Instance je
 **per-request** — žádný singleton, takže se paralelní requesty nepřelévají.
 
-**Tok přes `CommandBus`** (chain v `container_provider.go`, `provideCommandBus`):
+**Tok přes `CommandBus`** (chain single-sourced v `busmw.CommandChain`, `app/application/bus/middleware/base.go`; DI ho volá z `provideCommandBus`):
 
 ```
 … → DispatchEventsMiddleware → TransactionMiddleware → handler
@@ -70,7 +70,7 @@ commandu. Je thread-safe (mutex) a má příznak `forbidden`. Instance je
    (`shared.ContextWithEventCollector`).
 2. `TransactionMiddleware` otevře transakci.
 3. Handler volá `shared.EventCollectorFromContext(ctx).Collect(event)` — typicky
-   hned po úspěšném `Save` (viz `create_user.go:77`).
+   hned po úspěšném `Save` (viz `userwrite.go:169` — sdílené create tělo `userwrite.Create`, na které `create_user.go` deleguje, aby CreateUser i CreateSuperAdmin emitovaly stejně).
 4. Transakce se potvrdí (commit), nebo se při chybě vrátí zpět (rollback).
 5. Když `next` vrátí chybu, middleware ji jen propaguje a **flush přeskočí**
    (eventy zmizí). Když je commit OK, `collector.Flush()` vrátí eventy a každý se
@@ -93,7 +93,7 @@ handler ještě není nasazený**, jen se eventy sbírají a logují.
 Cíl: po `CreateUser` spustit nový vedlejší efekt na event `user.created`.
 
 1. **Event** už existuje (`app/domain/user/user_created.go`) a emituje se
-   (`create_user.go`). Pro nový event přidej struct jen z primitivů + `EventName()`
+   (`userwrite.go` — sdílené create tělo, na které deleguje `create_user.go`). Pro nový event přidej struct jen z primitivů + `EventName()`
    + `OccurredAt()` do `domain/<kontext>/` a `Collect` ho v handleru **až po
    úspěšném zápisu**.
 2. **Handler** napiš do `app/application/<kontext>/event/`. Signatura:
@@ -123,8 +123,7 @@ Cíl: po `CreateUser` spustit nový vedlejší efekt na event `user.created`.
 - **Žádná kaskáda.** `Collect` z event handleru **panicne** (forbidden collector
   nastavený v `EventBus.Dispatch`). Pro follow-up async práci sáhni po
   `shared.RunDispatcherFromContext(ctx).Enqueue(...)`.
-- **Handler nemůže odvolat command.** Když selže, command už commitnul; chyba se
-  jen zaloguje (`RecoveryMiddleware` na EventBusu), uživatel dostal 2xx.
+- **Handler nemůže odvolat command.** Když selže, command už commitnul; vrácená chyba se jen zaloguje a zahodí (`LoggingMiddleware` na EventBusu; panika projde `RecoveryMiddleware` — zaloguje se a reportuje do Sentry), uživatel dostal 2xx.
 - **Mimo bus** (přímé volání handleru v testech) vrátí `EventCollectorFromContext`
   *jednorázový* sběrač — `Collect` projde, ale nikam to nejde. CLI commandy teď
   jedou přes `SystemCommandBus` (má DispatchEvents), takže event z `create-user` se
@@ -142,5 +141,5 @@ Cíl: po `CreateUser` spustit nový vedlejší efekt na event `user.created`.
   `app/application/bus/middleware/events.go` (dispatch po commitu),
   `app/application/bus/event.go` (`EventBus`, `Register`, `Dispatch`),
   `app/domain/user/user_created.go` (vzorový event),
-  `app/application/user/command/create_user.go` (emit site),
+  `app/application/userwrite/userwrite.go` (emit site — sdílené create tělo; volá ho `create_user.go` i CLI create-superadmin),
   `app/infrastructure/di/container_provider.go` (`provideEventHandlers` / `provideEventBus`)

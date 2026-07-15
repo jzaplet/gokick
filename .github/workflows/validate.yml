@@ -79,7 +79,7 @@ jobs:
     # so it runs as its own parallel job. Plain bash + jq + sqlite3, no Docker; the
     # scripts build bin/app themselves (go:embed * is satisfied by the committed
     # public/ files, no frontend build needed — E2E only talks to /health and
-    # /debug/runs). See test/e2e/README.md.
+    # /debug/runs). See tests/e2e/README.md.
     name: durable-run E2E
     runs-on: ubuntu-latest
     steps:

@@ -16,8 +16,8 @@ Vue 3 SPA v `assets/`, doménově organizované, s vrstvou sdílených UI utilit
 
 ## What & when
 
-- Sáhni sem, když **píšeš nebo měníš cokoli ve `assets/`** — komponentu, view, formulář, route — a potřebuješ vědět, **kam soubor patří** a **odkud importovat** hotové utility (`apiFetch`, `authFetch`, `useAuth`, `useToast`, `Modal`…).
-- Sáhni sem, když **lint nebo `vue-tsc` padá** na věci, co jinde v JS projektech projdou (přístup přes tečku k dynamickému klíči, `if (!x)`, `as` cast, relativní import) — pravidla jsou tu schválně tvrdší.
+- Sáhni sem, když **píšeš nebo měníš cokoli ve `assets/`** — komponentu, view, formulář, route — a potřebuješ vědět, **kam soubor patří** a **odkud importovat** hotové utility (`apiFetch`, `authFetch`, `useAuth`, `useToast`, `ConfirmModal`…).
+- Sáhni sem, když **lint nebo `vue-tsc` padá** na věci, co jinde v JS projektech projdou (přístup přes tečku k dynamickému klíči, implicitní ne-boolean podmínka, `interface` místo `type`, `==` místo `===`) — pravidla jsou tu schválně tvrdší.
 - **NEtýká se** detailů formulářů a chybových odpovědí (to je vlastní téma — viz `Related`), permission stringů a `Permission` enumu (`/gk-permissions`), ani backendu.
 
 ## For non-tech / juniors
@@ -32,17 +32,17 @@ Kód je rozdělený na dvě poloviny:
 
 ## How it works
 
-**Doménová organizace** (`assets/app/<Domain>/`, reálné domény: `Admin`, `Auth`, `Dashboard`, `Home`, `Layout`, `Profile`):
+**Doménová organizace** (`assets/app/<Domain>/`, reálné domény: `Admin`, `Auth`, `Dashboard`, `Home`, `Layout`, `Platform`, `Profile`):
 - **`Views/`** — routované obrazovky, jsou to **orchestrátory**: poskládají layout, namountují pár komponent, předají props. Business logika sem nepatří. Příklad: `app/Admin/Views/AdminUsersView.vue`.
 - **`Components/`** — doménové, samostatné kusy: formuláře (`UserForm.vue`), tabulky (`UsersTable.vue`), karty.
-- **`types/`** — typové definice, jeden typ na soubor (`AdminUser.ts`, `UserFormData.ts`).
+- **`types/`** — typové definice, jeden typ na soubor. Wire DTO typy (`AdminUser.ts`, `UserFormData.ts`) generuje z Go structů `make ts-gen` (tsgen, hlavička `DO NOT EDIT` — needituj ručně, uprav Go struct); ručně píšeš jen FE-lokální typy (`UserFormErrors.ts`).
 
 **Sdílené `app-ui/`** — generic, znovupoužitelné napříč doménami. Klíčové vstupní body (importuj z barrelu, ne z konkrétního souboru):
 - **`@/app-ui/Fetch`** — `apiFetch` (public endpoint bez JWT), `apiUpload`, `apiDownload`. Návrat je `ApiResponse<TData, TError>` = sjednocení `{ success: true, status, data }` / `{ success: false, status, data }` (`app-ui/Fetch/types/`).
-- **`@/app-ui/Auth`** — `authFetch` (protected endpoint, na 401 sám zavolá `refresh()` a request zopakuje), `useAuth` (reaktivní session: `user`, `isAuthenticated`, `login/logout/refresh`, permission helpery), a re-exportované `hasPermission`, `hasRole`, `isAdmin`, `hasAllPermissions`, `hasAnyPermission` pro použití mimo `<script setup>`.
+- **`@/app-ui/Auth`** — `authFetch` (protected endpoint, na 401 sám zavolá `refresh()` a request zopakuje), `useAuth` (reaktivní session: `user`, `isAuthenticated`, `login/logout/refresh`, permission helpery), a re-exportované `hasPermission`, `hasRole`, `isAdmin`, `isSuperAdmin`, `hasAllPermissions`, `hasAnyPermission` pro použití mimo `<script setup>`.
 - **`@/app-ui/Toast/useToast`** — `success/error/info/warning/clear` notifikace.
 - **`@/app-ui/ClickOutside/useClickOutside`** — composable: zavolá callback při kliku mimo element.
-- **UI komponenty**: `Inputs/` (`Input`, `Select`, `CheckBox`, `DateTimeInput`), `Buttons/Button`, `Modals/` (`Modal`, `ConfirmModal`), `Dropdown/`, `Alerts/ErrorAlert`, `Loading/Spinner`, `Icons/` (SVG).
+- **UI komponenty**: `Inputs/` (`Input`, `Select`), `Buttons/Button`, `Modals/ConfirmModal`, `Dropdown/`, `Alerts/ErrorAlert`, `Loading/Spinner`, `Icons/` (SVG).
 
 > **Composable** = sdílená funkce začínající `use…`, která zabaluje kus reaktivní logiky (stav + lifecycle) k znovupoužití mezi komponentami. V tomhle projektu nahrazuje to, k čemu by jinde sloužila třída.
 
@@ -68,7 +68,7 @@ Kód je rozdělený na dvě poloviny:
 - **Views jsou orchestrátory.** Business logika nepatří do `Views/` — patří do `<Domain>/Components/`.
 - **Vždy `@/` alias, nikdy relativní cesty** (`../../`). Vynuceno konvencí v `CLAUDE.md`.
 - **Žádná frontend validace.** Backend je autoritativní; chyby přicházejí v odpovědi a mapují se na pole formuláře.
-- **Maximální přísnost — tohle ti lint/tsc zařízne:** `as` cast (použij generika), `interface` pro běžné typy (jen `type`; `interface` výjimečně u module augmentation, viz `router/meta.ts`), `function` keyword a `class` (jen arrow funkce / composables), `obj.key` u index signatury (musí `obj['key']`), implicitní boolean (`if (!x)` → `if (x === false)` / `if (x === null)`), `==`/`!=` (jen `===`/`!==`), `.forEach()` (použij `for...of`), `console.*`/`debugger`/`alert`.
+- **Maximální přísnost — tohle ti lint/tsc zařízne:** `interface` pro běžné typy (jen `type`; `interface` výjimečně u module augmentation, viz `router/meta.ts`), `obj.key` u index signatury (musí `obj['key']`), implicitní ne-boolean podmínka (`strict-boolean-expressions`), `==`/`!=` (jen `===`/`!==`), `console.*`/`debugger`/`alert`, soubor přes 300 řádků / vnoření hlubší než 4 (`max-lines`/`max-depth`). **Konvence z `CLAUDE.md` (lint je zatím nehlídá, no-as je plánovaný ratchet):** `as` cast (použij generika; jediná tolerovaná zóna jsou JSON-boundary soubory `parseResponse.ts`, `apiFetch.ts`, `apiUpload.ts`, `useToast.ts` — odstraní je až runtime-validační follow-up), `function` keyword a `class` (jen arrow funkce / composables), `.forEach()` (použij `for...of`), `if (!x)` → `if (x === false)` / `if (x === null)`.
 - **Každá route deklaruje `meta.requiresAuth`** — bez něj neprojde typ `AppRoute`. Zrcadlí backendové `Permissioned` / `SkipPermission`.
 - **Žádné hard-coded permission stringy ve `assets/`** — vždy `Permission` enum z `@/app/Auth/enums/resources` (jeden zdroj pravdy, zrcadlí backend). Detail → `/gk-permissions`.
 - **Tailwind v template:** dlouhé seznamy tříd (5+ utilit) přes `:class="[...]"` array, krátké (1–4) jako plain `class="..."`. SVG `d` atribut lámej po ~120 znacích.

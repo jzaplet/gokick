@@ -37,13 +37,15 @@ import (
 	"gokick/app/presentation/console"
 	"gokick/app/presentation/http/handler"
 	httpmw "gokick/app/presentation/http/middleware"
+	"gokick/app/presentation/http/response"
 	"gokick/app/presentation/http/server"
 	"gokick/public"
 	"io/fs"
 	"log/slog"
 
-	"github.com/google/wire"
 	"time"
+
+	"github.com/google/wire"
 )
 
 func providePasswordHasher() shared.PasswordHasher {
@@ -89,17 +91,21 @@ func provideCommandBus(
 
 // provideSystemCommandBus wires the OPERATOR-TRUSTED write bus for the CLI
 // create-* commands. It is the CommandBus chain MINUS Authorize and Tenant (no
-// principal, no JWT-resolved tenant) and minus RunDispatcher (these commands
-// enqueue nothing). Audit still wraps OUTSIDE Transaction and DispatchEvents
-// still wraps it, so the ordering invariants hold. See bus.SystemCommandBus.
+// principal, no JWT-resolved tenant). Audit still wraps OUTSIDE Transaction and
+// DispatchEvents still wraps it, and RunDispatcher sits between them so an event
+// handler on this bus can durably enqueue a follow-up run (F-008). See
+// bus.SystemCommandBus.
 func provideSystemCommandBus(
 	logger *slog.Logger,
 	db *database.SqliteManager,
 	eventBus *bus.EventBus,
 	audit shared.AuditLogger,
+	runDispatcher shared.RunDispatcher,
 	reporter shared.ErrorReporter,
 ) *bus.SystemCommandBus {
-	return bus.NewSystemCommandBus(busmw.SystemChain(logger, db, eventBus, audit, reporter)...)
+	return bus.NewSystemCommandBus(
+		busmw.SystemChain(logger, db, eventBus, audit, runDispatcher, reporter)...,
+	)
 }
 
 func provideQueryBus(
@@ -216,7 +222,12 @@ func provideMultitenancy(cfg *config.Config) shared.Multitenancy {
 // provideSchedulerJobs is the single source of truth for periodic in-process
 // jobs — mirrors providePermissionsRegistry. Add
 // a new Job here; provideScheduler stays decoupled from job business.
-func provideSchedulerJobs(tokens token.TokenRepository) []scheduler.Job {
+//
+// Jobs run with NO tenant in ctx: under APP_MULTITENANCY=true a Fn that touches
+// a tenant-owned table (r.Tenant(ctx)) panics on every tick, log-only, forever.
+// Tenant-scoped work belongs in a run (tenant stamped at enqueue) or must
+// resolve tenants explicitly.
+func provideSchedulerJobs(tokens token.Repository) []scheduler.Job {
 	return []scheduler.Job{
 		{
 			Name:     "cleanup:expired-refresh-tokens",
@@ -255,9 +266,10 @@ func provideRunDispatcher(
 }
 
 // provideRunWorker wires the durable run worker (the one background-work engine) from
-// config. It injects the run dispatcher (so a handler can enqueue a child task) and the
+// config. It injects the run dispatcher (so a handler can enqueue a child task), the
 // SqliteManager as the Transactor backing shared.WithTx (short atomic writes the handler
-// scopes itself) — the worker bypasses the bus, where these are normally injected.
+// scopes itself), and the AuditLogger so a run handler's audit events are drained and
+// persisted — the worker bypasses the bus, where these are normally injected.
 func provideRunWorker(
 	logger *slog.Logger,
 	reporter shared.ErrorReporter,
@@ -265,6 +277,7 @@ func provideRunWorker(
 	registry *runapp.HandlerRegistry,
 	runDispatcher shared.RunDispatcher,
 	db *database.SqliteManager,
+	audit shared.AuditLogger,
 	cfg *config.Config,
 ) *worker.RunWorker {
 	return worker.NewRunWorker(
@@ -274,6 +287,7 @@ func provideRunWorker(
 		registry,
 		runDispatcher,
 		db,
+		audit,
 		worker.RunWorkerConfig{
 			DefaultLease:      cfg.RunWorkerLease,
 			HeartbeatInterval: cfg.RunWorkerHeartbeat,
@@ -294,13 +308,19 @@ func providePermissionsRegistry() *shared.PermissionsRegistry {
 		usercmd.UpdateUserCommand{},
 		usercmd.DeleteUserCommand{},
 		userqry.ListUsersQuery{},
+		userqry.GetUserQuery{},
 		dashboardqry.GetUserDashboardQuery{},
 		dashboardqry.GetAdminDashboardQuery{},
 		platformqry.ListAllUsersQuery{},
+		platformqry.GetUserQuery{},
 		platformqry.ListTenantsQuery{},
 		platformqry.GetStatsQuery{},
 		platformcmd.UpdatePlatformUserCommand{},
 		platformcmd.DeletePlatformUserCommand{},
+		// CLI-only (shared.CLIOnly): dispatched via the SystemCommandBus, no HTTP
+		// route. NewPermissionsRegistry filters them out so their permission never
+		// reaches the FE-facing list. Listed here so the marker is the single
+		// exclusion mechanism (drop the marker → the di outcome test fails).
 		platformcmd.CreateSuperAdminCommand{},
 		tenantcmd.CreateTenantCommand{},
 		tenantqry.GetTenantQuery{},
@@ -338,12 +358,13 @@ func CreateApplication(
 		provideRunWorker,
 		providePermissionsRegistry,
 		security.NewJwtService,
-		wire.Bind(new(shared.JwtService), new(*security.JwtService)),
+		wire.Bind(new(shared.TokenService), new(*security.JwtService)),
 		wire.Bind(new(user.Repository), new(*sqliteuser.Repository)),
 		wire.Bind(new(user.PlatformRepository), new(*sqliteuser.Repository)),
-		wire.Bind(new(token.TokenRepository), new(*sqlitetoken.Repository)),
+		wire.Bind(new(token.Repository), new(*sqlitetoken.Repository)),
 		wire.Bind(new(run.Repository), new(*sqliterun.Repository)),
 		wire.Bind(new(tenant.Repository), new(*sqlitetenant.Repository)),
+		wire.Bind(new(tenant.PlatformRepository), new(*sqlitetenant.Repository)),
 		wire.Bind(new(shared.Seeder), new(*sqliteseeder.Seeder)),
 		wire.Bind(new(shared.AuditLogger), new(*sqliteaudit.Repository)),
 		sqliteuser.NewRepository,
@@ -361,7 +382,9 @@ func CreateApplication(
 		usercmd.NewUpdateUserHandler,
 		usercmd.NewDeleteUserHandler,
 		userqry.NewListUsersHandler,
+		userqry.NewGetUserHandler,
 		platformqry.NewListAllUsersHandler,
+		platformqry.NewGetUserHandler,
 		platformqry.NewListTenantsHandler,
 		platformqry.NewGetStatsHandler,
 		platformcmd.NewUpdatePlatformUserHandler,
@@ -373,6 +396,7 @@ func CreateApplication(
 		dashboardqry.NewGetAdminDashboardHandler,
 		providePublicFS,
 		provideSPAConfig,
+		response.NewResponder,
 		handler.NewSPAHandler,
 		handler.NewHealthHandler,
 		handler.NewAuthHandler,

@@ -11,7 +11,7 @@ description: 'Kompletní reference .env proměnných — co se čte, kdy, jaké 
 
 # Configuration
 
-Celá aplikace se konfiguruje z prostředí — `.env` plus skutečné env proměnné, žádné globální stavové proměnné a žádné přímé volání `os.Getenv` roztroušené po kódu. Tahle stránka je **kompletní reference**: co každá `APP_*` proměnná dělá, jaký má default a kde se její hodnota validuje.
+Celá aplikace se konfiguruje z prostředí — `.env` plus skutečné env proměnné, žádné globální stavové proměnné a žádné přímé volání `os.Getenv` roztroušené po kódu.
 
 > Jak přidat/změnit env proměnnou a kde ji navázat: skill `/gk-config`. Plný seznam s komentáři: `.env.example` (zkopíruj na `.env` — viz [Installation](/framework/installation)). Kde tahle vrstva sedí v celku: [Architecture](/framework/architecture).
 
@@ -23,12 +23,12 @@ Hodnoty se čtou na **dvou místech** podle toho, kdy je start potřebuje:
 - **`Config` struct** — hlavní konfigurace, načtená přes `LoadConfig()` (v `infrastructure/config/config.go`). Volá se z DI při stavbě aplikace.
 - **`StartupConfig`** — úzký výřez čtený přes `LoadStartup()` na úplném začátku `cmd/main.go`, **ještě před** `LoadConfig`, protože logger a error reporter se staví jako první (aby šlo zalogovat i selhání uvnitř `LoadConfig`).
 
-Obě cesty čtou env přes jediný helper `getEnv(key, fallback)` — `os.Getenv` je tak na **jednom místě**, žádné přímé čtení roztroušené po `cmd/`. `getEnv` vrací fallback, když je proměnná prázdná nebo nenastavená.
+Obě cesty čtou env přes společné helpery `getEnv(key, fallback)` / `getEnvInt` / `getEnvBool` (vše v `config.go`) — `os.Getenv` je tak na **jednom místě**, žádné přímé čtení roztroušené po `cmd/`. `getEnv` vrací fallback, když je proměnná prázdná nebo nenastavená.
 
 
 ## Kde se hodnoty validují
 
-`LoadConfig` sama **nevaliduje obsah** — jen parsuje. Jediné, na čem může selhat, jsou dvě duration proměnné (`time.ParseDuration` na `APP_JWT_ACCESS_EXPIRATION` / `APP_JWT_REFRESH_EXPIRATION`). Bool proměnné parsují řetězec `"true"` jako `true`, vše ostatní jako `false`.
+`LoadConfig` část hodnot rovnou **validuje** a selže rychle na: rozbitém `.env` (parse chyba je fatální — chybějící soubor ne), nevalidním `APP_CORS_ORIGIN` (musí být přesně jeden origin `scheme://host[:port]`), duration proměnných (`time.ParseDuration` na `APP_JWT_ACCESS_EXPIRATION` / `APP_JWT_REFRESH_EXPIRATION` + `APP_RUN_WORKER_*`; obě JWT expirace musí být navíc **kladné**), int proměnných (`APP_DB_MAX_CONNS`, `APP_RUN_WORKER_MAX_*`) a bool proměnných — ty se parsují **striktně**: povolené je jen `"true"` nebo `"false"`, cokoli jiného shodí start (překlep se nesmí tiše propadnout na `false`).
 
 Sémantickou validaci dělají konzumenti:
 
@@ -42,7 +42,7 @@ Sémantickou validaci dělají konzumenti:
 |---|---|---|
 | `APP_HTTP_PORT` | `3000` | Port, na kterém naslouchá HTTP server (`./bin/app serve`). V `docker-compose.yml` ho OrbStack přes `dev.orbstack.http-port` forwarduje na **`https://$APP_DOMAIN`** (žádný host port mapping). |
 | `APP_DOMAIN` | `gokick.local` | OrbStack dev doména pro `docker-compose` (jen compose, ne `make serve`). Jedna proměnná na projekt: app jede na `https://$APP_DOMAIN`, docs odvozeně na `https://docs.$APP_DOMAIN`. |
-| `APP_CORS_ORIGIN` | `http://localhost:5173` | Jediný povolený origin pro CORS (Vite dev server). V produkci nastav na doménu SPA. |
+| `APP_CORS_ORIGIN` | `http://localhost:5173` | Jediný povolený origin pro CORS (Vite dev server). V produkci nastav na doménu SPA. Musí to být přesně jeden konkrétní origin tvaru `scheme://host[:port]` — `*`, prázdná hodnota, cesta nebo query selžou při startu (CORS odpovídá s `Allow-Credentials: true`, a credentialed CORS wildcard zakazuje). Stejný origin server registruje i jako důvěryhodný pro CSRF, takže CORS a CSRF souhlasí. |
 
 Čteno přes `Config` struct.
 
@@ -53,6 +53,7 @@ Sémantickou validaci dělají konzumenti:
 |---|---|---|
 | `APP_DB_PATH` | `./data/app.db` | Cesta k souboru SQLite databáze. |
 | `APP_DB_JOURNAL_MODE` | `WAL` | SQLite journal mode. `WAL` je default a správná volba pro normální běh. Přepni na `DELETE`, když stejnou DB čte přes Docker bind mount jiný proces (např. prohlížení `data/app.db` v IDE, zatímco kontejner zapisuje) — virtualizovaný FS Docker Desktopu nezaručuje koordinaci mmap/shm, kterou WAL vyžaduje. |
+| `APP_DB_MAX_CONNS` | `0` (auto) | Strop SQLite connection poolu. Nenastavené/`0` = auto: `clamp(2×NumCPU, 4, 32)`. SQLite zápisy stejně serializuje — limit řídí paměť a backpressure, ne propustnost; override jen při neobvyklém poměru RAM:CPU. |
 
 Čteno přes `Config` struct. Ladění connection poolu, DSN (`_txlock=immediate`, `busy_timeout`, `foreign_keys`) a transakce viz skill `/gk-repositories` (+ `/gk-migrations` pro schéma).
 
@@ -167,7 +168,7 @@ Tyto proměnné běžící HTTP server **nepoužívá** — patří CLI příkaz
 
 | Proměnná | Default | Co dělá |
 |---|---|---|
-| `APP_SEED_ADMIN_PASSWORD` | (žádný) | Heslo admin uživatele pro `./bin/app seed` (8–128 znaků). Vyžaduje ho jen seed příkaz; v prostředích, kde se seed nikdy nespouští, nech prázdné. Wire ho injektuje jako distinct typ do seederu. |
+| `APP_SEED_ADMIN_PASSWORD` | (žádný) | Heslo admin uživatele pro `./bin/app seed` (min. 8 znaků, max. 128 bajtů). Vyžaduje ho jen seed příkaz; v prostředích, kde se seed nikdy nespouští, nech prázdné. Wire ho injektuje jako distinct typ do seederu. |
 | `APP_SEED_SUPERADMIN_PASSWORD` | (prázdné) | Heslo platformního **superadmina** pro `./bin/app seed`. Prázdné = superadmin se neseeduje (platformní rovina zůstává nedostupná). Wire distinct typ. |
 | `APP_SEED_ADMIN_TENANT` | `Tenant 1` | Jméno tenantu, do kterého seed založí admina, **když je multitenancy zapnutá** (find-or-create). Single-tenant ho ignoruje (admin zůstává v default tenantu). Wire distinct typ. |
 | `VITE_SENTRY_DSN`, `VITE_SENTRY_ENVIRONMENT` | (prázdné) | Frontend Sentry config **jen pro Vite dev server** (`yarn dev`), kde se `index.html` doručuje přímo bez Go injekce. Když SPA obsluhuje Go server v produkci, tyto `VITE_*` se **nepoužijí** — přednost má injekce `APP_SENTRY_*`. |

@@ -8,8 +8,6 @@ import (
 	"gokick/app/domain/shared"
 	"gokick/app/domain/tenant"
 	"gokick/app/domain/user"
-
-	"github.com/google/uuid"
 )
 
 // Structured-log keys. sloglint's no-raw-keys forbids bare string keys.
@@ -77,7 +75,36 @@ func (s *Seeder) Seed(ctx context.Context) error {
 }
 
 func (s *Seeder) seedAdmin(ctx context.Context) error {
-	existing, err := s.users.FindByNickname(ctx, "admin")
+	return s.seedUser(ctx, seedSpec{
+		nickname:       "admin",
+		email:          "admin@localhost",
+		role:           user.RoleAdmin,
+		password:       string(s.adminPassword),
+		passwordEnvVar: "APP_SEED_ADMIN_PASSWORD",
+		resolveTenant:  s.adminTenantID,
+	})
+}
+
+// seedSpec describes one account to find-or-create: identity, role, the
+// operator-supplied password (with the env var named for the error message)
+// and a lazy tenant resolver (run only when the account is actually missing).
+type seedSpec struct {
+	nickname       string
+	email          string
+	role           user.Role
+	password       string
+	passwordEnvVar string
+	resolveTenant  func(context.Context) (string, error)
+}
+
+// seedUser is the one find-or-create path both seeded accounts share: skip when
+// the nickname exists, validate through the same VOs as the user-facing CRUD,
+// construct via the born-scoped NewUser factory (single construction path —
+// UUIDv7 id + timestamps), Save, and record the bootstrap audit event.
+// resolveTenant runs lazily AFTER the exists-check, so an idempotent re-run
+// never touches (or creates) tenants.
+func (s *Seeder) seedUser(ctx context.Context, spec seedSpec) error {
+	existing, err := s.users.FindByNickname(ctx, spec.nickname)
 	if err != nil {
 		return err
 	}
@@ -86,11 +113,11 @@ func (s *Seeder) seedAdmin(ctx context.Context) error {
 	}
 
 	// Force the operator to supply a real password instead of silently
-	// minting an admin with a guessable one. NewPassword enforces the same
+	// minting an account with a guessable one. NewPassword enforces the same
 	// length policy as the user-facing CRUD.
-	pw, err := user.NewPassword(string(s.adminPassword))
+	pw, err := user.NewPassword(spec.password)
 	if err != nil {
-		return fmt.Errorf("APP_SEED_ADMIN_PASSWORD: %w", err)
+		return fmt.Errorf("%s: %w", spec.passwordEnvVar, err)
 	}
 
 	hash, err := s.hasher.Hash(string(pw))
@@ -98,22 +125,23 @@ func (s *Seeder) seedAdmin(ctx context.Context) error {
 		return err
 	}
 
-	tenantID, err := s.adminTenantID(ctx)
+	tenantID, err := spec.resolveTenant(ctx)
 	if err != nil {
 		return err
 	}
 
-	admin := &user.User{
-		ID:           uuid.New().String(),
-		Nickname:     "admin",
-		PasswordHash: hash,
-		Email:        "admin@localhost",
-		Role:         string(user.RoleAdmin),
-		TenantID:     tenantID,
-		Active:       true,
+	nick, err := user.NewNickname(spec.nickname)
+	if err != nil {
+		return err
+	}
+	mail, err := user.NewEmail(spec.email)
+	if err != nil {
+		return err
 	}
 
-	if err := s.users.Save(ctx, admin); err != nil {
+	u := user.NewUser(nick, hash, mail, spec.role, tenantID)
+
+	if err := s.users.Save(ctx, u); err != nil {
 		return err
 	}
 
@@ -123,11 +151,11 @@ func (s *Seeder) seedAdmin(ctx context.Context) error {
 	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
 		Action:     "user.created",
 		TargetType: "user",
-		TargetID:   admin.ID,
-		Metadata:   map[string]any{"role": admin.Role},
+		TargetID:   u.ID,
+		Metadata:   map[string]any{"role": u.Role},
 	})
 
-	s.logger.Info("seeded default admin user", logKeyNickname, "admin")
+	s.logger.Info("seeded user", logKeyNickname, spec.nickname)
 	return nil
 }
 
@@ -141,8 +169,12 @@ func (s *Seeder) adminTenantID(ctx context.Context) (string, error) {
 		return shared.DefaultTenantID, nil
 	}
 
-	name := string(s.adminTenant)
-	existing, err := s.tenants.FindByName(ctx, name)
+	name, err := tenant.NewName(string(s.adminTenant))
+	if err != nil {
+		return "", fmt.Errorf("APP_SEED_ADMIN_TENANT: %w", err)
+	}
+
+	existing, err := s.tenants.FindByName(ctx, string(name))
 	if err != nil {
 		return "", err
 	}
@@ -162,7 +194,7 @@ func (s *Seeder) adminTenantID(ctx context.Context) (string, error) {
 		Metadata:   map[string]any{"name": t.Name},
 	})
 
-	s.logger.Info("seeded admin tenant", logKeyTenant, name)
+	s.logger.Info("seeded admin tenant", logKeyTenant, string(name))
 	return t.ID, nil
 }
 
@@ -176,45 +208,14 @@ func (s *Seeder) seedSuperAdmin(ctx context.Context) error {
 		return nil
 	}
 
-	existing, err := s.users.FindByNickname(ctx, "superadmin")
-	if err != nil {
-		return err
-	}
-	if existing != nil {
-		return nil
-	}
-
-	pw, err := user.NewPassword(string(s.superAdminPassword))
-	if err != nil {
-		return fmt.Errorf("APP_SEED_SUPERADMIN_PASSWORD: %w", err)
-	}
-
-	hash, err := s.hasher.Hash(string(pw))
-	if err != nil {
-		return err
-	}
-
-	superAdmin := &user.User{
-		ID:           uuid.New().String(),
-		Nickname:     "superadmin",
-		PasswordHash: hash,
-		Email:        "superadmin@localhost",
-		Role:         string(user.RoleSuperAdmin),
-		TenantID:     shared.DefaultTenantID,
-		Active:       true,
-	}
-
-	if err := s.users.Save(ctx, superAdmin); err != nil {
-		return err
-	}
-
-	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
-		Action:     "user.created",
-		TargetType: "user",
-		TargetID:   superAdmin.ID,
-		Metadata:   map[string]any{"role": superAdmin.Role},
+	return s.seedUser(ctx, seedSpec{
+		nickname:       "superadmin",
+		email:          "superadmin@localhost",
+		role:           user.RoleSuperAdmin,
+		password:       string(s.superAdminPassword),
+		passwordEnvVar: "APP_SEED_SUPERADMIN_PASSWORD",
+		resolveTenant: func(context.Context) (string, error) {
+			return shared.DefaultTenantID, nil
+		},
 	})
-
-	s.logger.Info("seeded superadmin user", logKeyNickname, "superadmin")
-	return nil
 }

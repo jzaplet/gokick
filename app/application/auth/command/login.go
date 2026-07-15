@@ -7,8 +7,6 @@ import (
 	"gokick/app/domain/shared"
 	"gokick/app/domain/token"
 	"gokick/app/domain/user"
-
-	"github.com/google/uuid"
 )
 
 type LoginCommand struct {
@@ -26,7 +24,11 @@ func (LoginCommand) SkipPermissionCheck() {}
 // safe to auto-commit individually.
 func (LoginCommand) SkipTransaction() {}
 
-type LoginResult struct {
+// IssuedSession is the freshly-minted session payload (access + refresh token
+// pair and the owning user) returned by BOTH issuance paths — login and refresh
+// rotation (built in issueSession). Use-neutral on purpose: refresh returning a
+// "login" result was a misnomer (F-033).
+type IssuedSession struct {
 	User             user.User
 	AccessToken      string
 	AccessExpiresIn  time.Duration
@@ -36,9 +38,9 @@ type LoginResult struct {
 
 type LoginHandler struct {
 	users     user.Repository
-	tokens    token.TokenRepository
+	tokens    token.Repository
 	password  shared.PasswordHasher
-	jwt       shared.JwtService
+	jwt       shared.TokenService
 	dummyHash string
 }
 
@@ -59,9 +61,9 @@ const (
 
 func NewLoginHandler(
 	users user.Repository,
-	tokens token.TokenRepository,
+	tokens token.Repository,
 	password shared.PasswordHasher,
-	jwt shared.JwtService,
+	jwt shared.TokenService,
 ) *LoginHandler {
 	// Pay the bcrypt cost once at startup so the "user not found" branch
 	// can compare against a real hash and match the timing of "user
@@ -83,12 +85,12 @@ func NewLoginHandler(
 	}
 }
 
-func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (LoginResult, error) {
+func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (IssuedSession, error) {
 	audit := shared.AuditCollectorFromContext(ctx)
 
 	u, err := h.users.FindByNickname(ctx, cmd.Nickname)
 	if err != nil {
-		return LoginResult{}, err
+		return IssuedSession{}, err
 	}
 
 	// Always call Verify so an attacker timing the response can't tell
@@ -105,11 +107,11 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (LoginResul
 	// "locked", "wrong password", and "unknown user" — without this,
 	// a locked-account response would skip Verify and become measurably
 	// faster, leaking lock state.
-	locked := u != nil && u.LockedUntil.Valid && time.Now().Before(u.LockedUntil.Time)
+	locked := u != nil && u.LockedUntil != nil && time.Now().Before(*u.LockedUntil)
 
 	if u == nil || verifyErr != nil {
 		h.handleFailedLogin(ctx, audit, cmd.Nickname, u, locked)
-		return LoginResult{}, &shared.AuthError{Message: "invalid credentials"}
+		return IssuedSession{}, &shared.AuthError{Message: "invalid credentials"}
 	}
 
 	if locked {
@@ -122,7 +124,7 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (LoginResul
 			TargetType: "user",
 			TargetID:   u.ID,
 		})
-		return LoginResult{}, &shared.AuthError{Message: "invalid credentials"}
+		return IssuedSession{}, &shared.AuthError{Message: "invalid credentials"}
 	}
 
 	// Successful login → clear the counter so the next failure cycle
@@ -134,50 +136,22 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (LoginResul
 	// raw pool (outside the bus tx) — analytics, never a reason to fail login.
 	_ = h.users.RecordLogin(ctx, u.ID)
 
-	accessToken, accessExpiresIn, err := h.jwt.GenerateAccessToken(&shared.AuthClaims{
-		UserID:   u.ID,
-		Role:     u.Role,
-		Nickname: u.Nickname,
-		Email:    u.Email,
-		TenantID: u.TenantID,
-	})
+	res, err := issueSession(ctx, h.jwt, h.tokens, u)
 	if err != nil {
-		return LoginResult{}, err
-	}
-
-	rawRefresh, hash, expiresAt, err := h.jwt.GenerateRefreshToken()
-	if err != nil {
-		return LoginResult{}, err
-	}
-
-	rt := &token.RefreshToken{
-		ID:        uuid.New().String(),
-		UserID:    u.ID,
-		TokenHash: hash,
-		ExpiresAt: expiresAt,
-		CreatedAt: time.Now(),
-	}
-	if err := h.tokens.Save(ctx, rt); err != nil {
-		return LoginResult{}, err
+		return IssuedSession{}, err
 	}
 
 	// Record success only after the token is actually issued and saved.
 	// audit.md defines auth.login.succeeded as "po vydání tokenu" — emitting
-	// it before tokens.Save would log a success for a login that then failed
-	// on the save and returned an error to the caller.
+	// it before issueSession's Save would log a success for a login that then
+	// failed on the save and returned an error to the caller.
 	audit.Record(shared.AuditEvent{
 		Action:     "auth.login.succeeded",
 		TargetType: "user",
 		TargetID:   u.ID,
 	})
 
-	return LoginResult{
-		User:             *u,
-		AccessToken:      accessToken,
-		AccessExpiresIn:  accessExpiresIn,
-		RefreshToken:     rawRefresh,
-		RefreshExpiresAt: expiresAt,
-	}, nil
+	return res, nil
 }
 
 // handleFailedLogin records the auth.login.failed event, bumps the

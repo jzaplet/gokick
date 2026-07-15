@@ -21,7 +21,7 @@ Kdo smí spustit kterou operaci a co uvidí na frontendu — jeden zdroj pravdy 
 ## For non-tech / juniors
 Permission je řetězec jako `admin:users:create` — pojmenovaná „klíčenka" k jedné akci. Každá operace v aplikaci si u sebe napíše, jaký klíč k ní potřebuješ. Při startu aplikace projde všechny operace a sesbírá z nich seznam klíčů — **žádný ruční seznam permissions neexistuje**, je odvozený z kódu. Když přijde request, brána (middleware) se podívá na roli přihlášeného a rozhodne, jestli má potřebný klíč.
 
-Pravidlo je jednoduché: role `admin` má všechny klíče. Každá jiná role má všechny **kromě těch, co začínají `admin:`**. Žádné jemnější přiřazování klíčů jednotlivým uživatelům zatím není.
+Pravidlo je třístupňový žebřík: role `superadmin` (autor platformy) má všechny klíče včetně těch, co začínají `platform:`. Role `admin` má všechny **kromě `platform:`** — spravuje svůj tenant, nikdy platformu. Každá jiná role má všechny **kromě těch, co začínají `admin:` a `platform:`**. Žádné jemnější přiřazování klíčů jednotlivým uživatelům zatím není.
 
 Frontend dostane při loginu seznam klíčů pro svoji roli a podle něj jen **schovává UI** (tlačítka, stránky). To je kosmetika — skutečnou kontrolu dělá vždycky backend.
 
@@ -38,11 +38,11 @@ func (LoginCommand) SkipPermissionCheck() {}                                    
 **Kontrola (backend).** `AuthorizeMiddleware` (`app/application/bus/middleware/authorize.go`) běží v command i query bus:
 1. `SkipPermission` → propustí. `Permissioned` → zavolá `PermissionChecker.Check(ctx, perm)`. Nic z toho → vrátí error (`must implement Permissioned or SkipPermission`) — pojistka proti zapomenuté deklaraci.
 2. `PermissionChecker` (`app/infrastructure/security/permission.go`) přečte `AuthClaims` z kontextu (vkládá je JWT `AuthMiddleware`, `app/presentation/http/middleware/auth.go`). Žádné claims → `*shared.AuthError` (HTTP 401).
-3. Zavolá `shared.IsPermissionAllowedForRole(perm, role)` — `admin` → vše; jinak vše kromě prefixu `admin:`. Nesedí → `*shared.PermissionError` (HTTP 403).
+3. Zavolá `shared.IsPermissionAllowedForRole(perm, role)` — třístupňový žebřík: `superadmin` → vše včetně `platform:*`; `admin` → vše kromě prefixu `platform:`; jinak vše kromě prefixů `admin:` a `platform:`. Nesedí → `*shared.PermissionError` (HTTP 403).
 
-**Registry = seznam pro frontend.** `PermissionsRegistry` (`app/domain/shared/permissions_registry.go`) sesbírá `RequiredPermission()` ze všech handlerů (deduplikace + sort). Konkrétní seznam handlerů je ve Wire provideru `providePermissionsRegistry` v `app/infrastructure/di/container_provider.go` (aktuálně 9 položek). `reg.ForRole(role)` vrátí permissions pro roli — login (`app/presentation/http/handler/auth.go`) i `/profile` (`profile.go`) ho dají do `user.permissions` v response.
+**Registry = seznam pro frontend.** `PermissionsRegistry` (`app/domain/shared/permissions_registry.go`) sesbírá `RequiredPermission()` ze všech handlerů (deduplikace + sort; položky označené `shared.CLIOnly` — CLI-only operace bez HTTP route — vyfiltruje, do FE seznamu nepatří). Konkrétní seznam handlerů je ve Wire provideru `providePermissionsRegistry` v `app/infrastructure/di/container_provider.go`. `reg.ForRole(role)` vrátí permissions pro roli — login (`app/presentation/http/handler/auth.go`) i `/profile` (`profile.go`) ho dají do `user.permissions` v response.
 
-**Frontend = jediný enum.** `Permission` v `assets/app/Auth/enums/resources.ts` zrcadlí backend stringy (single source of truth na FE — nikde jinde se string literál nepíše). Helpery v `assets/app-ui/Auth/permissions.ts` (`hasPermission`, `hasAllPermissions`, `hasAnyPermission`, `isAdmin`) berou typovaný `Permission` a čtou `user.permissions` ze stavu; `admin` je vždy `true`. Vystaveno přes `useAuth()` (`assets/app-ui/Auth/useAuth.ts`).
+**Frontend = jediný enum.** `Permission` v `assets/app/Auth/enums/resources.ts` zrcadlí backend stringy (single source of truth na FE — nikde jinde se string literál nepíše). Helpery v `assets/app-ui/Auth/permissions.ts` (`hasPermission`, `hasAllPermissions`, `hasAnyPermission`; role-checky `isAdmin`, `isSuperAdmin`) berou typovaný `Permission` a pro KAŽDOU roli dělají jednotný membership check nad `user.permissions` ze stavu — FE žebřík rolí nereimplementuje, věří seznamu poslanému serverem. Vystaveno přes `useAuth()` (`assets/app-ui/Auth/useAuth.ts`).
 
 **Route guard.** `assets/router/meta.ts` typuje `meta.requiresAuth: boolean` (povinné) a `meta.requiresPermission?: Permission`. `assets/router/authGuard.ts`: nepřihlášený na `requiresAuth` route → redirect na login; chybějící permission → toast + redirect domů. Routy: `assets/router/routes.ts`.
 
@@ -60,10 +60,10 @@ func (LoginCommand) SkipPermissionCheck() {}                                    
 
 ## Invariants & pitfalls
 - **Každý command/query deklaruje permission.** Chybí-li `Permissioned` i `SkipPermission`, bus vrátí runtime error — není to volitelné.
-- **Registry je jediný zdroj pravdy a musí se ručně doplnit.** Nový `Permissioned` handler, který nepřidáš do `providePermissionsRegistry`, je sice chráněný backendem, ale frontend o permission neví → UI se chová, jako bys ji neměl. Druhá konfigurace neexistuje.
+- **Registry je jediný zdroj pravdy a musí se ručně doplnit.** Nový `Permissioned` handler, který nepřidáš do `providePermissionsRegistry`, by frontend o permission nechal bez informace — zapomenutý zápis ale chytí konformní test `TestProvidePermissionsRegistry_EnrollsEveryFEFacingPermission` (`app/infrastructure/di/`), takže `make test` spadne dřív, než se to dostane do UI. Druhá konfigurace neexistuje.
 - **Žádné raw permission stringy na FE.** Každá reference jde přes `Permission` enum (`resources.ts`). Literál `'admin:users:read'` v `.vue`/`.ts` je zakázaný — enum je typovaný, překlep = compile-time chyba.
 - **FE schovává, BE rozhoduje.** `hasPermission` je jen UX; autoritativní kontrola je vždy `AuthorizeMiddleware` na backendu. Nikdy nespoléhej na FE jako na bezpečnostní hranici.
-- **Jen role-based, žádné per-user granty.** `IsPermissionAllowedForRole` zná jen `admin` (vše) a ostatní (vše kromě `admin:*`). Jemnější model zatím není.
+- **Jen role-based, žádné per-user granty.** `IsPermissionAllowedForRole` zná tři role: `superadmin` (vše vč. `platform:*`), `admin` (vše kromě `platform:*`) a ostatní (vše kromě `admin:*` a `platform:*`). Jemnější model zatím není.
 - **`meta.requiresAuth` je povinné na každé routě** (typ `AppRoute`) — žádná implicitní „public". Stejně jako BE pravidlo `Permissioned`/`SkipPermission`.
 
 ## Related

@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import type { FieldSize } from '@/app-ui/Inputs/field';
+import { ref } from 'vue';
+import { targetValue } from '@/app-ui/Events/eventTarget';
+import { fieldId, fieldSizeClass, useFieldValueSync } from '@/app-ui/Inputs/field';
 
 type Option = {
     value: string;
@@ -15,7 +18,7 @@ type Props = {
     required?: boolean;
     disabled?: boolean;
     name?: string;
-    size?: 'sm' | 'md' | 'lg' | 'xl';
+    size?: FieldSize;
 };
 
 const props = defineProps<Props>();
@@ -24,32 +27,21 @@ const emit = defineEmits<{
     'change': [string | null];
 }>();
 
-const inputId
-    = props.name ?? `select-${Math.random().toString(36).substring(2, 9)}`;
+const inputId = fieldId(props.name, 'select');
 
 const selectValue = ref(props.modelValue ?? '');
 
 const handleChange = (event: Event): void => {
-    const target = event.target as HTMLSelectElement;
+    const value = targetValue(event);
 
-    selectValue.value = target.value;
-    const value = target.value === '' ? null : target.value;
+    selectValue.value = value;
+    const emitted = value === '' ? null : value;
 
-    emit('update:modelValue', value);
-    emit('change', value);
+    emit('update:modelValue', emitted);
+    emit('change', emitted);
 };
 
-watch(
-    () => props.modelValue,
-    (newValue) => {
-        if (newValue === null || newValue === undefined) {
-            selectValue.value = '';
-        } else {
-            selectValue.value = newValue;
-        }
-    },
-    { immediate: true },
-);
+useFieldValueSync(() => props.modelValue, selectValue);
 </script>
 
 <template>
@@ -75,13 +67,7 @@ watch(
         focus:ring-orange-500 focus:border-orange-500
         appearance-none cursor-pointer"
             :class="[
-                size === 'xl'
-                    ? 'px-6 py-4 text-lg'
-                    : size === 'lg'
-                        ? 'px-4 py-3 text-base'
-                        : size === 'sm'
-                            ? 'px-2 py-1 text-sm'
-                            : 'px-3 py-2',
+                fieldSizeClass(size),
                 error
                     ? 'border-red-300 focus:ring-red-500'
                     : 'border-gray-300 hover:border-gray-400',

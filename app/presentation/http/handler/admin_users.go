@@ -13,32 +13,39 @@ import (
 )
 
 type AdminUsersHandler struct {
+	resp       *response.Responder
 	commandBus *bus.CommandBus
 	queryBus   *bus.QueryBus
 	listUsers  *userqry.ListUsersHandler
+	getUser    *userqry.GetUserHandler
 	createUser *usercmd.CreateUserHandler
 	updateUser *usercmd.UpdateUserHandler
 	deleteUser *usercmd.DeleteUserHandler
 }
 
 func NewAdminUsersHandler(
+	resp *response.Responder,
 	commandBus *bus.CommandBus,
 	queryBus *bus.QueryBus,
 	listUsers *userqry.ListUsersHandler,
+	getUser *userqry.GetUserHandler,
 	createUser *usercmd.CreateUserHandler,
 	updateUser *usercmd.UpdateUserHandler,
 	deleteUser *usercmd.DeleteUserHandler,
 ) *AdminUsersHandler {
 	return &AdminUsersHandler{
+		resp:       resp,
 		commandBus: commandBus,
 		queryBus:   queryBus,
 		listUsers:  listUsers,
+		getUser:    getUser,
 		createUser: createUser,
 		updateUser: updateUser,
 		deleteUser: deleteUser,
 	}
 }
 
+//gkts:assets/app/Admin/types/AdminUser.ts AdminUser
 type adminUserDTO struct {
 	ID       string `json:"id"`
 	Nickname string `json:"nickname"`
@@ -47,6 +54,7 @@ type adminUserDTO struct {
 	Active   bool   `json:"active"`
 }
 
+//gkts:assets/app/Admin/types/UserFormData.ts UserFormData
 type createUserRequest struct {
 	Nickname string `json:"nickname"`
 	Password string `json:"password"`
@@ -54,6 +62,7 @@ type createUserRequest struct {
 	Role     string `json:"role"`
 }
 
+//gkts:assets/app/Admin/types/UserFormData.ts UserFormData
 type updateUserRequest struct {
 	Nickname string `json:"nickname"`
 	Password string `json:"password"`
@@ -64,9 +73,9 @@ type updateUserRequest struct {
 func (h *AdminUsersHandler) List(w http.ResponseWriter, r *http.Request) {
 	q := userqry.ListUsersQuery{}
 
-	users, err := bus.Exec(
+	users, err := bus.Query(
 		r.Context(),
-		h.queryBus.Bus,
+		h.queryBus,
 		"ListUsers",
 		q,
 		func(ctx context.Context) ([]user.User, error) {
@@ -74,7 +83,7 @@ func (h *AdminUsersHandler) List(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
@@ -84,13 +93,38 @@ func (h *AdminUsersHandler) List(w http.ResponseWriter, r *http.Request) {
 		dtos[i] = toAdminUserDTO(u)
 	}
 
-	response.JSON(w, http.StatusOK, dtos)
+	h.resp.JSON(r.Context(), w, http.StatusOK, dtos)
+}
+
+// Get returns one user in the caller's tenant (GET /admin/users/{id}) — the
+// read-one the edit view fetches instead of pulling the whole list and .find()ing
+// client-side. A missing / cross-tenant / superadmin id surfaces as the query
+// handler's 400 (Field "id"), so u is non-nil here.
+func (h *AdminUsersHandler) Get(w http.ResponseWriter, r *http.Request) {
+	q := userqry.GetUserQuery{ID: r.PathValue("id")}
+
+	u, err := bus.Query(
+		r.Context(),
+		h.queryBus,
+		"GetUser",
+		q,
+		func(ctx context.Context) (*user.User, error) {
+			return h.getUser.Handle(ctx, q)
+		},
+	)
+	if err != nil {
+		h.resp.HandleError(r.Context(), w, err)
+
+		return
+	}
+
+	h.resp.JSON(r.Context(), w, http.StatusOK, toAdminUserDTO(*u))
 }
 
 func (h *AdminUsersHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var body createUserRequest
 	if err := request.DecodeJSON(w, r, &body); err != nil {
-		response.Error(w, http.StatusBadRequest, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
@@ -102,9 +136,9 @@ func (h *AdminUsersHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Role:     body.Role,
 	}
 
-	err := bus.ExecVoid(
+	err := bus.DispatchVoid(
 		r.Context(),
-		h.commandBus.Bus,
+		h.commandBus,
 		"CreateUser",
 		cmd,
 		func(ctx context.Context) error {
@@ -112,7 +146,7 @@ func (h *AdminUsersHandler) Create(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
@@ -123,7 +157,7 @@ func (h *AdminUsersHandler) Create(w http.ResponseWriter, r *http.Request) {
 func (h *AdminUsersHandler) Update(w http.ResponseWriter, r *http.Request) {
 	var body updateUserRequest
 	if err := request.DecodeJSON(w, r, &body); err != nil {
-		response.Error(w, http.StatusBadRequest, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
@@ -136,9 +170,9 @@ func (h *AdminUsersHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Role:     body.Role,
 	}
 
-	err := bus.ExecVoid(
+	err := bus.DispatchVoid(
 		r.Context(),
-		h.commandBus.Bus,
+		h.commandBus,
 		"UpdateUser",
 		cmd,
 		func(ctx context.Context) error {
@@ -146,7 +180,7 @@ func (h *AdminUsersHandler) Update(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
@@ -157,9 +191,9 @@ func (h *AdminUsersHandler) Update(w http.ResponseWriter, r *http.Request) {
 func (h *AdminUsersHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	cmd := usercmd.DeleteUserCommand{ID: r.PathValue("id")}
 
-	err := bus.ExecVoid(
+	err := bus.DispatchVoid(
 		r.Context(),
-		h.commandBus.Bus,
+		h.commandBus,
 		"DeleteUser",
 		cmd,
 		func(ctx context.Context) error {
@@ -167,7 +201,7 @@ func (h *AdminUsersHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}

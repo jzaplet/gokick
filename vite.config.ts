@@ -79,7 +79,7 @@ export default defineConfig(({ mode }) => {
         publicDir: false,
         test: {
             root: '.',
-            include: ['tests/**/*.test.ts'],
+            include: ['tests/assets/**/*.test.ts'],
             environment: 'jsdom',
         },
     };

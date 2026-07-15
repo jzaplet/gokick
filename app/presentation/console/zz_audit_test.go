@@ -14,6 +14,7 @@ import (
 	"gokick/app/infrastructure/config"
 	"gokick/app/infrastructure/worker"
 	"gokick/app/internal/testfx"
+	"gokick/app/presentation/http/response"
 
 	"github.com/spf13/cobra"
 )
@@ -21,6 +22,9 @@ import (
 func silentLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
+
+// testResponder is a Responder over a discard logger for console server-wiring tests.
+func testResponder() *response.Responder { return response.NewResponder(silentLogger()) }
 
 // ---------------------------------------------------------------------------
 // create-user command wiring
@@ -241,6 +245,7 @@ func newTestRunWorker(t *testing.T, fx *testfx.Fixture) *worker.RunWorker {
 		shared.NopReporter{},
 		fx.Runs,
 		registry,
+		nil,
 		nil,
 		nil,
 		worker.RunWorkerConfig{},

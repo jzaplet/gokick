@@ -30,7 +30,7 @@ func (c *SeedCommand) Command() *cobra.Command {
 			// Dispatch through the system bus so the whole bootstrap (admin tenant +
 			// admin + optional superadmin) runs in ONE transaction — atomic, no
 			// half-seeded DB — with the audit trail and panic→Sentry.
-			return bus.ExecVoid(cmd.Context(), c.sysBus.Bus, "Seed", seedCommand{},
+			return bus.SystemDispatchVoid(cmd.Context(), c.sysBus, "Seed", seedCommand{},
 				func(ctx context.Context) error { return c.seeder.Seed(ctx) })
 		},
 	}

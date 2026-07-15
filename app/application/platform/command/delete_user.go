@@ -26,9 +26,9 @@ func (h *DeletePlatformUserHandler) Handle(
 	ctx context.Context,
 	cmd DeletePlatformUserCommand,
 ) error {
-	claims := shared.ClaimsFromContext(ctx)
-	if claims == nil {
-		return &shared.AuthError{Message: "authentication required"}
+	claims, err := shared.RequireClaims(ctx)
+	if err != nil {
+		return err
 	}
 	if claims.UserID == cmd.ID {
 		return &shared.ValidationError{Message: "cannot delete your own account"}
@@ -37,6 +37,9 @@ func (h *DeletePlatformUserHandler) Handle(
 	target, err := h.users.FindByID(ctx, cmd.ID)
 	if err != nil {
 		return err
+	}
+	if target == nil {
+		return &shared.ValidationError{Field: "id", Message: "user not found"}
 	}
 
 	// A superadmin (platform) account is never deletable through the API — the

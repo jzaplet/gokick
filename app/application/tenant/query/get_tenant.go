@@ -14,6 +14,10 @@ type GetTenantQuery struct {
 
 func (GetTenantQuery) RequiredPermission() string { return "platform:tenants:read" }
 
+// CLIOnly: get-tenant runs only via the CLI/SystemCommandBus (no HTTP route),
+// so its permission stays out of the FE-facing registry. See shared.CLIOnly.
+func (GetTenantQuery) CLIOnly() {}
+
 type GetTenantHandler struct {
 	tenants tenant.Repository
 }

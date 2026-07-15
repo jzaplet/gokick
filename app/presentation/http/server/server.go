@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"gokick/app/infrastructure/config"
 	"gokick/app/presentation/http/handler"
 	"gokick/app/presentation/http/middleware"
+	"gokick/app/presentation/http/response"
 )
 
 const (
@@ -55,7 +57,8 @@ type Server struct {
 	config     *config.Config
 	logger     *slog.Logger
 	reporter   shared.ErrorReporter
-	jwt        shared.JwtService
+	jwt        shared.TokenService
+	resp       *response.Responder
 	limiters   *RateLimiters
 	ipExtract  middleware.IPExtractor
 	health     *handler.HealthHandler
@@ -72,7 +75,8 @@ func NewServer(
 	config *config.Config,
 	logger *slog.Logger,
 	reporter shared.ErrorReporter,
-	jwt shared.JwtService,
+	jwt shared.TokenService,
+	resp *response.Responder,
 	limiters *RateLimiters,
 	ipExtract middleware.IPExtractor,
 	health *handler.HealthHandler,
@@ -89,6 +93,7 @@ func NewServer(
 		logger:     logger,
 		reporter:   reporter,
 		jwt:        jwt,
+		resp:       resp,
 		limiters:   limiters,
 		ipExtract:  ipExtract,
 		health:     health,
@@ -217,7 +222,7 @@ func (s *Server) registerRoutes() *http.ServeMux {
 
 	// Protected — JWT Bearer required (AuthMiddleware populates claims,
 	// bus AuthorizeMiddleware then enforces the per-command permission).
-	authed := middleware.AuthMiddleware(s.jwt)
+	authed := middleware.AuthMiddleware(s.jwt, s.resp)
 	mux.Handle("POST /api/v1/auth/logout", authed(http.HandlerFunc(s.auth.Logout)))
 	mux.Handle("GET /api/v1/profile", authed(http.HandlerFunc(s.profile.Get)))
 	mux.Handle("PUT /api/v1/profile/password", authed(http.HandlerFunc(s.profile.ChangePassword)))
@@ -226,6 +231,7 @@ func (s *Server) registerRoutes() *http.ServeMux {
 	// Admin — bus AuthorizeMiddleware enforces admin:* permission per command/query.
 	mux.Handle("GET /api/v1/dashboard/admin", authed(http.HandlerFunc(s.dashboard.Admin)))
 	mux.Handle("GET /api/v1/admin/users", authed(http.HandlerFunc(s.adminUsers.List)))
+	mux.Handle("GET /api/v1/admin/users/{id}", authed(http.HandlerFunc(s.adminUsers.Get)))
 	mux.Handle("POST /api/v1/admin/users", authed(http.HandlerFunc(s.adminUsers.Create)))
 	mux.Handle("PUT /api/v1/admin/users/{id}", authed(http.HandlerFunc(s.adminUsers.Update)))
 	mux.Handle("DELETE /api/v1/admin/users/{id}", authed(http.HandlerFunc(s.adminUsers.Delete)))
@@ -233,6 +239,7 @@ func (s *Server) registerRoutes() *http.ServeMux {
 	// Platform plane — superadmin only (platform:* permissions, enforced by the bus).
 	mux.Handle("GET /api/v1/platform/stats", authed(http.HandlerFunc(s.platform.Stats)))
 	mux.Handle("GET /api/v1/platform/users", authed(http.HandlerFunc(s.platform.Users)))
+	mux.Handle("GET /api/v1/platform/users/{id}", authed(http.HandlerFunc(s.platform.GetUser)))
 	mux.Handle("GET /api/v1/platform/tenants", authed(http.HandlerFunc(s.platform.Tenants)))
 	mux.Handle("PUT /api/v1/platform/users/{id}", authed(http.HandlerFunc(s.platform.UpdateUser)))
 	mux.Handle(
@@ -248,6 +255,17 @@ func (s *Server) registerRoutes() *http.ServeMux {
 
 func (s *Server) buildMiddlewareChain(handler http.Handler) http.Handler {
 	csrf := &http.CrossOriginProtection{}
+	// CORS and CSRF must agree on the one allowed cross-origin browser client:
+	// CORSMiddleware advertises s.config.CORSOrigin, so the same origin is
+	// registered as CSRF-trusted — without this, a write from the CORS-allowed
+	// origin would still be 403'd by CrossOriginProtection (Sec-Fetch-Site:
+	// cross-site). The origin shape is validated fail-fast in LoadConfig, so an
+	// error here is impossible by construction; the panic keeps the impossible
+	// loud at startup rather than silently shipping a broken pairing.
+	if err := csrf.AddTrustedOrigin(s.config.CORSOrigin); err != nil {
+		panic(fmt.Sprintf("CORS origin %q rejected as CSRF trusted origin: %v",
+			s.config.CORSOrigin, err))
+	}
 
 	// Order: Trace → IP → ReportScope → Recovery → Security headers → CORS →
 	// CSRF → Logging (→ handler). HSTS is only emitted in production (gated on

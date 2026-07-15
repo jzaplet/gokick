@@ -103,6 +103,7 @@ type RateLimiter struct {
 	rule    RateRule
 	extract IPExtractor
 	logger  *slog.Logger
+	resp    *response.Responder
 
 	refillPerSec float64
 
@@ -120,6 +121,7 @@ func NewRateLimiter(rule RateRule, extract IPExtractor, logger *slog.Logger) *Ra
 		rule:         rule,
 		extract:      extract,
 		logger:       logger,
+		resp:         response.NewResponder(logger),
 		refillPerSec: float64(rule.Tokens) / rule.Per.Seconds(),
 		buckets:      map[string]*bucket{},
 	}
@@ -136,7 +138,12 @@ func (l *RateLimiter) Middleware() func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !l.allow(l.extract(r), time.Now()) {
 				w.Header().Set("Retry-After", strconv.Itoa(int(l.rule.Per.Seconds())))
-				response.Error(w, http.StatusTooManyRequests, errors.New("too many requests"))
+				l.resp.Error(
+					r.Context(),
+					w,
+					http.StatusTooManyRequests,
+					errors.New("too many requests"),
+				)
 				return
 			}
 			next.ServeHTTP(w, r)

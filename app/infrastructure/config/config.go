@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"time"
@@ -10,9 +11,12 @@ import (
 )
 
 type Config struct {
-	HTTPPort             string
-	DBPath               string
-	DBJournalMode        string
+	HTTPPort      string
+	DBPath        string
+	DBJournalMode string
+	// DBMaxConns caps the SQLite connection pool. <= 0 means auto (NewSqliteManager
+	// derives it from CPU count). APP_DB_MAX_CONNS overrides.
+	DBMaxConns           int
 	JWTSecret            string
 	JWTAccessExpiration  time.Duration
 	JWTRefreshExpiration time.Duration
@@ -82,7 +86,13 @@ type Config struct {
 }
 
 func LoadConfig() (*Config, error) {
-	_ = godotenv.Load()
+	// A missing .env is fine (real env / defaults); a MALFORMED one is a broken
+	// deploy config and fails fast here, consistent with every other LoadConfig
+	// validation. LoadStartup ran first and already surfaced the same parse error
+	// as a Warn before the logger existed — this is the authoritative hard stop.
+	if err := loadDotenv(); err != nil {
+		return nil, fmt.Errorf("invalid .env: %w", err)
+	}
 
 	config := &Config{
 		HTTPPort:               getEnv("APP_HTTP_PORT", "3000"),
@@ -90,25 +100,50 @@ func LoadConfig() (*Config, error) {
 		DBJournalMode:          getEnv("APP_DB_JOURNAL_MODE", "WAL"),
 		JWTSecret:              getEnv("APP_JWT_SECRET", ""),
 		CORSOrigin:             getEnv("APP_CORS_ORIGIN", "http://localhost:5173"),
-		CookieSecure:           getEnv("APP_COOKIE_SECURE", "true") == "true",
 		SeedAdminPassword:      getEnv("APP_SEED_ADMIN_PASSWORD", ""),
 		SeedSuperAdminPassword: getEnv("APP_SEED_SUPERADMIN_PASSWORD", ""),
 		SeedAdminTenant:        getEnv("APP_SEED_ADMIN_TENANT", "Tenant 1"),
-		TrustProxyHeaders:      getEnv("APP_TRUST_PROXY_HEADERS", "false") == "true",
-		Multitenancy:           getEnv("APP_MULTITENANCY", "false") == "true",
 		RateLimitLogin:         getEnv("APP_RATE_LIMIT_LOGIN", "10/min"),
 		RateLimitRefresh:       getEnv("APP_RATE_LIMIT_REFRESH", "60/min"),
 		FrontendSentryDSN:      getEnv("APP_SENTRY_DSN_FRONTEND", ""),
 		SentryEnvironment:      getEnv("APP_SENTRY_ENVIRONMENT", ""),
-		SentryDebug:            getEnv("APP_SENTRY_DEBUG", "false") == "true",
-		RunDebug:               getEnv("APP_RUN_DEBUG", "false") == "true",
+	}
+
+	if err := validateCORSOrigin(config.CORSOrigin); err != nil {
+		return nil, err
 	}
 
 	var err error
 
+	// Booleans are parsed strictly (getEnvBool): a typo fails fast instead of
+	// silently coercing to false — for APP_COOKIE_SECURE that would ship insecure
+	// cookies + drop HSTS unnoticed.
+	for _, b := range []struct {
+		dst *bool
+		key string
+		def bool
+	}{
+		{&config.CookieSecure, "APP_COOKIE_SECURE", true},
+		{&config.TrustProxyHeaders, "APP_TRUST_PROXY_HEADERS", false},
+		{&config.Multitenancy, "APP_MULTITENANCY", false},
+		{&config.SentryDebug, "APP_SENTRY_DEBUG", false},
+		{&config.RunDebug, "APP_RUN_DEBUG", false},
+	} {
+		if *b.dst, err = getEnvBool(b.key, b.def); err != nil {
+			return nil, err
+		}
+	}
+
 	config.JWTAccessExpiration, err = time.ParseDuration(getEnv("APP_JWT_ACCESS_EXPIRATION", "15m"))
 	if err != nil {
 		return nil, fmt.Errorf("invalid APP_JWT_ACCESS_EXPIRATION: %w", err)
+	}
+	// Sign guard sits with the parse (its sibling): a non-positive expiration parses
+	// fine but would mint already-expired / never-expiring tokens. The JwtService
+	// constructor stays unguarded on purpose — tests feed it a negative access
+	// expiration to exercise expired-token rejection; operator config is validated here.
+	if config.JWTAccessExpiration <= 0 {
+		return nil, fmt.Errorf("APP_JWT_ACCESS_EXPIRATION must be positive")
 	}
 
 	config.JWTRefreshExpiration, err = time.ParseDuration(
@@ -117,7 +152,25 @@ func LoadConfig() (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid APP_JWT_REFRESH_EXPIRATION: %w", err)
 	}
+	if config.JWTRefreshExpiration <= 0 {
+		return nil, fmt.Errorf("APP_JWT_REFRESH_EXPIRATION must be positive")
+	}
 
+	// 0 = auto (NewSqliteManager derives the cap from CPU count).
+	if config.DBMaxConns, err = getEnvInt("APP_DB_MAX_CONNS", 0); err != nil {
+		return nil, fmt.Errorf("invalid APP_DB_MAX_CONNS: %w", err)
+	}
+
+	if err := loadRunWorkerConfig(config); err != nil {
+		return nil, err
+	}
+
+	return config, nil
+}
+
+// loadRunWorkerConfig parses the durable-run worker knobs onto config, split out
+// of LoadConfig to keep it under the length gate.
+func loadRunWorkerConfig(config *Config) error {
 	for _, d := range []struct {
 		dst *time.Duration
 		key string
@@ -128,19 +181,20 @@ func LoadConfig() (*Config, error) {
 		{&config.RunWorkerPoll, "APP_RUN_WORKER_POLL", "1s"},
 		{&config.RunWorkerDrainTimeout, "APP_RUN_WORKER_DRAIN_TIMEOUT", "10s"},
 	} {
+		var err error
 		if *d.dst, err = time.ParseDuration(getEnv(d.key, d.def)); err != nil {
-			return nil, fmt.Errorf("invalid %s: %w", d.key, err)
+			return fmt.Errorf("invalid %s: %w", d.key, err)
 		}
 	}
 
+	var err error
 	if config.RunWorkerMaxInFlight, err = getEnvInt("APP_RUN_WORKER_MAX_IN_FLIGHT", 8); err != nil {
-		return nil, fmt.Errorf("invalid APP_RUN_WORKER_MAX_IN_FLIGHT: %w", err)
+		return fmt.Errorf("invalid APP_RUN_WORKER_MAX_IN_FLIGHT: %w", err)
 	}
 	if config.RunWorkerMaxReclaims, err = getEnvInt("APP_RUN_WORKER_MAX_RECLAIMS", 20); err != nil {
-		return nil, fmt.Errorf("invalid APP_RUN_WORKER_MAX_RECLAIMS: %w", err)
+		return fmt.Errorf("invalid APP_RUN_WORKER_MAX_RECLAIMS: %w", err)
 	}
-
-	return config, nil
+	return nil
 }
 
 // StartupConfig is the slice of configuration read at the very start of main —
@@ -154,13 +208,19 @@ type StartupConfig struct {
 	SentryDSN         string
 	SentryEnvironment string
 	SentryRelease     string
+	// DotenvError carries a malformed-.env parse error (nil when .env is absent or
+	// valid). LoadStartup runs before the logger exists, so it stashes the error
+	// here for main to Warn once the logger is built.
+	DotenvError error
 }
 
 // LoadStartup loads .env (best-effort) and reads the bootstrap configuration.
-// LoadConfig loads .env again later; godotenv.Load never overrides already-set
+// A malformed .env is stashed in DotenvError (not fatal here — the logger it
+// would be reported through doesn't exist yet). LoadConfig loads .env again later
+// and fails fast on the same parse error; godotenv never overrides already-set
 // vars, so the repeat is harmless.
 func LoadStartup() StartupConfig {
-	_ = godotenv.Load()
+	dotenvErr := loadDotenv()
 
 	return StartupConfig{
 		LogFormat:         getEnv("APP_LOG_FORMAT", ""),
@@ -168,7 +228,18 @@ func LoadStartup() StartupConfig {
 		SentryDSN:         getEnv("APP_SENTRY_DSN", ""),
 		SentryEnvironment: getEnv("APP_SENTRY_ENVIRONMENT", ""),
 		SentryRelease:     getEnv("APP_SENTRY_RELEASE", ""),
+		DotenvError:       dotenvErr,
 	}
+}
+
+// loadDotenv loads .env, treating an absent file as success (real env / defaults)
+// but returning a genuine parse error so callers can surface it — a malformed
+// .env must never be silently indistinguishable from an absent one.
+func loadDotenv() error {
+	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 func getEnv(key, fallback string) string {
@@ -185,4 +256,47 @@ func getEnvInt(key string, fallback int) (int, error) {
 		return fallback, nil
 	}
 	return strconv.Atoi(v)
+}
+
+// validateCORSOrigin enforces that APP_CORS_ORIGIN is one concrete origin of the
+// exact scheme://host[:port] shape. CORSMiddleware always answers with
+// Access-Control-Allow-Credentials: true, and credentialed CORS forbids a
+// wildcard — "*" (or an empty/relative/path-carrying value) would either be
+// rejected by browsers or silently break the CORS↔CSRF pairing, so a bad value
+// is a broken deploy config and fails fast at startup. The same value is
+// registered as a CSRF trusted origin (server.buildMiddlewareChain), which
+// requires this exact shape too.
+func validateCORSOrigin(origin string) error {
+	if origin == "" || origin == "*" {
+		return fmt.Errorf(
+			"APP_CORS_ORIGIN must be one concrete origin (scheme://host[:port]), got %q: "+
+				"credentialed CORS (Allow-Credentials: true) forbids a wildcard", origin)
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return fmt.Errorf("invalid APP_CORS_ORIGIN %q: %w", origin, err)
+	}
+	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+		u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+		return fmt.Errorf(
+			"invalid APP_CORS_ORIGIN %q: must be exactly scheme://host[:port] with an http(s) "+
+				"scheme and no path, query, fragment or credentials", origin)
+	}
+	return nil
+}
+
+// getEnvBool reads a strict boolean env var: only "true" or "false" are accepted.
+// Any other non-empty value is an error, so a typo fails fast at load rather than
+// silently coercing to false (the trap the old `== "true"` had).
+func getEnvBool(key string, fallback bool) (bool, error) {
+	switch os.Getenv(key) {
+	case "":
+		return fallback, nil
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, fmt.Errorf("%s must be \"true\" or \"false\"", key)
+	}
 }

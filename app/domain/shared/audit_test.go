@@ -5,18 +5,18 @@ import (
 	"testing"
 )
 
-func TestAuditCollector_RecordAndDrain(t *testing.T) {
+func TestAuditCollector_RecordAndFlush(t *testing.T) {
 	t.Parallel()
-	c := &AuditCollector{}
+	c := NewAuditCollector()
 	c.Record(AuditEvent{Action: "a"})
 	c.Record(AuditEvent{Action: "b"})
 
-	got := c.Drain()
+	got := c.Flush()
 	if len(got) != 2 || got[0].Action != "a" || got[1].Action != "b" {
-		t.Fatalf("drain order: %+v", got)
+		t.Fatalf("flush order: %+v", got)
 	}
-	if rest := c.Drain(); len(rest) != 0 {
-		t.Fatalf("collector should be empty after drain, got %d", len(rest))
+	if rest := c.Flush(); len(rest) != 0 {
+		t.Fatalf("collector should be empty after flush, got %d", len(rest))
 	}
 }
 
@@ -25,7 +25,7 @@ func TestAuditCollector_RecordAndDrain(t *testing.T) {
 // raced, -race would fail it.
 func TestAuditCollector_ConcurrentRecord(t *testing.T) {
 	t.Parallel()
-	c := &AuditCollector{}
+	c := NewAuditCollector()
 	const writers, perWriter = 50, 20
 	var wg sync.WaitGroup
 	for i := 0; i < writers; i++ {
@@ -38,7 +38,7 @@ func TestAuditCollector_ConcurrentRecord(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	if got := len(c.Drain()); got != writers*perWriter {
+	if got := len(c.Flush()); got != writers*perWriter {
 		t.Fatalf("expected %d events, got %d", writers*perWriter, got)
 	}
 }

@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -139,6 +140,51 @@ func TestScheduler_PanicInOneJobKeepsOthersRunning(t *testing.T) {
 	}
 	if atomic.LoadInt32(&panicRuns) < 2 {
 		t.Fatalf("panicking job ticks: %d (want >=2) — recovery may be broken", panicRuns)
+	}
+}
+
+// The panic log is the ONLY diagnostic the deliberate no-Sentry policy leaves,
+// so it must carry the stack trace — without it the log names the job but not
+// the faulting line. Interval=hour → exactly one run-once tick panics; the buffer
+// is read only after Run() drains (channel-synchronized, no data race).
+func TestScheduler_PanicLogCarriesStack(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+
+	fired := make(chan struct{})
+	s, err := NewScheduler(logger, []Job{
+		{Name: "boom", Interval: time.Hour, Fn: func(_ context.Context) error {
+			close(fired) // signal before panicking; run-once + hour interval = once
+			panic("kaboom")
+		}},
+	})
+	if err != nil {
+		t.Fatalf("NewScheduler: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.Run(ctx)
+	}()
+
+	<-fired
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("scheduler hung after panic")
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "scheduler: job panicked") {
+		t.Fatalf("expected the panic log, got: %q", out)
+	}
+	if !strings.Contains(out, "stack=") || !strings.Contains(out, "goroutine") {
+		t.Fatalf("panic log must carry a non-empty stack trace, got: %q", out)
 	}
 }
 

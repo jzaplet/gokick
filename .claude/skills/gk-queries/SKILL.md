@@ -6,14 +6,14 @@ slug: 'skills-gk-queries'
 parent: 'skills-cqrs'
 navTitle: 'gk-queries'
 title: 'GK — Query handlers (read operace)'
-description: 'Read operace (čtení dat bez změny stavu) — struktura query handleru, deklarace permission a typovaný návrat přes bus.Exec. Use when přidáváš endpoint, který něco čte/vypisuje (list, detail, dashboard), a řešíš strukturu handleru, permission nebo jak ho poslat přes bus.'
+description: 'Read operace (čtení dat bez změny stavu) — struktura query handleru, deklarace permission a typovaný návrat přes bus.Query. Use when přidáváš endpoint, který něco čte/vypisuje (list, detail, dashboard), a řešíš strukturu handleru, permission nebo jak ho poslat přes bus.'
 name: 'gk-queries'
 ---
 
 # GK — Query handlers (read operace)
 
 Query čte stav systému a **nic nemění**. V gokicku má pevnou strukturu, deklaruje
-permission a posílá se přes `QueryBus` typovaným `bus.Exec`.
+permission a posílá se přes `QueryBus` typovaným `bus.Query`.
 
 ## What & when
 
@@ -61,8 +61,23 @@ func (h *ListUsersHandler) Handle(ctx context.Context, _ ListUsersQuery) ([]user
 **Návratový typ je libovolný** — slice entit (`[]user.User`) i vlastní DTO struct
 (`AdminDashboard{ Message string }` v `get_admin_dashboard.go`).
 
-**Dispatch z HTTP handleru** přes generický `bus.Exec[R]`
-(`app/application/bus/exec.go`) — `R` je typ výsledku, takže návrat je typovaný:
+**Dispatch z HTTP handleru** přes generický `bus.Query[R]`
+(`app/application/bus/dispatch.go`) — `R` je typ výsledku, takže návrat je typovaný.
+`bus.Query` bere přímo `*bus.QueryBus` (vnitřní `*Bus` je neexportovaný), takže párování
+bus↔operace hlídá kompilátor — query nejde omylem poslat na command bus:
+
+```go
+// app/presentation/http/handler/dashboard.go
+result, err := bus.Query(
+    r.Context(),
+    h.queryBus,                 // *bus.QueryBus
+    "GetAdminDashboard",        // jméno do logů
+    q,                          // samotná query (nese permission)
+    func(ctx context.Context) (dashboardqry.AdminDashboard, error) {
+        return h.adminDash.Handle(ctx, q)
+    },
+)
+```
 
 ```go
 // app/presentation/http/handler/dashboard.go
@@ -81,10 +96,12 @@ result, err := bus.Exec(
 `app/application/bus/middleware/base.go`:
 
 ```
-Recovery → Logging → Authorize
+Recovery → Logging → Authorize → Tenant
 ```
 
-Žádná transakce, žádný audit, žádné eventy (to má jen `CommandBus`). `Authorize`
+`Tenant` (`middleware/tenant.go`) hned po autorizaci resolvuje aktivní tenant do ctx — čtení potřebuje tenant scoping stejně jako zápis (viz `/gk-multitenancy`).
+
+Žádná transakce, žádný audit, žádné eventy (to mají jen command busy — `CommandBus` a `SystemCommandBus`). `Authorize`
 (`middleware/authorize.go`) zavolá `RequiredPermission()` a ověří ho proti rolím
 volajícího.
 
@@ -101,8 +118,8 @@ Přidání nové query (čtecí endpoint):
    rozhraní** (`user.Repository`), ne konkrétní `*sqliteuser.Repository`.
 5. **`Handle(ctx, q) (R, error)`** — jen čte, žádné zápisy.
 6. **HTTP handler** v `presentation/http/handler/` dispatchni přes
-   `bus.Exec[R](ctx, h.queryBus.Bus, "Name", q, fn)`; výsledek namapuj na DTO a vrať
-   `response.JSON(...)`, chybu přes `response.HandleError(...)`.
+   `bus.Query[R](ctx, h.queryBus, "Name", q, fn)`; výsledek namapuj na DTO a vrať
+   `h.resp.JSON(r.Context(), w, http.StatusOK, dto)`, chybu přes `h.resp.HandleError(r.Context(), w, err)` (`resp *response.Responder` si handler nechá injektovat v konstruktoru).
 7. **Route** zaregistruj v `presentation/http/server/server.go`, **DI** dráty
    (provider handleru + query handleru) v `infrastructure/di/container_provider.go`,
    pak `make di`. Celý průchod vrstvami → `/gk-feature`.
@@ -119,7 +136,7 @@ Přidání nové query (čtecí endpoint):
 - **Závislost na doménovém rozhraní, ne na konkrétním repu.** Handler drží
   `user.Repository`, ne `*sqliteuser.Repository` — jinak porušíš pravidlo vrstev
   (`make arch-check` to chytne).
-- **Nikdy nevolej handler napřímo z HTTP** — vždy přes `bus.Exec`. Mimo bus by
+- **Nikdy nevolej handler napřímo z HTTP** — vždy přes `bus.Query`. Mimo bus by
   permission check ani logging neproběhly.
 - **Žádné raw permission stringy na frontendu.** Backendová query deklaruje string
   (`admin:users:read`), FE musí stejnou permission brát z `Permission` enumu
@@ -131,5 +148,5 @@ Přidání nové query (čtecí endpoint):
   end-to-end přes vrstvy), `/gk-entities` (entity a value objects, které query vrací)
 - Kód: `app/application/user/query/list_users.go`,
   `app/application/dashboard/query/get_admin_dashboard.go`,
-  `app/application/bus/exec.go`, `app/application/bus/middleware/base.go`,
+  `app/application/bus/dispatch.go`, `app/application/bus/middleware/base.go`,
   `app/presentation/http/handler/dashboard.go`

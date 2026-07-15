@@ -24,9 +24,9 @@ func (h *GetUserDashboardHandler) Handle(
 	ctx context.Context,
 	_ GetUserDashboardQuery,
 ) (UserDashboard, error) {
-	claims := shared.ClaimsFromContext(ctx)
-	if claims == nil {
-		return UserDashboard{}, &shared.AuthError{Message: "authentication required"}
+	claims, err := shared.RequireClaims(ctx)
+	if err != nil {
+		return UserDashboard{}, err
 	}
 
 	return UserDashboard{

@@ -36,7 +36,7 @@ func TestLoginHandler_LockDurationIs15Minutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("find user: %v", err)
 	}
-	if !got.LockedUntil.Valid {
+	if got.LockedUntil == nil {
 		t.Fatal("account must be locked after threshold reached")
 	}
 
@@ -44,7 +44,7 @@ func TestLoginHandler_LockDurationIs15Minutes(t *testing.T) {
 	// and we only care about the instant, not the location.
 	wantLowerBound := start.UTC().Add(loginLockDuration)
 	wantUpperBound := time.Now().UTC().Add(loginLockDuration)
-	gotLocked := got.LockedUntil.Time.UTC()
+	gotLocked := got.LockedUntil.UTC()
 
 	if gotLocked.Before(wantLowerBound.Add(-time.Second)) ||
 		gotLocked.After(wantUpperBound.Add(time.Second)) {
@@ -157,14 +157,13 @@ func TestLoginHandler_BlockedWhileLockedHasNoMetadata(t *testing.T) {
 		_, _ = handler.Handle(ctx, LoginCommand{Nickname: "quinn", Password: "wrong"})
 	}
 
-	collector := &shared.AuditCollector{}
-	lockedCtx := shared.ContextWithAuditCollector(ctx, collector)
+	lockedCtx, collector := shared.ContextWithAuditCollector(ctx)
 	if _, err := handler.Handle(lockedCtx, LoginCommand{Nickname: "quinn", Password: "correct-pw"}); err == nil {
 		t.Fatal("locked account must return an error")
 	}
 
 	var blocked *shared.AuditEvent
-	for _, e := range collector.Drain() {
+	for _, e := range collector.Flush() {
 		if e.Action == "auth.login.blocked_while_locked" {
 			ev := e
 			blocked = &ev
@@ -190,8 +189,7 @@ func TestLoginHandler_AccountLockedEventCarriesLockedUntilMetadata(t *testing.T)
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "zz_locked_meta.db"))
 	fx.SeedUser(t, "rosa", "correct-pw", "user")
 
-	collector := &shared.AuditCollector{}
-	auditCtx := shared.ContextWithAuditCollector(ctx, collector)
+	auditCtx, collector := shared.ContextWithAuditCollector(ctx)
 
 	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
 	before := time.Now()
@@ -200,7 +198,7 @@ func TestLoginHandler_AccountLockedEventCarriesLockedUntilMetadata(t *testing.T)
 	}
 
 	var lockEvent *shared.AuditEvent
-	for _, e := range collector.Drain() {
+	for _, e := range collector.Flush() {
 		if e.Action == "auth.account.locked" {
 			ev := e
 			lockEvent = &ev
@@ -232,7 +230,7 @@ func TestLoginHandler_AccountLockedEventCarriesLockedUntilMetadata(t *testing.T)
 	}
 }
 
-// raceTokenRepo is a stub token.TokenRepository that simulates a concurrent
+// raceTokenRepo is a stub token.Repository that simulates a concurrent
 // rotation race: FindByHash returns a valid, unused, unexpired token, but
 // MarkUsed reports (false, nil) — i.e. another request already flipped used_at
 // first. Only the methods the refresh handler calls on this path are
@@ -287,8 +285,7 @@ func TestRefreshTokenHandler_ConcurrentRotationRaceRecordsTheftAudit(t *testing.
 
 	handler := NewRefreshTokenHandler(fx.Users, stub, fx.Jwt)
 
-	collector := &shared.AuditCollector{}
-	auditCtx := shared.ContextWithAuditCollector(ctx, collector)
+	auditCtx, collector := shared.ContextWithAuditCollector(ctx)
 
 	_, err := handler.Handle(auditCtx, RefreshTokenCommand{RawToken: raw})
 	var authErr *shared.AuthError
@@ -301,7 +298,7 @@ func TestRefreshTokenHandler_ConcurrentRotationRaceRecordsTheftAudit(t *testing.
 	}
 
 	var theft *shared.AuditEvent
-	for _, e := range collector.Drain() {
+	for _, e := range collector.Flush() {
 		if e.Action == "auth.token.theft_detected" {
 			ev := e
 			theft = &ev

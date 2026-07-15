@@ -24,7 +24,7 @@ func newAuthHandler(t *testing.T) (*AuthHandler, *testfx.Fixture) {
 		authcmd.LogoutCommand{},
 	})
 
-	h := NewAuthHandler(
+	h := NewAuthHandler(testResponder(),
 		CookieSecure(false),
 		cmdBus,
 		authcmd.NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt),

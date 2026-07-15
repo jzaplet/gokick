@@ -44,20 +44,23 @@ DB server. **Seed** je jednorázové naplnění DB výchozími daty (admin úče
   `seed` / `create-user`, nejen u `serve`. Ruční `make migrate-up` na první spuštění
   nepotřebuješ.
 - **`make build` = plná binárka:** `di` (Wire) → `fe-build` (Vite → `public/`) → Go
-  build, který `public/` embeduje. **`make dev` je jen backend** (Makefile řádek ~69:
+  build, který `public/` embeduje. **`make dev` je jen backend** (Makefile řádek ~95:
   `di` + `go build`, **bez** `fe-build`) — rychlý při práci na Go, ale neembeduje SPA.
 - **`make serve`** jen spustí `./bin/app serve` — nejdřív musíš mít sestavenou binárku.
-- **CLI surface** (`app/presentation/console/root.go`) — Cobra root `app` s subcommandy:
 
   | Příkaz | Co dělá |
   |---|---|
   | `./bin/app serve` | HTTP server **+ in-process scheduler + durable-task worker** v jednom procesu (sdílí jeden `ctx`, SIGTERM nechá vše korektně dobíhat — `console/serve.go`) |
   | `./bin/app seed` | Vytvoří admin účet (pokud chybí), heslo z `APP_SEED_ADMIN_PASSWORD` (`console/seed.go`) |
   | `./bin/app create-user -n <nick> -p <pass> [-e <email>] [-r <role>]` | Vytvoří uživatele; role default `admin`, alternativa `user` (`console/create_user.go`) |
+  | `./bin/app create-superadmin -n <nick> -p <pass> [-e <email>]` | Vytvoří platform superadmina (cross-tenant) — jediná cesta k té roli (`console/create_superadmin.go`) |
+  | `./bin/app create-tenant -n <name>` | Vytvoří tenant a vypíše jeho id — pro multitenant režim (`console/create_tenant.go`) |
   | `./bin/app worker` | Jen persistentní durable-task worker, bez HTTP serveru — pro škálování workerů zvlášť (`console/worker.go`) |
 
-- **`create-user` bypassuje bus** a volá přímo `*usercmd.CreateUserHandler.Handle()` —
-  recykluje stejnou validaci, hashing a unique-nickname check jako HTTP API.
+- **`create-user` jede přes `SystemCommandBus`** (transakce, audit trail, post-commit
+  eventy, panic→Sentry — bez Authorize/Tenant middleware) a uvnitř volá stejný
+  `*usercmd.CreateUserHandler` jako HTTP API — recykluje stejnou validaci, hashing
+  a unique-nickname check.
 
 ## Recipe
 
@@ -92,9 +95,10 @@ DB server. **Seed** je jednorázové naplnění DB výchozími daty (admin úče
   nebo je stará, nejdřív `make build` / `make dev`.
 - **`seed` bez `APP_SEED_ADMIN_PASSWORD` selže.** Proměnná je povinná jen pro `seed`;
   v prostředích, kde seed neběží, ji nech prázdnou.
-- **Změň `APP_JWT_SECRET`.** Placeholder v `.env.example` je sice ≥ 32 znaků (config ho
-  na délku nevaliduje, `app/infrastructure/config/config.go`), ale ponechat výchozí
-  tajemství je bezpečnostní díra — vždy ho přepiš na vlastní náhodný řetězec.
+- **Změň `APP_JWT_SECRET`.** Placeholder v `.env.example` je ≥ 32 znaků — délku vynucuje
+  `NewJwtService` (`app/infrastructure/security/jwt.go`): prázdný nebo kratší secret
+  shodí start. Ale ponechat výchozí tajemství je bezpečnostní díra — vždy ho přepiš
+  na vlastní náhodný řetězec.
 - **Nepotřebuješ ruční migraci na první boot** — `RunUp()` ji udělá za tebe před každým
   subcommandem.
 - **Go 1.26+ a Node 24+** jsou prerekvizity.
@@ -105,4 +109,4 @@ DB server. **Seed** je jednorázové naplnění DB výchozími daty (admin úče
   end-to-end), `/gk-architecture` (vrstvy a pravidla závislostí), `/gk-bus` (CQRS busy).
 - Docs: [Installation](/framework/installation).
 - Kód: `app/presentation/console/` (`root.go`, `serve.go`, `seed.go`, `create_user.go`,
-  `worker.go`), `app/application.go` (auto-migrace), `Makefile`, `.env.example`.
+  `create_superadmin.go`, `create_tenant.go`, `worker.go`), `app/application.go` (auto-migrace), `Makefile`, `.env.example`.

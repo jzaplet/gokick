@@ -69,8 +69,8 @@ Na vše ostatní stačí **`/gk`** — rozcestník, který sám rozhodne, jaké 
 | `make build` | Sestaví frontend + backend → `bin/app` |
 | `make serve` | Spustí server |
 | `make test` | Vitest + go test |
-| `make lint` | ESLint + vue-tsc + golangci-lint + go-arch-lint |
-| `make format` | ESLint Stylistic + golines |
+| `make lint` | ESLint + vue-tsc + knip + golangci-lint + go-arch-lint + golines format-check + ts-check + documan-lint |
+| `make format` | ESLint Stylistic + golines + documan-fix |
 
 
 ## Dokumentace

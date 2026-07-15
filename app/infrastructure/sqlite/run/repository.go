@@ -1,8 +1,10 @@
 // Package run implements run.Repository on SQLite. It uses the project's
 // julianday/ms-precision time discipline (julianday comparisons, ms-precision writes) and adds the
-// owner-token fencing the durable model needs: every mutating method is
-// owner-checked and returns whether it affected its one row, so a worker that
-// lost its lease cannot stomp a run another worker reclaimed.
+// owner-token fencing the durable model needs: every worker mutating method past
+// the claim (the lease/checkpoint/finalize writes) is owner-checked and returns
+// whether it affected its one row, so a worker that lost its lease cannot stomp
+// a run another worker reclaimed. Enqueue (the command-side INSERT) and
+// RequestCancel (the operator signal) are deliberately not owner-checked.
 package run
 
 import (
@@ -74,9 +76,7 @@ func (r *Repository) ClaimDue(
 		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = (
 		    SELECT id FROM runs
-		    WHERE completed_at IS NULL
-		      AND failed_at IS NULL
-		      AND cancelled_at IS NULL
+		    WHERE ` + sqlite.NotTerminalClause + `
 		      AND julianday(run_at) <= julianday('now')
 		      AND (locked_until IS NULL OR julianday(locked_until) < julianday('now'))
 		    ORDER BY julianday(run_at)
@@ -118,7 +118,7 @@ func (r *Repository) RenewLease(
 		SET locked_until = ` + sqlite.LeaseExpr + `,
 		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = ? AND locked_by = ?
-		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL
+		  AND ` + sqlite.NotTerminalClause + `
 		RETURNING cancel_requested`
 	err = r.Conn(ctx).GetContext(ctx, &cancelRequested, q, lease.Seconds(), id, owner)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -147,7 +147,7 @@ func (r *Repository) Checkpoint(
 		    locked_until = ` + sqlite.LeaseExpr + `,
 		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = ? AND locked_by = ?
-		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL`
+		  AND ` + sqlite.NotTerminalClause
 	res, err := r.Conn(ctx).ExecContext(ctx, q, state, lease.Seconds(), id, owner)
 	return sqlite.RowsAffectedBool(res, err)
 }
@@ -162,7 +162,7 @@ func (r *Repository) MarkComplete(ctx context.Context, id, owner string) (bool, 
 		    locked_by = NULL,
 		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = ? AND locked_by = ?
-		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL`
+		  AND ` + sqlite.NotTerminalClause
 	res, err := r.Conn(ctx).ExecContext(ctx, q, id, owner)
 	return sqlite.RowsAffectedBool(res, err)
 }
@@ -185,7 +185,7 @@ func (r *Repository) Reschedule(
 		    locked_by = NULL,
 		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = ? AND locked_by = ?
-		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL`
+		  AND ` + sqlite.NotTerminalClause
 	res, err := r.Conn(ctx).ExecContext(ctx, q, sqlite.MsPrecisionUTC(runAt), lastErr, id, owner)
 	return sqlite.RowsAffectedBool(res, err)
 }
@@ -208,7 +208,7 @@ func (r *Repository) Park(
 		    locked_by = NULL,
 		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = ? AND locked_by = ?
-		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL`
+		  AND ` + sqlite.NotTerminalClause
 	res, err := r.Conn(ctx).ExecContext(ctx, q, sqlite.MsPrecisionUTC(runAt), reason, id, owner)
 	return sqlite.RowsAffectedBool(res, err)
 }
@@ -229,7 +229,7 @@ func (r *Repository) MarkFailed(
 		    locked_by = NULL,
 		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = ? AND locked_by = ?
-		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL`
+		  AND ` + sqlite.NotTerminalClause
 	res, err := r.Conn(ctx).ExecContext(ctx, q, lastErr, id, owner)
 	return sqlite.RowsAffectedBool(res, err)
 }
@@ -243,7 +243,7 @@ func (r *Repository) RequestCancel(ctx context.Context, id string) error {
 		SET cancel_requested = 1,
 		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = ?
-		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL`
+		  AND ` + sqlite.NotTerminalClause
 	_, err := r.Conn(ctx).ExecContext(ctx, q, id)
 	return err
 }
@@ -259,7 +259,7 @@ func (r *Repository) MarkCancelled(ctx context.Context, id, owner string) (bool,
 		    locked_by = NULL,
 		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = ? AND locked_by = ?
-		  AND completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL`
+		  AND ` + sqlite.NotTerminalClause
 	res, err := r.Conn(ctx).ExecContext(ctx, q, id, owner)
 	return sqlite.RowsAffectedBool(res, err)
 }

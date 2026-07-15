@@ -35,13 +35,14 @@ Vše se skládá v `app/presentation/http/server/server.go` → `buildMiddleware
 ### CSRF — Go 1.25 stdlib `http.CrossOriginProtection`
 
 ```go
-csrf := &http.CrossOriginProtection{}   // prázdný = bezpečné defaulty
+csrf := &http.CrossOriginProtection{}   // bezpečné defaulty
+csrf.AddTrustedOrigin(cfg.CORSOrigin)   // CORS a CSRF souhlasí na jednom povoleném originu
 // ... v chainu: csrf.Handler
 ```
 
 - Žádný **CSRF token, žádná cookie, žádný per-form secret**. `CrossOriginProtection` (stdlib Go 1.25) odmítne **stav měnící (non-safe-method) cross-origin** požadavek tak, že čte hlavičku `Sec-Fetch-Site`, a když chybí, porovná `Origin` vs `Host`. Safe metody (GET/HEAD) projdou vždy.
-- **Prázdný struct** = žádné trusted cross-origins, žádné bypass patterns. To sedí na náš **same-origin SPA**: frontend obsluhuje stejný mux (`spa.Serve` catch-all v `registerRoutes`), takže API i stránka běží ze stejného originu a žádná výjimka není potřeba.
-- CORS (`cors.go`) je vedlejší a oddělená věc — nastavuje `Access-Control-*` hlavičky pro povolený `APP_CORS_ORIGIN`; není to CSRF ochrana.
+- **Jediný trusted cross-origin = `APP_CORS_ORIGIN`.** Same-origin SPA (frontend obsluhuje stejný mux, `spa.Serve` catch-all) projde i bez něj; registrace pokrývá cross-origin klienta (Vite dev server, samostatně nasazená SPA), kterému CORS zápisy slibuje — bez ní by dostal na zápisech 403 (F-069).
+- CORS (`cors.go`) nastavuje `Access-Control-*` hlavičky pro povolený `APP_CORS_ORIGIN`; není to CSRF ochrana — ale obě vrstvy musí souhlasit, proto se stejná hodnota registruje i tady. `APP_CORS_ORIGIN` se validuje fail-fast v `LoadConfig` (přesně jeden origin `scheme://host[:port]`, žádný `*` — CORS odpovídá s `Allow-Credentials: true`).
 
 ### Security headers — `SecurityHeadersMiddleware`
 
@@ -65,7 +66,7 @@ Maskuje se **na jediném místě: těsně před odchodem do error trackeru** (`E
 1. Otevři `app/presentation/http/middleware/security.go`, najdi `csp := strings.Join([]string{ … })`.
 2. Přidej host do správné direktivy (`script-src` pro skript, `connect-src` pro XHR/fetch, `img-src` pro obrázky…). Drž to **co nejužší** — CSP je záměrně lokální (`'self'`).
 3. Sentry ingest se přidává automaticky přes `sentryIngestOrigin` — ten needituj ručně.
-4. `make test` (security_test pokrývá direktivy) + ověř v prohlížeči (DevTools → Console hlásí CSP violations).
+4. `make test` (direktivy pokrývají `TestSecurityHeadersMiddleware_*` testy v `middleware/zz_audit_test.go`) + ověř v prohlížeči (DevTools → Console hlásí CSP violations).
 
 ## Recipe: nová credential hlavička / log klíč k maskování
 

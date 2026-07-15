@@ -2,7 +2,6 @@ package command
 
 import (
 	"context"
-	"strings"
 
 	"gokick/app/domain/shared"
 	"gokick/app/domain/tenant"
@@ -16,6 +15,10 @@ type CreateTenantCommand struct {
 
 func (CreateTenantCommand) RequiredPermission() string { return "platform:tenants:create" }
 
+// CLIOnly: create-tenant runs only via the CLI/SystemCommandBus (no HTTP route),
+// so its permission stays out of the FE-facing registry. See shared.CLIOnly.
+func (CreateTenantCommand) CLIOnly() {}
+
 type CreateTenantHandler struct {
 	tenants tenant.Repository
 }
@@ -28,9 +31,9 @@ func (h *CreateTenantHandler) Handle(
 	ctx context.Context,
 	cmd CreateTenantCommand,
 ) (*tenant.Tenant, error) {
-	name := strings.TrimSpace(cmd.Name)
-	if name == "" {
-		return nil, &shared.ValidationError{Field: "name", Message: "tenant name is required"}
+	name, err := tenant.NewName(cmd.Name)
+	if err != nil {
+		return nil, err
 	}
 
 	t := tenant.NewTenant(name)

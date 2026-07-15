@@ -8,9 +8,12 @@ const (
 	// RoleSuperAdmin is the platform-level role (above admin/user): it sees
 	// across all tenants and is the only role granted platform:* permissions.
 	// Seeded out-of-band (APP_SEED_SUPERADMIN_PASSWORD), not via normal signup.
-	RoleSuperAdmin Role = "superadmin"
-	RoleAdmin      Role = "admin"
-	RoleUser       Role = "user"
+	// The VO consts are conversions of the canonical shared.Role* strings so the
+	// authorization ladder (shared.IsPermissionAllowedForRole) and this VO share
+	// one definition of each role name.
+	RoleSuperAdmin = Role(shared.RoleSuperAdmin)
+	RoleAdmin      = Role(shared.RoleAdmin)
+	RoleUser       = Role(shared.RoleUser)
 )
 
 func NewRole(s string) (Role, error) {

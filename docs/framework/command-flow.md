@@ -32,7 +32,7 @@ Chain se sestaví jednou v `provideCommandBus`. Pořadí zvenku dovnitř:
 5. **Audit** — vloží `AuditCollector` do `ctx`, po handleru zapíše záznamy.
 6. **RunDispatcher** — vloží `RunDispatcher` do `ctx` (handler může zařazovat runy do fronty).
 7. **DispatchEvents** — vloží per-request `EventCollector`; po úspěšném commitu eventy synchronně rozešle.
-8. **Transaction** — `BeginTx` → handler → `Commit` při úspěchu, `Rollback` při chybě.
+8. **Transaction** — `BeginTx` → handler → `Commit` při úspěchu, `Rollback` při chybě. Command se může opt-outnout markerem `shared.SkipsTransaction` (výjimka — raw-pool zápisy u Login, theft-cleanup u RefreshToken; viz `/gk-bus`).
 
 Uvnitř pak běží command handler: validace přes value objects, `repo.Save`, `Collect(event)`, `Record(audit)`.
 
@@ -42,18 +42,18 @@ Dvě věci stojí za zapamatování: **Audit je mimo transakci** (bezpečnostní
 ## Příklad
 
 ```go
-err := bus.ExecVoid(r.Context(), h.commandBus.Bus, "CreateUser", cmd,
+err := bus.DispatchVoid(r.Context(), h.commandBus, "CreateUser", cmd,
     func(ctx context.Context) error {
         return h.createUser.Handle(ctx, cmd)
     },
 )
 if err != nil {
-    response.HandleError(w, err)
+    h.resp.HandleError(r.Context(), w, err)
     return
 }
 ```
 
-`ExecVoid` je `Exec[any]` bez návratové hodnoty; `Exec[R]` použij, když command něco vrací.
+`DispatchVoid` je `Dispatch[R]` bez návratové hodnoty; `Dispatch[R]` použij, když command něco vrací. Obě berou `*bus.CommandBus`, takže záměna s QueryBusem nejde přeložit.
 
 
 ## Související

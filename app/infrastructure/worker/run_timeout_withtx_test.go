@@ -36,7 +36,7 @@ func TestRunWorker_Timeout_ReschedulesAsFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("registry: %v", err)
 	}
-	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, nil, fastCfg())
+	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, nil, nil, fastCfg())
 	r := enqueueRunW(t, fx, "slow", 1) // 1 retry available
 
 	stop := startWorker(w)
@@ -56,7 +56,8 @@ func TestRunWorker_HandlerWithTx_CommitsChildWrite(t *testing.T) {
 	fx := testfx.New(t, t.TempDir()+"/rw_withtx_commit.db")
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		return shared.WithTx(ctx, func(txCtx context.Context) error {
-			return fx.Runs.Enqueue(txCtx, run.NewRun("withtx.child", []byte(`{}`), 0))
+			child, _ := run.NewRun("withtx.child", []byte(`{}`), 0)
+			return fx.Runs.Enqueue(txCtx, child)
 		})
 	}
 	reg, err := runapp.NewHandlerRegistry(map[string]runapp.Registration{
@@ -69,7 +70,7 @@ func TestRunWorker_HandlerWithTx_CommitsChildWrite(t *testing.T) {
 		t.Fatalf("registry: %v", err)
 	}
 	// transactor = fx.DB (implements shared.Transactor) → WithTx works.
-	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, fx.DB, fastCfg())
+	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, fx.DB, nil, fastCfg())
 	enqueueRunW(t, fx, "withtx.parent", 0)
 
 	stop := startWorker(w)
@@ -86,7 +87,8 @@ func TestRunWorker_HandlerWithTx_RollsBackOnError(t *testing.T) {
 	boom := errors.New("fail after the write")
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		return shared.WithTx(ctx, func(txCtx context.Context) error {
-			if e := fx.Runs.Enqueue(txCtx, run.NewRun("withtx.rbchild", []byte(`{}`), 0)); e != nil {
+			rbchild, _ := run.NewRun("withtx.rbchild", []byte(`{}`), 0)
+			if e := fx.Runs.Enqueue(txCtx, rbchild); e != nil {
 				return e
 			}
 			return boom // roll the child enqueue back with the tx
@@ -98,7 +100,7 @@ func TestRunWorker_HandlerWithTx_RollsBackOnError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("registry: %v", err)
 	}
-	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, fx.DB, fastCfg())
+	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, fx.DB, nil, fastCfg())
 	r := enqueueRunW(t, fx, "withtx.rbparent", 0) // run-once → first failure is terminal
 
 	stop := startWorker(w)
@@ -129,7 +131,7 @@ func TestRunWorker_Timeout_NilReturn_NotCompleted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("registry: %v", err)
 	}
-	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, nil, fastCfg())
+	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, nil, nil, fastCfg())
 	r := enqueueRunW(t, fx, "slownil", 1)
 
 	stop := startWorker(w)
@@ -167,7 +169,7 @@ func TestRunWorker_Timeout_NonCtxAwareHandler_AbandonsForReclaim(t *testing.T) {
 	}
 	cfg := fastCfg()
 	cfg.MaxInFlight = 1 // the stuck handler pins the only slot, so the worker can't reclaim
-	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, nil, cfg)
+	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, nil, nil, cfg)
 	r := enqueueRunW(t, fx, "stuck", 0)
 
 	stop := startWorker(w)

@@ -51,12 +51,12 @@ func newRunWorker(
 		t.Fatalf("registry: %v", err)
 	}
 	reporter := &countingReporter{}
-	return NewRunWorker(silentLogger(), reporter, fx.Runs, reg, nil, nil, cfg), reporter
+	return NewRunWorker(silentLogger(), reporter, fx.Runs, reg, nil, nil, nil, cfg), reporter
 }
 
 func enqueueRunW(t *testing.T, fx *testfx.Fixture, kind string, maxRetries int) *run.Run {
 	t.Helper()
-	r := run.NewRun(kind, []byte(`{}`), maxRetries)
+	r, _ := run.NewRun(kind, []byte(`{}`), maxRetries)
 	if err := fx.Runs.Enqueue(context.Background(), r); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestRunWorker_ResumesFromCheckpoint(t *testing.T) {
 		fastCfg(),
 	)
 	// Pre-seed a run that already has checkpoint state (as if a prior worker crashed).
-	r := run.NewRun("agent", []byte(`{}`), 3)
+	r, _ := run.NewRun("agent", []byte(`{}`), 3)
 	r.State = []byte(`{"step":5}`)
 	if err := fx.Runs.Enqueue(context.Background(), r); err != nil {
 		t.Fatalf("enqueue: %v", err)
@@ -608,7 +608,16 @@ func TestRunWorker_HandlerCanEnqueueChildRun(t *testing.T) {
 		t.Fatalf("registry: %v", err)
 	}
 	dispatcher := runapp.NewDispatcher(fx.Runs, reg)
-	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, dispatcher, nil, fastCfg())
+	w := NewRunWorker(
+		silentLogger(),
+		&countingReporter{},
+		fx.Runs,
+		reg,
+		dispatcher,
+		nil,
+		nil,
+		fastCfg(),
+	)
 
 	enqueueRunW(t, fx, "parent", 0)
 	stop := startWorker(w)
@@ -639,7 +648,7 @@ func TestRunWorker_RestoresRunTenantIntoHandlerContext(t *testing.T) {
 		fastCfg(),
 	)
 
-	r := run.NewRun("agent", []byte(`{}`), 0)
+	r, _ := run.NewRun("agent", []byte(`{}`), 0)
 	r.TenantID = "tenant-A"
 	if err := fx.Runs.Enqueue(context.Background(), r); err != nil {
 		t.Fatalf("enqueue: %v", err)

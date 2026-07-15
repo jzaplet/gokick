@@ -27,9 +27,9 @@ Když chceš na změnu stavu **navázat vedlejší efekt** (uvítací mail, sync
 2. Command handler posbírá event přes `Collect` (jen primitiva — string ID, čas; žádné entity).
 3. Proběhne transakce. Když handler nebo commit **selže** → eventy se zahodí (zmizí spolu s rollbackem).
 4. Po úspěšném **commitu** middleware kolektor vyprázdní (`Flush`) a pro každý event volá `eventBus.Dispatch`.
-5. `EventBus` spustí registrované handlery **synchronně a sekvenčně**, každý přes `ExecVoid` (Recovery + Logging). Chyba handleru původní command neshodí.
+5. `EventBus` spustí registrované handlery **synchronně a sekvenčně**, každý přes vlastní middleware chain EventBusu (Recovery + Logging). Chyba handleru původní command neshodí.
 
-`Dispatch` nejdřív z `ctx` odebere kolektor — kdyby se event handler pokusil zavolat `Collect` na další event, **vyvolá to paniku** (kaskádové eventy nejsou podporované; navazující práce patří do `RunDispatcheru`).
+`Dispatch` nejdřív v `ctx` nahradí kolektor zakázaným markerem — kdyby se event handler pokusil zavolat `Collect` na další event, **vyvolá to paniku** (kaskádové eventy nejsou podporované; navazující práce patří do `RunDispatcheru`).
 
 
 ## Příklad
@@ -37,7 +37,7 @@ Když chceš na změnu stavu **navázat vedlejší efekt** (uvítací mail, sync
 Sběr v command handleru — handler k `EventBus` nepřistupuje přímo:
 
 ```go
-// app/application/user/command/create_user.go
+// app/application/userwrite/userwrite.go — sdílené tělo create, volané z command handleru
 shared.EventCollectorFromContext(ctx).Collect(user.UserCreated{
     UserID:    u.ID,
     Nickname:  u.Nickname,
@@ -47,7 +47,7 @@ shared.EventCollectorFromContext(ctx).Collect(user.UserCreated{
 })
 ```
 
-Handlery se registrují na jednom místě — `provideEventHandlers()` v DI (`eb.Register(event, handler)`); volá se jen při sestavování DI.
+Handlery se registrují na jednom místě — `provideEventHandlers()` v DI vrací seznam `bus.EventHandlerEntry` (event → handler); `provideEventBus` je při konstrukci navěsí přes `eb.Register`. Obojí běží jen při sestavování DI.
 
 
 ## Související

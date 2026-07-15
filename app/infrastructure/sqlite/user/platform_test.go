@@ -52,7 +52,7 @@ func TestUserRepository_RecordLogin_StampsLastLoginAt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load before: %v", err)
 	}
-	if before.LastLoginAt.Valid {
+	if before.LastLoginAt != nil {
 		t.Fatal("last_login_at must be NULL before any login")
 	}
 
@@ -64,7 +64,7 @@ func TestUserRepository_RecordLogin_StampsLastLoginAt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load after: %v", err)
 	}
-	if !after.LastLoginAt.Valid {
+	if after.LastLoginAt == nil {
 		t.Fatal("last_login_at must be set after RecordLogin")
 	}
 }

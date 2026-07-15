@@ -19,8 +19,11 @@ package bus
 // transaction (multi-write commands are atomic — the orphan-tenant rollback comes
 // for free instead of being hand-rolled), an audit trail, post-commit event
 // dispatch, and panic→Sentry reporting.
-type SystemCommandBus struct{ *Bus }
+// Its inner *Bus is unexported: an operator command runs only through
+// bus.SystemDispatch / bus.SystemDispatchVoid, which take *SystemCommandBus (see
+// CommandBus for the compile-checked-pairing rationale).
+type SystemCommandBus struct{ inner *Bus }
 
 func NewSystemCommandBus(middlewares ...Middleware) *SystemCommandBus {
-	return &SystemCommandBus{Bus: newBus(middlewares...)}
+	return &SystemCommandBus{inner: newBus(middlewares...)}
 }

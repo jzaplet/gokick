@@ -15,8 +15,6 @@ import (
 const (
 	logKeySourceCommand = "source_command"
 	logKeyAction        = "action"
-	logKeyPanic         = "panic"
-	logKeyStack         = "stack"
 )
 
 func LoggingMiddleware(logger *slog.Logger) bus.Middleware {

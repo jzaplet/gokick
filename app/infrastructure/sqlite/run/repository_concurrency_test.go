@@ -135,9 +135,9 @@ func TestTenant_ClaimDueGlobalDrainAcrossTenants(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_drain.db"))
 	ctx := context.Background()
 	// Two runs in distinct tenants, distinct run_at so order is deterministic.
-	r1 := run.NewRun("agent", []byte(`{}`), 0)
+	r1, _ := run.NewRun("agent", []byte(`{}`), 0)
 	r1.TenantID, r1.RunAt = "T1", time.Now().Add(-2*time.Second)
-	r2 := run.NewRun("agent", []byte(`{}`), 0)
+	r2, _ := run.NewRun("agent", []byte(`{}`), 0)
 	r2.TenantID, r2.RunAt = "T2", time.Now().Add(-1*time.Second)
 	for _, r := range []*run.Run{r1, r2} {
 		if err := fx.Runs.Enqueue(ctx, r); err != nil {
@@ -351,7 +351,7 @@ func TestConcurrency_TwoOwnersRaceOneRun_OneWins(t *testing.T) {
 func TestEdge_EmptyPayload_PersistsAndClaims(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "edge_empty_payload.db"))
 	ctx := context.Background()
-	r := run.NewRun("agent", []byte{}, 0)
+	r, _ := run.NewRun("agent", []byte{}, 0)
 	if err := fx.Runs.Enqueue(ctx, r); err != nil {
 		t.Fatalf("empty payload must persist (empty != NULL): %v", err)
 	}

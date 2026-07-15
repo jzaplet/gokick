@@ -43,7 +43,7 @@ const r = await authFetch<UserProfile, ValidationError>('GET', '/api/v1/profile'
 if (r.success === true)  { r.data; }   // ApiSuccess<TData>: { success:true,  status, data }
 if (r.success === false) { r.data; }   // ApiError<TError>:   { success:false, status, data }
 ```
-`parseResponse` (`Fetch/parseResponse.ts`) staví union podle `response.ok`; chybí-li JSON tělo, doplní `{ message: 'Error <status>' }`. Default `TError` je `{ message: string }`.
+`parseResponse` (`Fetch/parseResponse.ts`) staví union podle `response.ok` — s výjimkou 2xx s nenaparsovatelným tělem, které vrací jako failure (`{ message: 'Malformed response body (status <status>)' }`), ne fake success; 2xx s prázdným tělem je success s `data: null`. Chybí-li JSON tělo u chybového statusu, doplní `{ message: 'Error <status>' }`. Síťovou/transportní chybu vrací `apiFetch` taky přes union: `{ success: false, status: 0 }` (nikdy nehodí výjimku). Default `TError` je `{ message: string }`. Default `TError` je `{ message: string }`.
 
 **Single-flight refresh** žije v `refresh()` (`Auth/refresh.ts`), v `inFlight` guardu — **ne** v authFetch. Bootstrap, časovač 30 s před expirací, jeho retry i 401-retry z authFetch **sdílí jednu rotaci** cookie. Je to **bezpečnostní vlastnost**: paralelní rotace téže cookie backend (compare-and-swap nad `used_at`) vyhodnotí jako krádež tokenu a session natvrdo odhlásí.
 
@@ -71,7 +71,7 @@ Asymetrie hintu JE ten self-heal: `clearAuth` (`Auth/state.ts`) schválně **nem
 
 ### Recipe: public endpoint (bez nutnosti session)
 1. `import { apiFetch } from '@/app-ui/Fetch';`
-2. `const r = await apiFetch<HealthResponse>('GET', '/health');` — token se přiloží jen pokud existuje, ale na 401 se NEretrí.
+2. `const r = await apiFetch<{ status: string }>('GET', '/health');` — token se přiloží jen pokud existuje, ale na 401 se NEretrí. (Typ si napiš inline/vlastní — `/health` je infra-only a schválně stojí mimo tsgen, žádný generovaný `HealthResponse` neexistuje.)
 
 ### Recipe: upload s progressem
 1. `import { apiUpload } from '@/app-ui/Fetch';`

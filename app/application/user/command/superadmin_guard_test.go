@@ -41,7 +41,10 @@ func TestCreateUserHandler_RejectsSuperadminRole(t *testing.T) {
 }
 
 func TestUpdateUserHandler_RejectsPromotionToSuperadmin(t *testing.T) {
-	ctx := context.Background()
+	ctx := shared.ContextWithClaims(
+		context.Background(),
+		&shared.AuthClaims{UserID: "admin-actor", Role: "admin"},
+	)
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "update_super.db"))
 
 	victim := fx.SeedUser(t, "bob", "password12", "user")

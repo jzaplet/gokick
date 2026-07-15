@@ -14,6 +14,7 @@ import (
 )
 
 type ProfileHandler struct {
+	resp           *response.Responder
 	commandBus     *bus.CommandBus
 	queryBus       *bus.QueryBus
 	getProfile     *profileqry.GetProfileHandler
@@ -22,6 +23,7 @@ type ProfileHandler struct {
 }
 
 func NewProfileHandler(
+	resp *response.Responder,
 	commandBus *bus.CommandBus,
 	queryBus *bus.QueryBus,
 	getProfile *profileqry.GetProfileHandler,
@@ -29,6 +31,7 @@ func NewProfileHandler(
 	registry *shared.PermissionsRegistry,
 ) *ProfileHandler {
 	return &ProfileHandler{
+		resp:           resp,
 		commandBus:     commandBus,
 		queryBus:       queryBus,
 		getProfile:     getProfile,
@@ -37,6 +40,7 @@ func NewProfileHandler(
 	}
 }
 
+//gkts:assets/app/Profile/types/ChangePasswordFormData.ts ChangePasswordFormData
 type changePasswordRequest struct {
 	OldPassword string `json:"old_password"`
 	NewPassword string `json:"new_password"`
@@ -45,9 +49,9 @@ type changePasswordRequest struct {
 func (h *ProfileHandler) Get(w http.ResponseWriter, r *http.Request) {
 	q := profileqry.GetProfileQuery{}
 
-	u, err := bus.Exec(
+	u, err := bus.Query(
 		r.Context(),
-		h.queryBus.Bus,
+		h.queryBus,
 		"GetProfile",
 		q,
 		func(ctx context.Context) (*user.User, error) {
@@ -55,12 +59,12 @@ func (h *ProfileHandler) Get(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
 
-	response.JSON(w, http.StatusOK, userDTO{
+	h.resp.JSON(r.Context(), w, http.StatusOK, userDTO{
 		ID:          u.ID,
 		Nickname:    u.Nickname,
 		Email:       u.Email,
@@ -72,7 +76,7 @@ func (h *ProfileHandler) Get(w http.ResponseWriter, r *http.Request) {
 func (h *ProfileHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	var body changePasswordRequest
 	if err := request.DecodeJSON(w, r, &body); err != nil {
-		response.Error(w, http.StatusBadRequest, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
@@ -82,9 +86,9 @@ func (h *ProfileHandler) ChangePassword(w http.ResponseWriter, r *http.Request) 
 		NewPassword: body.NewPassword,
 	}
 
-	err := bus.ExecVoid(
+	err := bus.DispatchVoid(
 		r.Context(),
-		h.commandBus.Bus,
+		h.commandBus,
 		"ChangePassword",
 		cmd,
 		func(ctx context.Context) error {
@@ -92,7 +96,7 @@ func (h *ProfileHandler) ChangePassword(w http.ResponseWriter, r *http.Request) 
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}

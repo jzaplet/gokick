@@ -29,7 +29,7 @@ Když práce **trvá dlouho a nesmí začít od nuly**, kdyby proces spadl. Oby�
 
 1. **Zařazení** — z command handleru zavoláš `RunDispatcher.Enqueue(kind, maxRetries, payload)`. Zápis do fronty se připojí ke **stejné transakci** jako tvoje uložení dat — buď se uloží obojí, nebo nic (jako u fire-and-forget runu).
 2. **Převzetí** — worker si práci atomicky vezme a označí ji jako „dělám na tom" (nikdo jiný ji mezitím nevezme).
-3. **Běh mimo transakci** — handler dostane vstupní data a dosavadní postup (`r.State`). Běží **bez transakce**, klidně minuty až hodiny. (Otevřít transakci uvnitř handleru framework **nedovolí** — fail-closed.)
+3. **Běh mimo transakci** — handler dostane vstupní data a dosavadní postup (`r.State`). Běží **bez transakce**, klidně minuty až hodiny. (Otevřít transakci **nechtěně** uvnitř handleru framework nedovolí — fail-closed; vědomou krátkou transakci na atomický zápis pár řádků umožňuje `shared.WithTx`.)
 4. **Checkpoint** — handler po každém kroku zavolá `ck.Save(postup)` — krátký zápis, kde skončil. Když mezitím o práci přišel (převzal ji jiný worker), `Save` to oznámí a handler skončí.
 5. **Heartbeat** — vedle běží malý hlídač, který každou chvíli dá databázi vědět, že práce pořád žije. Dokud žije, nikdo jiný ji nepřevezme.
 6. **Dokončení** — povedlo se → označí hotovo; selhalo a zbývají pokusy → zkusí znovu s odstupem (backoff); došly pokusy → označí selhání. Práce, o kterou worker přišel nebo byla zrušena, se **nikdy nedokončí napůl**.
@@ -58,7 +58,7 @@ func ZpracujDavku(ctx context.Context, r *run.Run, ck run.Checkpointer) error {
 shared.RunDispatcherFromContext(ctx).Enqueue(ctx, "import:velky", 3, payload)
 ```
 
-`maxRetries` (kolik logických pokusů) je povinné. Run handler **nesmí otevřít transakci** (framework to hlídá); když potřebuješ něco uložit atomicky, **zařaď na to command** — ten poběží ve své vlastní krátké transakci mimo run (background run transakci nemá).
+`maxRetries` (kolik logických pokusů) je povinné. Run handler **nesmí nechtěně otevřít transakci** (implicitní/omylem otevřenou transakci framework fail-closed odmítne); když potřebuješ pár zápisů uložit atomicky, použij `shared.WithTx(ctx, fn)` — krátkou transakci, kterou si sám ohraničíš (zapiš pár řádků, commitni, pokračuj). Drž ji krátkou a bez pomalého/externího I/O — stejné pravidlo jako uvnitř command handleru (jinak background run transakci nemá).
 
 
 ## Související

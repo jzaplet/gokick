@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import WarningIcon from '@/app-ui/Icons/WarningIcon.vue';
 
 const {
     show,
@@ -20,23 +20,14 @@ const emit = defineEmits<{
     cancel: [];
 }>();
 
-const isVisible = ref(show);
-
-watch(
-    () => show,
-    (newValue) => {
-        isVisible.value = newValue;
-    },
-);
-
+// Visibility is fully controlled by the `show` prop — the parent flips it. No
+// local isVisible mirror (it only risked drifting from the prop).
 const handleConfirm = (): void => {
     emit('confirm');
-    isVisible.value = false;
 };
 
 const handleCancel = (): void => {
     emit('cancel');
-    isVisible.value = false;
 };
 </script>
 
@@ -44,7 +35,7 @@ const handleCancel = (): void => {
     <Teleport to="body">
         <Transition name="modal">
             <div
-                v-if="isVisible"
+                v-if="show"
                 class="fixed inset-0 z-50 overflow-y-auto"
                 aria-labelledby="modal-title"
                 role="dialog"
@@ -56,7 +47,7 @@ const handleCancel = (): void => {
                     <!-- Background overlay -->
                     <Transition name="fade">
                         <div
-                            v-if="isVisible"
+                            v-if="show"
                             class="fixed inset-0 bg-gray-900/50 transition-opacity"
                             @click="handleCancel"
                         />
@@ -65,7 +56,7 @@ const handleCancel = (): void => {
                     <!-- Modal panel -->
                     <Transition name="scale">
                         <div
-                            v-if="isVisible"
+                            v-if="show"
                             class="relative inline-block align-bottom
                 bg-white rounded-lg shadow-xl text-left
                 overflow-hidden transform transition-all
@@ -82,25 +73,7 @@ const handleCancel = (): void => {
                       h-12 w-12 sm:h-10 sm:w-10
                       rounded-full bg-red-100"
                                     >
-                                        <svg
-                                            class="h-6 w-6 text-red-600"
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            fill="none"
-                                            viewBox="0 0 24 24"
-                                            stroke="currentColor"
-                                        >
-                                            <path
-                                                stroke-linecap="round"
-                                                stroke-linejoin="round"
-                                                stroke-width="2"
-                                                d="M12 9v2m0 4h.01m-6.938
-                          4h13.856c1.54 0 2.502-1.667
-                          1.732-3L13.732
-                          4c-.77-1.333-2.694-1.333-3.464
-                          0L3.34 16c-.77 1.333.192 3
-                          1.732 3z"
-                                            />
-                                        </svg>
+                                        <WarningIcon class="h-6 w-6 text-red-600" />
                                     </div>
                                     <div
                                         class="mt-3 sm:mt-0 sm:ml-4 text-center sm:text-left"

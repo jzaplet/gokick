@@ -46,9 +46,9 @@ func TestQueryBus_AuthorizeDeniesUnpermittedQuery(t *testing.T) {
 		)...)
 
 	var ran bool
-	_, err := bus.Exec(
+	_, err := bus.Query(
 		t.Context(),
-		queryBus.Bus,
+		queryBus,
 		"ListUsers",
 		permitCmd{perm: "admin:users:read"},
 		func(context.Context) (string, error) {
@@ -92,9 +92,9 @@ func TestQueryBus_RejectsQueryWithoutDeclaration(t *testing.T) {
 		)...)
 
 	var ran bool
-	_, err := bus.Exec(
+	_, err := bus.Query(
 		t.Context(),
-		queryBus.Bus,
+		queryBus,
 		"BareQuery",
 		bareCmd{}, // implements neither marker
 		func(context.Context) (string, error) {

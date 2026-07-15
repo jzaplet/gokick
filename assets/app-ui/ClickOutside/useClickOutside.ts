@@ -1,5 +1,6 @@
 import type { Ref } from 'vue';
 import { onMounted, onUnmounted } from 'vue';
+import { targetNode } from '@/app-ui/Events/eventTarget';
 
 // Calls `onClickOutside` whenever a click lands outside the referenced element.
 // Listener is attached on mount and detached on unmount.
@@ -10,7 +11,7 @@ export const useClickOutside = (
     const handleClick = (event: MouseEvent): void => {
         if (
             elementRef.value !== null
-            && elementRef.value.contains(event.target as Node) === false
+            && elementRef.value.contains(targetNode(event)) === false
         ) {
             onClickOutside();
         }

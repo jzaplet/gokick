@@ -14,7 +14,7 @@ import (
 
 func enqueueRunPayload(t *testing.T, fx *testfx.Fixture, payload string) *run.Run {
 	t.Helper()
-	r := run.NewRun("agent", []byte(payload), 3)
+	r, _ := run.NewRun("agent", []byte(payload), 3)
 	if err := fx.Runs.Enqueue(context.Background(), r); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
@@ -23,7 +23,7 @@ func enqueueRunPayload(t *testing.T, fx *testfx.Fixture, payload string) *run.Ru
 
 func enqueueRunInTenant(t *testing.T, fx *testfx.Fixture, tenantID string) *run.Run {
 	t.Helper()
-	r := run.NewRun("agent", []byte(`{}`), 3)
+	r, _ := run.NewRun("agent", []byte(`{}`), 3)
 	r.TenantID = tenantID
 	if err := fx.Runs.Enqueue(context.Background(), r); err != nil {
 		t.Fatalf("enqueue: %v", err)
@@ -51,7 +51,7 @@ func reclaimedByB(t *testing.T, fx *testfx.Fixture) (id, ownerA, ownerB string) 
 }
 
 // ownerCheckedCall abstracts each owner-checked mutating method so the uniform
-// fencing contract can be table-tested across all five.
+// fencing contract can be table-tested across all six.
 type ownerCheckedCall struct {
 	name string
 	call func(ctx context.Context, fx *testfx.Fixture, id, owner string) (bool, error)
@@ -73,6 +73,9 @@ var ownerCheckedCalls = []ownerCheckedCall{
 	}},
 	{"MarkFailed", func(ctx context.Context, fx *testfx.Fixture, id, owner string) (bool, error) {
 		return fx.Runs.MarkFailed(ctx, id, owner, "boom")
+	}},
+	{"Park", func(ctx context.Context, fx *testfx.Fixture, id, owner string) (bool, error) {
+		return fx.Runs.Park(ctx, id, owner, time.Now().Add(time.Hour), "skew")
 	}},
 }
 

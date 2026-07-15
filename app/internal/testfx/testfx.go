@@ -25,19 +25,18 @@ import (
 	sqlitetenant "gokick/app/infrastructure/sqlite/tenant"
 	sqlitetoken "gokick/app/infrastructure/sqlite/token"
 	sqliteuser "gokick/app/infrastructure/sqlite/user"
-
-	"github.com/google/uuid"
 )
 
 type Fixture struct {
-	DB            *database.SqliteManager
-	Users         user.Repository
-	PlatformUsers user.PlatformRepository // same concrete repo; the cross-tenant port for platform handler tests
-	Tokens        token.TokenRepository
-	Runs          run.Repository
-	Tenants       tenant.Repository
-	Hasher        *security.PasswordHasher
-	Jwt           *security.JwtService
+	DB              *database.SqliteManager
+	Users           user.Repository
+	PlatformUsers   user.PlatformRepository // same concrete repo; the cross-tenant port for platform handler tests
+	Tokens          token.Repository
+	Runs            run.Repository
+	Tenants         tenant.Repository
+	PlatformTenants tenant.PlatformRepository // same concrete repo; cross-tenant port for platform tests
+	Hasher          *security.PasswordHasher
+	Jwt             *security.JwtService
 }
 
 // New spins up an isolated SQLite database at dbPath, runs migrations and wires
@@ -81,16 +80,18 @@ func newFixture(t *testing.T, dbPath string, multitenant bool) *Fixture {
 	}
 
 	usersRepo := sqliteuser.NewRepository(db)
+	tenantsRepo := sqlitetenant.NewRepository(db)
 
 	return &Fixture{
-		DB:            db,
-		Users:         usersRepo,
-		PlatformUsers: usersRepo,
-		Tokens:        sqlitetoken.NewRepository(db),
-		Runs:          sqliterun.NewRepository(db),
-		Tenants:       sqlitetenant.NewRepository(db),
-		Hasher:        security.NewPasswordHasher(),
-		Jwt:           jwt,
+		DB:              db,
+		Users:           usersRepo,
+		PlatformUsers:   usersRepo,
+		Tokens:          sqlitetoken.NewRepository(db),
+		Runs:            sqliterun.NewRepository(db),
+		Tenants:         tenantsRepo,
+		PlatformTenants: tenantsRepo,
+		Hasher:          security.NewPasswordHasher(),
+		Jwt:             jwt,
 	}
 }
 
@@ -152,8 +153,16 @@ func (f *Fixture) NewSystemBus() *bus.SystemCommandBus {
 		busmw.LoggingMiddleware(logger),
 	)
 
+	// Throwaway no-op run dispatcher, same as NewBuses: no CLI command's event
+	// handler enqueues today, and importing the real application/run dispatcher
+	// here would cycle (its test imports testfx). A test that needs a real enqueue
+	// via the system bus builds its own SystemChain with a live dispatcher.
+	runDispatcher := shared.RunDispatcherFromContext(context.Background())
+
 	return bus.NewSystemCommandBus(
-		busmw.SystemChain(logger, f.DB, eventBus, sqliteaudit.NewRepository(f.DB), reporter)...,
+		busmw.SystemChain(
+			logger, f.DB, eventBus, sqliteaudit.NewRepository(f.DB), runDispatcher, reporter,
+		)...,
 	)
 }
 
@@ -171,7 +180,7 @@ func ExecCommand[R any](
 	cmd any,
 	handlerFn func(ctx context.Context) (R, error),
 ) (R, error) {
-	return bus.Exec(ctx, cmdBus.Bus, name, cmd, handlerFn)
+	return bus.Dispatch(ctx, cmdBus, name, cmd, handlerFn)
 }
 
 // ExecQuery is ExecCommand's read-side twin: it dispatches q through queryBus so
@@ -185,7 +194,7 @@ func ExecQuery[R any](
 	q any,
 	handlerFn func(ctx context.Context) (R, error),
 ) (R, error) {
-	return bus.Exec(ctx, queryBus.Bus, name, q, handlerFn)
+	return bus.Query(ctx, queryBus, name, q, handlerFn)
 }
 
 // NewJwt returns a JwtService configured with the given access expiration.
@@ -215,6 +224,14 @@ func (f *Fixture) AssertTokenCount(t *testing.T, want int) {
 	if got != want {
 		t.Fatalf("refresh_tokens count: got %d want %d", got, want)
 	}
+}
+
+// NewAuditLogger returns a real AuditLogger backed by this fixture's DB, for tests
+// that need the run worker (or any non-bus path) to actually persist audit rows.
+// Keeps the sqlite/audit import in testfx so consumer test packages don't take an
+// infrastructure→infrastructure dependency of their own.
+func (f *Fixture) NewAuditLogger() shared.AuditLogger {
+	return sqliteaudit.NewRepository(f.DB)
 }
 
 // SeedUser persists a user with the given nickname/password/role and returns the entity.
@@ -247,7 +264,11 @@ func (f *Fixture) SeedUser(t *testing.T, nickname, password, role string) *user.
 // multitenant tests to create the distinct tenants whose isolation they assert.
 func (f *Fixture) SeedTenant(t *testing.T, name string) *tenant.Tenant {
 	t.Helper()
-	tn := tenant.NewTenant(name)
+	n, err := tenant.NewName(name)
+	if err != nil {
+		t.Fatalf("tenant name: %v", err)
+	}
+	tn := tenant.NewTenant(n)
 	if err := f.Tenants.Save(context.Background(), tn); err != nil {
 		t.Fatalf("save tenant: %v", err)
 	}
@@ -288,13 +309,7 @@ func (f *Fixture) SeedRefreshToken(t *testing.T, userID string, expiresAt time.T
 	if err != nil {
 		t.Fatalf("generate refresh: %v", err)
 	}
-	rt := &token.RefreshToken{
-		ID:        uuid.New().String(),
-		UserID:    userID,
-		TokenHash: hash,
-		ExpiresAt: expiresAt,
-		CreatedAt: time.Now(),
-	}
+	rt := token.NewRefreshToken(userID, hash, expiresAt)
 	if err := f.Tokens.Save(context.Background(), rt); err != nil {
 		t.Fatalf("save token: %v", err)
 	}

@@ -18,6 +18,18 @@ import (
 // and burn memory.
 const MaxBodyBytes int64 = 1 << 20
 
+// DecodeError is a request-body decode failure carrying the HTTP status it maps
+// to. It satisfies response.HTTPError (HTTPStatus), so a handler hands it straight
+// to response.HandleError — no hardcoded status, and no risk of the untyped-error
+// → 500 funnel trap. 413 for an oversize body, 400 for every other decode failure.
+type DecodeError struct {
+	status int
+	msg    string
+}
+
+func (e *DecodeError) Error() string   { return e.msg }
+func (e *DecodeError) HTTPStatus() int { return e.status }
+
 // DecodeJSON enforces three guarantees that plain json.Decoder doesn't:
 //
 //  1. body size capped at MaxBodyBytes (http.MaxBytesReader)
@@ -25,8 +37,8 @@ const MaxBodyBytes int64 = 1 << 20
 //     would otherwise silently no-op, plus reduces accidental over-posting)
 //  3. exactly one JSON value present (rejects payloads like `{}{}`)
 //
-// All decode failures collapse into a single sentinel-shaped error so the
-// handler can map them to 400 without branching on encoding/json internals.
+// Every failure is a typed *DecodeError (an HTTPError) with the right status, so a
+// handler just calls response.HandleError without branching on encoding/json.
 func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, MaxBodyBytes)
 
@@ -36,17 +48,30 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 	if err := dec.Decode(dst); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			return fmt.Errorf("request body exceeds %d bytes", MaxBodyBytes)
+			return &DecodeError{
+				status: http.StatusRequestEntityTooLarge,
+				msg:    fmt.Sprintf("request body exceeds %d bytes", MaxBodyBytes),
+			}
 		}
-		return fmt.Errorf("invalid request body: %w", err)
+		return &DecodeError{
+			status: http.StatusBadRequest,
+			msg:    fmt.Sprintf("invalid request body: %v", err),
+		}
 	}
 
 	if dec.More() {
-		return errors.New("request body must contain a single JSON object")
+		return singleObjectError()
 	}
 	if err := dec.Decode(&struct{}{}); err != nil && !errors.Is(err, io.EOF) {
-		return errors.New("request body must contain a single JSON object")
+		return singleObjectError()
 	}
 
 	return nil
+}
+
+func singleObjectError() *DecodeError {
+	return &DecodeError{
+		status: http.StatusBadRequest,
+		msg:    "request body must contain a single JSON object",
+	}
 }

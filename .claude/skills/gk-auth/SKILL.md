@@ -40,7 +40,8 @@ heslo nastaví nanovo.
 
 **Dva tokeny** (`app/infrastructure/security/jwt.go`):
 - **Access token** — HS256-podepsaný JWT, claims `sub` (UserID), `role`, `nickname`,
-  `email`, `iat`, `exp`. Krátká expirace (`APP_JWT_ACCESS_EXPIRATION`, default `15m`).
+  `email`, `tenant` (TenantID pro multitenancy), `iat`, `exp`. Krátká expirace
+  (`APP_JWT_ACCESS_EXPIRATION`, default `15m`).
   Posílá se v `Authorization: Bearer`, na FE žije jen v paměti (`setAccessToken`).
 - **Refresh token** — náhodný řetězec z `rand.Text()` (Go 1.24+). Klientovi jde **raw**
   hodnota v cookie; v DB se ukládá jen jeho **SHA-256 hash** (`HashToken`). Server proto
@@ -55,7 +56,10 @@ heslo nastaví nanovo.
   se FE (`assets/app.ts:bootstrap` → `hasSessionHint()` z `assets/app-ui/Auth/sessionHint.ts`)
   rozhodne, jestli refresh při startu vůbec zkoušet.
 
-**Rotace + theft detection** (`app/application/auth/command/refresh_token.go`): starý token
+**Rotace + theft detection** — stavový automat žije v doméně jako `token.Rotator`
+(`app/domain/token/rotator.go`) a vrací typovaný výsledek (rotated/invalid/expired/theft
+{reason}); handler (`app/application/auth/command/refresh_token.go`) zůstává orchestrace —
+dodá vydání nové session a mapuje výsledek na `AuthError`/theft response. Starý token
 se při refreshi nemaže, jen označí `used_at = now` (atomicky přes `MarkUsed`, CAS z NULL).
 Nový token se **uloží (`Save`) DŘÍV**, než se starý označí jako použitý. Dvě cesty ke krádeži:
 
@@ -83,7 +87,7 @@ i refresh jsou `SkipPermissionCheck()` (veřejné).
 
 **Endpointy:** `POST /api/v1/auth/login` (veřejný) · `POST /api/v1/auth/refresh`
 (cookie) · `POST /api/v1/auth/logout` (Bearer). Login/refresh response:
-`{ access_token, access_expiration, user: { id, nickname, email, role, permissions } }`.
+`{ access_token, access_expiration, user: { id, nickname, email, role, permissions } }`. Pozor na jednotky: `access_expiration` je v **sekundách** — FE si ho na ms převádí až u sebe (`state.ts`, `establishSession`); codegen hlídá jméno+typ, jednotku ne.
 
 ## Recipe
 
@@ -101,8 +105,9 @@ i refresh jsou `SkipPermissionCheck()` (veřejné).
 1. Přidej pole do `shared.AuthClaims` (`app/domain/shared/`).
 2. Zapiš ho v `GenerateAccessToken` (`jwt.go`, do `jwt.MapClaims`) a přečti zpět ve
    `ValidateAccessToken` (přes `claimString`).
-3. Naplň ho při vydání v `login.go` i `refresh_token.go` (oba staví `&shared.AuthClaims{...}`).
-4. Pokud má jít na FE, přidej ho i do `userDTO` ve `writeAuthResponse` (`auth.go`).
+3. Naplň ho při vydání v `issueSession` (`issue_session.go`) — jediné místo, které staví
+   `&shared.AuthClaims{...}` pro login i refresh (takhle tam přibyl claim `tenant`).
+4. Pokud má jít na FE, přidej ho do structu `userDTO` (`auth.go`, plní se ve `writeAuthResponse`) a spusť `make ts-gen` — `userDTO` je `//gkts`-anotovaný, TS typ `AuthUser` se generuje a `make lint` (ts-check) bez regenerace spadne.
 
 ## Invariants & pitfalls
 - **Do DB jen hash, nikdy raw refresh token.** Klient drží raw, server ho jen hashuje

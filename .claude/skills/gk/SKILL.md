@@ -17,7 +17,7 @@ aplikace v jediné binárce. Tahle rodina `gk-*` skillů popisuje **přesné kon
 a jak se co používá**: každý skill má „proč to použít · na co je vhodné · jak to
 funguje · recept · časté chyby" a je psaný i pro juniory / non-tech.
 
-**Jak na to:** napiš `/gk-<název>` (např. `/gk-database` → `/gk-repositories`).
+**Jak na to:** napiš `/gk-<název>` (např. `/gk-repositories`).
 Nebo prostě popiš problém a AI sáhne po správném skillu sama (řídí se podle
 `description` každého skillu).
 

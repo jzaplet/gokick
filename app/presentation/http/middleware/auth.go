@@ -17,7 +17,10 @@ const bearerPrefix = "Bearer "
 //   - header valid    → claims stored in context via shared.ContextWithClaims
 //
 // Actual permission enforcement happens in the bus AuthorizeMiddleware.
-func AuthMiddleware(jwt shared.JwtService) func(http.Handler) http.Handler {
+func AuthMiddleware(
+	jwt shared.TokenService,
+	resp *response.Responder,
+) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			header := r.Header.Get("Authorization")
@@ -28,7 +31,9 @@ func AuthMiddleware(jwt shared.JwtService) func(http.Handler) http.Handler {
 			}
 
 			if !strings.HasPrefix(header, bearerPrefix) {
-				response.HandleError(w, &shared.AuthError{Message: "invalid Authorization header"})
+				resp.HandleError(
+					r.Context(), w, &shared.AuthError{Message: "invalid Authorization header"},
+				)
 
 				return
 			}
@@ -37,7 +42,7 @@ func AuthMiddleware(jwt shared.JwtService) func(http.Handler) http.Handler {
 
 			claims, err := jwt.ValidateAccessToken(token)
 			if err != nil {
-				response.HandleError(w, err)
+				resp.HandleError(r.Context(), w, err)
 
 				return
 			}

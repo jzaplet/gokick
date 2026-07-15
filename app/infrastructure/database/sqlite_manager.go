@@ -7,6 +7,7 @@ import (
 	"gokick/app/infrastructure/config"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/ncruces/go-sqlite3/driver"
@@ -60,30 +61,66 @@ func NewSqliteManager(config *config.Config) (*SqliteManager, error) {
 	// scheduler/worker poll writes and a user-driven command serialize via
 	// a 5s wait instead of bubbling "database is locked" to the caller.
 	//
-	// foreign_keys is per-connection in SQLite — setting it via DSN
-	// guarantees every pooled connection has it on, not just the one the
-	// first PRAGMA executed against.
+	// foreign_keys AND journal_mode are both per-connection in SQLite — setting
+	// them via DSN _pragma guarantees EVERY pooled connection gets them, not just
+	// the one a first one-shot PRAGMA happened to run against. (WAL/DELETE also
+	// flip the on-disk header so they'd persist regardless, but MEMORY is purely
+	// per-connection, so a one-shot exec applied it to a single pooled connection
+	// only — the bug this closes.)
 	//
 	// The file: prefix is required for ncruces to parse the query string
 	// at all (driver.go newConnector: query parsing is gated on file:).
 	dsn := "file:" + config.DBPath +
 		"?_txlock=immediate" +
 		"&_pragma=busy_timeout(5000)" +
-		"&_pragma=foreign_keys(on)"
+		"&_pragma=foreign_keys(on)" +
+		"&_pragma=journal_mode(" + journalMode + ")"
 
 	db, err := sqlx.Open("sqlite3", dsn)
 	if err != nil {
 		return nil, err
 	}
 
-	// journal_mode is filesystem-persistent (WAL flips the on-disk header)
-	// so a one-shot exec on the pool is enough; later connections inherit
-	// it from the file.
-	if _, err := db.Exec("PRAGMA journal_mode=" + journalMode); err != nil {
-		return nil, err
+	// Bound the connection pool. SQLite serializes writes on a single writer
+	// (_txlock=immediate), so a bigger pool does NOT raise write throughput — its
+	// job is to cap MEMORY (each ncruces WASM connection carries a WASM instance +
+	// page cache, a few MB) and to apply BACKPRESSURE: a blocked writer waits
+	// cheaply at Go's pool gate instead of every burst goroutine holding a live
+	// WASM connection (unbounded → reachable OOM, F-047). Reads run concurrently
+	// under WAL, so the cap tracks read concurrency + a little write headroom.
+	maxConns := config.DBMaxConns
+	if maxConns <= 0 {
+		maxConns = autoMaxConns()
 	}
+	db.SetMaxOpenConns(maxConns)
+	db.SetMaxIdleConns(maxConns)
 
 	return &SqliteManager{db: db, multitenant: config.Multitenancy}, nil
+}
+
+// dbMaxConnsFloor / dbMaxConnsCeil bound the auto pool cap. The floor keeps a
+// tiny box (a 2-vCPU droplet) usable; the ceiling bounds WASM-connection memory
+// on a big-core host, where extra connections past read concurrency buy nothing
+// (writes serialize regardless).
+const (
+	dbMaxConnsFloor = 4
+	dbMaxConnsCeil  = 32
+)
+
+// autoMaxConns derives the pool cap from the CPU count when APP_DB_MAX_CONNS is
+// unset. 2×NumCPU covers concurrent readers plus a little write-queue headroom;
+// clamped to [floor, ceil]. Cloud RAM scales with vCPU, so scaling by CPU
+// implicitly tracks the memory budget (2 vCPU / 2 GB → 4; 10-core → 20; 16-core
+// → capped 32). Override with APP_DB_MAX_CONNS for an unusual RAM:CPU ratio.
+func autoMaxConns() int {
+	n := 2 * runtime.NumCPU()
+	if n < dbMaxConnsFloor {
+		return dbMaxConnsFloor
+	}
+	if n > dbMaxConnsCeil {
+		return dbMaxConnsCeil
+	}
+	return n
 }
 
 func (m *SqliteManager) DB() *sqlx.DB {

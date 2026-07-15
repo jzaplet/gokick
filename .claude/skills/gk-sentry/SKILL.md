@@ -35,14 +35,14 @@ A bez „adresy" (DSN — veřejný odkaz na tvůj Sentry projekt) je všechno v
 **Kdo volá `Capture` (jen 3 místa — recovery + terminal):**
 - bus `RecoveryMiddleware` (`app/application/bus/middleware/recovery.go`) — panika v command/query handleru,
 - HTTP `RecoveryMiddleware` (`app/presentation/http/middleware/recovery.go`) — panika v requestu → log + report + 500,
-- run worker (`app/infrastructure/worker/run_worker.go`) — run s **vyčerpanými retries** (terminálně padlý) nebo neznámý kind.
+- run worker (`app/infrastructure/worker/run_worker_process.go`) — run s **vyčerpanými retries** (terminálně padlý), neznámý kind, poison run (překročený limit reclaims) nebo panika v procesu/heartbeatu workeru. — A v Invariants bullet doplnit: „Hlásí se jen recovery (bus + HTTP `RecoveryMiddleware`, paniky ve workeru) a terminálně padlé runy (worker)."
 
 Běžné návratové chyby se nehlásí — proto je `Capture` jen na těchto cestách.
 
 **Obohacení eventu** (`cmd/sentry.go`, `Capture`):
 - **User** — `id` / `nickname` / `role` / `email` z `AuthClaims` v ctx + rozlišená klientská IP (`sentryUser`). Vyžaduje `SendDefaultPII: true` v `Init`, jinak sentry-go ručně nastavenou IP/email zahodí.
 - **Request** — `method` / `url` / `User-Agent` z předaných attrs (`sentryRequest`); jen u HTTP callera (worker nemá `method` → bez requestu).
-- **Tags** — ostatní attrs jako vyhledatelné tagy; u paniky navíc typ exception `panic` + tag `panic.type`, u workeru fingerprint `["{{ default }}", "job:<kind>"]` (každý padající handler vlastní issue).
+- **Tags** — ostatní attrs jako vyhledatelné tagy; u paniky navíc typ exception `panic` + tag `panic.type`, u workeru fingerprint `["{{ default }}", "run:<kind>"]` (každý padající handler vlastní issue).
 - **Maskování** — credential hodnoty se redaktují na **každém** egress bodu (hlavičky, tagy, breadcrumbs), ne whitelistem. Detail v `cmd/sentry.go` + `app/domain/shared/mask.go`.
 
 **Breadcrumbs** = stopa `INFO+` log řádků vedoucích k chybě (jako Symfony Monolog trail). `ReportScopeMiddleware` (`app/presentation/http/middleware/reportscope.go`, zapojený **před** Recovery) zavolá `WithRequestScope` a naváže per-request Sentry hub na ctx; `breadcrumbHandler` v `cmd/logger.go` (obal slog handleru) přidá každý `INFO+` záznam na ten hub. **Jen ctx-form logy** (`LogAttrs(ctx, …)`) breadcrumb nesou.
@@ -51,7 +51,7 @@ Běžné návratové chyby se nehlásí — proto je `Capture` jen na těchto ce
 
 **Frontend** (`assets/app-ui/Sentry/`): `initSentry` (volaný v `app.ts` před prvním `await`) zachytává Vue chyby + unhandled promise rejections; handled API 4xx z `authFetch`/`apiFetch` se **nehlásí**. Browser SDK sbírá breadcrumbs (kliky, navigace) automaticky. `syncUser.ts` drží `Sentry.setUser` v zámku se session přes `watch` nad jediným `user` ref — login/refresh/logout ho aktualizují, žádná auth cesta nezapomene.
 
-**Lifecycle:** `Init` při startu, `defer reporter.Flush(...)` v `cmd/main.go` (+ explicitně před `os.Exit`) — `CaptureException` je async, jinak by panika/exit event ztratily.
+**Lifecycle:** `Init` při startu, `defer reporter.Flush(...)` v `run()` v `cmd/main.go` — `main()` je jen `os.Exit(run())`, takže defer proběhne na každé exit cestě (žádný `os.Exit` ho nepřeskočí) — `CaptureException` je async, jinak by panika/exit event ztratily.
 
 ## Recipe: zapnout Sentry
 

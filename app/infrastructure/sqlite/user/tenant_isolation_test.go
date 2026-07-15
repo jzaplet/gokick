@@ -2,6 +2,7 @@ package user_test
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -59,13 +60,15 @@ func TestUserRepository_UpdateDelete_IsolateByTenant(t *testing.T) {
 	ctxA := shared.ContextWithTenantID(ctx, tenantA.ID)
 
 	// A tenant-A admin tries to rename, then delete, bob (tenant B). Both scope to
-	// tenant A, so they match no row and must leave bob untouched.
+	// tenant A, so they match no row — which now surfaces as a not-found error
+	// (F-039), never a silent success — and must leave bob untouched.
 	bob.Nickname = "hacked"
-	if err := fx.Users.Update(ctxA, bob); err != nil {
-		t.Fatalf("Update: %v", err)
+	var ve *shared.ValidationError
+	if err := fx.Users.Update(ctxA, bob); !errors.As(err, &ve) {
+		t.Fatalf("cross-tenant Update must error on 0 rows, got %T: %v", err, err)
 	}
-	if err := fx.Users.Delete(ctxA, bob.ID); err != nil {
-		t.Fatalf("Delete: %v", err)
+	if err := fx.Users.Delete(ctxA, bob.ID); !errors.As(err, &ve) {
+		t.Fatalf("cross-tenant Delete must error on 0 rows, got %T: %v", err, err)
 	}
 
 	got, err := fx.Users.FindByID(ctx, bob.ID)

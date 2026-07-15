@@ -47,13 +47,19 @@ type AuditCollector struct {
 	events []AuditEvent
 }
 
+func NewAuditCollector() *AuditCollector {
+	return &AuditCollector{}
+}
+
 func (c *AuditCollector) Record(event AuditEvent) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.events = append(c.events, event)
 }
 
-func (c *AuditCollector) Drain() []AuditEvent {
+// Flush returns the buffered events and clears the collector (take-and-clear) —
+// same name as EventCollector.Flush for the identical operation.
+func (c *AuditCollector) Flush() []AuditEvent {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	out := c.events
@@ -61,36 +67,40 @@ func (c *AuditCollector) Drain() []AuditEvent {
 	return out
 }
 
-type auditCollectorKeyType struct{}
+type auditCollectorKey struct{}
 
-var auditCollectorKey = auditCollectorKeyType{}
-
-func ContextWithAuditCollector(ctx context.Context, c *AuditCollector) context.Context {
-	return context.WithValue(ctx, auditCollectorKey, c)
+// ContextWithAuditCollector creates a fresh collector, installs it in ctx and
+// returns both — the same create-and-return shape as ContextWithEventCollector,
+// so the two per-request collectors are used identically.
+func ContextWithAuditCollector(ctx context.Context) (context.Context, *AuditCollector) {
+	c := NewAuditCollector()
+	return context.WithValue(ctx, auditCollectorKey{}, c), c
 }
 
-// AuditCollectorFromContext returns the request-scoped collector when
-// the call site is inside the bus. Outside (CLI bypass, tests) it
-// returns a throwaway so handlers don't have to nil-check.
+// AuditCollectorFromContext returns the request-scoped collector installed by a
+// middleware/worker that will drain it: the bus AuditMiddleware for HTTP + CLI
+// commands (the CLI runs through the SystemCommandBus, which HAS audit), and the
+// run worker for background runs (it installs a real collector and drains to the
+// AuditLogger). Elsewhere — a handler invoked with no such installer, or a test —
+// it returns a throwaway so callers never have to nil-check; a Record on that
+// throwaway is simply not persisted.
 func AuditCollectorFromContext(ctx context.Context) *AuditCollector {
-	if c, ok := ctx.Value(auditCollectorKey).(*AuditCollector); ok {
+	if c, ok := ctx.Value(auditCollectorKey{}).(*AuditCollector); ok {
 		return c
 	}
-	return &AuditCollector{}
+	return NewAuditCollector()
 }
 
-type actorIPKeyType struct{}
-
-var actorIPKey = actorIPKeyType{}
+type actorIPKey struct{}
 
 // ContextWithActorIP injects the caller's IP — populated by HTTP
 // middleware right after IP extraction, consumed by the audit
 // middleware when stamping AuditRecord.ActorIP.
 func ContextWithActorIP(ctx context.Context, ip string) context.Context {
-	return context.WithValue(ctx, actorIPKey, ip)
+	return context.WithValue(ctx, actorIPKey{}, ip)
 }
 
 func ActorIPFromContext(ctx context.Context) string {
-	ip, _ := ctx.Value(actorIPKey).(string)
+	ip, _ := ctx.Value(actorIPKey{}).(string)
 	return ip
 }

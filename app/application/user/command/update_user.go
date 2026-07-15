@@ -2,8 +2,8 @@ package command
 
 import (
 	"context"
-	"time"
 
+	"gokick/app/application/userwrite"
 	"gokick/app/domain/shared"
 	"gokick/app/domain/user"
 )
@@ -31,90 +31,43 @@ func NewUpdateUserHandler(
 }
 
 func (h *UpdateUserHandler) Handle(ctx context.Context, cmd UpdateUserCommand) error {
+	claims, err := shared.RequireClaims(ctx)
+	if err != nil {
+		return err
+	}
+
 	target, err := h.users.FindByID(ctx, cmd.ID)
 	if err != nil {
 		return err
 	}
-
-	nickname, err := user.NewNickname(cmd.Nickname)
-	if err != nil {
-		return err
+	if target == nil {
+		return &shared.ValidationError{Field: "id", Message: "user not found"}
 	}
 
-	role, err := user.NewRole(cmd.Role)
-	if err != nil {
-		return err
-	}
-	// An admin must not promote anyone TO superadmin (self-escalation to the
-	// platform plane). The repo's Update also excludes superadmin rows, so an
-	// existing superadmin can't be demoted/edited here either.
-	if role.IsSuperAdmin() {
-		return &shared.ValidationError{
-			Field:   "role",
-			Message: "cannot assign the superadmin role",
-		}
-	}
-
-	// Mirror DeleteUserHandler's self-lockout guard: don't let an admin
-	// demote themselves out of admin and lock the org out of admin ops.
-	// Self-update of other fields (nickname, password, email) stays allowed.
-	claims := shared.ClaimsFromContext(ctx)
-	if claims != nil && claims.UserID == target.ID && string(role) != string(user.RoleAdmin) {
-		return &shared.ValidationError{
-			Field:   "role",
-			Message: "cannot change your own role",
-		}
-	}
-
-	email, err := user.NewEmail(cmd.Email)
-	if err != nil {
-		return err
-	}
-
-	if string(nickname) != target.Nickname {
-		conflict, err := h.users.FindByNickname(ctx, string(nickname))
-		if err != nil {
-			return err
-		}
-		if conflict != nil && conflict.ID != target.ID {
+	// Admin-only guard: don't let an admin demote themselves out of admin and lock
+	// the org out of admin ops (self-update of nickname/password/email stays OK).
+	// Plane-specific, so it rides userwrite.Update's guard hook rather than the
+	// shared body. The platform handler passes nil (no self-demote concern there).
+	selfDemoteGuard := func(role user.Role) error {
+		if claims.UserID == target.ID && string(role) != string(user.RoleAdmin) {
 			return &shared.ValidationError{
-				Field:   "nickname",
-				Message: "user with this nickname already exists",
+				Field:   "role",
+				Message: "cannot change your own role",
 			}
 		}
+		return nil
 	}
 
-	if cmd.Password != "" {
-		newPassword, err := user.NewPassword(cmd.Password)
-		if err != nil {
-			return err
-		}
-		hash, err := h.password.Hash(string(newPassword))
-		if err != nil {
-			return err
-		}
-		target.PasswordHash = hash
-	}
-
-	roleChanged := target.Role != string(role)
-
-	target.Nickname = string(nickname)
-	target.Email = string(email)
-	target.Role = string(role)
-	target.UpdatedAt = time.Now()
-
-	if err := h.users.Update(ctx, target); err != nil {
-		return err
-	}
-
-	if roleChanged {
-		shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
-			Action:     "user.role_changed",
-			TargetType: "user",
-			TargetID:   target.ID,
-			Metadata:   map[string]any{"new_role": target.Role},
-		})
-	}
-
-	return nil
+	return userwrite.Update(
+		ctx,
+		userwrite.Deps{Repo: h.users, Hasher: h.password},
+		target,
+		userwrite.Fields{
+			Nickname: cmd.Nickname,
+			Email:    cmd.Email,
+			Role:     cmd.Role,
+			Password: cmd.Password,
+		},
+		userwrite.Plane{Guard: selfDemoteGuard, Save: h.users.Update},
+	)
 }

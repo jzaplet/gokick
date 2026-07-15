@@ -2,6 +2,7 @@ package user_test
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -44,16 +45,19 @@ func TestUserRepository_AdminCannotTouchSuperadminInSameTenant(t *testing.T) {
 		t.Fatal("admin listing must still include regular tenant users (alice)")
 	}
 
-	// (2) Update must be a no-op against a superadmin (password reset attempt).
+	// (2) Update must REFUSE a superadmin (password reset attempt). The row is
+	// excluded by role != 'superadmin', so it matches 0 rows — which now surfaces
+	// as a not-found error (F-039), never a silent success. The row stays intact.
 	super.PasswordHash = "hijacked"
 	super.Nickname = "pwned"
-	if err := fx.Users.Update(dctx, super); err != nil {
-		t.Fatalf("Update (expected no-op): %v", err)
+	var ve *shared.ValidationError
+	if err := fx.Users.Update(dctx, super); !errors.As(err, &ve) {
+		t.Fatalf("Update of a superadmin must error on 0 rows, got %T: %v", err, err)
 	}
 
-	// (3) Delete must be a no-op against a superadmin.
-	if err := fx.Users.Delete(dctx, super.ID); err != nil {
-		t.Fatalf("Delete (expected no-op): %v", err)
+	// (3) Delete must likewise refuse a superadmin with a not-found error.
+	if err := fx.Users.Delete(dctx, super.ID); !errors.As(err, &ve) {
+		t.Fatalf("Delete of a superadmin must error on 0 rows, got %T: %v", err, err)
 	}
 
 	// The superadmin must survive intact — original hash, original nickname.

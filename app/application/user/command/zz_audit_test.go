@@ -26,10 +26,9 @@ func auditEventsByAction(events []shared.AuditEvent, action string) []shared.Aud
 func TestCreateUserHandler_RecordsUserCreatedAudit(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "audit_user_created.db"))
 
-	collector := &shared.AuditCollector{}
 	// EventCollector is also needed: Handle calls EventCollectorFromContext too,
 	// but it returns a throwaway when absent, so only the audit collector is wired.
-	ctx := shared.ContextWithAuditCollector(context.Background(), collector)
+	ctx, collector := shared.ContextWithAuditCollector(authedCtx("admin-actor", "admin"))
 
 	h := NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	if err := h.Handle(ctx, CreateUserCommand{
@@ -49,7 +48,7 @@ func TestCreateUserHandler_RecordsUserCreatedAudit(t *testing.T) {
 		t.Fatal("expected user persisted")
 	}
 
-	created := auditEventsByAction(collector.Drain(), "user.created")
+	created := auditEventsByAction(collector.Flush(), "user.created")
 	if len(created) != 1 {
 		t.Fatalf("user.created records: got %d want 1", len(created))
 	}
@@ -71,8 +70,7 @@ func TestUpdateUserHandler_RecordsRoleChangedAudit(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "audit_role_changed.db"))
 	target := fx.SeedUser(t, "bob", "secret12", "user")
 
-	collector := &shared.AuditCollector{}
-	ctx := shared.ContextWithAuditCollector(context.Background(), collector)
+	ctx, collector := shared.ContextWithAuditCollector(authedCtx("admin-actor", "admin"))
 
 	h := NewUpdateUserHandler(fx.Users, fx.Hasher)
 	if err := h.Handle(ctx, UpdateUserCommand{
@@ -84,7 +82,7 @@ func TestUpdateUserHandler_RecordsRoleChangedAudit(t *testing.T) {
 		t.Fatalf("update: %v", err)
 	}
 
-	changed := auditEventsByAction(collector.Drain(), "user.role_changed")
+	changed := auditEventsByAction(collector.Flush(), "user.role_changed")
 	if len(changed) != 1 {
 		t.Fatalf("user.role_changed records: got %d want 1", len(changed))
 	}
@@ -106,8 +104,7 @@ func TestUpdateUserHandler_NoRoleChangedAuditWhenRoleUnchanged(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "audit_role_same.db"))
 	target := fx.SeedUser(t, "bob", "secret12", "user")
 
-	collector := &shared.AuditCollector{}
-	ctx := shared.ContextWithAuditCollector(context.Background(), collector)
+	ctx, collector := shared.ContextWithAuditCollector(authedCtx("admin-actor", "admin"))
 
 	h := NewUpdateUserHandler(fx.Users, fx.Hasher)
 	// Change only the email; role stays "user".
@@ -129,8 +126,34 @@ func TestUpdateUserHandler_NoRoleChangedAuditWhenRoleUnchanged(t *testing.T) {
 		t.Fatalf("email not updated: got %q", updated.Email)
 	}
 
-	if changed := auditEventsByAction(collector.Drain(), "user.role_changed"); len(changed) != 0 {
+	if changed := auditEventsByAction(collector.Flush(), "user.role_changed"); len(changed) != 0 {
 		t.Fatalf("expected no user.role_changed records, got %d", len(changed))
+	}
+}
+
+// F-023: an admin updating a superadmin used to hit the repo's role != 'superadmin'
+// filter (a 0-row no-op) yet still emit a phantom user.role_changed audit for a
+// change that never persisted. The up-front superadmin guard now returns a
+// PermissionError before any audit is recorded.
+func TestUpdateUserHandler_NoPhantomRoleChangedOnSuperadminTarget(t *testing.T) {
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "audit_superadmin_phantom.db"))
+	su := fx.SeedUser(t, "root", "secret12", "superadmin")
+
+	ctx, collector := shared.ContextWithAuditCollector(authedCtx("admin-actor", "admin"))
+
+	h := NewUpdateUserHandler(fx.Users, fx.Hasher)
+	err := h.Handle(ctx, UpdateUserCommand{
+		ID:       su.ID,
+		Nickname: "root",
+		Email:    "root@example.com",
+		Role:     "admin",
+	})
+	if err == nil {
+		t.Fatal("expected update of a superadmin to be refused")
+	}
+
+	if changed := auditEventsByAction(collector.Flush(), "user.role_changed"); len(changed) != 0 {
+		t.Fatalf("expected no phantom user.role_changed, got %d", len(changed))
 	}
 }
 
@@ -140,15 +163,14 @@ func TestDeleteUserHandler_RecordsUserDeletedAudit(t *testing.T) {
 	admin := fx.SeedUser(t, "admin", "secret12", "admin")
 	target := fx.SeedUser(t, "bob", "secret12", "user")
 
-	collector := &shared.AuditCollector{}
-	ctx := shared.ContextWithAuditCollector(authedCtx(admin.ID, "admin"), collector)
+	ctx, collector := shared.ContextWithAuditCollector(authedCtx(admin.ID, "admin"))
 
 	h := NewDeleteUserHandler(fx.Users)
 	if err := h.Handle(ctx, DeleteUserCommand{ID: target.ID}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 
-	deleted := auditEventsByAction(collector.Drain(), "user.deleted")
+	deleted := auditEventsByAction(collector.Flush(), "user.deleted")
 	if len(deleted) != 1 {
 		t.Fatalf("user.deleted records: got %d want 1", len(deleted))
 	}

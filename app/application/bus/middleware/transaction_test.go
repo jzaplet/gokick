@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"gokick/app/domain/shared"
 )
 
 // stubTx records BeginTx / Commit / Rollback calls so we can assert
@@ -42,7 +44,7 @@ type skipCmd struct{}
 
 func (skipCmd) SkipTransaction() {}
 
-var _ SkipsTransaction = skipCmd{}
+var _ shared.SkipsTransaction = skipCmd{}
 
 func TestTransactionMiddleware_WrapsByDefault(t *testing.T) {
 	t.Parallel()

@@ -18,40 +18,48 @@ import (
 // (gated platform:overview) plus cross-tenant user management (platform:users:*).
 // Superadmin only; an admin is denied at the bus.
 type PlatformHandler struct {
+	resp        *response.Responder
 	queryBus    *bus.QueryBus
 	commandBus  *bus.CommandBus
 	getStats    *platformqry.GetStatsHandler
 	listUsers   *platformqry.ListAllUsersHandler
+	getUser     *platformqry.GetUserHandler
 	listTenants *platformqry.ListTenantsHandler
 	updateUser  *platformcmd.UpdatePlatformUserHandler
 	deleteUser  *platformcmd.DeletePlatformUserHandler
 }
 
 func NewPlatformHandler(
+	resp *response.Responder,
 	queryBus *bus.QueryBus,
 	commandBus *bus.CommandBus,
 	getStats *platformqry.GetStatsHandler,
 	listUsers *platformqry.ListAllUsersHandler,
+	getUser *platformqry.GetUserHandler,
 	listTenants *platformqry.ListTenantsHandler,
 	updateUser *platformcmd.UpdatePlatformUserHandler,
 	deleteUser *platformcmd.DeletePlatformUserHandler,
 ) *PlatformHandler {
 	return &PlatformHandler{
+		resp:        resp,
 		queryBus:    queryBus,
 		commandBus:  commandBus,
 		getStats:    getStats,
 		listUsers:   listUsers,
+		getUser:     getUser,
 		listTenants: listTenants,
 		updateUser:  updateUser,
 		deleteUser:  deleteUser,
 	}
 }
 
+//gkts:assets/app/Platform/types/PlatformStats.ts PlatformStats
 type platformStatsDTO struct {
 	TenantCount int `json:"tenant_count"`
 	UserCount   int `json:"user_count"`
 }
 
+//gkts:assets/app/Platform/types/PlatformUser.ts PlatformUser
 type platformUserDTO struct {
 	ID          string  `json:"id"`
 	Nickname    string  `json:"nickname"`
@@ -63,6 +71,7 @@ type platformUserDTO struct {
 	LastLoginAt *string `json:"last_login_at"`
 }
 
+//gkts:assets/app/Platform/types/PlatformTenant.ts PlatformTenant
 type platformTenantDTO struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
@@ -70,6 +79,7 @@ type platformTenantDTO struct {
 	UserCount int    `json:"user_count"`
 }
 
+//gkts:assets/app/Platform/types/PlatformUserFormData.ts PlatformUserFormData
 type platformUserRequest struct {
 	Nickname string `json:"nickname"`
 	Password string `json:"password"`
@@ -80,9 +90,9 @@ type platformUserRequest struct {
 func (h *PlatformHandler) Stats(w http.ResponseWriter, r *http.Request) {
 	q := platformqry.GetStatsQuery{}
 
-	stats, err := bus.Exec(
+	stats, err := bus.Query(
 		r.Context(),
-		h.queryBus.Bus,
+		h.queryBus,
 		"PlatformStats",
 		q,
 		func(ctx context.Context) (platformqry.PlatformStats, error) {
@@ -90,12 +100,12 @@ func (h *PlatformHandler) Stats(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
 
-	response.JSON(w, http.StatusOK, platformStatsDTO{
+	h.resp.JSON(r.Context(), w, http.StatusOK, platformStatsDTO{
 		TenantCount: stats.TenantCount,
 		UserCount:   stats.UserCount,
 	})
@@ -104,9 +114,9 @@ func (h *PlatformHandler) Stats(w http.ResponseWriter, r *http.Request) {
 func (h *PlatformHandler) Users(w http.ResponseWriter, r *http.Request) {
 	q := platformqry.ListAllUsersQuery{}
 
-	rows, err := bus.Exec(
+	rows, err := bus.Query(
 		r.Context(),
-		h.queryBus.Bus,
+		h.queryBus,
 		"PlatformListUsers",
 		q,
 		func(ctx context.Context) ([]user.PlatformRow, error) {
@@ -114,7 +124,7 @@ func (h *PlatformHandler) Users(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
@@ -124,15 +134,40 @@ func (h *PlatformHandler) Users(w http.ResponseWriter, r *http.Request) {
 		dtos[i] = toPlatformUserDTO(row)
 	}
 
-	response.JSON(w, http.StatusOK, dtos)
+	h.resp.JSON(r.Context(), w, http.StatusOK, dtos)
+}
+
+// GetUser returns one user in ANY tenant (GET /platform/users/{id}) — the
+// cross-tenant read-one the platform edit view fetches instead of pulling the
+// whole cross-tenant list and .find()ing it. A missing id surfaces as the query
+// handler's 400 (Field "id"), so row is non-nil here.
+func (h *PlatformHandler) GetUser(w http.ResponseWriter, r *http.Request) {
+	q := platformqry.GetUserQuery{ID: r.PathValue("id")}
+
+	row, err := bus.Query(
+		r.Context(),
+		h.queryBus,
+		"PlatformGetUser",
+		q,
+		func(ctx context.Context) (*user.PlatformRow, error) {
+			return h.getUser.Handle(ctx, q)
+		},
+	)
+	if err != nil {
+		h.resp.HandleError(r.Context(), w, err)
+
+		return
+	}
+
+	h.resp.JSON(r.Context(), w, http.StatusOK, toPlatformUserDTO(*row))
 }
 
 func (h *PlatformHandler) Tenants(w http.ResponseWriter, r *http.Request) {
 	q := platformqry.ListTenantsQuery{}
 
-	rows, err := bus.Exec(
+	rows, err := bus.Query(
 		r.Context(),
-		h.queryBus.Bus,
+		h.queryBus,
 		"PlatformListTenants",
 		q,
 		func(ctx context.Context) ([]tenant.Overview, error) {
@@ -140,7 +175,7 @@ func (h *PlatformHandler) Tenants(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
@@ -155,13 +190,13 @@ func (h *PlatformHandler) Tenants(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	response.JSON(w, http.StatusOK, dtos)
+	h.resp.JSON(r.Context(), w, http.StatusOK, dtos)
 }
 
 func (h *PlatformHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	var body platformUserRequest
 	if err := request.DecodeJSON(w, r, &body); err != nil {
-		response.Error(w, http.StatusBadRequest, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
@@ -174,9 +209,9 @@ func (h *PlatformHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		Role:     body.Role,
 	}
 
-	err := bus.ExecVoid(
+	err := bus.DispatchVoid(
 		r.Context(),
-		h.commandBus.Bus,
+		h.commandBus,
 		"PlatformUpdateUser",
 		cmd,
 		func(ctx context.Context) error {
@@ -184,7 +219,7 @@ func (h *PlatformHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
@@ -195,9 +230,9 @@ func (h *PlatformHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 func (h *PlatformHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	cmd := platformcmd.DeletePlatformUserCommand{ID: r.PathValue("id")}
 
-	err := bus.ExecVoid(
+	err := bus.DispatchVoid(
 		r.Context(),
-		h.commandBus.Bus,
+		h.commandBus,
 		"PlatformDeleteUser",
 		cmd,
 		func(ctx context.Context) error {
@@ -205,7 +240,7 @@ func (h *PlatformHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
@@ -215,8 +250,8 @@ func (h *PlatformHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 
 func toPlatformUserDTO(row user.PlatformRow) platformUserDTO {
 	var lastLogin *string
-	if row.LastLoginAt.Valid {
-		s := row.LastLoginAt.Time.Format(time.RFC3339)
+	if row.LastLoginAt != nil {
+		s := row.LastLoginAt.Format(time.RFC3339)
 		lastLogin = &s
 	}
 

@@ -56,7 +56,7 @@ Plníš jen `Action`, `TargetType`, `TargetID`, `Metadata`. Zbytek doplní middl
 **2. `AuditMiddleware` obohatí a uloží** — `app/application/bus/middleware/audit.go`:
 - Vytvoří **per-request** `AuditCollector` a strčí ho do `ctx` (žádný singleton —
   paralelní commandy se nemíchají).
-- Po handleru (i když vrátil error) `Drain()`-uje nasbírané eventy.
+- Po handleru (i když vrátil error) `Flush()`-ne nasbírané eventy.
 - Pro každý doplní `actor_user_id` (z `ClaimsFromContext`), `actor_ip`
   (z `ActorIPFromContext`, plněno HTTP middleware v `presentation/http/middleware/ip.go`),
   `created_at` a `id` (UUID) → `AuditRecord` → `AuditLogger.Save`.
@@ -73,12 +73,14 @@ Recovery → Logging → Authorize → Tenant → Audit → RunDispatcher → Di
                                           ^^^^^                                     ^^^^^^^^^^^
                                           audit zde, tx vně → rollback audit nesmaže
 ```
-Ověř v `app/infrastructure/di/container_provider.go` (build) a generated `wire_gen.go`.
+Pořadí je jednozdrojové v `middleware.CommandChain` (`app/application/bus/middleware/base.go`) — DI provider (`provideCommandBus` v `container_provider.go`) i testfx ho jen volají, takže se nemohou rozjet.
 
-**Mimo bus (přímé volání handleru v testech)** — `AuditCollectorFromContext` vrátí
-jednorázový collector, `Record` je no-op. Handler tedy nikdy nil-checkuje. CLI
-commandy (create-*, seed) jedou přes `SystemCommandBus`, který AuditMiddleware má —
-jejich audit záznamy se perzistují.
+**Mimo bus** — bez instalovaného collectoru (přímé volání handleru v testu) vrátí
+`AuditCollectorFromContext` jednorázový collector a `Record` se neperzistuje. Handler
+tedy nikdy nil-checkuje. CLI commandy (create-*, seed) jedou přes `SystemCommandBus`,
+který AuditMiddleware má, a background run handlery drainuje run worker do
+`AuditLogger` sám (`app/infrastructure/worker/run_worker_audit.go`) — v obou
+případech se audit záznamy perzistují.
 
 ## Recipe
 Přidat audit zápis do command handleru:
@@ -105,10 +107,12 @@ Přidat audit zápis do command handleru:
   (string ID, čas), ne entity ani value objekty.
 - **Konvence `Action`.** Reálné akce dnes v kódu, pro inspiraci formátu:
   `auth.login.succeeded` / `auth.login.failed` (`{nickname}`) /
+  `auth.login.blocked_while_locked` (správné heslo na zamčený účet) /
   `auth.account.locked` (`{locked_until}`) / `auth.token.theft_detected`
   (`{reason: reused_after_rotation | concurrent_rotation_race}`) /
+  `auth.logout` (global session revocation) /
   `user.created` (`{role}`) / `user.role_changed` (`{new_role}`) /
-  `user.deleted` / `user.password_changed`.
+  `user.deleted` / `user.password_changed` / `tenant.created`.
 
 ## Related
 - Skills: `/gk-bus` (middleware chain + pořadí), `/gk-auth` (kde většina audit

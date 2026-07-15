@@ -10,23 +10,27 @@ import (
 )
 
 type DashboardHandler struct {
+	resp      *response.Responder
 	queryBus  *bus.QueryBus
 	userDash  *dashboardqry.GetUserDashboardHandler
 	adminDash *dashboardqry.GetAdminDashboardHandler
 }
 
 func NewDashboardHandler(
+	resp *response.Responder,
 	queryBus *bus.QueryBus,
 	userDash *dashboardqry.GetUserDashboardHandler,
 	adminDash *dashboardqry.GetAdminDashboardHandler,
 ) *DashboardHandler {
 	return &DashboardHandler{
+		resp:      resp,
 		queryBus:  queryBus,
 		userDash:  userDash,
 		adminDash: adminDash,
 	}
 }
 
+//gkts:assets/app/Dashboard/types/DashboardResponse.ts DashboardResponse
 type dashboardDTO struct {
 	Message string `json:"message"`
 }
@@ -34,9 +38,9 @@ type dashboardDTO struct {
 func (h *DashboardHandler) User(w http.ResponseWriter, r *http.Request) {
 	q := dashboardqry.GetUserDashboardQuery{}
 
-	result, err := bus.Exec(
+	result, err := bus.Query(
 		r.Context(),
-		h.queryBus.Bus,
+		h.queryBus,
 		"GetUserDashboard",
 		q,
 		func(ctx context.Context) (dashboardqry.UserDashboard, error) {
@@ -44,20 +48,20 @@ func (h *DashboardHandler) User(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
 
-	response.JSON(w, http.StatusOK, dashboardDTO{Message: result.Message})
+	h.resp.JSON(r.Context(), w, http.StatusOK, dashboardDTO{Message: result.Message})
 }
 
 func (h *DashboardHandler) Admin(w http.ResponseWriter, r *http.Request) {
 	q := dashboardqry.GetAdminDashboardQuery{}
 
-	result, err := bus.Exec(
+	result, err := bus.Query(
 		r.Context(),
-		h.queryBus.Bus,
+		h.queryBus,
 		"GetAdminDashboard",
 		q,
 		func(ctx context.Context) (dashboardqry.AdminDashboard, error) {
@@ -65,10 +69,10 @@ func (h *DashboardHandler) Admin(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 
 		return
 	}
 
-	response.JSON(w, http.StatusOK, dashboardDTO{Message: result.Message})
+	h.resp.JSON(r.Context(), w, http.StatusOK, dashboardDTO{Message: result.Message})
 }

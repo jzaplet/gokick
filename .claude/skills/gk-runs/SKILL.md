@@ -62,17 +62,19 @@ Fire-and-forget run je výprava bez deníku (jeden krok, žádný checkpoint). P
 ## How it works
 
 **Schéma `runs`** (`migrations/…_create_runs_table.sql`) = fronta + `state`
-(checkpoint BLOB), `locked_by` (owner token), `reclaims`, `updated_at`,
+(checkpoint BLOB), `locked_by` (owner token), `reclaims`, `parks`, `updated_at`,
 `cancel_requested`/`cancelled_at`. Stav se odvozuje ze sloupců (`completed_at` /
 `failed_at` / `cancelled_at` != NULL → terminal; `locked_until > now` → běží).
 
-**Entita + port** (`app/domain/run/`): `Run` + `Repository`. Dva oddělené čítače:
+**Entita + port** (`app/domain/run/`): `Run` + `Repository`. Tři oddělené čítače:
 `Attempts` = **logické retry** (bumpuje jen `Reschedule`, cap `MaxRetries`),
 `Reclaims` = **crash reclaimy** (bumpuje `ClaimDue` při převzetí vypršelého leasu,
+cap zvlášť), `Parks` = **registry-skew parky** (bumpuje `Park` u neznámého kindu,
 cap zvlášť). Mutující metody jsou **owner-checked** a vrací `bool`: `false` = lease
-ztracen → caller se vzdá (fencing). `ClaimDue`/`RenewLease`/`Checkpoint`/`MarkComplete`/
-`Reschedule`/`MarkFailed`/`MarkCancelled`/`RequestCancel`/`IsCancelRequested` (levný
-flag-only poll pro heartbeat, netáhne state BLOB)/`FindByID`. Čas: `julianday()` na
+ztracen → caller se vzdá (fencing). `ClaimDue`/`RenewLease` (heartbeat; v témže owner-checked zápisu vrací přes
+`RETURNING` i `cancel_requested` — žádný samostatný cancel-poll, state BLOB se
+netáhne)/`Checkpoint`/`MarkComplete`/`Reschedule`/`Park`/`MarkFailed`/`MarkCancelled`/
+`RequestCancel`/`FindByID`. Čas: `julianday()` na
 porovnání, ms-precizní zápisy, sub-second lease — viz `/gk-repositories`.
 
 **Kontrakt + registrace** (`app/application/run/registry.go`): handler píše aplikace,
@@ -116,7 +118,9 @@ serveru pro split deploy: 1× serve + N× worker, sdílená SQLite).
 pro oba tvary**: `RunDispatcherMiddleware` ho vloží do ctx; `Enqueue` z command handleru
 padne do **stejné transakce** jako business write (atomický enqueue přes `Conn(ctx)`).
 Neznámý `kind` (bez registrovaného handleru) i `maxRetries < 0` selžou už při enqueue.
-Mimo bus (CLI, testy) vrací no-op dispatcher — enqueue se tiše zahodí, handler nenil-checkuje.
+Mimo bus (testy, přímé volání handleru) vrací no-op dispatcher — enqueue se tiše
+zahodí, handler nenil-checkuje. CLI příkazy jedou přes SystemCommandBus, který
+RunDispatcher nese — enqueue z CLI je durable INSERT a run si vyzvedne serve/worker.
 
 ## Recipe
 
@@ -143,13 +147,16 @@ Přidání nového kindu (vyber tvar podle „potřebuje checkpoint/resume?"):
 
 ## Invariants & pitfalls
 
-- **Handler NESMÍ otevřít transakci — vynuceno pro oba tvary.** Worker označí handler
-  ctx `shared.ContextForbidTx`; `Transactor.BeginTx` v té zóně **fail-closed selže**
-  (+ statická `zz_notx_test.go` brána skenuje run path). Dlouhý handler v `BEGIN IMMEDIATE`
-  by držel globální SQLite write-lock → freeze; i krátké volání ven by drželo zámek po dobu
-  volání. Stav perzistuj přes `Checkpointer`; transakční side-work **zařaď jako command**
-  (poběží ve vlastní krátké tx mimo run). Kdy durable run vs fire-and-forget run vs scheduler vs event →
-  `docs/framework/background-work.md`.
+- **Handler NESMÍ držet transakci přes pomalou práci — implicitní tx je vynuceně
+  zakázaná.** Worker označí handler ctx `shared.ContextForbidTx`; `Transactor.BeginTx`
+  v té zóně **fail-closed selže** (+ statická `zz_notx_test.go` brána skenuje run path).
+  Dlouhý handler v `BEGIN IMMEDIATE` by držel globální SQLite write-lock → freeze;
+  i krátké volání ven by drželo zámek po dobu volání. Stav perzistuj přes `Checkpointer`;
+  pár atomických zápisů udělej přes `shared.WithTx(ctx, fn)` — krátkou tx, kterou si
+  handler sám ohraničí (worker mu `Transactor` do ctx injektuje; drž ji krátkou, žádné
+  pomalé/externí I/O uvnitř — přesně jako v command handleru). Vnořený `WithTx` i syrový
+  `BeginTx` uvnitř fail-closed selžou. Kdy durable run vs fire-and-forget run vs
+  scheduler vs event → `docs/framework/background-work.md`.
 - **At-least-once → idempotence VŠEHO.** Mimo tx zaniká atomicita „handler-writes +
   complete" — `MarkComplete` je **samostatný zápis až po návratu handleru**, takže crash
   v okně mezi nimi handler na reclaimu **zopakuje**. Idempotentní musí být nejen externí
@@ -171,8 +178,11 @@ Přidání nového kindu (vyber tvar podle „potřebuje checkpoint/resume?"):
 - **Z handleru NEvolat `EventCollector.Collect`.** Sběrač eventů se vyprazdňuje jen v
   command request goroutině; ve workeru je zablokovaný a Collect je runtime panic. Pro
   navazující async práci zařaď další run (`RunDispatcher` je v ctx).
-- **Neznámý kind = terminal failure.** Worker dostane kind bez handleru (deploy/registry-skew)
-  → `MarkFailed` + report do Sentry, žádný retry.
+- **Neznámý kind = park s backoffem, ne okamžitý fail.** Worker dostane kind bez handleru
+  (deploy/registry-skew) → `Park`: reschedule s exponenciálním backoffem, bumpne vyhrazený
+  čítač `parks` (NE `attempts` — deploy okno nespálí logic-retry budget, přežije ho i run-once
+  run s `maxRetries=0`). Teprve po vyčerpání park budgetu (`minUnknownKindParks` = 5)
+  → `MarkFailed` + report do Sentry.
 
 ## Related
 

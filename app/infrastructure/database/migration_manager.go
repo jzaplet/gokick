@@ -2,6 +2,8 @@ package database
 
 import (
 	"context"
+	"errors"
+	"gokick/app/domain/shared"
 	"gokick/migrations"
 	"log/slog"
 
@@ -48,17 +50,25 @@ func (m *MigrationManager) RunUp() error {
 	m.db.SetMaxOpenConns(1)
 	defer m.db.SetMaxOpenConns(0)
 
-	before, _ := goose.GetDBVersion(m.db.DB)
+	before, errBefore := goose.GetDBVersion(m.db.DB)
 
 	if err := goose.UpContext(context.Background(), m.db.DB, "."); err != nil {
 		return err
 	}
 
-	after, _ := goose.GetDBVersion(m.db.DB)
+	after, errAfter := goose.GetDBVersion(m.db.DB)
 
-	if after > before {
+	switch {
+	case errBefore != nil || errAfter != nil:
+		// A version read failed. The migrations themselves succeeded (UpContext
+		// returned nil), so this is a reporting-only degradation — but don't
+		// fabricate an applied-range from a swallowed 0 (that would log a phantom
+		// "0 -> N" or "up to date version 0"). Surface the read failure instead.
+		m.logger.Warn("migrations: applied, but version read failed (applied-range log skipped)",
+			shared.LogKeyError, errors.Join(errBefore, errAfter))
+	case after > before:
 		m.logger.Info("migrations: applied", logKeyFrom, before, logKeyTo, after)
-	} else {
+	default:
 		m.logger.Info("migrations: up to date", logKeyVersion, after)
 	}
 

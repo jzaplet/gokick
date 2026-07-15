@@ -13,8 +13,13 @@ import (
 	"gokick/app/internal/testfx"
 )
 
-// stubFindByIDUsers wraps a real user.Repository but forces FindByID to fail with
-// a transient (non-ValidationError) error, to exercise the durable-logout guard.
+// stubFindByIDUsers wraps a real user.Repository but forces FindByID to return a
+// fixed (nil, err) pair. With a non-nil transient err it exercises the
+// durable-logout guard (must propagate raw, not launder into AuthError); with
+// err == nil it returns the (nil, nil) not-found the F-011 contract defines, to
+// exercise the u == nil → AuthError branch with a still-valid refresh token
+// (the plain fx.Users.Delete path can't reach it — user delete cascades to the
+// token, so the handler bails at FindByHash before ever calling FindByID).
 type stubFindByIDUsers struct {
 	user.Repository
 	err error
@@ -24,11 +29,11 @@ func (s stubFindByIDUsers) FindByID(context.Context, string) (*user.User, error)
 	return nil, s.err
 }
 
-// stubSaveFailsTokens wraps a real token.TokenRepository but forces Save (the
+// stubSaveFailsTokens wraps a real token.Repository but forces Save (the
 // persist of the freshly-rotated token) to fail, to prove the rotation order:
 // the new token is saved BEFORE the old one is marked used.
 type stubSaveFailsTokens struct {
-	token.TokenRepository
+	token.Repository
 	err error
 }
 
@@ -36,11 +41,11 @@ func (s stubSaveFailsTokens) Save(context.Context, *token.RefreshToken) error {
 	return s.err
 }
 
-// stubDeleteFailsTokens wraps a real token.TokenRepository but forces
+// stubDeleteFailsTokens wraps a real token.Repository but forces
 // DeleteByUserID (the theft-response revocation) to fail, to prove a failed
 // revocation surfaces a raw error instead of a laundered AuthError.
 type stubDeleteFailsTokens struct {
-	token.TokenRepository
+	token.Repository
 	err error
 }
 
@@ -141,6 +146,29 @@ func TestRefreshTokenHandler_UserDeletedAfterIssue(t *testing.T) {
 	}
 }
 
+// The F-011 not-found branch in isolation: the refresh token is STILL VALID but
+// FindByID reports the user is gone as (nil, nil). The handler must map that to
+// AuthError (end the session), NOT panic on a nil deref. The UserDeletedAfterIssue
+// test above cannot cover this — deleting the user cascade-deletes the token, so
+// that path exits at FindByHash. Here the stub returns (nil, nil) with err == nil.
+func TestRefreshTokenHandler_UserVanishedNilNilReturnsAuthError(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "refresh_user_vanished.db"))
+	u := fx.SeedUser(t, "alice", "pwd", "user")
+	raw := fx.SeedRefreshToken(t, u.ID, time.Now().Add(24*time.Hour))
+
+	handler := NewRefreshTokenHandler(
+		stubFindByIDUsers{Repository: fx.Users, err: nil}, // (nil, nil) not-found
+		fx.Tokens, fx.Jwt,
+	)
+
+	_, err := handler.Handle(ctx, RefreshTokenCommand{RawToken: raw})
+	var authErr *shared.AuthError
+	if !errors.As(err, &authErr) {
+		t.Fatalf("vanished user (nil,nil) must map to *shared.AuthError, got %T: %v", err, err)
+	}
+}
+
 // A transient DB error during the user lookup must propagate as a RAW error (→
 // 5xx → cookie kept), NOT be laundered into *AuthError. Otherwise the HTTP layer
 // (clearRefreshCookie only on *AuthError) and the SPA (clearSessionHint only on
@@ -190,7 +218,7 @@ func TestRefreshTokenHandler_SaveFailureLeavesOldTokenUnconsumed(t *testing.T) {
 	dbBlip := errors.New("database is locked")
 	handler := NewRefreshTokenHandler(
 		fx.Users,
-		stubSaveFailsTokens{TokenRepository: fx.Tokens, err: dbBlip},
+		stubSaveFailsTokens{Repository: fx.Tokens, err: dbBlip},
 		fx.Jwt,
 	)
 
@@ -243,6 +271,45 @@ func TestRefreshTokenHandler_ReuseTriggersForceLogout(t *testing.T) {
 	}
 }
 
+// F-026: the theft-path force-logout must PERSIST when the command runs through
+// the real tx-wrapping CommandBus. revokeAllAsTheft calls tx-aware DeleteByUserID
+// then returns an AuthError; without SkipTransaction() on RefreshTokenCommand the
+// wrapping bus tx would roll that delete back on the error and quietly defeat the
+// force-logout. Dispatched through fx.NewBuses (the production chain), this fails
+// if SkipTransaction() is ever removed or renamed.
+func TestRefreshTokenHandler_TheftForceLogoutPersistsThroughBusTx(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "refresh_theft_bus.db"))
+	u := fx.SeedUser(t, "alice", "pwd", "user")
+	raw := fx.SeedRefreshToken(t, u.ID, time.Now().Add(24*time.Hour))
+
+	cmdBus, _, _ := fx.NewBuses()
+	handler := NewRefreshTokenHandler(fx.Users, fx.Tokens, fx.Jwt)
+	refresh := func() (IssuedSession, error) {
+		return testfx.ExecCommand(ctx, cmdBus, "RefreshToken",
+			RefreshTokenCommand{RawToken: raw},
+			func(ctx context.Context) (IssuedSession, error) {
+				return handler.Handle(ctx, RefreshTokenCommand{RawToken: raw})
+			})
+	}
+
+	// First rotation marks the old token used (through the bus, for realism).
+	if _, err := refresh(); err != nil {
+		t.Fatalf("first refresh through bus: %v", err)
+	}
+	fx.AssertTokenCount(t, 2) // old (used) + new
+
+	// Reuse the old token → theft → DeleteByUserID + AuthError, all inside the bus tx.
+	_, err := refresh()
+	var authErr *shared.AuthError
+	if !errors.As(err, &authErr) {
+		t.Fatalf("expected *shared.AuthError on reuse, got %T: %v", err, err)
+	}
+
+	// The force-logout must have COMMITTED despite the returned error.
+	fx.AssertTokenCount(t, 0)
+}
+
 // The theft path must emit auth.token.theft_detected with metadata {reason}
 // (audit.md table + app-events-audit-40). The behavioral test above proves the
 // force-logout; this proves the security event operators rely on to SEE it.
@@ -260,14 +327,13 @@ func TestRefreshTokenHandler_ReuseRecordsTheftAudit(t *testing.T) {
 	}
 
 	// Reuse the already-rotated token with a collector attached.
-	collector := &shared.AuditCollector{}
-	auditCtx := shared.ContextWithAuditCollector(ctx, collector)
+	auditCtx, collector := shared.ContextWithAuditCollector(ctx)
 	if _, err := handler.Handle(auditCtx, RefreshTokenCommand{RawToken: raw}); err == nil {
 		t.Fatal("expected AuthError on token reuse")
 	}
 
 	var theft *shared.AuditEvent
-	for _, e := range collector.Drain() {
+	for _, e := range collector.Flush() {
 		if e.Action == "auth.token.theft_detected" {
 			ev := e
 			theft = &ev
@@ -311,11 +377,10 @@ func TestRefreshTokenHandler_TheftDeleteFailureSurfacesErrorAndStillAudits(t *te
 	deleteBlip := errors.New("database is locked")
 	handler := NewRefreshTokenHandler(
 		fx.Users,
-		stubDeleteFailsTokens{TokenRepository: fx.Tokens, err: deleteBlip},
+		stubDeleteFailsTokens{Repository: fx.Tokens, err: deleteBlip},
 		fx.Jwt,
 	)
-	collector := &shared.AuditCollector{}
-	auditCtx := shared.ContextWithAuditCollector(ctx, collector)
+	auditCtx, collector := shared.ContextWithAuditCollector(ctx)
 
 	_, err := handler.Handle(auditCtx, RefreshTokenCommand{RawToken: raw})
 
@@ -330,7 +395,7 @@ func TestRefreshTokenHandler_TheftDeleteFailureSurfacesErrorAndStillAudits(t *te
 	}
 	// The theft was audited regardless — recorded BEFORE the delete was attempted.
 	var sawTheft bool
-	for _, e := range collector.Drain() {
+	for _, e := range collector.Flush() {
 		if e.Action == "auth.token.theft_detected" {
 			sawTheft = true
 		}

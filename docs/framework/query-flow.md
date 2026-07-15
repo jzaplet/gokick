@@ -11,7 +11,7 @@ description: 'Čtecí cesta CQRS — krátký řetězec Recovery → Logging →
 
 # Query flow
 
-Čtecí operace tečou přes `QueryBus`. Oproti [Command flow](/framework/command-flow) je řetězec krátký — jen **Recovery → Logging → Authorize → Tenant**. Žádná transakce, audit ani eventy: čtení nemění stav, takže nemá co commitovat ani ohlašovat. Tenant resoluce tu je (čtení se scopuje stejně jako zápisy — viz `/gk-multitenancy`). Návratová hodnota je typovaná díky generikám v `bus.Exec[R]`.
+Čtecí operace tečou přes `QueryBus`. Oproti [Command flow](/framework/command-flow) je řetězec krátký — jen **Recovery → Logging → Authorize → Tenant**. Žádná transakce, audit ani eventy: čtení nemění stav, takže nemá co commitovat ani ohlašovat. Tenant resoluce tu je (čtení se scopuje stejně jako zápisy — viz `/gk-multitenancy`). Návratová hodnota je typovaná díky generikám v `bus.Query[R]`.
 
 > Přehled toku. Návod „jak napsat query handler" je ve skillu `/gk-queries`, mechaniku busů rozebírá `/gk-bus`.
 
@@ -23,13 +23,13 @@ Když potřebuješ **přečíst data** (seznam, detail) a vrátit je z endpointu
 
 ## Jak to teče
 
-1. HTTP handler sestaví query (prostý struct) a pošle ji přes `bus.Exec[R]` — nevolá handler přímo.
+1. HTTP handler sestaví query (prostý struct) a pošle ji přes `bus.Query[R]` — nevolá handler přímo.
 2. **Recovery** zachytí případnou paniku → `PanicError` (500) + report.
 3. **Logging** zaloguje `bus: executing` → `bus: completed` + `duration_ms`.
 4. **Authorize** porovná `RequiredPermission()` s `PermissionChecker` → jinak 403.
 5. **Tenant** resolvuje aktivní tenant do `ctx` (row-level multitenancy; viz `/gk-multitenancy`).
 6. Query handler `Handle` čte přes `r.Conn(ctx)` (raw pool, žádná transakce).
-7. `bus.Exec[R]` vrátí typovaný výsledek (na `nil` vrátí zero value `R`); chybu mapuje `response.HandleError` na HTTP status.
+7. `bus.Query[R]` vrátí typovaný výsledek (na `nil` vrátí zero value `R`); chybu mapuje `resp.HandleError` (metoda injektovaného `*response.Responder`) na HTTP status.
 
 
 ## Příklad
@@ -38,9 +38,9 @@ Když potřebuješ **přečíst data** (seznam, detail) a vrátit je z endpointu
 func (h *AdminUsersHandler) List(w http.ResponseWriter, r *http.Request) {
     q := userqry.ListUsersQuery{}
 
-    users, err := bus.Exec(
+    users, err := bus.Query(
         r.Context(),
-        h.queryBus.Bus,
+        h.queryBus,
         "ListUsers",
         q,
         func(ctx context.Context) ([]user.User, error) {
@@ -48,7 +48,7 @@ func (h *AdminUsersHandler) List(w http.ResponseWriter, r *http.Request) {
         },
     )
     if err != nil {
-        response.HandleError(w, err)
+        h.resp.HandleError(r.Context(), w, err)
         return
     }
 
@@ -56,7 +56,7 @@ func (h *AdminUsersHandler) List(w http.ResponseWriter, r *http.Request) {
     for i, u := range users {
         dtos[i] = toAdminUserDTO(u)
     }
-    response.JSON(w, http.StatusOK, dtos)
+    h.resp.JSON(r.Context(), w, http.StatusOK, dtos)
 }
 ```
 

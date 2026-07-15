@@ -25,7 +25,7 @@ func newOwner(prefix string) string { return prefix + "-" + uuid.NewString() }
 
 func enqueueRun(t *testing.T, fx *testfx.Fixture, kind string) *run.Run {
 	t.Helper()
-	r := run.NewRun(kind, []byte(`{}`), 3)
+	r, _ := run.NewRun(kind, []byte(`{}`), 3)
 	if err := fx.Runs.Enqueue(context.Background(), r); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
@@ -34,7 +34,7 @@ func enqueueRun(t *testing.T, fx *testfx.Fixture, kind string) *run.Run {
 
 func enqueueRunAt(t *testing.T, fx *testfx.Fixture, kind string, runAt time.Time) *run.Run {
 	t.Helper()
-	r := run.NewRun(kind, []byte(`{}`), 3)
+	r, _ := run.NewRun(kind, []byte(`{}`), 3)
 	r.RunAt = runAt
 	if err := fx.Runs.Enqueue(context.Background(), r); err != nil {
 		t.Fatalf("enqueue: %v", err)
@@ -81,7 +81,7 @@ func mustFind(t *testing.T, fx *testfx.Fixture, id string) *run.Run {
 
 func TestEnqueue_PersistsAndRoundTrips(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "enq.db"))
-	r := run.NewRun("agent:summarize", []byte(`{"input":"x"}`), 3)
+	r, _ := run.NewRun("agent:summarize", []byte(`{"input":"x"}`), 3)
 	if err := fx.Runs.Enqueue(context.Background(), r); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestEnqueue_InTxRollback_LeavesNoRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	r := run.NewRun("tx", []byte(`{}`), 0)
+	r, _ := run.NewRun("tx", []byte(`{}`), 0)
 	if err := fx.Runs.Enqueue(txCtx, r); err != nil {
 		t.Fatalf("enqueue in tx: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestEnqueue_InTxCommit_Persists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	r := run.NewRun("tx", []byte(`{}`), 0)
+	r, _ := run.NewRun("tx", []byte(`{}`), 0)
 	if err := fx.Runs.Enqueue(txCtx, r); err != nil {
 		t.Fatalf("enqueue in tx: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestEnqueue_InTxCommit_Persists(t *testing.T) {
 
 func TestEnqueue_DuplicateIDErrors(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "enq_dup.db"))
-	r := run.NewRun("dup", []byte(`{}`), 0)
+	r, _ := run.NewRun("dup", []byte(`{}`), 0)
 	if err := fx.Runs.Enqueue(context.Background(), r); err != nil {
 		t.Fatalf("first enqueue: %v", err)
 	}

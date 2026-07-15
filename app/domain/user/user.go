@@ -1,7 +1,6 @@
 package user
 
 import (
-	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,19 +27,21 @@ type User struct {
 	// Brute-force tracking. Mutated only via Repository's
 	// RecordFailedLogin / ResetFailedLogin (which run outside the bus
 	// transaction so the counter persists even when login returns
-	// AuthError and the surrounding tx rolls back). sql.NullTime is
-	// used (not *time.Time) because the SQLite driver writes/reads
-	// these as TEXT — the standard sql.NullTime scanner handles both
-	// the string-from-DB and the NULL case without a custom type.
-	FailedLoginAttempts int          `db:"failed_login_attempts"`
-	LastFailedLoginAt   sql.NullTime `db:"last_failed_login_at"`
-	LockedUntil         sql.NullTime `db:"locked_until"`
+	// AuthError and the surrounding tx rolls back). *time.Time (not
+	// sql.NullTime) for the nullable columns — the same shape run.Run
+	// uses: the ncruces driver scans a nullable DATETIME TEXT column
+	// into a *time.Time (nil for NULL) without a custom type, so nil is
+	// the one "unset" sentinel across contexts. Writes stamp ms
+	// precision (strftime %f), verified round-trip under load.
+	FailedLoginAttempts int        `db:"failed_login_attempts"`
+	LastFailedLoginAt   *time.Time `db:"last_failed_login_at"`
+	LockedUntil         *time.Time `db:"locked_until"`
 
 	// LastLoginAt is stamped on each successful login via Repository.RecordLogin
-	// (raw pool, best-effort, like the brute-force counters above). NULL until
+	// (raw pool, best-effort, like the brute-force counters above). nil until
 	// the user has logged in at least once. Powers the superadmin platform
 	// overview.
-	LastLoginAt sql.NullTime `db:"last_login_at"`
+	LastLoginAt *time.Time `db:"last_login_at"`
 }
 
 func NewUser(
@@ -51,7 +52,7 @@ func NewUser(
 	tenantID string,
 ) *User {
 	return &User{
-		ID:           uuid.New().String(),
+		ID:           uuid.Must(uuid.NewV7()).String(),
 		Nickname:     string(nickname),
 		PasswordHash: passwordHash,
 		Email:        string(email),

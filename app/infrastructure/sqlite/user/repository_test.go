@@ -9,6 +9,35 @@ import (
 	"gokick/app/internal/testfx"
 )
 
+// F-045: after a lock EXPIRES, a single below-threshold failure must return nil —
+// not the stale past locked_until the CASE's ELSE branch keeps. Returning it would
+// be mis-read by the login handler as a fresh lock and emit a phantom
+// auth.account.locked audit. This fails against the old `RETURNING locked_until`.
+func TestRecordFailedLogin_ExpiredLockDoesNotReturnStale(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "lock_stale.db"))
+	u := fx.SeedUser(t, "alice", "secret12", "user")
+
+	// A lock that has since expired: locked_until in the past.
+	past := time.Now().Add(-time.Hour)
+	if _, err := fx.DB.DB().ExecContext(ctx,
+		`UPDATE users SET locked_until = ? WHERE id = ?`, past, u.ID); err != nil {
+		t.Fatalf("seed expired lock: %v", err)
+	}
+
+	// One below-threshold failure → does NOT lock → must return nil, not the stale past.
+	locked, err := fx.Users.RecordFailedLogin(ctx, u.ID, 5, time.Minute, time.Hour)
+	if err != nil {
+		t.Fatalf("RecordFailedLogin: %v", err)
+	}
+	if locked != nil {
+		t.Fatalf(
+			"expired lock + below-threshold failure must return nil, got %v (phantom lock)",
+			locked,
+		)
+	}
+}
+
 func TestRecordFailedLogin_IncrementsBelowThreshold(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "lock_inc.db"))
@@ -25,7 +54,7 @@ func TestRecordFailedLogin_IncrementsBelowThreshold(t *testing.T) {
 	if got.FailedLoginAttempts != 1 {
 		t.Fatalf("counter: got %d want 1", got.FailedLoginAttempts)
 	}
-	if got.LockedUntil.Valid {
+	if got.LockedUntil != nil {
 		t.Fatal("LockedUntil must be NULL below threshold")
 	}
 }
@@ -45,7 +74,7 @@ func TestRecordFailedLogin_LocksAtThreshold(t *testing.T) {
 	if got.FailedLoginAttempts != threshold-1 {
 		t.Fatalf("pre-lock counter: got %d want %d", got.FailedLoginAttempts, threshold-1)
 	}
-	if got.LockedUntil.Valid {
+	if got.LockedUntil != nil {
 		t.Fatal("must not lock before threshold")
 	}
 
@@ -58,7 +87,7 @@ func TestRecordFailedLogin_LocksAtThreshold(t *testing.T) {
 		t.Fatal("threshold attempt must return non-nil locked_until")
 	}
 	got, _ = fx.Users.FindByID(ctx, u.ID)
-	if !got.LockedUntil.Valid {
+	if got.LockedUntil == nil {
 		t.Fatal("LockedUntil must be set after threshold reached")
 	}
 	if got.FailedLoginAttempts != 0 {
@@ -97,7 +126,7 @@ func TestResetFailedLogin_ClearsCounterAndLock(t *testing.T) {
 		_, _ = fx.Users.RecordFailedLogin(ctx, u.ID, 3, time.Minute, time.Hour)
 	}
 	got, _ := fx.Users.FindByID(ctx, u.ID)
-	if !got.LockedUntil.Valid {
+	if got.LockedUntil == nil {
 		t.Fatal("setup: account should be locked")
 	}
 
@@ -105,7 +134,7 @@ func TestResetFailedLogin_ClearsCounterAndLock(t *testing.T) {
 		t.Fatalf("reset: %v", err)
 	}
 	got, _ = fx.Users.FindByID(ctx, u.ID)
-	if got.FailedLoginAttempts != 0 || got.LockedUntil.Valid {
+	if got.FailedLoginAttempts != 0 || got.LockedUntil != nil {
 		t.Fatalf("after reset: counter=%d locked_until=%v",
 			got.FailedLoginAttempts, got.LockedUntil)
 	}

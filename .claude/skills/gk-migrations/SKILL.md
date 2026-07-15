@@ -40,9 +40,7 @@ Goose si značí, u kterého kroku jsi skončil, a dorazí jen ty zbývající.
 
 ## How it works
 Migrace žijí v `migrations/` jako `YYYYMMDDHHMMSS_<name>.sql` (Goose SQL formát).
-Aktuální sada: `20260327000001_init_schema.sql` (tabulky `users`, `refresh_tokens`),
-`20260517000002_add_user_lock_columns.sql`, `20260517000003_create_audit_log.sql`,
-`20260625144133_create_runs_table.sql` (tabulka `runs` — durable engine). Vyšší timestamp = běží později.
+Aktuální sada = **jediný squashed init** `20260327000001_init_schema.sql` (tabulky `tenants` + seed Default tenantu, `users`, `refresh_tokens`, `audit_log`, `runs` + všechny indexy) — jako boilerplate gokick dodává finální schéma jedním krokem; inkrementální historie (12 kroků vč. vzniku a dropu tabulky `jobs`) byla 2026-07-15 squashnuta. Nasazení, která starou historii už aplikovala, mají verzi zapsanou a soubor přeskočí. Projektové migrace přidávej jako NOVÉ soubory za init (`make migrate-create`); vyšší timestamp = běží později.
 
 Existují **dvě oddělené cesty**, jak se migrace spustí:
 
@@ -51,13 +49,16 @@ Existují **dvě oddělené cesty**, jak se migrace spustí:
   (`var FS embed.FS`) — runtime nepotřebuje žádné soubory na disku.
 - `Application.Run` (`app/application.go:24-28`) volá `migrations.RunUp()`
   **před** `rootCmd.Execute(ctx)`. Takže auto-up proběhne při **každém**
-  subcommandu — `serve`, `worker`, `seed`, `create-user` — ne jen u `serve`.
+  subcommandu — `serve`, `worker`, `seed`, `create-user`, `create-superadmin`,
+  `create-tenant` — ne jen u `serve`.
 - `MigrationManager.RunUp()` (`app/infrastructure/database/migration_manager.go`)
   spustí `goose.UpContext` na embedded FS. **Jen směr Up** — automaticky se nikdy
   nic nerolluje zpět.
 - Goose má vlastní logger umlčený (`goose.SetLogger(goose.NopLogger())`); stav se
-  hlásí přes aplikační `*slog.Logger`: `migrations: applied {from,to}` nebo
-  `migrations: up to date {version}` (jedna logovací cesta, viz CLAUDE.md).
+  hlásí přes aplikační `*slog.Logger`: `migrations: applied {from,to}`,
+  `migrations: up to date {version}`, a když po úspěšném Up selže čtení goose
+  verze, warn `migrations: applied, but version read failed` — migrace samotné
+  proběhly, jen se nefabrikuje rozsah (jedna logovací cesta, viz CLAUDE.md).
 
 **2) Ruční `make migrate-*` (jen vývoj).**
 - `make migrate-create / migrate-up / migrate-down / migrate-status` (viz

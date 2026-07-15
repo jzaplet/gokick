@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { LoginErrors } from '@/app/Auth/types/LoginErrors';
 import type { LoginRequest } from '@/app-ui/Auth';
+import { Role } from '@/app/Auth/enums/roles';
 import { reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuth } from '@/app-ui/Auth';
@@ -22,11 +23,6 @@ const form: LoginRequest = reactive({
 const errors = ref<LoginErrors>({});
 const isLoading = ref(false);
 
-const clearFieldError = (field: keyof LoginErrors): void => {
-    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- optional key removal is the intended API
-    delete errors.value[field];
-};
-
 const handleSubmit = async (): Promise<void> => {
     isLoading.value = true;
     errors.value = {};
@@ -44,11 +40,21 @@ const handleSubmit = async (): Promise<void> => {
 
     const redirectQuery = route.query['redirect'];
     const roleHome: Record<string, string> = {
-        superadmin: '/platform/dashboard',
-        admin: '/admin/dashboard',
+        [Role.SuperAdmin]: '/platform/dashboard',
+        [Role.Admin]: '/admin/dashboard',
     };
     const defaultByRole = roleHome[result.data.user.role] ?? '/user/dashboard';
-    const target = typeof redirectQuery === 'string' ? redirectQuery : defaultByRole;
+
+    // Only accept a same-origin absolute path: reject protocol-relative
+    // (`//evil.com`) and any non-string so a crafted ?redirect= can't bounce the
+    // user off-site (open redirect). The narrowing lives in the ternary so no cast.
+    const safeRedirect = (query: typeof redirectQuery): string | null =>
+        typeof query === 'string'
+        && query.startsWith('/') === true
+        && query.startsWith('//') === false
+            ? query
+            : null;
+    const target = safeRedirect(redirectQuery) ?? defaultByRole;
 
     await router.push(target);
 };
@@ -66,10 +72,8 @@ const handleSubmit = async (): Promise<void> => {
                 type="text"
                 label="Nickname"
                 placeholder="admin"
-                :error="errors.nickname"
                 required
                 :disabled="isLoading"
-                @update:model-value="() => clearFieldError('nickname')"
             />
 
             <Input
@@ -77,10 +81,8 @@ const handleSubmit = async (): Promise<void> => {
                 name="password"
                 type="password"
                 label="Password"
-                :error="errors.password"
                 required
                 :disabled="isLoading"
-                @update:model-value="() => clearFieldError('password')"
             />
         </div>
 

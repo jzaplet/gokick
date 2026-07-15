@@ -6,14 +6,14 @@ import (
 	"github.com/google/uuid"
 )
 
-// Tenant is the boundary of data ownership — every tenant-owned row belongs to
-// exactly one. In single-tenant mode there is just the bootstrap "Default"
-// tenant (shared.DefaultTenantID); a multitenant deployment creates one per
-// workspace and scopes its data to the tenant id.
 // PlanFree is the default billing tier. gokick ships only the column + this
 // default; the product wires the paid tiers, Stripe, and the tenant_usage ledger.
 const PlanFree = "free"
 
+// Tenant is the boundary of data ownership — every tenant-owned row belongs to
+// exactly one. In single-tenant mode there is just the bootstrap "Default"
+// tenant (shared.DefaultTenantID); a multitenant deployment creates one per
+// workspace and scopes its data to the tenant id.
 type Tenant struct {
 	ID   string `db:"id"`
 	Name string `db:"name"`
@@ -36,13 +36,14 @@ type Overview struct {
 	UserCount int    `db:"user_count"`
 }
 
-// NewTenant builds a tenant with a fresh UUIDv7 id. The bootstrap "Default"
-// tenant is created by migration, not this factory.
-func NewTenant(name string) *Tenant {
+// NewTenant builds a tenant with a fresh UUIDv7 id. It takes a validated Name
+// value object, not a raw string, so a blank/whitespace name can't reach the DB.
+// The bootstrap "Default" tenant is created by migration, not this factory.
+func NewTenant(name Name) *Tenant {
 	now := time.Now()
 	return &Tenant{
-		ID:        uuid.NewString(),
-		Name:      name,
+		ID:        uuid.Must(uuid.NewV7()).String(),
+		Name:      string(name),
 		Plan:      PlanFree,
 		CreatedAt: now,
 		UpdatedAt: now,

@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { PlatformUser } from '@/app/Platform/types/PlatformUser';
+import { Role } from '@/app/Auth/enums/roles';
+import { roleBadge } from '@/app-ui/Users/roleBadge';
 import Button from '@/app-ui/Buttons/Button.vue';
 import EditIcon from '@/app-ui/Icons/EditIcon.vue';
 import TrashIcon from '@/app-ui/Icons/TrashIcon.vue';
@@ -13,17 +15,6 @@ defineEmits<{
     delete: [user: PlatformUser];
 }>();
 
-const roleBadge = (role: string): string => {
-    if (role === 'superadmin') {
-        return 'bg-purple-100 text-purple-800';
-    }
-    if (role === 'admin') {
-        return 'bg-orange-100 text-orange-800';
-    }
-
-    return 'bg-gray-100 text-gray-800';
-};
-
 const formatLastLogin = (value: string | null): string => {
     if (value === null) {
         return 'Never';
@@ -35,7 +26,7 @@ const formatLastLogin = (value: string | null): string => {
 // A superadmin row is managed out-of-band — the backend rejects edit/delete on
 // it, so the actions are disabled here to match.
 const isManageable = (role: string): boolean => {
-    return role !== 'superadmin';
+    return role !== Role.SuperAdmin;
 };
 </script>
 
@@ -105,6 +96,14 @@ const isManageable = (role: string): boolean => {
                     </td>
                     <td class="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {{ user.nickname }}
+                        <span
+                            v-if="user.active === false"
+                            :class="[
+                                'ml-2 inline-flex px-2 py-0.5',
+                                'text-xs font-semibold rounded-full',
+                                'bg-gray-100 text-gray-600',
+                            ]"
+                        >Inactive</span>
                     </td>
                     <td class="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         <span v-if="user.email !== ''">{{ user.email }}</span>

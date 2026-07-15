@@ -1,10 +1,9 @@
 import type { ApiResponse } from '@/app-ui/Fetch/types/ApiResponse';
 import { apiFetch } from '@/app-ui/Fetch/apiFetch';
-import { setAccessToken } from '@/app-ui/Fetch/accessToken';
 import type { AuthError } from '@/app-ui/Auth/types/AuthError';
 import type { LoginRequest } from '@/app-ui/Auth/types/LoginRequest';
 import type { LoginResponse } from '@/app-ui/Auth/types/LoginResponse';
-import { isAuthenticated, scheduleRefresh, user } from '@/app-ui/Auth/state';
+import { establishSession } from '@/app-ui/Auth/state';
 import { refresh } from '@/app-ui/Auth/refresh';
 
 // POST /api/v1/auth/login — generic TError lets callers supply their own
@@ -17,13 +16,11 @@ export const login = async <TError extends AuthError>(
         body: credentials,
     });
 
+    // establishSession shape-guards the 200 body before installing the session, so
+    // a malformed body can't flip isAuthenticated on a bogus/empty access token —
+    // the same guard refresh already had (previously login trusted the body blindly).
     if (result.success === true) {
-        setAccessToken(result.data.access_token);
-        user.value = result.data.user;
-        isAuthenticated.value = true;
-        scheduleRefresh(result.data.access_expiration * 1_000, () => {
-            void refresh();
-        });
+        establishSession(result.data, () => void refresh());
     }
 
     return result;

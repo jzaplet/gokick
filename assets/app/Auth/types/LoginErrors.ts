@@ -1,7 +1,7 @@
-// general = non-field errors (auth, rate-limit, …)
-// nickname / password = ValidationError with matching Field
+// Login returns ONLY a neutral `general` error by design: it is constant-time
+// and never per-field, so it leaks no account-existence or lock oracle. Do NOT
+// add per-field nickname/password keys here — that would invite wiring login
+// into per-field errors and reintroduce exactly that oracle.
 export type LoginErrors = {
     general?: string;
-    nickname?: string;
-    password?: string;
 };

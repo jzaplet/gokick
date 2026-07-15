@@ -19,16 +19,19 @@ type GetStatsQuery struct{}
 func (GetStatsQuery) RequiredPermission() string { return "platform:overview" }
 
 type GetStatsHandler struct {
-	tenants tenant.Repository
+	tenants tenant.PlatformRepository
 	users   user.PlatformRepository
 }
 
-func NewGetStatsHandler(tenants tenant.Repository, users user.PlatformRepository) *GetStatsHandler {
+func NewGetStatsHandler(
+	tenants tenant.PlatformRepository,
+	users user.PlatformRepository,
+) *GetStatsHandler {
 	return &GetStatsHandler{tenants: tenants, users: users}
 }
 
 func (h *GetStatsHandler) Handle(ctx context.Context, _ GetStatsQuery) (PlatformStats, error) {
-	tenantCount, err := h.tenants.Count(ctx)
+	tenantCount, err := h.tenants.CountAcrossTenants(ctx)
 	if err != nil {
 		return PlatformStats{}, err
 	}

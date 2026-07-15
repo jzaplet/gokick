@@ -1,48 +1,7 @@
 import { apiFetch } from '@/app-ui/Fetch/apiFetch';
-import { setAccessToken } from '@/app-ui/Fetch/accessToken';
 import type { LoginResponse } from '@/app-ui/Auth/types/LoginResponse';
-import type { AuthUser } from '@/app-ui/Auth/types/AuthUser';
-import { clearAuth, isAuthenticated, scheduleRefresh, scheduleRetry, user } from '@/app-ui/Auth/state';
+import { clearAuth, establishSession, isAuthenticated, scheduleRetry } from '@/app-ui/Auth/state';
 import { clearSessionHint } from '@/app-ui/Auth/sessionHint';
-
-// Validates the user principal carries the fields the app later dereferences —
-// notably role (string) and permissions (string[]). Checking only `typeof user
-// === 'object'` is NOT enough: `user:{}` or `user:[]` (typeof [] === 'object')
-// would pass, isAuthenticated would flip true, then the router guard would crash
-// at `user.permissions.includes(...)` (permissions.ts). Narrows from unknown so
-// every field access below is a real runtime check, not an erased cast.
-const isAuthUser = (data: unknown): data is AuthUser =>
-    typeof data === 'object'
-    && data !== null
-    && Array.isArray(data) === false
-    && 'id' in data
-    && typeof data.id === 'string'
-    && 'nickname' in data
-    && typeof data.nickname === 'string'
-    && 'email' in data
-    && typeof data.email === 'string'
-    && 'role' in data
-    && typeof data.role === 'string'
-    && data.role !== ''
-    && 'permissions' in data
-    && Array.isArray(data.permissions) === true;
-
-// parseResponse casts the body to LoginResponse, but a 200 with an empty or
-// partial body yields null / a missing field at runtime. Guard the shape before
-// trusting it: without this, setAccessToken(undefined) + scheduleRefresh(NaN)
-// would spin a hot refresh loop. Narrows from unknown (no `as`) so the runtime
-// checks are real rather than erased by the optimistic cast.
-const isLoginResponse = (data: unknown): data is LoginResponse =>
-    typeof data === 'object'
-    && data !== null
-    && 'access_token' in data
-    && typeof data.access_token === 'string'
-    && data.access_token !== ''
-    && 'access_expiration' in data
-    && typeof data.access_expiration === 'number'
-    && Number.isFinite(data.access_expiration) === true
-    && 'user' in data
-    && isAuthUser(data.user);
 
 // Transient-failure retry budget. A momentary 5xx / offline blip during a mid-
 // session refresh must NOT log the user out (the access token is typically still
@@ -92,19 +51,14 @@ const runRefresh = async (): Promise<boolean> => {
         const result = await apiFetch<LoginResponse>('POST', '/api/v1/auth/refresh');
 
         if (result.success === true) {
-            // A 200 with a malformed/partial body is not a usable session — treat
-            // it as a transient miss (it may be a flaky proxy), not a hard logout.
-            if (isLoginResponse(result.data) === false) {
+            // A 200 with a malformed/partial body is not a usable session —
+            // establishSession installs nothing and returns false; treat that as a
+            // transient miss (it may be a flaky proxy), not a hard logout.
+            if (establishSession(result.data, () => void refresh()) === false) {
                 return onTransientFailure();
             }
 
             retries = 0;
-            setAccessToken(result.data.access_token);
-            user.value = result.data.user;
-            isAuthenticated.value = true;
-            scheduleRefresh(result.data.access_expiration * 1_000, () => {
-                void refresh();
-            });
 
             return true;
         }

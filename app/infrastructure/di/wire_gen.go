@@ -39,6 +39,7 @@ import (
 	"gokick/app/presentation/console"
 	"gokick/app/presentation/http/handler"
 	middleware2 "gokick/app/presentation/http/middleware"
+	"gokick/app/presentation/http/response"
 	"gokick/app/presentation/http/server"
 	"gokick/public"
 	"io/fs"
@@ -57,15 +58,16 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	if err != nil {
 		return nil, err
 	}
+	responder := response.NewResponder(logger)
 	ipExtractor := provideIPExtractor(configConfig)
 	rateLimiters, err := provideRateLimiters(configConfig, ipExtractor, logger)
 	if err != nil {
 		return nil, err
 	}
-	healthHandler := handler.NewHealthHandler()
+	healthHandler := handler.NewHealthHandler(responder)
 	fs := providePublicFS()
 	spaConfig := provideSPAConfig(configConfig)
-	spaHandler := handler.NewSPAHandler(logger, fs, spaConfig)
+	spaHandler := handler.NewSPAHandler(responder, logger, fs, spaConfig)
 	cookieSecure := provideCookieSecure(configConfig)
 	sqliteManager, err := database.NewSqliteManager(configConfig)
 	if err != nil {
@@ -90,42 +92,44 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	refreshTokenHandler := command.NewRefreshTokenHandler(userRepository, tokenRepository, jwtService)
 	logoutHandler := command.NewLogoutHandler(tokenRepository)
 	permissionsRegistry := providePermissionsRegistry()
-	authHandler := handler.NewAuthHandler(cookieSecure, commandBus, loginHandler, refreshTokenHandler, logoutHandler, permissionsRegistry)
+	authHandler := handler.NewAuthHandler(responder, cookieSecure, commandBus, loginHandler, refreshTokenHandler, logoutHandler, permissionsRegistry)
 	queryBus := provideQueryBus(logger, permissionChecker, reporter, tenantResolver)
 	getProfileHandler := query.NewGetProfileHandler(userRepository)
 	changePasswordHandler := command2.NewChangePasswordHandler(userRepository, passwordHasher)
-	profileHandler := handler.NewProfileHandler(commandBus, queryBus, getProfileHandler, changePasswordHandler, permissionsRegistry)
+	profileHandler := handler.NewProfileHandler(responder, commandBus, queryBus, getProfileHandler, changePasswordHandler, permissionsRegistry)
 	listUsersHandler := query2.NewListUsersHandler(userRepository)
+	getUserHandler := query2.NewGetUserHandler(userRepository)
 	multitenancy := provideMultitenancy(configConfig)
 	createUserHandler := command3.NewCreateUserHandler(userRepository, passwordHasher, multitenancy)
 	updateUserHandler := command3.NewUpdateUserHandler(userRepository, passwordHasher)
 	deleteUserHandler := command3.NewDeleteUserHandler(userRepository)
-	adminUsersHandler := handler.NewAdminUsersHandler(commandBus, queryBus, listUsersHandler, createUserHandler, updateUserHandler, deleteUserHandler)
+	adminUsersHandler := handler.NewAdminUsersHandler(responder, commandBus, queryBus, listUsersHandler, getUserHandler, createUserHandler, updateUserHandler, deleteUserHandler)
 	getUserDashboardHandler := query3.NewGetUserDashboardHandler()
 	getAdminDashboardHandler := query3.NewGetAdminDashboardHandler()
-	dashboardHandler := handler.NewDashboardHandler(queryBus, getUserDashboardHandler, getAdminDashboardHandler)
+	dashboardHandler := handler.NewDashboardHandler(responder, queryBus, getUserDashboardHandler, getAdminDashboardHandler)
 	tenantRepository := tenant.NewRepository(sqliteManager)
 	getStatsHandler := query4.NewGetStatsHandler(tenantRepository, userRepository)
 	listAllUsersHandler := query4.NewListAllUsersHandler(userRepository)
+	queryGetUserHandler := query4.NewGetUserHandler(userRepository)
 	listTenantsHandler := query4.NewListTenantsHandler(tenantRepository)
 	updatePlatformUserHandler := command4.NewUpdatePlatformUserHandler(userRepository, passwordHasher)
 	deletePlatformUserHandler := command4.NewDeletePlatformUserHandler(userRepository)
-	platformHandler := handler.NewPlatformHandler(queryBus, commandBus, getStatsHandler, listAllUsersHandler, listTenantsHandler, updatePlatformUserHandler, deletePlatformUserHandler)
-	debugRunHandler := handler.NewDebugRunHandler(repository)
-	serverServer := server.NewServer(configConfig, logger, reporter, jwtService, rateLimiters, ipExtractor, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler, platformHandler, debugRunHandler)
+	platformHandler := handler.NewPlatformHandler(responder, queryBus, commandBus, getStatsHandler, listAllUsersHandler, queryGetUserHandler, listTenantsHandler, updatePlatformUserHandler, deletePlatformUserHandler)
+	debugRunHandler := handler.NewDebugRunHandler(responder, repository)
+	serverServer := server.NewServer(configConfig, logger, reporter, jwtService, responder, rateLimiters, ipExtractor, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler, platformHandler, debugRunHandler)
 	v2 := provideSchedulerJobs(tokenRepository)
 	scheduler, err := provideScheduler(logger, v2)
 	if err != nil {
 		return nil, err
 	}
-	runWorker := provideRunWorker(logger, reporter, repository, handlerRegistry, runDispatcher, sqliteManager, configConfig)
+	runWorker := provideRunWorker(logger, reporter, repository, handlerRegistry, runDispatcher, sqliteManager, auditRepository, configConfig)
 	serveCommand := console.NewServeCommand(serverServer, scheduler, runWorker)
 	seedAdminPassword := provideSeedAdminPassword(configConfig)
 	seedSuperAdminPassword := provideSeedSuperAdminPassword(configConfig)
 	seedAdminTenant := provideSeedAdminTenant(configConfig)
 	multitenant := provideMultitenant(configConfig)
 	seederSeeder := seeder.NewSeeder(userRepository, tenantRepository, passwordHasher, seedAdminPassword, seedSuperAdminPassword, seedAdminTenant, multitenant, logger)
-	systemCommandBus := provideSystemCommandBus(logger, sqliteManager, eventBus, auditRepository, reporter)
+	systemCommandBus := provideSystemCommandBus(logger, sqliteManager, eventBus, auditRepository, runDispatcher, reporter)
 	seedCommand := console.NewSeedCommand(seederSeeder, systemCommandBus)
 	createTenantHandler := command5.NewCreateTenantHandler(tenantRepository)
 	getTenantHandler := query5.NewGetTenantHandler(tenantRepository)
@@ -182,17 +186,20 @@ func provideCommandBus(
 
 // provideSystemCommandBus wires the OPERATOR-TRUSTED write bus for the CLI
 // create-* commands. It is the CommandBus chain MINUS Authorize and Tenant (no
-// principal, no JWT-resolved tenant) and minus RunDispatcher (these commands
-// enqueue nothing). Audit still wraps OUTSIDE Transaction and DispatchEvents
-// still wraps it, so the ordering invariants hold. See bus.SystemCommandBus.
+// principal, no JWT-resolved tenant). Audit still wraps OUTSIDE Transaction and
+// DispatchEvents still wraps it, and RunDispatcher sits between them so an event
+// handler on this bus can durably enqueue a follow-up run (F-008). See
+// bus.SystemCommandBus.
 func provideSystemCommandBus(
 	logger *slog.Logger,
 	db *database.SqliteManager,
 	eventBus *bus.EventBus, audit2 shared.AuditLogger,
 
+	runDispatcher shared.RunDispatcher,
 	reporter shared.ErrorReporter,
 ) *bus.SystemCommandBus {
-	return bus.NewSystemCommandBus(middleware.SystemChain(logger, db, eventBus, audit2, reporter)...)
+	return bus.NewSystemCommandBus(middleware.SystemChain(logger, db, eventBus, audit2, runDispatcher, reporter)...,
+	)
 }
 
 func provideQueryBus(
@@ -304,7 +311,7 @@ func provideMultitenancy(cfg *config.Config) shared.Multitenancy {
 // provideSchedulerJobs is the single source of truth for periodic in-process
 // jobs — mirrors providePermissionsRegistry. Add
 // a new Job here; provideScheduler stays decoupled from job business.
-func provideSchedulerJobs(tokens token2.TokenRepository) []scheduler.Job {
+func provideSchedulerJobs(tokens token2.Repository) []scheduler.Job {
 	return []scheduler.Job{
 		{
 			Name:     "cleanup:expired-refresh-tokens",
@@ -343,16 +350,18 @@ func provideRunDispatcher(
 }
 
 // provideRunWorker wires the durable run worker (the one background-work engine) from
-// config. It injects the run dispatcher (so a handler can enqueue a child task) and the
+// config. It injects the run dispatcher (so a handler can enqueue a child task), the
 // SqliteManager as the Transactor backing shared.WithTx (short atomic writes the handler
-// scopes itself) — the worker bypasses the bus, where these are normally injected.
+// scopes itself), and the AuditLogger so a run handler's audit events are drained and
+// persisted — the worker bypasses the bus, where these are normally injected.
 func provideRunWorker(
 	logger *slog.Logger,
 	reporter shared.ErrorReporter,
 	repo run3.Repository,
 	registry *run2.HandlerRegistry,
 	runDispatcher shared.RunDispatcher,
-	db *database.SqliteManager,
+	db *database.SqliteManager, audit2 shared.AuditLogger,
+
 	cfg *config.Config,
 ) *worker.RunWorker {
 	return worker.NewRunWorker(
@@ -361,7 +370,7 @@ func provideRunWorker(
 		repo,
 		registry,
 		runDispatcher,
-		db, worker.RunWorkerConfig{
+		db, audit2, worker.RunWorkerConfig{
 			DefaultLease:      cfg.RunWorkerLease,
 			HeartbeatInterval: cfg.RunWorkerHeartbeat,
 			PollInterval:      cfg.RunWorkerPoll,
@@ -373,5 +382,5 @@ func provideRunWorker(
 }
 
 func providePermissionsRegistry() *shared.PermissionsRegistry {
-	return shared.NewPermissionsRegistry([]shared.Permissioned{command.LogoutCommand{}, command2.ChangePasswordCommand{}, query.GetProfileQuery{}, command3.CreateUserCommand{}, command3.UpdateUserCommand{}, command3.DeleteUserCommand{}, query2.ListUsersQuery{}, query3.GetUserDashboardQuery{}, query3.GetAdminDashboardQuery{}, query4.ListAllUsersQuery{}, query4.ListTenantsQuery{}, query4.GetStatsQuery{}, command4.UpdatePlatformUserCommand{}, command4.DeletePlatformUserCommand{}, command4.CreateSuperAdminCommand{}, command5.CreateTenantCommand{}, query5.GetTenantQuery{}})
+	return shared.NewPermissionsRegistry([]shared.Permissioned{command.LogoutCommand{}, command2.ChangePasswordCommand{}, query.GetProfileQuery{}, command3.CreateUserCommand{}, command3.UpdateUserCommand{}, command3.DeleteUserCommand{}, query2.ListUsersQuery{}, query2.GetUserQuery{}, query3.GetUserDashboardQuery{}, query3.GetAdminDashboardQuery{}, query4.ListAllUsersQuery{}, query4.GetUserQuery{}, query4.ListTenantsQuery{}, query4.GetStatsQuery{}, command4.UpdatePlatformUserCommand{}, command4.DeletePlatformUserCommand{}, command4.CreateSuperAdminCommand{}, command5.CreateTenantCommand{}, query5.GetTenantQuery{}})
 }

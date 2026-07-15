@@ -44,11 +44,11 @@ Zapínatelný **row-level** multitenancy jedním přepínačem (`APP_MULTITENANC
 Řešení = **system bus levně**: druhý provider `provideSystemCommandBus` poskládá **podmnožinu** stávajících (už composable) middlewarů — žádná nová abstrakce, jen jiný subset:
 
 ```
-Recovery(→Sentry) → Logging → Audit → DispatchEvents → Transaction      (vynechán Authorize i Tenant)
+Recovery(→Sentry) → Logging → Audit → RunDispatcher → DispatchEvents → Transaction      (vynechán Authorize i Tenant)
 ```
 
-- [x] **`provideSystemCommandBus`** — vynechává `Authorize` (operator trust; kontrakt `Permissioned`/`SkipPermission` žije *uvnitř* AuthorizeMiddleware, takže vynechání je čisté) i `Tenant` (resolver by přemázl tenant injectnutý přes `ContextWithTenantID`). Pořadí: **Audit vně Transaction**, **DispatchEvents obaluje Transaction**. RunDispatcher vynechán.
-- [x] **4 commandy přepojeny** přes `bus.ExecVoid`/`bus.Exec` skrz system bus; ruční transakce v `create-user` zmizela (dává ji `TransactionMiddleware`) → odpadl bespoke `shared.Transactor` wiring. **seed** je teď taky přes bus → **atomický bootstrap** (all-or-nothing).
+- [x] **`provideSystemCommandBus`** — vynechává `Authorize` (operator trust; kontrakt `Permissioned`/`SkipPermission` žije *uvnitř* AuthorizeMiddleware, takže vynechání je čisté) i `Tenant` (resolver by přemázl tenant injectnutý přes `ContextWithTenantID`). Pořadí: **Audit vně Transaction**, **DispatchEvents obaluje Transaction**, **RunDispatcher mezi nimi** (stejně jako v CommandChainu — bez něj by durable enqueue z event handleru tiše no-opnul; doplněno dodatečně).
+- [x] **4 commandy přepojeny** přes `bus.SystemDispatchVoid`/`bus.SystemDispatch` skrz system bus; ruční transakce v `create-user` zmizela (dává ji `TransactionMiddleware`) → odpadl bespoke `shared.Transactor` wiring. **seed** je teď taky přes bus → **atomický bootstrap** (all-or-nothing).
 - [x] **Audit záznamy** doplněny: `create-superadmin`/seed superadmin → `user.created`, `create-tenant`/seed tenant → `tenant.created` (bez ActorUserID — systémová akce). Ověřeno end-to-end přes reálný system bus.
 - [x] **Sentry = jen neočekávané** — paniky reportuje `RecoveryMiddleware` zadarmo; očekávané validační chyby do trackeru nejdou (invariant „error reporting is for the unexpected only").
 
@@ -66,6 +66,42 @@ Recovery(→Sentry) → Logging → Audit → DispatchEvents → Transaction    
 - [ ] **Hardening:** `otelsql` + OTEL SDK do depguard allow-listu (`.golangci.yml`); collector endpoint do CSP `connect-src` + `traceparent` přes CORS.
 
 
+## 🔗 BE↔FE typová parita — vynucení „nemáš kam uhnout" (post-audit follow-up)
+
+Dnes generuje `gk tsgen` (modul `tools/gk`) TypeScript typy z anotovaných Go DTO (direktiva `//gkts:<cesta> <TSName>` → přesná cílová `.ts` cesta per typ; cesta je první schválně — malé písmeno za dvojtečkou z ní dělá pravou gofmt/golines direktivu, takže ji formatter nechá být) a `make ts-check` v `make lint` hlídá, že vygenerované soubory nedriftnou. To řeší drift **anotovaných** typů, ale je to **opt-in** — a tím zůstává díra:
+
+- Zapomenu dát `//gkts:` na nový response/request DTO → generátor mlčí.
+- Handler odpoví inline `map[string]any` místo pojmenovaného structu → nikdo to nechytí.
+- FE `fetch` pošle neotypované `body` nebo zkonzumuje odpověď jako `any` → parita nevynucená.
+
+Generátor umí říct „tenhle typ driftnul", ne „tady jsi typ zapomněl". **Cílový stav = uzavřená smyčka**, kde `//gkts:` na Go DTO je jediný zdroj pravdy a hranice drátu se vynutí staticky:
+
+- [x] **① Codegen (`gk tsgen`)** — Go DTO → TS, drift = fail v `make lint`. *(hotovo — 12 wire DTO generováno a gate-ováno; `healthResponse` je z tsgen vědomě vyňatý — infra-only endpoint, FE typ by byl dead code)*
+- [ ] **② BE boundary analyzer** — `go/analysis` linter: každý `resp.JSON(ctx, w, _, X)` (metoda na injektovaném `*response.Responder`) a `request.DecodeJSON(w, r, &X)` musí mít `X` = pojmenovaný struct s `//gkts:`. Inline mapa / `any` / neanotovaný typ = fail. Escape `//gkts:ignore` (stejná disciplína jako raw-pool výjimky) pro debug endpointy. Výsledek: **Go response nejde odeslat mimo generovaný DTO.**
+- [ ] **③ FE typovaný fetch + lint** — `authFetch<Res, Req, Err>` s **povinným** `Req` typem; ESLint pravidlo zakáže fetch bez explicitních generovaných typů i inline `body` literál. Výsledek: **fetch nejde poslat mimo generovaný typ.**
+- [ ] **④ Parita chybových polí (F-077)** — do smyčky patří i jména validačních polí: `ValidationError.Field` ↔ TS `Errors` klíč ↔ JSON klíč. Dnes jen konvence (a `change_password` ručně remapuje `password`→`new_password`, aby seděl na FE formulář). Řeší se stejným codegen mostem; do jeho příchodu je levná pojistka curated golden test „{Field hodnoty dosažitelné z endpointu} ⊆ {klíče v jeho TS Errors typu}".
+- [ ] **⑤ Role union přes codegen (F-095)** — `AuthUser.role` / `UserFormData.role` jsou dnes codegen `string`; FE má ruční `Role` enum (`assets/app/Auth/enums/roles.ts`) jen pro literály. Až codegen umí emitovat uniony, rozšířit role pole ze `string` na `Role` — pak zmizí i ruční enum.
+- [ ] **⑥ no-as ratchet (F-085)** — zapnout `@typescript-eslint/consistent-type-assertions` (zákaz `as`) až po runtime validaci JSON hranic; do té doby jsou `as` casty tolerované JEN ve čtyřech boundary souborech (`parseResponse.ts`, `apiFetch.ts`, `apiUpload.ts`, `useToast.ts`) — přesně ty odstraní ②③+validace.
+
+② + ③ dohromady = smyčka zavřená: nový handler ani nový fetch nelze přidat bez typu, který existuje a matchuje na obou stranách. Airtight je BE strana (statická jistota); FE je „velmi těsné" (strukturální typing TS), ale v kombinaci s ② nemá FE co poslat mimo deklarovaný kontrakt.
+
+### Sjednocení dev-tooling adresářů
+
+Vedlejší cíl: roztříštěnost dev nástrojů (`cmd/` vs samostatný modul per nástroj vs `audit/tool`) je matoucí — kam sáhnout, co použít.
+
+- `cmd/` = samotná aplikace (zůstává — to je produkt).
+- `audit/tool` = **dočasný** tracker; teardown po dopracování backlogu → zmizí.
+- [x] `tools/tsgen` → **jeden `tools/gk` modul** se sub-příkazy (`gk tsgen generate|check`; budoucí `gk boundary` = analyzer ② výše přibude jako další subpackage + case v dispatcheru, ne další `go.mod`). Vlastní `go.mod` je nutnost — codegen píše na stdout i do souborů, což lint invarianty hlavního modulu (jediná logovací cesta) zakazují.
+- **Ustálený stav = dva moduly:** `cmd/` (app) + `tools/gk` (dev codegen/checks). *(platí už teď)*
+- **Make surface se nemění** — codegen se skládá do `make lint` (drift = fail); regen dává ruční `make ts-gen` (mirror `make di`), takže se vynutí sám; 5 hlavních příkazů v README zůstává jedinou plochou. *„Code-gen, na který si nikdy nevzpomeneš, protože se vynutí sám."*
+
+### FE lint gaty (ratchet) — cognitive complexity čeká na TS7
+
+Post-audit zapnul FE gaty `max-lines 300` + `max-depth 4` + `knip` (dead-code, strict) do `make lint`. **Kognitivní complexity gate ale zatím NEJDE:** jediný nástroj, který kognitivní metriku poskytuje (`eslint-plugin-sonarjs`), transitivně vyžaduje **TypeScript 7** (nativní přepis), a ten `typescript-eslint` nepodporuje (peer `typescript >=4.8.4 <6.1.0`) — TS7 by rozbil celý type-aware lint. Projekt je proto na **TS 6.0.2 = strop ekosystému**. (Cyclomatic complexity vědomě nechceme — `cyclop` je na do-not-enable listu, protože penalizuje ploché validační řetězce.)
+
+- [ ] **Re-check TS7 viability** — až `typescript-eslint` vydá stabilní TS7 podporu (dnes jen `4.0.0-alpha`), ověřit upgrade TS 6→7 přes izolovaný worktree (build + type-aware lint + vue-tsc + testy) a při zelené zapnout cognitive-complexity gate (`sonarjs/cognitive-complexity`, práh dle kognitivní metriky, ne cyklomatické). Do té doby `max-lines` + `max-depth` drží strukturální strop.
+
+
 ## Cesta k 10/10
 
 Co konkrétně chybí do plného skóre v jednotlivých disciplínách. **Jedna disciplína nese ~90 % práce** — škálovatelnost; zbytek představují cílené dílčí úpravy v řádu týdnů. Dokumentace & AI skills je na **10/10** (ADRs jsou součástí šablony, ne tohoto projektu — do hodnocení se nepromítají). Detaily a kontext v [PDF reportu](../gokick-hodnoceni.pdf), kapitola 9.
@@ -81,7 +117,7 @@ Největší (a jediný zásadní) strop: single-node SQLite (single-writer) + sc
 - **B) Skutečný write-scale (Postgres):**
   - Přidat `infrastructure/postgres/*` + `wire.Bind` na stávající doménové interface (adapter swap).
   - Frontu durable runů nahradit **River** (Postgres-native, battle-tested) místo custom SQLite queue.
-  - **Durable runs (`runs` tabulka):** `ClaimDue` na Postgresu přepsat na `SELECT … FOR UPDATE SKIP LOCKED` místo SQLite single-writer + `UPDATE … RETURNING`. **Vedlejší benefit:** současný SQLite `ClaimDue` obaluje indexovaný `run_at` do `julianday()` (kvůli ms-precision korektnosti proti `strftime('%f')` round-half-up skew), takže parciální index `idx_runs_claim` neslouží range-seeku ani ORDER BY → `SCAN` + `TEMP B-TREE` na každém pollu (na cíli ~500 agentů ≈ 6 % stropu, vrací LIMIT 1, takže zatím neřešené). Postgresí seek na nativním `timestamptz` tohle odstraní bez kompromisu na přesnosti. (Nález z xhigh code-review PR #21.)
+  - **Durable runs (`runs` tabulka):** `ClaimDue` na Postgresu přepsat na `SELECT … FOR UPDATE SKIP LOCKED` místo SQLite single-writer + `UPDATE … RETURNING`. **Vedlejší benefit:** současný SQLite `ClaimDue` obaluje indexovaný `run_at` do `julianday()` (kvůli ms-precision korektnosti proti `strftime('%f')` round-half-up skew), julianday() obalování je na SQLite už vyřešené expression indexem — `idx_runs_claim` keyuje přímo `julianday(run_at)`/`julianday(locked_until)`, takže claim dělá bounded range-seek a čte setříděně (nález z xhigh code-review PR #21, od té doby opraveno). Postgresí seek na nativním `timestamptz` je pak jen přirozenější tvar téhož bez expression indexu.. Postgresí seek na nativním `timestamptz` tohle odstraní bez kompromisu na přesnosti. (Nález z xhigh code-review PR #21.)
   - Scheduler ošetřit **leader election** (Postgres advisory locks) — konec double-runů na víc instancích.
   - Rate-limit stav externalizovat (Redis), aby instance byly stateless.
 

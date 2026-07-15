@@ -45,18 +45,19 @@ func (r *Repository) Save(ctx context.Context, u *user.User) error {
 `Conn(ctx)` se podívá do contextu: pokud běží transakce (otevřel ji `TransactionMiddleware`), vrátí `*sqlx.Tx`; jinak vrátí surový pool `*sqlx.DB`. Repo tak nic neví o tom, jestli je v transakci nebo ne — viz `BaseRepository.Conn` v `conn.go` a `TxFromContext` v `app/infrastructure/database/sqlite_manager.go`. SQL se píše přes `sqlx` named queries (`NamedExecContext` mapuje `db:"..."` tagy structu rovnou na `:placeholder`).
 
 ### Raw-pool výjimka — zápisy, co musí přežít rollback
-Dva zápisy **vědomě obcházejí** `r.Conn(ctx)` a jdou surovým poolem `r.DB.DB()`, aby se uložily (commit) nezávisle na obklopující bus transakci (ta se může vrátit zpět):
+Čtyři zápisy **vědomě obcházejí** `r.Conn(ctx)` a jdou surovým poolem `r.DB.DB()`, aby se uložily (commit) nezávisle na obklopující bus transakci (ta se může vrátit zpět):
 
-- `user.Repository.RecordFailedLogin` a `ResetFailedLogin` (`app/infrastructure/sqlite/user/repository.go`) — počítadlo neúspěšných přihlášení (brute-force ochrana). `LoginHandler` při špatném heslu vrací `AuthError` a vrátí svou transakci zpět (rollback); counter to ale musí přežít, jinak je ochrana k ničemu.
+- `user.Repository.RecordFailedLogin` a `ResetFailedLogin` (`app/infrastructure/sqlite/user/repository.go`) — počítadlo neúspěšných přihlášení (brute-force ochrana). Login běží záměrně mimo bus transakci (`LoginCommand` deklaruje `SkipTransaction()` — obalení write-tx by se s raw-pool zápisem pod SQLite zadeadlockovalo), takže tyhle single-statement zápisy se commitují samy; raw pool navíc zajišťuje, že by counter přežil i rollback případného budoucího volajícího uvnitř transakce.
+- `user.Repository.RecordLogin` (tamtéž) — razítko `last_login_at` při úspěšném přihlášení. Stejná situace jako u počítadla: login běží mimo bus transakci, zápis se commituje sám.
 - `audit.Repository.Save` (`app/infrastructure/sqlite/audit/repository.go`) — security audit trail musí zůstat i u commandu, který se vrátí zpět (rollback). Proto Audit middleware sedí **mimo** Transaction middleware (viz `/gk-bus`).
 
-Tohle je **uzavřená množina** tří metod ve dvou repozitářích — žádný jiný repozitář raw pool legitimně nepoužívá a každá výjimka má u metody komentář s důvodem.
+Tohle je **uzavřená množina** čtyř metod ve dvou repozitářích — žádný jiný repozitář raw pool legitimně nepoužívá a každá výjimka má u metody komentář s důvodem.
 
 ### SQLite tuning
 `NewSqliteManager` v `app/infrastructure/database/sqlite_manager.go` otevírá pool s DSN:
 
 ```
-file:<path>?_txlock=immediate&_pragma=busy_timeout(5000)&_pragma=foreign_keys(on)
+file:<path>?_txlock=immediate&_pragma=busy_timeout(5000)&_pragma=foreign_keys(on)&_pragma=journal_mode(<WAL|DELETE|MEMORY>)
 ```
 
 - `_txlock=immediate` — každý `BeginTx` startuje jako `BEGIN IMMEDIATE` (vezme write-lock hned na začátku). Bez toho by při default deferred transakci souběžný commit jiného zapisovače během CPU okna (bcrypt) zneplatnil přečtený snapshot a následný zápis by fatálně spadl jako `SQLITE_BUSY_SNAPSHOT` (to `busy_timeout` neumí zopakovat).
@@ -64,23 +65,23 @@ file:<path>?_txlock=immediate&_pragma=busy_timeout(5000)&_pragma=foreign_keys(on
 - `foreign_keys(on)` — FK je per-connection; přes DSN ho má **každá** nová konexe v poolu (jednorázový `PRAGMA exec` by zapnul jen jednu).
 - `file:` prefix je u driveru `ncruces/go-sqlite3` (pure-Go, žádné CGO) povinný — jinak se query string ignoruje.
 
-`journal_mode` se naopak nastavuje **jednorázovým** `PRAGMA journal_mode=...` execem na poolu (ne v DSN), protože WAL se zapisuje do hlavičky souboru a je tedy persistentní. Default je `WAL`, povolené hodnoty `WAL|DELETE|MEMORY` (whitelist přes `APP_DB_JOURNAL_MODE` — chrání proti SQL injection z misconfigurace).
+`journal_mode` jde od F-052 **taky přes DSN** (`_pragma=journal_mode(...)`) — je per-connection stejně jako `foreign_keys`: WAL/DELETE se sice persistují v hlavičce souboru, ale `MEMORY` je čistě per-connection, takže jednorázový `PRAGMA` exec by ho nastavil jen jedné konexi v poolu. Default je `WAL`, povolené hodnoty `WAL|DELETE|MEMORY` (whitelist přes `APP_DB_JOURNAL_MODE` — chrání proti SQL injection z misconfigurace).
 
 ### Aktuální repozitáře
-`sqlite/user/` (`user.Repository`), `sqlite/token/` (`token.TokenRepository`), `sqlite/run/` (`run.Repository`), `sqlite/tenant/` (`tenant.Repository`), `sqlite/audit/` (`shared.AuditLogger`), `sqlite/seeder/` (`shared.Seeder`).
+`sqlite/user/` (`user.Repository`), `sqlite/token/` (`token.Repository`), `sqlite/run/` (`run.Repository`), `sqlite/tenant/` (`tenant.Repository`), `sqlite/audit/` (`shared.AuditLogger`), `sqlite/seeder/` (`shared.Seeder`).
 
 ## Recipe: nový repozitář
 1. Vytvoř `app/infrastructure/sqlite/<context>/repository.go` se `type Repository struct { sqlite.BaseRepository }`.
 2. Constructor: `NewRepository(db *database.SqliteManager) *Repository { return &Repository{BaseRepository: sqlite.BaseRepository{DB: db}} }`.
 3. Implementuj metody doménového interface (`<context>.Repository` z `app/domain/<context>/`). SQL vždy přes `r.Conn(ctx)`.
-4. Konvence not-found: lookupy vracejí `nil, nil` (výjimkou je `user.Repository.FindByID`, který na not-found vrací `*shared.ValidationError`; `run.Repository.FindByID` naopak vrací `nil, nil`).
+4. Konvence not-found: lookupy vracejí `nil, nil` — bez výjimky (od F-011 to platí i pro `user.Repository.FindByID`): nil entita je signál not-found, ne-nil error je skutečné selhání.
 5. Wire binding v `app/infrastructure/di/container_provider.go`: `wire.Bind(new(<context>.Repository), new(*sqlite<context>.Repository))`, pak `make di`.
 6. Pokud je to **nový bounded context**, přidej adresář do `sqlite_repos` v `.go-arch-lint.yml` a spusť `make arch-check` (viz `/gk-feature`).
 
 ## Invariants & pitfalls
-- **Vždy `r.Conn(ctx)`, nikdy `r.DB.DB()`** — jediná výjimka jsou tři výše uvedené metody (`RecordFailedLogin`, `ResetFailedLogin`, `audit.Save`), každá s komentářem proč. Nový raw-pool zápis bez tohoto důvodu je chyba.
+- **Vždy `r.Conn(ctx)`, nikdy `r.DB.DB()`** — jediná výjimka jsou čtyři výše uvedené metody (`RecordFailedLogin`, `ResetFailedLogin`, `RecordLogin`, `audit.Save`), každá s komentářem proč. Nový raw-pool zápis bez tohoto důvodu je chyba.
 - **Repozitář závisí jen na doménovém interface**, ne na konkrétním infra typu — handlery a CLI nikdy neimportují `*sqlite<context>.Repository`, jen `<context>.Repository`.
-- **Nemíchej journal_mode do DSN** — patří do jednorázového `PRAGMA exec`, protože je persistentní v souboru. Pragmy v DSN (`busy_timeout`, `foreign_keys`) jsou per-connection.
+- **journal_mode patří do DSN** — je per-connection jako `busy_timeout` a `foreign_keys`; jednorázový `PRAGMA exec` by u `MEMORY` nastavil jen jednu konexi v poolu (F-052). Nezakládej vlastní `PRAGMA journal_mode` exec.
 - `SQLITE_BUSY_SNAPSHOT` / `database is locked` při ladění obvykle znamená, že někdo obešel `_txlock=immediate` nebo otevírá vlastní konexi mimo manager — nezakládej nový pool, použij `SqliteManager`.
 
 ## Related

@@ -28,7 +28,7 @@ func newAuthHandlerSecure(t *testing.T, secure bool) (*AuthHandler, *testfx.Fixt
 		authcmd.LogoutCommand{},
 	})
 
-	h := NewAuthHandler(
+	h := NewAuthHandler(testResponder(),
 		CookieSecure(secure),
 		cmdBus,
 		authcmd.NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt),
@@ -45,10 +45,11 @@ func newAdminUsersHandler(t *testing.T) (*AdminUsersHandler, *testfx.Fixture) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "admin_users_http.db"))
 	cmdBus, qryBus, _ := fx.NewBuses()
 
-	h := NewAdminUsersHandler(
+	h := NewAdminUsersHandler(testResponder(),
 		cmdBus,
 		qryBus,
 		userqry.NewListUsersHandler(fx.Users),
+		userqry.NewGetUserHandler(fx.Users),
 		usercmd.NewCreateUserHandler(fx.Users, fx.Hasher, false),
 		usercmd.NewUpdateUserHandler(fx.Users, fx.Hasher),
 		usercmd.NewDeleteUserHandler(fx.Users),

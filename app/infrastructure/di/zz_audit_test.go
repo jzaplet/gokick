@@ -56,9 +56,9 @@ func TestCommandBus_AuthorizeBlocksDeniedCommand(t *testing.T) {
 	)
 
 	var handlerRan bool
-	err := bus.ExecVoid(
+	err := bus.DispatchVoid(
 		ctx,
-		cmdBus.Bus,
+		cmdBus,
 		"DeniedCreate",
 		deniedAdminCmd{},
 		func(context.Context) error {
@@ -122,9 +122,9 @@ func TestCommandBus_EventsDispatchAfterCommit(t *testing.T) {
 	)
 
 	const nick = "committed-user"
-	err := bus.ExecVoid(
+	err := bus.DispatchVoid(
 		ctx,
-		cmdBus.Bus,
+		cmdBus,
 		"CreateThenEmit",
 		skipPermCmd{},
 		func(ctx context.Context) error {
@@ -192,9 +192,9 @@ func TestCommandBus_EventsDiscardedOnRollback(t *testing.T) {
 	)
 
 	const nick = "rolledback-user"
-	err := bus.ExecVoid(
+	err := bus.DispatchVoid(
 		ctx,
-		cmdBus.Bus,
+		cmdBus,
 		"CreateThenFail",
 		skipPermCmd{},
 		func(ctx context.Context) error {
@@ -243,9 +243,9 @@ func TestQueryBus_AuthorizeEnforced(t *testing.T) {
 	// Denied: authenticated non-admin caller → role gate rejects the admin query.
 	userCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{UserID: "u1", Role: "user"})
 	var deniedHandlerRan bool
-	_, err := bus.Exec[int](
+	_, err := bus.Query[int](
 		userCtx,
-		queryBus.Bus,
+		queryBus,
 		"DeniedQuery",
 		deniedAdminCmd{},
 		func(context.Context) (int, error) {
@@ -263,9 +263,9 @@ func TestQueryBus_AuthorizeEnforced(t *testing.T) {
 
 	// Permitted: admin claims satisfy the same permission → handler runs.
 	adminCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{UserID: "u1", Role: "admin"})
-	got, err := bus.Exec[int](
+	got, err := bus.Query[int](
 		adminCtx,
-		queryBus.Bus,
+		queryBus,
 		"AllowedQuery",
 		deniedAdminCmd{},
 		func(context.Context) (int, error) {
@@ -416,7 +416,7 @@ func rateCode(lim *httpmw.RateLimiter, realIP, remoteAddr string) int {
 	return rec.Code
 }
 
-// deleteExpiredSpy is a TokenRepository that records DeleteExpired invocations,
+// deleteExpiredSpy is a Repository that records DeleteExpired invocations,
 // proving the scheduler job's Fn is wired to token.DeleteExpired. (Named
 // distinctly from scheduler_test.go's stubTokens to avoid a redeclaration.)
 type deleteExpiredSpy struct{ calls atomic.Int32 }
@@ -434,6 +434,6 @@ func (s *deleteExpiredSpy) DeleteExpired(context.Context) error {
 
 // Compile-time guards: the spies must satisfy the real domain interfaces.
 var (
-	_ token.TokenRepository = (*deleteExpiredSpy)(nil)
-	_ shared.DomainEvent    = rowVisibleEvent{}
+	_ token.Repository   = (*deleteExpiredSpy)(nil)
+	_ shared.DomainEvent = rowVisibleEvent{}
 )

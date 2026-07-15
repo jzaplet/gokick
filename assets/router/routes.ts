@@ -1,6 +1,7 @@
 import type { AppRoute } from '@/router/meta';
 import { Permission } from '@/app/Auth/enums/resources';
 import HomeView from '@/app/Home/Views/HomeView.vue';
+import NotFoundView from '@/app/Home/Views/NotFoundView.vue';
 import LoginView from '@/app/Auth/Views/LoginView.vue';
 import ProfileView from '@/app/Profile/Views/ProfileView.vue';
 import AdminUsersView from '@/app/Admin/Views/AdminUsersView.vue';
@@ -115,5 +116,14 @@ export const routes: AppRoute[] = [
             requiresAuth: true,
             requiresPermission: Permission.PlatformUsersUpdate,
         },
+    },
+    {
+        // Trailing catch-all: an unmatched path renders the 404 view instead of a
+        // blank RouterView. requiresAuth:false so both signed-in and signed-out
+        // users see it (authGuard passes requiresAuth:false straight through).
+        path: '/:pathMatch(.*)*',
+        name: 'not-found',
+        component: NotFoundView,
+        meta: { requiresAuth: false },
     },
 ];

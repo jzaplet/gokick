@@ -89,6 +89,54 @@ func TestBuildMiddlewareChain_CSRFBlocksCrossSitePOST(t *testing.T) {
 			t.Fatal("terminal handler did not run on a same-origin POST — chain over-blocked")
 		}
 	})
+
+	// F-069: the CORS-allowed origin is also CSRF-trusted. The same cross-site
+	// POST that is rejected above must pass once its Origin is the configured
+	// CORS origin (chainOnlyServer sets https://app.example.com) — CORS and CSRF
+	// agree on the one allowed cross-origin browser client. A different origin
+	// stays rejected, so the trust is per-origin, not a blanket cross-site allow.
+	t.Run("cross-site POST from the CORS origin allowed", func(t *testing.T) {
+		chain, reached := newChain()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users", nil)
+		req.RemoteAddr = "203.0.113.7:5555"
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		req.Header.Set("Origin", "https://app.example.com")
+		rec := httptest.NewRecorder()
+		chain.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf(
+				"cross-site POST from the CORS origin: got %d want 200 — "+
+					"CORSOrigin is not registered as a CSRF trusted origin; body=%s",
+				rec.Code,
+				rec.Body.String(),
+			)
+		}
+		if !*reached {
+			t.Fatal("terminal handler did not run on a POST from the CORS-allowed origin")
+		}
+	})
+
+	t.Run("cross-site POST from another origin still rejected", func(t *testing.T) {
+		chain, reached := newChain()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users", nil)
+		req.RemoteAddr = "203.0.113.7:5555"
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		req.Header.Set("Origin", "https://evil.example.com")
+		rec := httptest.NewRecorder()
+		chain.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf(
+				"cross-site POST from an untrusted origin: got %d want 403; body=%s",
+				rec.Code,
+				rec.Body.String(),
+			)
+		}
+		if *reached {
+			t.Fatal("terminal handler ran for an untrusted cross-site origin")
+		}
+	})
 }
 
 // TestServer_SPAFallbackServesIndexForUnknownPath drives a request the whole way through
@@ -140,7 +188,7 @@ func TestServer_SPAFallbackServesIndexForUnknownPath(t *testing.T) {
 // are never hit here). registerRoutes wraps every protected route in AuthMiddleware(jwt), so
 // the test must send a valid admin Bearer for the handler to run.
 //
-// The bus AuthorizeMiddleware (inside each handler's bus.Exec) reads the role straight from
+// The bus AuthorizeMiddleware (inside each handler's bus.Dispatch/Query) reads the role straight from
 // the JWT claims, so the actor user need not exist in the DB — an admin role passes every
 // admin:* permission. Targets that commands mutate by id (Update/Delete) ARE seeded.
 func boundServer(t *testing.T) (*Server, *testfx.Fixture) {
@@ -152,25 +200,27 @@ func boundServer(t *testing.T) (*Server, *testfx.Fixture) {
 	extract := middleware.NewIPExtractor(false)
 	rule := middleware.RateRule{Tokens: 1000, Per: time.Minute}
 
-	adminUsers := handler.NewAdminUsersHandler(
+	adminUsers := handler.NewAdminUsersHandler(testResponder(),
 		cmdBus,
 		qryBus,
 		userqry.NewListUsersHandler(fx.Users),
+		userqry.NewGetUserHandler(fx.Users),
 		usercmd.NewCreateUserHandler(fx.Users, fx.Hasher, false),
 		usercmd.NewUpdateUserHandler(fx.Users, fx.Hasher),
 		usercmd.NewDeleteUserHandler(fx.Users),
 	)
-	dashboard := handler.NewDashboardHandler(
+	dashboard := handler.NewDashboardHandler(testResponder(),
 		qryBus,
 		dashboardqry.NewGetUserDashboardHandler(),
 		dashboardqry.NewGetAdminDashboardHandler(),
 	)
 
 	s := &Server{
-		config:    &config.Config{CookieSecure: false, CORSOrigin: "*"},
+		config:    &config.Config{CookieSecure: false, CORSOrigin: "https://app.example.com"},
 		logger:    logger,
 		reporter:  shared.NopReporter{},
 		jwt:       fx.Jwt,
+		resp:      testResponder(),
 		ipExtract: extract,
 		limiters: &RateLimiters{
 			Login:   middleware.NewRateLimiter(rule, extract, logger),
@@ -316,7 +366,7 @@ func TestRegisterRoutes_BindsAdminAndDashboardRoutesToHandlers(t *testing.T) {
 				rec.Body.String(),
 			)
 		}
-		if _, err := fx.Users.FindByID(context.Background(), target.ID); err == nil {
+		if got, _ := fx.Users.FindByID(context.Background(), target.ID); got != nil {
 			t.Fatal("target user still present after DELETE — route updated instead of deleting")
 		}
 	})

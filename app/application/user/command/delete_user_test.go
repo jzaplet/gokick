@@ -76,6 +76,33 @@ func TestDeleteUserHandler_NotFound(t *testing.T) {
 	}
 }
 
+// F-039: an admin must never delete a superadmin. FindByID loads the superadmin
+// row (identity-exempt), but the repo Delete excludes superadmin rows — pre-fix
+// that was a silent 0-row no-op with a phantom user.deleted audit. The handler
+// now refuses up front with a PermissionError and the row survives.
+func TestDeleteUserHandler_RejectsSuperadminTarget(t *testing.T) {
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "delete_superadmin_target.db"))
+	admin := fx.SeedUser(t, "admin", "secret12", "admin")
+	su := fx.SeedUser(t, "root", "secret12", "superadmin")
+
+	ctx := authedCtx(admin.ID, "admin")
+	h := NewDeleteUserHandler(fx.Users)
+	err := h.Handle(ctx, DeleteUserCommand{ID: su.ID})
+
+	var pe *shared.PermissionError
+	if !errors.As(err, &pe) {
+		t.Fatalf("expected *shared.PermissionError, got %T: %v", err, err)
+	}
+
+	stillThere, err := fx.Users.FindByID(ctx, su.ID)
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	if stillThere == nil {
+		t.Fatal("superadmin must NOT have been deleted")
+	}
+}
+
 func TestDeleteUserHandler_RequiresAuth(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "delete_noauth.db"))
 	target := fx.SeedUser(t, "bob", "secret12", "user")

@@ -10,9 +10,9 @@ import (
 )
 
 // DeleteExpired once had a TZ-format bug (Go's time.Time serialises with a
-// zone offset that doesn't lex-compare to SQLite's UTC datetime('now')),
+// zone offset that doesn't lex-compare to SQLite's UTC clock format),
 // making the F2 cleanup a silent no-op. The fix wraps expires_at in
-// datetime(...) so the comparison normalises to UTC. The load-bearing
+// julianday(...) so the comparison normalises encodings. The load-bearing
 // assertion here is that the past-dated row is actually GONE (count drops
 // 2 -> 1): under the old no-op bug nothing would be deleted and the count
 // would stay at 2. The survivor-identity check additionally guards against
@@ -54,7 +54,7 @@ func TestDeleteExpired_RemovesPastDatedTokensKeepsFuture(t *testing.T) {
 	}
 }
 
-// DeleteExpired's WHERE clause keys solely on expires_at < datetime('now');
+// DeleteExpired's WHERE clause keys solely on the expires_at cutoff;
 // used_at is intentionally NOT part of the cleanup condition. A token that
 // has been used (used_at set) but is not yet expired must therefore survive.
 // The guard that keeps this test from degenerating into the plain

@@ -44,16 +44,35 @@ func (r *Repository) Save(ctx context.Context, u *user.User) error {
 func (r *Repository) Update(ctx context.Context, u *user.User) error {
 	const q = `UPDATE users SET nickname=?, password_hash=?, email=?, role=?, active=?, updated_at=?
 		WHERE id=? AND tenant_id=? AND role != 'superadmin'`
-	_, err := r.Conn(ctx).ExecContext(ctx, q,
+	res, err := r.Conn(ctx).ExecContext(ctx, q,
 		u.Nickname, u.PasswordHash, u.Email, u.Role, u.Active, u.UpdatedAt, u.ID, r.Tenant(ctx))
-	return err
+	return requireOneRow(res, err)
 }
 
 // Delete scopes by tenant AND excludes superadmin rows — same rationale as Update.
 func (r *Repository) Delete(ctx context.Context, id string) error {
-	_, err := r.Conn(ctx).ExecContext(ctx,
+	res, err := r.Conn(ctx).ExecContext(ctx,
 		`DELETE FROM users WHERE id=? AND tenant_id=? AND role != 'superadmin'`, id, r.Tenant(ctx))
-	return err
+	return requireOneRow(res, err)
+}
+
+// UpdatePassword sets a user's OWN password hash — the self-service write behind
+// the profile change-password flow. The id is always the authenticated subject's
+// own claims.UserID, so unlike Update it carries NO role != 'superadmin' filter: a
+// superadmin changing their own password is legitimate and must not silently
+// no-op. That escalation guard exists only to stop a tenant admin editing OTHER
+// users; a self password change can't escalate. Scoped WHERE id=? — a self
+// identity write, tenant-exempt like FindByID — and errors on 0 rows.
+func (r *Repository) UpdatePassword(
+	ctx context.Context,
+	userID, passwordHash string,
+	updatedAt time.Time,
+) error {
+	res, err := r.Conn(ctx).ExecContext(ctx,
+		`UPDATE users SET password_hash=?, updated_at=? WHERE id=?
+		 /* tenant-scope-exempt: self password change by id (subject == claims.UserID) */`,
+		passwordHash, updatedAt, userID)
+	return requireOneRow(res, err)
 }
 
 // FindByID loads the user named by an exact id — used by auth (the JWT subject)
@@ -63,14 +82,43 @@ func (r *Repository) Delete(ctx context.Context, id string) error {
 // exact id. The enumerable list leak is closed (FindAll is tenant-scoped) and the
 // mutate paths are scoped (Update/Delete), so a targeted by-id read is a known,
 // smaller surface — not an oversight. Scope it too if that surface matters.
+//
+// Not-found returns (nil, nil) — the repository idiom every other lookup already
+// follows (FindByNickname, token/run/tenant FindByID). Application handlers own
+// the not-found *response*: each decides whether a missing user is a 400
+// (admin edits a stale id), a 401 (the authenticated user's own row is gone), or
+// a force-logout (refresh). See the contract on user.Repository.FindByID (F-011).
 func (r *Repository) FindByID(ctx context.Context, id string) (*user.User, error) {
 	var u user.User
 	err := r.Conn(ctx).GetContext(ctx, &u,
 		`SELECT * FROM users WHERE id=? /* tenant-scope-exempt: identity load by id */`, id)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, &shared.ValidationError{Field: "id", Message: "user not found"}
+		return nil, nil
 	}
-	return &u, err
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
+// FindScopedByID is the tenant-scoped by-id read behind the admin read-one
+// endpoint (GET /admin/users/{id}). It mirrors FindAll's scoping (tenant_id=? AND
+// role != 'superadmin') rather than the tenant-exempt FindByID, so the read-one
+// cannot become a cross-tenant leak: an admin reads only a non-superadmin user in
+// its OWN tenant. Not-found — absent, another tenant, or a superadmin — is
+// (nil, nil), the same idiom as FindByID.
+func (r *Repository) FindScopedByID(ctx context.Context, id string) (*user.User, error) {
+	var u user.User
+	err := r.Conn(ctx).GetContext(ctx, &u,
+		`SELECT * FROM users WHERE id=? AND tenant_id=? AND role != 'superadmin'`,
+		id, r.Tenant(ctx))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
 }
 
 // FindByNickname is the login lookup — it runs before any tenant is resolved,
@@ -85,16 +133,6 @@ func (r *Repository) FindByNickname(ctx context.Context, nickname string) (*user
 		return nil, nil
 	}
 	return &u, err
-}
-
-// FindAllActive (like FindAll) excludes superadmin rows: a platform account must
-// never surface in a tenant admin's user listing — it lives above the tenant.
-func (r *Repository) FindAllActive(ctx context.Context) ([]user.User, error) {
-	var users []user.User
-	err := r.Conn(ctx).SelectContext(ctx, &users,
-		`SELECT * FROM users WHERE active=1 AND tenant_id=? AND role != 'superadmin' ORDER BY nickname`,
-		r.Tenant(ctx))
-	return users, err
 }
 
 func (r *Repository) FindAll(ctx context.Context) ([]user.User, error) {
@@ -121,6 +159,30 @@ func (r *Repository) FindAllAcrossTenants(ctx context.Context) ([]user.PlatformR
 	return rows, err
 }
 
+// FindByIDAcrossTenants is the platform-plane read-one: one user in ANY tenant,
+// joined to its tenant name — the by-id inverse of FindAllAcrossTenants. It does
+// NOT scope by tenant_id; the marker makes the cross-tenant read explicit to the
+// conformance gate. Not-found returns (nil, nil).
+func (r *Repository) FindByIDAcrossTenants(
+	ctx context.Context,
+	id string,
+) (*user.PlatformRow, error) {
+	var row user.PlatformRow
+	err := r.Conn(ctx).GetContext(ctx, &row,
+		`SELECT u.id, u.nickname, u.email, u.role, u.active, u.tenant_id,
+		        t.name AS tenant_name, u.last_login_at
+		   FROM users u
+		   JOIN tenants t ON t.id = u.tenant_id /* tenant-scope-exempt: platform superadmin */
+		  WHERE u.id = ?`, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
 // CountAcrossTenants counts every user (all tenants, including superadmins) for
 // the platform dashboard — it must match what the platform user list shows.
 func (r *Repository) CountAcrossTenants(ctx context.Context) (int, error) {
@@ -138,23 +200,24 @@ func (r *Repository) CountAcrossTenants(ctx context.Context) (int, error) {
 func (r *Repository) UpdateAcrossTenants(ctx context.Context, u *user.User) error {
 	const q = `UPDATE users SET nickname=?, password_hash=?, email=?, role=?, active=?, updated_at=?
 		WHERE id=? AND role != 'superadmin' /* tenant-scope-exempt: platform superadmin */`
-	_, err := r.Conn(ctx).ExecContext(ctx, q,
+	res, err := r.Conn(ctx).ExecContext(ctx, q,
 		u.Nickname, u.PasswordHash, u.Email, u.Role, u.Active, u.UpdatedAt, u.ID)
-	return err
+	return requireOneRow(res, err)
 }
 
 // DeleteAcrossTenants is the platform-plane delete — same cross-tenant scope and
 // superadmin exclusion as UpdateAcrossTenants.
 func (r *Repository) DeleteAcrossTenants(ctx context.Context, id string) error {
-	_, err := r.Conn(ctx).ExecContext(ctx,
+	res, err := r.Conn(ctx).ExecContext(ctx,
 		`DELETE FROM users WHERE id=? AND role != 'superadmin' /* tenant-scope-exempt: platform superadmin */`,
 		id)
-	return err
+	return requireOneRow(res, err)
 }
 
 // RecordLogin stamps last_login_at on successful login. Raw pool (r.DB.DB()),
-// outside the bus tx — same rationale as ResetFailedLogin: a successful login
-// should record even if a later step in the handler rolls back. Best-effort.
+// same rationale as ResetFailedLogin: login runs outside any bus tx by design
+// (SkipTransaction), so the stamp auto-commits on its own, independent of any
+// future in-tx caller. Best-effort.
 func (r *Repository) RecordLogin(ctx context.Context, userID string) error {
 	_, err := r.DB.DB().ExecContext(ctx,
 		`UPDATE users SET last_login_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?
@@ -167,9 +230,11 @@ func (r *Repository) RecordLogin(ctx context.Context, userID string) error {
 // after the window, increment otherwise, lock when threshold reached) is
 // atomic relative to other concurrent failed logins for the same row.
 // Uses r.DB.DB() (raw pool) instead of r.Conn(ctx) (tx-aware) on purpose
-// — the surrounding LoginHandler returns AuthError on bad credentials,
-// which rolls back its bus transaction; the counter update must survive
-// that rollback or brute-force protection becomes a no-op.
+// — login runs outside any bus tx by design (LoginCommand declares
+// SkipTransaction), so this single-statement write auto-commits on its
+// own; the raw pool also future-proofs the counter against a future
+// in-tx caller, whose rollback must not erase it — otherwise
+// brute-force protection becomes a no-op.
 func (r *Repository) RecordFailedLogin(
 	ctx context.Context,
 	userID string,
@@ -213,19 +278,51 @@ func (r *Repository) RecordFailedLogin(
 	if err != nil {
 		return nil, err
 	}
-	if !locked.Valid {
+	// Return locked_until ONLY when THIS attempt produced an ACTIVE lock (the port
+	// contract: "the new lock, else nil"). The filter is in Go, not SQL, because a
+	// RETURNING CASE expression loses the column's datetime affinity and comes back
+	// as a raw string. RecordFailedLogin runs only when the account is NOT already
+	// locked (login.go guards on the locked flag), so a FUTURE locked_until here can
+	// only be one this attempt set; a stale PAST value left by an expired lock (the
+	// ELSE branch keeps it) is NOT a fresh lock — returning it would be mis-read as
+	// one and emit a phantom auth.account.locked audit event (F-045).
+	if !locked.Valid || !locked.Time.After(time.Now()) {
 		return nil, nil
 	}
 	return &locked.Time, nil
 }
 
-// ResetFailedLogin runs outside the caller's tx for the same reason as
-// RecordFailedLogin — a successful login should clear the counter even
-// if a later step in the same handler hits an error and rolls back.
+// ResetFailedLogin uses the raw pool for the same reason as
+// RecordFailedLogin — login runs outside any bus tx by design
+// (SkipTransaction); the single-statement clear auto-commits on its
+// own, independent of any future in-tx caller.
 func (r *Repository) ResetFailedLogin(ctx context.Context, userID string) error {
 	_, err := r.DB.DB().ExecContext(ctx,
 		`UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?
 		 /* tenant-scope-exempt: clear brute-force counter on successful login */`,
 		userID)
 	return err
+}
+
+// requireOneRow turns a by-id mutation result into a not-found error when it
+// matched no row. A scoped UPDATE/DELETE that changes 0 rows — target absent, or
+// excluded by the WHERE guard (role != 'superadmin', wrong tenant) — must surface
+// as an error, never a silent success: a silent no-op returns 204 AND lets the
+// caller emit a phantom audit event for a write that never happened (F-023 phantom
+// role_changed, F-039 superadmin self-password no-op). Unlike sqlite.RowsAffectedBool
+// (owner-fencing, where 0 rows is a normal terminal outcome), here 0 rows is ALWAYS
+// an error. Field "id" matches the not-found ValidationError the admin/platform
+// handlers return on a missing user, so both map to the same 400.
+func requireOneRow(res sql.Result, err error) error {
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return &shared.ValidationError{Field: "id", Message: "user not found"}
+	}
+	return nil
 }

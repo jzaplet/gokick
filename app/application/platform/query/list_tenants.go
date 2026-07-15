@@ -13,10 +13,10 @@ type ListTenantsQuery struct{}
 func (ListTenantsQuery) RequiredPermission() string { return "platform:overview" }
 
 type ListTenantsHandler struct {
-	tenants tenant.Repository
+	tenants tenant.PlatformRepository
 }
 
-func NewListTenantsHandler(tenants tenant.Repository) *ListTenantsHandler {
+func NewListTenantsHandler(tenants tenant.PlatformRepository) *ListTenantsHandler {
 	return &ListTenantsHandler{tenants: tenants}
 }
 
@@ -24,5 +24,5 @@ func (h *ListTenantsHandler) Handle(
 	ctx context.Context,
 	_ ListTenantsQuery,
 ) ([]tenant.Overview, error) {
-	return h.tenants.FindAllWithUserCount(ctx)
+	return h.tenants.OverviewAcrossTenants(ctx)
 }

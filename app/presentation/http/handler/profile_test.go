@@ -27,7 +27,7 @@ func newProfileHandler(t *testing.T) (*ProfileHandler, *testfx.Fixture) {
 		profileqry.GetProfileQuery{},
 	})
 
-	h := NewProfileHandler(
+	h := NewProfileHandler(testResponder(),
 		cmdBus,
 		qryBus,
 		profileqry.NewGetProfileHandler(fx.Users),

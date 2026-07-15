@@ -3,14 +3,20 @@ workdir: app
 
 allow:
   depOnAnyVendor: true
-  # Deep scan analyzes method call graphs and flags cross-layer DI wiring
-  # (e.g. testfx passing a security type to a bus middleware constructor).
-  # Component-import rules alone are sufficient — disabling removes false
-  # positives caused by dependency injection wiring.
-  deepScan: false
+  # Deep scan analyzes method call graphs and flags cross-layer DI wiring in
+  # PRODUCTION code (e.g. a repo passing a database type into a bus-middleware
+  # constructor) — the class of violation the component-import rules alone miss.
+  # Enabled: production is empirically clean. The only deepScan notices came from
+  # the testfx fixture legitimately wiring production buses, so testfx is excluded
+  # below (it is a test-only fixture, imported solely from _test.go files).
+  deepScan: true
 
 exclude:
   - infrastructure/di/**
+  # Test-only fixture that wires production buses/repos across layers on purpose
+  # (its import-level grants are enumerated below, but deepScan is a global flag
+  # with no per-component toggle, so exclude the whole dir from arch-lint).
+  - internal/testfx/**
 
 excludeFiles:
   - infrastructure/database/migration_manager.go
@@ -151,7 +157,13 @@ deps:
     mayDependOn:
       - bus
   application:
+    # Self-dependency: application/** is deliberately ONE component (unlike the
+    # per-context domain split), so application subpackages may import each other
+    # — e.g. user/command + platform/command share application/userwrite (the
+    # admin↔platform update-user body, F-023). bus/bus_middleware stay separate
+    # components on purpose, so this does not open a path to them.
     mayDependOn:
+      - application
       - testfx
       - domain_user
       - domain_token
@@ -232,11 +244,14 @@ deps:
       - response
       - testfx
   response:
+    mayDependOn:
+      - domain_shared
     anyVendorDeps: true
   server:
     mayDependOn:
       - handler
       - http_middleware
+      - response
       - config
   console:
     mayDependOn:

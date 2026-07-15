@@ -19,8 +19,8 @@ func RecoveryMiddleware(logger *slog.Logger, reporter shared.ErrorReporter) bus.
 				logger.LogAttrs(ctx, slog.LevelError, "bus: panic recovered",
 					append(shared.LogAttrs(ctx),
 						slog.String(shared.LogKeyCommand, name),
-						slog.Any(logKeyPanic, r),
-						slog.String(logKeyStack, string(debug.Stack())),
+						slog.Any(shared.LogKeyPanic, r),
+						slog.String(shared.LogKeyStack, string(debug.Stack())),
 					)...)
 				// Wrap as a PanicError so the tracker labels it "panic" rather
 				// than the generic *errors.errorString from fmt.Errorf. The

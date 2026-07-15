@@ -43,9 +43,7 @@ func (c *EventCollector) Flush() []DomainEvent {
 	return events
 }
 
-type eventCollectorKeyType struct{}
-
-var eventCollectorKey = eventCollectorKeyType{}
+type eventCollectorKey struct{}
 
 // forbiddenCollector marker — set by EventBus.Dispatch and worker before
 // invoking a handler. Cascading Collect from inside an event/run handler
@@ -54,7 +52,7 @@ var forbiddenCollector = &EventCollector{forbidden: true}
 
 func ContextWithEventCollector(ctx context.Context) (context.Context, *EventCollector) {
 	c := NewEventCollector()
-	return context.WithValue(ctx, eventCollectorKey, c), c
+	return context.WithValue(ctx, eventCollectorKey{}, c), c
 }
 
 // ContextWithoutEventCollector installs a forbidden-marker collector that
@@ -62,7 +60,7 @@ func ContextWithEventCollector(ctx context.Context) (context.Context, *EventColl
 // handler — they must use the RunDispatcher for follow-up async work, not
 // re-emit events through a collector that no one will flush.
 func ContextWithoutEventCollector(ctx context.Context) context.Context {
-	return context.WithValue(ctx, eventCollectorKey, forbiddenCollector)
+	return context.WithValue(ctx, eventCollectorKey{}, forbiddenCollector)
 }
 
 // EventCollectorFromContext returns the per-request EventCollector.
@@ -70,7 +68,7 @@ func ContextWithoutEventCollector(ctx context.Context) context.Context {
 //   - Event / run handler → forbidden collector; calling Collect panics.
 //   - Outside both (CLI bypass) → throwaway collector; Collect silently drops.
 func EventCollectorFromContext(ctx context.Context) *EventCollector {
-	if c, ok := ctx.Value(eventCollectorKey).(*EventCollector); ok {
+	if c, ok := ctx.Value(eventCollectorKey{}).(*EventCollector); ok {
 		return c
 	}
 	return NewEventCollector()

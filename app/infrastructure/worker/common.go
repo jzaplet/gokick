@@ -13,8 +13,6 @@ const defaultBaseBackoff = 5 * time.Second
 // no-raw-keys). Run-worker-specific keys live in run_worker.go.
 const (
 	logKeyKinds = "kinds"
-	logKeyPanic = "panic"
-	logKeyStack = "stack"
 )
 
 // backoff returns 2^(attempts-1) * defaultBaseBackoff, capped at 1h. attempts is

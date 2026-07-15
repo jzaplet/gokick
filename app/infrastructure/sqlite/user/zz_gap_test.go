@@ -12,7 +12,7 @@ import (
 )
 
 // Closes infra-db-security-10 at the repository layer: the users-table schema
-// guards role CHECK(role IN ('admin','user')) and nickname NOT NULL UNIQUE
+// guards role CHECK(role IN ('superadmin','admin','user')) and nickname NOT NULL UNIQUE
 // actually reject bad rows. Nothing else in the suite asserts these constraints.
 // (The other assigned claims for this package — app-events-audit-29, roadmap-71,
 // infra-db-security-20 — are already pinned by the survives-rollback tests in
@@ -31,17 +31,23 @@ func rawInsertUser(t *testing.T, fx *testfx.Fixture, nickname, role string) erro
 }
 
 // TestUsersTableConstraints pins the users-table schema guards from
-// infra-db-security-10: role is CHECK(role IN ('admin','user')) and nickname is
-// NOT NULL UNIQUE. Removing either constraint from the init migration would let
-// these raw inserts succeed and fail the test.
+// infra-db-security-10: role is CHECK(role IN ('superadmin','admin','user')) and nickname
+// is NOT NULL UNIQUE. Removing either constraint from the init migration
+// (20260327000001_init_schema.sql) would let these raw inserts succeed
+// and fail the test.
 func TestUsersTableConstraints(t *testing.T) {
 	t.Run("role CHECK rejects an unknown role", func(t *testing.T) {
 		fx := testfx.New(t, filepath.Join(t.TempDir(), "users_role_check.db"))
 
-		// Sanity: a valid role inserts fine through the same path, so a failure
-		// below is the CHECK firing, not a broken INSERT.
+		// Sanity: valid roles insert fine through the same path, so a failure
+		// below is the CHECK firing, not a broken INSERT. 'superadmin' is asserted
+		// accepted at the DB level on purpose — gating who may create one is the
+		// application/CLI layer's job, not the schema's.
 		if err := rawInsertUser(t, fx, "valid-admin", "admin"); err != nil {
 			t.Fatalf("valid role insert should succeed: %v", err)
+		}
+		if err := rawInsertUser(t, fx, "valid-superadmin", "superadmin"); err != nil {
+			t.Fatalf("superadmin must be accepted by the DB-level CHECK: %v", err)
 		}
 
 		err := rawInsertUser(t, fx, "villain", "superhero")

@@ -9,11 +9,17 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	"gokick/app/presentation/http/response"
 )
 
 // discardLogger is a throwaway logger for SPA handler tests that don't assert on
 // log output (the warn-and-degrade path has its own buffer-backed logger).
 func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
+
+// testResponder is a Responder over a discard logger for handler tests that
+// don't assert on the (rare) encode-failure log line.
+func testResponder() *response.Responder { return response.NewResponder(discardLogger()) }
 
 // injectRuntimeConfig must tolerate the realistic ways a template's <head> can
 // be written — attributes, casing, whitespace — so a routine index.html edit in
@@ -88,6 +94,56 @@ func TestInjectRuntimeConfig_RobustEdges(t *testing.T) {
 	})
 }
 
+// An unknown /api path must NOT fall through to the SPA index — it returns a
+// JSON 404 (a 200 text/html page would surface client-side as a confusing parse
+// error). A dotless non-/api path still serves the SPA; a dotted path still hits
+// the file server.
+func TestSPAHandler_Serve_Routing(t *testing.T) {
+	t.Parallel()
+	fsys := fstest.MapFS{
+		"index.html": &fstest.MapFile{Data: []byte("<html><head></head><body>app</body></html>")},
+		"app.js":     &fstest.MapFile{Data: []byte("console.log(1)")},
+	}
+	h := NewSPAHandler(testResponder(), discardLogger(), fsys, SPAConfig{})
+
+	t.Run("unknown /api path is a JSON 404", func(t *testing.T) {
+		t.Parallel()
+		rec := httptest.NewRecorder()
+		h.Serve(rec, httptest.NewRequest(http.MethodGet, "/api/v1/nonexistent", nil))
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("want 404, got %d", rec.Code)
+		}
+		if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+			t.Fatalf("want JSON content-type, got %q", ct)
+		}
+		if strings.Contains(rec.Body.String(), "<html") {
+			t.Fatalf("must not serve the SPA index for /api, got: %s", rec.Body.String())
+		}
+	})
+
+	t.Run("dotless SPA route serves index 200", func(t *testing.T) {
+		t.Parallel()
+		rec := httptest.NewRecorder()
+		h.Serve(rec, httptest.NewRequest(http.MethodGet, "/admin/users", nil))
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "app") {
+			t.Fatalf("SPA route must serve index 200, got %d body=%q", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("dotted asset hits the file server", func(t *testing.T) {
+		t.Parallel()
+		rec := httptest.NewRecorder()
+		h.Serve(rec, httptest.NewRequest(http.MethodGet, "/app.js", nil))
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "console.log") {
+			t.Fatalf(
+				"asset must be served by the file server, got %d body=%q",
+				rec.Code,
+				rec.Body.String(),
+			)
+		}
+	})
+}
+
 // A real index.html with no <head> anchor must WARN (so the missing telemetry is
 // visible) yet still SERVE the page — a template edit in a fork degrades the FE
 // runtime config to its build-time fallback, it does not crash the app.
@@ -99,7 +155,12 @@ func TestNewSPAHandler_WarnsButServesWhenNoHead(t *testing.T) {
 		"index.html": &fstest.MapFile{Data: []byte("<html><body>no head here</body></html>")},
 	}
 
-	h := NewSPAHandler(logger, fsys, SPAConfig{SentryDSN: "https://k@example.com/1"})
+	h := NewSPAHandler(
+		testResponder(),
+		logger,
+		fsys,
+		SPAConfig{SentryDSN: "https://k@example.com/1"},
+	)
 
 	rec := httptest.NewRecorder()
 	h.Serve(rec, httptest.NewRequest(http.MethodGet, "/", nil))

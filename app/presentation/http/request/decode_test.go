@@ -2,6 +2,7 @@ package request
 
 import (
 	"bytes"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -55,4 +56,35 @@ func TestDecodeJSON_RejectsOversizedBody(t *testing.T) {
 	if !strings.Contains(err.Error(), "exceeds") {
 		t.Fatalf("error should mention size limit, got %q", err)
 	}
+}
+
+// F-066: decode failures are typed *DecodeError (HTTPError) so a handler maps them
+// via response.HandleError without hardcoding a status — oversize → 413, every
+// other decode failure → 400.
+func TestDecodeJSON_ErrorsCarryHTTPStatus(t *testing.T) {
+	assertStatus := func(t *testing.T, err error, want int) {
+		t.Helper()
+		var de *DecodeError
+		if !errors.As(err, &de) {
+			t.Fatalf("expected *DecodeError, got %T: %v", err, err)
+		}
+		if de.HTTPStatus() != want {
+			t.Fatalf("HTTPStatus: got %d want %d", de.HTTPStatus(), want)
+		}
+	}
+
+	t.Run("unknown field is 400", func(t *testing.T) {
+		assertStatus(t, decode(t, `{"extra":1}`), http.StatusBadRequest)
+	})
+	t.Run("trailing object is 400", func(t *testing.T) {
+		assertStatus(t, decode(t, `{"name":"a"}{}`), http.StatusBadRequest)
+	})
+	t.Run("oversize is 413", func(t *testing.T) {
+		big := append([]byte(`{"name":"`), bytes.Repeat([]byte("x"), int(MaxBodyBytes)+1024)...)
+		big = append(big, []byte(`"}`)...)
+		req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(big))
+		rec := httptest.NewRecorder()
+		var got payload
+		assertStatus(t, DecodeJSON(rec, req, &got), http.StatusRequestEntityTooLarge)
+	})
 }

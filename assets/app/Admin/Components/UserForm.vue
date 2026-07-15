@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { UserFormData } from '@/app/Admin/types/UserFormData';
 import type { UserFormErrors } from '@/app/Admin/types/UserFormErrors';
+import { Role } from '@/app/Auth/enums/roles';
 import { reactive, ref } from 'vue';
 import Button from '@/app-ui/Buttons/Button.vue';
 import Input from '@/app-ui/Inputs/Input.vue';
@@ -31,12 +32,12 @@ const form: UserFormData = reactive({
     nickname: initial.nickname ?? '',
     password: '',
     email: initial.email ?? '',
-    role: initial.role ?? 'user',
+    role: initial.role ?? Role.User,
 });
 
 const roleOptions = ref([
-    { value: 'user', label: 'User' },
-    { value: 'admin', label: 'Admin' },
+    { value: Role.User, label: 'User' },
+    { value: Role.Admin, label: 'Admin' },
 ]);
 
 const handleSubmit = (): void => {

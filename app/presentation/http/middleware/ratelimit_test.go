@@ -7,11 +7,16 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"gokick/app/presentation/http/response"
 )
 
 func silentLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
+
+// testResponder is a Responder over a discard logger for middleware tests.
+func testResponder() *response.Responder { return response.NewResponder(silentLogger()) }
 
 func TestParseRateRule_AcceptedShapes(t *testing.T) {
 	t.Parallel()

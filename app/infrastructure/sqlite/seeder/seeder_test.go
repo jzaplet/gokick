@@ -247,7 +247,7 @@ func TestSeeder_AuditTrailThroughSystemBus(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "seed_audit.db"))
 	s := newSeederMT(t, fx, "valid-password-12", "super-password-12", "Acme")
 
-	err := bus.ExecVoid(context.Background(), fx.NewSystemBus().Bus, "Seed", struct{}{},
+	err := bus.SystemDispatchVoid(context.Background(), fx.NewSystemBus(), "Seed", struct{}{},
 		func(ctx context.Context) error { return s.Seed(ctx) })
 	if err != nil {
 		t.Fatalf("seed through bus: %v", err)

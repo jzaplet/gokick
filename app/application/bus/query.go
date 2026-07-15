@@ -1,7 +1,10 @@
 package bus
 
-type QueryBus struct{ *Bus }
+// QueryBus is the read-side bus. Its inner *Bus is unexported so a read runs only
+// through bus.Query, which takes *QueryBus — the counterpart to Dispatch's
+// compile-checked pairing (see CommandBus).
+type QueryBus struct{ inner *Bus }
 
 func NewQueryBus(middlewares ...Middleware) *QueryBus {
-	return &QueryBus{Bus: newBus(middlewares...)}
+	return &QueryBus{inner: newBus(middlewares...)}
 }

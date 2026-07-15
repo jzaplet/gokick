@@ -14,6 +14,7 @@ import (
 	"gokick/app/internal/testfx"
 	"gokick/app/presentation/http/handler"
 	"gokick/app/presentation/http/middleware"
+	"gokick/app/presentation/http/response"
 )
 
 // silentLogger returns a slog.Logger that discards everything — keeps test
@@ -21,6 +22,9 @@ import (
 func silentLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
+
+// testResponder is a Responder over a discard logger for server route tests.
+func testResponder() *response.Responder { return response.NewResponder(silentLogger()) }
 
 // chainOnlyServer builds a Server populated with just the fields
 // buildMiddlewareChain touches (config, logger, ipExtract). The route/handler
@@ -148,19 +152,20 @@ func routingServer(t *testing.T) *Server {
 	rule := middleware.RateRule{Tokens: 1000, Per: time.Minute}
 
 	return &Server{
-		config:    &config.Config{CookieSecure: false, CORSOrigin: "*"},
+		config:    &config.Config{CookieSecure: false, CORSOrigin: "https://app.example.com"},
 		logger:    logger,
 		reporter:  shared.NopReporter{},
 		jwt:       jwt,
+		resp:      testResponder(),
 		ipExtract: extract,
 		limiters: &RateLimiters{
 			Login:   middleware.NewRateLimiter(rule, extract, logger),
 			Refresh: middleware.NewRateLimiter(rule, extract, logger),
 		},
-		health: handler.NewHealthHandler(),
+		health: handler.NewHealthHandler(testResponder()),
 		// fstest.MapFS has no index.html; NewSPAHandler falls back to a
 		// built-in default index, so the catch-all never panics.
-		spa: handler.NewSPAHandler(logger, fstest.MapFS{}, handler.SPAConfig{}),
+		spa: handler.NewSPAHandler(testResponder(), logger, fstest.MapFS{}, handler.SPAConfig{}),
 	}
 }
 
@@ -170,8 +175,12 @@ func routingServer(t *testing.T) *Server {
 // guard before the (nil) handler runs. Covers the route-presence + auth-guard
 // claims: guide-auth-perm-17 (logout), overview-12 / overview-21 / presentation-39
 // / presentation-40 / presentation-41 (admin users routes), presentation-37 /
-// presentation-38 (dashboard routes), and the protected half of overview-13 /
-// presentation-22. NOTE: this asserts registration + protection only, not which
+// presentation-38 (dashboard routes), the six superadmin platform-plane routes
+// (stats / users / get-user / tenants / update-user / delete-user, all platform:*
+// behind the bus), and the protected half of overview-13 / presentation-22. The table is
+// exhaustive over the authed() API routes registered in registerRoutes (the
+// config-gated /debug/runs routes are out of scope — routingServer does not enable
+// RunDebug). NOTE: this asserts registration + protection only, not which
 // command/query each route dispatches nor its permission string (those are
 // covered by the *_RequiredPermission tests in the command/query packages).
 func TestRegisterRoutes_ProtectedRoutesRejectInvalidBearer(t *testing.T) {
@@ -190,8 +199,15 @@ func TestRegisterRoutes_ProtectedRoutesRejectInvalidBearer(t *testing.T) {
 		{http.MethodGet, "/api/v1/dashboard/admin"},
 		{http.MethodGet, "/api/v1/admin/users"},
 		{http.MethodPost, "/api/v1/admin/users"},
+		{http.MethodGet, "/api/v1/admin/users/abc123"},
 		{http.MethodPut, "/api/v1/admin/users/abc123"},
 		{http.MethodDelete, "/api/v1/admin/users/abc123"},
+		{http.MethodGet, "/api/v1/platform/stats"},
+		{http.MethodGet, "/api/v1/platform/users"},
+		{http.MethodGet, "/api/v1/platform/tenants"},
+		{http.MethodGet, "/api/v1/platform/users/abc123"},
+		{http.MethodPut, "/api/v1/platform/users/abc123"},
+		{http.MethodDelete, "/api/v1/platform/users/abc123"},
 	}
 
 	for _, tc := range protected {

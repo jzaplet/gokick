@@ -40,16 +40,27 @@ ověří, že všechno (styl, architektura, testy) je v pořádku, než to pošl
 
 ## How it works
 
+### Kde testy žijí (layout)
+
+- **Go testy** (`_test.go`) — VŽDY vedle svého balíčku (`app/**`), nikdy v `tests/`.
+  Jazykový idiom, ne preference: white-box testy potřebují package scope
+  (neexportované symboly) a `zz_*` konformanční gaty skenují vlastní adresář
+  přes `runtime.Caller`. Přesun by je rozbil.
+- **`tests/assets/`** — FE vitest testy (jediné místo, kde testy žijí mimo
+  testovaný kód; Vue SFC nemá package-local konvenci).
+- **`tests/e2e/`** — shell E2E harness durable-run engine (`make e2e`,
+  proces-lifecycle: crash/drain/at-least-once/terminal).
+
+
 ### testfx — reálná DB v testu
 `app/internal/testfx/testfx.go`, import path `gokick/app/internal/testfx`.
 `testfx.New(t, dbPath)` otevře izolovanou SQLite na `dbPath`, spustí migrace a
-vrátí `*Fixture` s reálnými implementacemi (`Users`, `Tokens`, `Runs`, `Hasher`,
-`Jwt`, `DB`). DB se zavře automaticky přes `t.Cleanup`. Logger je tichý
+vrátí `*Fixture` s reálnými implementacemi (`Users`, `PlatformUsers`, `Tokens`, `Runs`, `Tenants`, `PlatformTenants`, `Hasher`, `Jwt`, `DB`).. DB se zavře automaticky přes `t.Cleanup`. Logger je tichý
 (`io.Discard`). Užitečné helpery na `*Fixture`:
 - `SeedUser(t, nickname, password, role)` / `SeedRefreshToken(t, userID, expiresAt)` — naplnění dat
 - `AssertTokenCount(t, n)` — kontrola počtu řádků v `refresh_tokens`
 - `NewBuses()` — postaví Command/Query/EventBus přesně jako `container_provider` (plný middleware chain)
-- `ExecCommand[R](ctx, cmdBus, name, cmd, fn)` — **sankcionovaný způsob**, jak v handler testu protáhnout command celým chainem (tx, audit, eventy). Handler balíček nesmí importovat `application/bus` přímo (arch-lint: smí jen `bus_middleware`), takže to běží přes testfx.
+- `ExecCommand[R](ctx, cmdBus, name, cmd, fn)` — **sankcionovaný způsob**, jak v handler testu protáhnout command celým chainem (tx, audit, eventy). Handler balíček nesmí importovat `application/bus` přímo (arch-lint: komponenta `application` nemá grant na `bus` ani na `bus_middleware`), takže to běží přes testfx.
 
 Mimo bus (přímé volání handleru) se eventy chytají přes
 `shared.ContextWithEventCollector(ctx)` + `collector.Flush()` —
@@ -77,11 +88,8 @@ svůj produkční balíček (vypadá to jako cyklus), jsou v `.go-arch-lint.yml`
 
 ### Quality gate
 `make test` = `yarn test` (vitest) + `go test ./app/... ./cmd/...`.
-`make lint` = ESLint + `vue-tsc` (type-check) + `golangci-lint` + `make arch-check`
-(go-arch-lint) + `format-check` (golines) + `documan-lint`.
-CI (`.github/workflows/validate.yml`): `make install` → `make lint` → `make test`
-→ `make build`, se `SKIP_DOCUMAN=1` (dokumentaci v CI validuje samostatný
-`.github/workflows/documan.yml` přes `docker/documan/Dockerfile`).
+`make lint` = ESLint + `vue-tsc` (type-check) + `knip` (dead code) + `golangci-lint` + `make arch-check` (go-arch-lint) + `format-check` (golines) + `ts-check` (Go→TS parita typů) + `documan-lint`.
+CI (`.github/workflows/validate.yml`): job `validate` = `make install` → `make lint` → `make test` → `make build`, se `SKIP_DOCUMAN=1` (dokumentaci v CI validuje samostatný `.github/workflows/documan.yml` přes `docker/documan/Dockerfile`); paralelní job `e2e` spouští `make e2e` (durable-run process-lifecycle testy, viz `tests/e2e/README.md`).
 
 ## Recipe
 
@@ -95,7 +103,7 @@ CI (`.github/workflows/validate.yml`): `make install` → `make lint` → `make 
 
 ### Než commitnu
 1. `make format` — srovná styl (ESLint Stylistic + golines).
-2. `make lint` — ESLint + tsc + golangci-lint + arch-check + format-check (+ documan lokálně).
+2. `make lint` — ESLint + tsc + knip + golangci-lint + arch-check + format-check + ts-check (+ documan lokálně).
 3. `make test` — vitest + `go test`.
 4. `go test -race ./app/... ./cmd/...` — **manuální** krok na souběh; **není**
    v `make test` ani v CI, ale spouští se lokálně před většími změnami.
@@ -104,8 +112,7 @@ CI (`.github/workflows/validate.yml`): `make install` → `make lint` → `make 
 - **testfx je test-only.** Import `app/internal/testfx` patří jen do `*_test.go`.
   Komponenta `testfx` v `.go-arch-lint.yml` smí wirovat reálnou infrastrukturu
   právě proto, že ji produkční kód nikdy neimportuje.
-- **Handler testy přes bus jedou `testfx.ExecCommand`, ne `application/bus` přímo** —
-  jinak spadne `make arch-check` (handler smí na `bus_middleware`, ne na `bus`).
+- **Handler testy přes bus jedou `testfx.ExecCommand`, ne `application/bus` přímo** — jinak spadne `make arch-check` (komponenta `application` nemá grant na `bus` ani na `bus_middleware`; sankcionovaná cesta je testfx).
 - **Nepřejmenuj `zz_`-testy bez kontextu.** Ruší se na nich claim-ID a
   anti-vacuity kontroly; prefix `zz_` je záměrný (řazení nakonec).
 - **Nový bounded context = nový `domain_<ctx>` + grant v `mayDependOn`** napříč

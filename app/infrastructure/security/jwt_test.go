@@ -6,6 +6,8 @@ import (
 
 	"gokick/app/domain/shared"
 	"gokick/app/infrastructure/config"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 func newTestJwtService(secret string, accessExp, refreshExp time.Duration) *JwtService {
@@ -155,6 +157,45 @@ func TestHashToken_DifferentInputs(t *testing.T) {
 	h2 := HashToken("input-b")
 	if h1 == h2 {
 		t.Fatal("expected different hashes for different inputs")
+	}
+}
+
+// A validly-SIGNED token whose sub or role claim is missing/empty must be
+// rejected (fail closed), not silently downgraded to baseline (empty-role)
+// permissions. These tokens bypass GenerateAccessToken (which always sets both).
+func TestValidateAccessToken_RejectsMissingSubOrRole(t *testing.T) {
+	const secret = "test-secret-32-chars-long-enough"
+	svc := newTestJwtService(secret, 15*time.Minute, 24*time.Hour)
+
+	exp := time.Now().Add(time.Hour).Unix()
+	mint := func(claims jwt.MapClaims) string {
+		signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).
+			SignedString([]byte(secret))
+		if err != nil {
+			t.Fatalf("sign: %v", err)
+		}
+		return signed
+	}
+
+	cases := map[string]jwt.MapClaims{
+		"missing role": {"sub": "u1", "exp": exp},
+		"missing sub":  {"role": "admin", "exp": exp},
+		"empty role":   {"sub": "u1", "role": "", "exp": exp},
+		"empty sub":    {"sub": "", "role": "admin", "exp": exp},
+	}
+	for name, claims := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := svc.ValidateAccessToken(mint(claims)); err == nil {
+				t.Fatalf("%s: a claim-incomplete token must be rejected, got nil error", name)
+			}
+		})
+	}
+
+	// Control: a complete token still validates.
+	if _, err := svc.ValidateAccessToken(mint(jwt.MapClaims{
+		"sub": "u1", "role": "admin", "exp": exp,
+	})); err != nil {
+		t.Fatalf("a complete token must still validate, got %v", err)
 	}
 }
 

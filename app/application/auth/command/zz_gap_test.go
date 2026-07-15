@@ -47,7 +47,7 @@ func TestLoginHandler_LocksOnFifthNotFourthFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("find user after 4 failures: %v", err)
 	}
-	if beforeLock.LockedUntil.Valid {
+	if beforeLock.LockedUntil != nil {
 		t.Fatal("account must NOT be locked after 4 failures (threshold is the 5th)")
 	}
 	// Counter climbs one-per-failure right up to the threshold edge.
@@ -62,14 +62,14 @@ func TestLoginHandler_LocksOnFifthNotFourthFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("find user after 5 failures: %v", err)
 	}
-	if !afterLock.LockedUntil.Valid {
+	if afterLock.LockedUntil == nil {
 		t.Fatal("account must be locked after the 5th failure")
 	}
 	// locked_until is in the future at the moment we read it back.
-	if !afterLock.LockedUntil.Time.After(time.Now()) {
+	if !afterLock.LockedUntil.After(time.Now()) {
 		t.Fatalf(
 			"locked_until must be in the future, got %s (now ~%s)",
-			afterLock.LockedUntil.Time, time.Now(),
+			*afterLock.LockedUntil, time.Now(),
 		)
 	}
 }

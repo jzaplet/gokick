@@ -31,7 +31,7 @@ func TestAuthMiddleware_ValidTokenSetsClaims(t *testing.T) {
 	}
 
 	capture := &captureHandler{}
-	mw := AuthMiddleware(jwt)(capture)
+	mw := AuthMiddleware(jwt, testResponder())(capture)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -58,7 +58,7 @@ func TestAuthMiddleware_NoHeaderPassesThroughWithoutClaims(t *testing.T) {
 	jwt := testfx.NewJwt(t, 15*time.Minute)
 
 	capture := &captureHandler{}
-	mw := AuthMiddleware(jwt)(capture)
+	mw := AuthMiddleware(jwt, testResponder())(capture)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -80,7 +80,7 @@ func TestAuthMiddleware_MissingBearerPrefixReturns401(t *testing.T) {
 	jwt := testfx.NewJwt(t, 15*time.Minute)
 
 	capture := &captureHandler{}
-	mw := AuthMiddleware(jwt)(capture)
+	mw := AuthMiddleware(jwt, testResponder())(capture)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Basic Zm9vOmJhcg==")
@@ -100,7 +100,7 @@ func TestAuthMiddleware_InvalidTokenReturns401(t *testing.T) {
 	jwt := testfx.NewJwt(t, 15*time.Minute)
 
 	capture := &captureHandler{}
-	mw := AuthMiddleware(jwt)(capture)
+	mw := AuthMiddleware(jwt, testResponder())(capture)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer not.a.real.token")
@@ -125,7 +125,7 @@ func TestAuthMiddleware_ExpiredTokenReturns401(t *testing.T) {
 	}
 
 	capture := &captureHandler{}
-	mw := AuthMiddleware(jwt)(capture)
+	mw := AuthMiddleware(jwt, testResponder())(capture)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -142,7 +142,7 @@ func TestAuthMiddleware_EmptyBearerValueReturns401(t *testing.T) {
 	jwt := testfx.NewJwt(t, 15*time.Minute)
 
 	capture := &captureHandler{}
-	mw := AuthMiddleware(jwt)(capture)
+	mw := AuthMiddleware(jwt, testResponder())(capture)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer ")

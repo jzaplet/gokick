@@ -43,7 +43,7 @@ func TestBuildMiddlewareChain_RecoveryCaptureSeesClientIP(t *testing.T) {
 
 	rep := &ctxRecordingReporter{}
 	s := &Server{
-		config:   &config.Config{CookieSecure: false, CORSOrigin: "*"},
+		config:   &config.Config{CookieSecure: false, CORSOrigin: "https://app.example.com"},
 		logger:   silentLogger(),
 		reporter: rep,
 		// trustProxy=true so the extractor honours CF-Connecting-IP — the real

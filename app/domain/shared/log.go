@@ -10,8 +10,9 @@ import (
 // constants instead of bare strings so the field vocabulary stays consistent
 // across layers — that consistency is what makes logs queryable in aggregators
 // like Loki/Grafana. Keep this list to genuinely cross-cutting keys; single-use
-// component-local keys (addr, slot, nickname, …) stay as literals at their one
-// call site.
+// component-local keys (addr, nickname, run_id, …) stay as package-local
+// logKey* constants next to their call site (sloglint no-raw-keys forbids raw
+// string literals).
 const (
 	LogKeyTraceID    = "trace_id"
 	LogKeyUserID     = "user_id"
@@ -21,6 +22,10 @@ const (
 	LogKeyError      = "error"
 	LogKeyEvent      = "event"
 	LogKeyRunKind    = "run_kind"
+	// Panic/stack are cross-cutting: every recovery site (bus, scheduler, run
+	// worker, HTTP) logs the recovered value + goroutine stack under one vocabulary.
+	LogKeyPanic = "panic"
+	LogKeyStack = "stack"
 )
 
 // HTTP request keys. Cross-cutting because they travel from the presentation

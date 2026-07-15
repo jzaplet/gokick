@@ -1,6 +1,7 @@
 package response
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -60,7 +61,7 @@ func TestHandleError_RealDomainErrorMapping(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			HandleError(rec, tc.err)
+			discardResponder().HandleError(context.Background(), rec, tc.err)
 
 			if rec.Code != tc.wantCode {
 				t.Fatalf("status: got %d want %d", rec.Code, tc.wantCode)
@@ -103,7 +104,7 @@ func TestHandleError_RealDomainErrorsAreNotCollapsedTo500(t *testing.T) {
 	}
 	for _, err := range cases {
 		rec := httptest.NewRecorder()
-		HandleError(rec, err)
+		discardResponder().HandleError(context.Background(), rec, err)
 		if rec.Code == http.StatusInternalServerError {
 			t.Fatalf("%T was collapsed to 500; expected its own status", err)
 		}
@@ -118,7 +119,7 @@ func TestError_FieldErrorKeyedByFieldName(t *testing.T) {
 	rec := httptest.NewRecorder()
 	verr := &shared.ValidationError{Field: "nickname", Message: "nickname is required"}
 
-	Error(rec, verr.HTTPStatus(), verr)
+	discardResponder().Error(context.Background(), rec, verr.HTTPStatus(), verr)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status: got %d want 400", rec.Code)
@@ -146,7 +147,7 @@ func TestError_NonFieldErrorKeyedAsGeneral(t *testing.T) {
 	rec := httptest.NewRecorder()
 	aerr := &shared.AuthError{Message: "invalid credentials"}
 
-	Error(rec, aerr.HTTPStatus(), aerr)
+	discardResponder().Error(context.Background(), rec, aerr.HTTPStatus(), aerr)
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status: got %d want 401", rec.Code)
@@ -169,7 +170,7 @@ func TestError_FieldErrorWithEmptyFieldFallsToGeneral(t *testing.T) {
 	// Field is empty on purpose.
 	verr := &shared.ValidationError{Message: "something is wrong"}
 
-	Error(rec, http.StatusBadRequest, verr)
+	discardResponder().Error(context.Background(), rec, http.StatusBadRequest, verr)
 
 	body := decodeBody(t, rec)
 	if len(body) != 1 {
@@ -188,7 +189,7 @@ func TestJSON_SetsContentTypeStatusAndEncodesBody(t *testing.T) {
 		Foo string `json:"foo"`
 	}{Foo: "bar"}
 
-	JSON(rec, http.StatusCreated, payload)
+	discardResponder().JSON(context.Background(), rec, http.StatusCreated, payload)
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status: got %d want 201", rec.Code)
@@ -213,7 +214,7 @@ func TestJSON_SetsContentTypeStatusAndEncodesBody(t *testing.T) {
 func TestJSON_NilDataWritesHeaderAndStatusOnly(t *testing.T) {
 	rec := httptest.NewRecorder()
 
-	JSON(rec, http.StatusNoContent, nil)
+	discardResponder().JSON(context.Background(), rec, http.StatusNoContent, nil)
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status: got %d want 204", rec.Code)

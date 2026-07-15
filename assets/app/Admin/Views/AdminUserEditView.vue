@@ -64,31 +64,24 @@ const handleCancel = (): void => {
 };
 
 onMounted(async (): Promise<void> => {
-    const result = await authFetch<AdminUser[]>('GET', '/api/v1/admin/users');
+    const result = await authFetch<AdminUser>('GET', `/api/v1/admin/users/${userId}`);
 
     isFetching.value = false;
 
     if (result.success === false) {
+        // A missing / cross-tenant / superadmin id comes back as a 400 from the
+        // read-one endpoint — the same redirect as any load failure.
         error('Failed to load user.');
         void router.push({ name: 'admin-users' });
 
         return;
     }
 
-    const target = result.data.find((u) => u.id === userId);
-
-    if (target === undefined) {
-        error('User not found.');
-        void router.push({ name: 'admin-users' });
-
-        return;
-    }
-
     initial.value = {
-        nickname: target.nickname,
+        nickname: result.data.nickname,
         password: '',
-        email: target.email,
-        role: target.role,
+        email: result.data.email,
+        role: result.data.role,
     };
 });
 </script>

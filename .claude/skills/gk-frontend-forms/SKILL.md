@@ -33,7 +33,7 @@ Validace je **server-side**; frontend jen propisuje. Klíčový je vzor **kdo vl
 
 **Datový tok (oba vzory stejný):**
 - `errors` je `ref<TErrors>({})` — prázdný objekt = bez chyb, klíč existuje = pole má chybu.
-- Odpověď `authFetch` je rozlišená podle `result.success` (`ApiSuccess` / `ApiError` v `assets/app-ui/Fetch/types/`); na chybě je v `result.data` přesně objekt `{ <pole>: <hláška> }`.
+- Odpověď `authFetch` je rozlišená podle `result.success` (`ApiSuccess` / `ApiError` v `assets/app-ui/Fetch/types/`); na chybě z backendu je v `result.data` přesně objekt `{ <pole>: <hláška> }` (transportní selhání a rozbité 2xx tělo chodí unionem taky jako chyba, ale s `{ message: … }` — viz `/gk-frontend-fetch`).
 - `errors.value = result.data` — jedna řádka, žádné mapování. Klíče z backendu sedí 1:1 na typ `TErrors`.
 - Render: per-field chyba → `<Input :error="errors.<pole>" />` (`assets/app-ui/Inputs/Input.vue`, příp. `Select.vue`); obecná → `<ErrorAlert :message="errors.general" />` (`assets/app-ui/Alerts/ErrorAlert.vue`).
 
@@ -44,7 +44,8 @@ Přidáváš/upravuješ formulář (vzor self-contained):
 
 1. **Typ chyb** v `types/XxxErrors.ts` — všechny klíče optional, vždy `general`, názvy 1:1 jako pole backendu:
    ```typescript
-   export type ChangePasswordErrors = { general?: string; old_password?: string; new_password?: string };
+   export type ChangePasswordErrors = { general?: string; new_password?: string };
+(a k větě „názvy 1:1 jako pole backendu" doplnit: „— jen ta, ke kterým backend field-chybu opravdu vrací; špatné staré heslo chodí jako AuthError do general")
    ```
 2. **State** — `reactive` pro data, `ref` pro chyby a loading:
    ```typescript
@@ -73,7 +74,7 @@ Přidáváš/upravuješ formulář (vzor self-contained):
        delete errors.value[field];
    };
    ```
-   Na inputu: `@update:model-value="() => clearFieldError('old_password')"`.
+   Na inputu: `@update:model-value="() => clearFieldError('new_password')"`.
 5. **Render** — `<Input :error="errors.old_password" … />` + `<ErrorAlert :message="errors.general" />`.
 
 **Varianta split (formulář na víc obrazovkách):** state a `authFetch` přesuň do View, formulářová komponenta dostane `errors`/`isLoading` přes props a místo `authFetch` vysílá `emit('submit', { ...form })`, `emit('cancel')`, `emit('clearError', field)`. View pak řeší, kam po úspěchu přesměrovat. Viz `UserForm.vue` + `AdminUserCreateView.vue`.

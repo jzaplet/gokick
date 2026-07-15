@@ -30,10 +30,17 @@ func (noopDispatcher) Enqueue(context.Context, string, int, any, ...shared.Enque
 	return nil
 }
 
+// testEvent is a minimal shared.DomainEvent for the DispatchEvents-order test.
+type testEvent struct{}
+
+func (testEvent) EventName() string     { return "test.happened" }
+func (testEvent) OccurredAt() time.Time { return time.Unix(0, 0) }
+
 // newProductionCommandBus builds the CommandBus through the SAME provider the
 // binary uses (provideCommandBus), so the middleware chain under test cannot
-// drift from production the way a hand-assembled chain (or testfx.NewBuses,
-// which omits Audit) silently can.
+// drift from production the way a hand-assembled chain silently could.
+// testfx.NewBuses builds the same busmw.CommandChain (the single source), just
+// at the fixture layer rather than through the provider.
 func newProductionCommandBus(
 	t *testing.T,
 	fx *testfx.Fixture,
@@ -69,9 +76,9 @@ func TestCommandBus_AuditSurvivesBusinessRollback(t *testing.T) {
 
 	cmdBus := newProductionCommandBus(t, fx, noopDispatcher{})
 
-	err := bus.ExecVoid(
+	err := bus.DispatchVoid(
 		ctx,
-		cmdBus.Bus,
+		cmdBus,
 		"TamperUser",
 		skipPermCmd{},
 		func(ctx context.Context) error {
@@ -147,9 +154,9 @@ func TestCommandBus_RunEnqueueJoinsBusinessTransaction(t *testing.T) {
 
 	// Rollback case: enqueue a run then fail → the run row must NOT persist,
 	// proving the enqueue joined the rolled-back business tx.
-	_ = bus.ExecVoid(
+	_ = bus.DispatchVoid(
 		ctx,
-		cmdBus.Bus,
+		cmdBus,
 		"EnqueueRunThenFail",
 		skipPermCmd{},
 		func(ctx context.Context) error {
@@ -164,13 +171,117 @@ func TestCommandBus_RunEnqueueJoinsBusinessTransaction(t *testing.T) {
 	}
 
 	// Commit case: enqueue a run then succeed → the run row persists.
-	if e := bus.ExecVoid(ctx, cmdBus.Bus, "EnqueueRunThenCommit", skipPermCmd{}, func(ctx context.Context) error {
+	if e := bus.DispatchVoid(ctx, cmdBus, "EnqueueRunThenCommit", skipPermCmd{}, func(ctx context.Context) error {
 		return shared.RunDispatcherFromContext(ctx).Enqueue(ctx, "test.run", 0, map[string]any{"x": 2})
 	}); e != nil {
 		t.Fatalf("enqueue+commit: %v", e)
 	}
 	if n := runCount(); n != 1 {
 		t.Fatalf("run enqueue must commit with the business tx, got %d run rows", n)
+	}
+}
+
+// F-028: DispatchEventsMiddleware wraps TransactionMiddleware, so an event a
+// handler Collects is dispatched to the EventBus ONLY after the business tx
+// commits, and is discarded on rollback. This ordering is the one chain invariant
+// not otherwise pinned through the assembled production chain — a reorder in
+// CommandChain compiles and passes every other test. A spy event handler counts
+// fires: the event must fire once on commit and never on rollback.
+func TestCommandBus_EventsDispatchOnCommitNotRollback(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "events_order.db"))
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	fired := 0
+	eventBus := provideEventBus(logger, []bus.EventHandlerEntry{
+		{Event: "test.happened", Handler: func(context.Context, shared.DomainEvent) error {
+			fired++
+			return nil
+		}},
+	}, shared.NopReporter{})
+	cmdBus := provideCommandBus(
+		logger,
+		fx.DB,
+		security.NewPermissionChecker(),
+		eventBus,
+		noopDispatcher{},
+		sqliteaudit.NewRepository(fx.DB),
+		shared.NopReporter{},
+		security.NewDefaultTenantResolver(),
+	)
+
+	// Rollback case: collect an event then fail → the handler must NOT fire.
+	_ = bus.DispatchVoid(
+		ctx,
+		cmdBus,
+		"CollectThenFail",
+		skipPermCmd{},
+		func(ctx context.Context) error {
+			shared.EventCollectorFromContext(ctx).Collect(testEvent{})
+			return errors.New("boom")
+		},
+	)
+	if fired != 0 {
+		t.Fatalf("event must NOT dispatch when the business tx rolls back, fired=%d", fired)
+	}
+
+	// Commit case: collect an event then succeed → the handler fires exactly once.
+	if e := bus.DispatchVoid(ctx, cmdBus, "CollectThenCommit", skipPermCmd{}, func(ctx context.Context) error {
+		shared.EventCollectorFromContext(ctx).Collect(testEvent{})
+		return nil
+	}); e != nil {
+		t.Fatalf("collect+commit: %v", e)
+	}
+	if fired != 1 {
+		t.Fatalf("event must dispatch exactly once on commit, fired=%d", fired)
+	}
+}
+
+// F-008: SystemChain includes RunDispatcherMiddleware, so a durable run enqueued
+// from the operator-trusted CLI bus is a real, persisted INSERT — not the silent
+// no-op it was when SystemChain omitted the dispatcher. SystemChain runs
+// DispatchEvents and an event handler is explicitly steered at
+// RunDispatcherFromContext(ctx).Enqueue, so the dispatcher must be present; the
+// enqueue is durable (the CLI process can exit and a serve/worker picks the run
+// up). Without RunDispatcherMiddleware in SystemChain, RunDispatcherFromContext
+// returns the no-op and this run vanishes — the count stays 0 and this fails.
+func TestSystemCommandBus_RunEnqueueIsDurable(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "system_enqueue.db"))
+
+	registry, err := runapp.NewHandlerRegistry(map[string]runapp.Registration{
+		"test.run": {
+			Handler: func(context.Context, *run.Run, runapp.Checkpointer) error { return nil },
+		},
+	}, time.Second)
+	if err != nil {
+		t.Fatalf("registry: %v", err)
+	}
+	dispatcher := runapp.NewDispatcher(fx.Runs, registry)
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	eventBus := provideEventBus(logger, provideEventHandlers(), shared.NopReporter{})
+	sysBus := provideSystemCommandBus(
+		logger,
+		fx.DB,
+		eventBus,
+		sqliteaudit.NewRepository(fx.DB),
+		dispatcher,
+		shared.NopReporter{},
+	)
+
+	if e := bus.SystemDispatchVoid(ctx, sysBus, "CliEnqueueRun", skipPermCmd{}, func(ctx context.Context) error {
+		return shared.RunDispatcherFromContext(ctx).Enqueue(ctx, "test.run", 0, map[string]any{"x": 1})
+	}); e != nil {
+		t.Fatalf("system enqueue: %v", e)
+	}
+
+	var n int
+	if e := fx.DB.DB().GetContext(ctx, &n, `SELECT COUNT(*) FROM runs`); e != nil {
+		t.Fatalf("count runs: %v", e)
+	}
+	if n != 1 {
+		t.Fatalf("run enqueued via the system bus must persist durably, got %d run rows", n)
 	}
 }
 
@@ -184,9 +295,9 @@ func TestCommandBus_InjectsTenantIntoHandlerContext(t *testing.T) {
 	cmdBus := newProductionCommandBus(t, fx, noopDispatcher{})
 
 	var seen string
-	err := bus.ExecVoid(
+	err := bus.DispatchVoid(
 		ctx,
-		cmdBus.Bus,
+		cmdBus,
 		"ReadTenant",
 		skipPermCmd{},
 		func(ctx context.Context) error {

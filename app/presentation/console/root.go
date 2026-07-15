@@ -37,6 +37,12 @@ func NewRootCommand(
 		Use:     "app",
 		Short:   "Golang skeleton application",
 		Version: "0.1.0",
+		// A semantic command failure surfaces once, via main.go's slog.Error on the
+		// returned error. Without these, cobra ALSO prints its own "Error: …" to
+		// stderr and dumps the usage text, so one failure appears 2–3×. cobra
+		// honors the root command's flags for every subcommand.
+		SilenceErrors: true,
+		SilenceUsage:  true,
 	}
 
 	root.cmd.AddCommand(serveCmd.Command())

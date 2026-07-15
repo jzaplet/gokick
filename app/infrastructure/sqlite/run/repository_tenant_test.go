@@ -14,7 +14,7 @@ import (
 // tenant — but still defaults in single-tenant mode (unchanged behavior).
 func TestEnqueue_TenantFailClosed(t *testing.T) {
 	mt := testfx.NewMultitenant(t, filepath.Join(t.TempDir(), "run_enq_mt.db"))
-	r := run.NewRun("agent", []byte(`{}`), 0)
+	r, _ := run.NewRun("agent", []byte(`{}`), 0)
 	if r.TenantID != "" {
 		t.Fatalf("precondition: NewRun leaves TenantID empty, got %q", r.TenantID)
 	}
@@ -23,7 +23,8 @@ func TestEnqueue_TenantFailClosed(t *testing.T) {
 	}
 
 	st := testfx.New(t, filepath.Join(t.TempDir(), "run_enq_st.db"))
-	if err := st.Runs.Enqueue(context.Background(), run.NewRun("agent", []byte(`{}`), 0)); err != nil {
+	rn, _ := run.NewRun("agent", []byte(`{}`), 0)
+	if err := st.Runs.Enqueue(context.Background(), rn); err != nil {
 		t.Fatalf("single-tenant enqueue with no tenant must default (not error), got %v", err)
 	}
 }

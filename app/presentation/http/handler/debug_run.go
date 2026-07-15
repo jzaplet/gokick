@@ -19,11 +19,12 @@ import (
 // Repository DIRECTLY (bypassing the bus); it is registered only when config.RunDebug
 // is on (see server.registerRoutes) and must never be enabled in production.
 type DebugRunHandler struct {
+	resp *response.Responder
 	runs run.Repository
 }
 
-func NewDebugRunHandler(runs run.Repository) *DebugRunHandler {
-	return &DebugRunHandler{runs: runs}
+func NewDebugRunHandler(resp *response.Responder, runs run.Repository) *DebugRunHandler {
+	return &DebugRunHandler{resp: resp, runs: runs}
 }
 
 const debugRunMaxPayload = 4 << 10 // 4 KiB — e2e payloads are tiny (steps/sleep config)
@@ -38,26 +39,39 @@ var (
 // e2e:checkpoint. max_retries is an optional query param (default 0). Returns the
 // new run id; the worker picks it up on its next poll.
 func (h *DebugRunHandler) Enqueue(w http.ResponseWriter, r *http.Request) {
-	payload, err := io.ReadAll(io.LimitReader(r.Body, debugRunMaxPayload))
+	// Reject an oversize body (400) rather than silently truncating it — matches
+	// the request.DecodeJSON idiom instead of io.LimitReader's quiet cut, so a
+	// too-big payload can't enqueue a corrupt run that looks like success.
+	r.Body = http.MaxBytesReader(w, r.Body, debugRunMaxPayload)
+	payload, err := io.ReadAll(r.Body)
 	if err != nil {
-		response.Error(w, http.StatusBadRequest, err)
+		h.resp.Error(r.Context(), w, http.StatusBadRequest, err)
 		return
 	}
 
 	maxRetries := 0
 	if v := r.URL.Query().Get("max_retries"); v != "" {
 		if maxRetries, err = strconv.Atoi(v); err != nil || maxRetries < 0 {
-			response.Error(w, http.StatusBadRequest, errBadMaxRetries)
+			h.resp.Error(r.Context(), w, http.StatusBadRequest, errBadMaxRetries)
 			return
 		}
 	}
 
-	rn := run.NewRun(r.PathValue("kind"), payload, maxRetries)
-	if err := h.runs.Enqueue(r.Context(), rn); err != nil {
-		response.HandleError(w, err)
+	rn, err := run.NewRun(r.PathValue("kind"), payload, maxRetries)
+	if err != nil {
+		h.resp.Error(r.Context(), w, http.StatusBadRequest, err)
 		return
 	}
-	response.JSON(w, http.StatusAccepted, map[string]string{"id": rn.ID, "kind": rn.Kind})
+	if err := h.runs.Enqueue(r.Context(), rn); err != nil {
+		h.resp.HandleError(r.Context(), w, err)
+		return
+	}
+	h.resp.JSON(
+		r.Context(),
+		w,
+		http.StatusAccepted,
+		map[string]string{"id": rn.ID, "kind": rn.Kind},
+	)
 }
 
 // Get returns the run's observable state (status / checkpoint / counters) so a
@@ -65,23 +79,28 @@ func (h *DebugRunHandler) Enqueue(w http.ResponseWriter, r *http.Request) {
 func (h *DebugRunHandler) Get(w http.ResponseWriter, r *http.Request) {
 	rn, err := h.runs.FindByID(r.Context(), r.PathValue("id"))
 	if err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 		return
 	}
 	if rn == nil {
-		response.Error(w, http.StatusNotFound, errRunNotFound)
+		h.resp.Error(r.Context(), w, http.StatusNotFound, errRunNotFound)
 		return
 	}
-	response.JSON(w, http.StatusOK, viewRun(rn))
+	h.resp.JSON(r.Context(), w, http.StatusOK, viewRun(rn))
 }
 
 // Cancel sets the operator cancel signal (idempotent; a no-op on a terminal run).
 func (h *DebugRunHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 	if err := h.runs.RequestCancel(r.Context(), r.PathValue("id")); err != nil {
-		response.HandleError(w, err)
+		h.resp.HandleError(r.Context(), w, err)
 		return
 	}
-	response.JSON(w, http.StatusAccepted, map[string]string{"status": "cancel requested"})
+	h.resp.JSON(
+		r.Context(),
+		w,
+		http.StatusAccepted,
+		map[string]string{"status": "cancel requested"},
+	)
 }
 
 // debugRunView is the JSON projection of a run — the fields a lifecycle test needs.
@@ -99,9 +118,11 @@ type debugRunView struct {
 
 func viewRun(rn *run.Run) debugRunView {
 	v := debugRunView{
-		ID:              rn.ID,
-		Kind:            rn.Kind,
-		Status:          runStatus(rn),
+		ID:   rn.ID,
+		Kind: rn.Kind,
+		// Derive the label from the domain method — the ONE terminal/lease-state
+		// derivation — instead of re-expressing the switch here.
+		Status:          rn.Status(time.Now()),
 		Attempts:        rn.Attempts,
 		Reclaims:        rn.Reclaims,
 		Parks:           rn.Parks,
@@ -112,21 +133,4 @@ func viewRun(rn *run.Run) debugRunView {
 		v.State = json.RawMessage(rn.State)
 	}
 	return v
-}
-
-// runStatus derives a coarse lifecycle status from the row's terminal/lease columns
-// — the same derivation the engine uses, just projected for the harness.
-func runStatus(rn *run.Run) string {
-	switch {
-	case rn.CompletedAt != nil:
-		return "completed"
-	case rn.FailedAt != nil:
-		return "failed"
-	case rn.CancelledAt != nil:
-		return "cancelled"
-	case rn.LockedUntil != nil && rn.LockedUntil.After(time.Now()):
-		return "running"
-	default:
-		return "pending"
-	}
 }

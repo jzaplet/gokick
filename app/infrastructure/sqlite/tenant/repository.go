@@ -45,18 +45,19 @@ func (r *Repository) FindByName(ctx context.Context, name string) (*tenant.Tenan
 	return &t, err
 }
 
-// Count returns the total number of tenants (platform dashboard card).
-func (r *Repository) Count(ctx context.Context) (int, error) {
+// CountAcrossTenants returns the total number of tenants (platform dashboard card).
+// Cross-tenant escape hatch — the *AcrossTenants name keeps the isolation gate on it.
+func (r *Repository) CountAcrossTenants(ctx context.Context) (int, error) {
 	var n int
 	err := r.Conn(ctx).GetContext(ctx, &n, `SELECT COUNT(*) FROM tenants`)
 	return n, err
 }
 
-// FindAllWithUserCount is the platform-plane aggregate: each tenant plus its
+// OverviewAcrossTenants is the platform-plane aggregate: each tenant plus its
 // user count via a single GROUP BY tenant_id. The LEFT JOIN touches the
 // tenant-owned users table cross-tenant, so the query carries the platform
 // exempt marker (tenants itself is control-plane / exempt).
-func (r *Repository) FindAllWithUserCount(ctx context.Context) ([]tenant.Overview, error) {
+func (r *Repository) OverviewAcrossTenants(ctx context.Context) ([]tenant.Overview, error) {
 	var rows []tenant.Overview
 	err := r.Conn(ctx).SelectContext(ctx, &rows,
 		`SELECT t.id, t.name, t.plan, COUNT(u.id) AS user_count

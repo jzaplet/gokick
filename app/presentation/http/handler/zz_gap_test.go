@@ -16,7 +16,7 @@ import (
 // payload (mutating the literal "ok" or the status code in health.go falsifies
 // it).
 func TestHealthHandler_Check_Returns200WithOkBody(t *testing.T) {
-	h := NewHealthHandler()
+	h := NewHealthHandler(testResponder())
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -46,7 +46,7 @@ func TestSPAHandler_Serve(t *testing.T) {
 		"index.html": {Data: []byte("<!doctype html><title>spa-root</title>")},
 		"app.js":     {Data: []byte("console.log('hello')")},
 	}
-	h := NewSPAHandler(discardLogger(), fsys, SPAConfig{})
+	h := NewSPAHandler(testResponder(), discardLogger(), fsys, SPAConfig{})
 
 	t.Run("existing dotted asset is served from the FS", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/app.js", nil)
@@ -101,7 +101,7 @@ func TestSPAHandler_InjectsRuntimeConfig(t *testing.T) {
 			"<!doctype html><html><head><title>x</title></head><body></body></html>",
 		)},
 	}
-	h := NewSPAHandler(discardLogger(), fsys, SPAConfig{
+	h := NewSPAHandler(testResponder(), discardLogger(), fsys, SPAConfig{
 		SentryDSN:         "https://k@o1.ingest.sentry.io/2",
 		SentryEnvironment: "production",
 		SentryDebug:       true,
@@ -126,7 +126,7 @@ func TestSPAHandler_OmitsDebugMetaWhenDisabled(t *testing.T) {
 	fsys := fstest.MapFS{
 		"index.html": {Data: []byte("<head></head>")},
 	}
-	h := NewSPAHandler(discardLogger(), fsys, SPAConfig{SentryDebug: false})
+	h := NewSPAHandler(testResponder(), discardLogger(), fsys, SPAConfig{SentryDebug: false})
 
 	rec := httptest.NewRecorder()
 	h.Serve(rec, httptest.NewRequest(http.MethodGet, "/", nil))

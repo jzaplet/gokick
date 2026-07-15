@@ -35,19 +35,17 @@ func WithDelay(d time.Duration) EnqueueOption {
 	return func(o *EnqueueOptions) { o.Delay = d }
 }
 
-type runDispatcherKeyType struct{}
-
-var runDispatcherKey = runDispatcherKeyType{}
+type runDispatcherKey struct{}
 
 func ContextWithRunDispatcher(ctx context.Context, d RunDispatcher) context.Context {
-	return context.WithValue(ctx, runDispatcherKey, d)
+	return context.WithValue(ctx, runDispatcherKey{}, d)
 }
 
 // RunDispatcherFromContext returns the dispatcher injected by the bus middleware.
 // Outside the bus (CLI, tests) it returns a no-op dispatcher so handlers never
 // nil-check; enqueue calls are silently dropped.
 func RunDispatcherFromContext(ctx context.Context) RunDispatcher {
-	if d, ok := ctx.Value(runDispatcherKey).(RunDispatcher); ok {
+	if d, ok := ctx.Value(runDispatcherKey{}).(RunDispatcher); ok {
 		return d
 	}
 	return noopRunDispatcher{}

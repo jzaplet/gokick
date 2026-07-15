@@ -52,24 +52,23 @@ na názvu typu, jen na metodě). Klíčové je, kdo koho zná:
 - Domain ty metody jen **implementuje** a `response` **nikdy neimportuje** → drží se
   pravidlo vrstev (domain nezávisí na ničem nad sebou).
 
-`HandleError(w, err)` (`response.go:52`) udělá `errors.As(err, &httpErr)`:
+`HandleError(ctx, w, err)` — metoda na injektovaném `*response.Responder` (`response.go:90`) — udělá `errors.As(err, &httpErr)`:
 - sedne na `HTTPError` → vrátí `httpErr.HTTPStatus()` a originální hlášku;
 - nesedne → vrátí `500` a generickou `errInternal` ("internal server error"). Skutečná
   chyba se **nezveřejní** (neúniknou repo/panika interní detaily); dohledá se v logu přes
   `trace_id`.
 
-Routování hlášky do pole (`Error(w, status, err)`, `response.go:31`): jen
+Routování hlášky do pole (`Error(ctx, w, status, err)`, `response.go:49`): jen
 `ValidationError` má `ErrorField()`. Když je `Field` neprázdné → JSON klíč = jméno pole
 (`{"nickname": "..."}`). Prázdné pole nebo `AuthError`/`PermissionError` → `{"general": "..."}`.
 
 ## Recipe
 ### Recipe: vrátit chybu z handleru se správným statusem
 1. **Doménová / bus chyba** (z value objectu, command/query handleru přes bus) →
-   `response.HandleError(w, err)`. Status se odvodí z typu chyby automaticky.
-2. **Selhání dekódování requestu** (rozbitý JSON v těle) → status neplyne z domény, urči
-   ho ručně: `response.Error(w, http.StatusBadRequest, err)` (viz `admin_users.go:93`).
+   `h.resp.HandleError(r.Context(), w, err)` (metoda na injektovaném `*response.Responder`). Status se odvodí z typu chyby automaticky.
+2. **Selhání dekódování requestu** (rozbitý JSON v těle) → `request.DecodeJSON` vrací typovaný `*DecodeError`, který sám implementuje `HTTPStatus()` (`413` pro nadměrné tělo, `400` pro ostatní selhání), takže i tady stačí `h.resp.HandleError(r.Context(), w, err)` (viz `admin_users.go:126`). Status ručně neurčuj.
 3. Konstruuj chybu vždy **pointerem**: `&shared.AuthError{Message: "missing refresh token"}`
-   (viz `auth.go:111`), nikdy hodnotou — viz pitfall níže.
+   (viz `auth.go:117`), nikdy hodnotou — viz pitfall níže.
 
 ### Recipe: validační chyba navázaná na konkrétní pole
 1. Ve value objectu vrať `&shared.ValidationError{Field: "nickname", Message: "nickname is required"}`.

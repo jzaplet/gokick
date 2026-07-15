@@ -29,10 +29,10 @@ Když proměnnou v `.env` nenastavíš, použije se vestavěný **default** (zá
 
 Dva config structy v `app/infrastructure/config/config.go`, oba čtou přes stejný `getEnv` helper:
 
-- **`StartupConfig`** (`LoadStartup()`) — 5 polí: `LogFormat`, `LogLevel`, `SentryDSN`, `SentryEnvironment`, `SentryRelease`. Čte se **jako první** v `cmd/main.go`, **ještě před** `LoadConfig`. Důvod: logger a error reporter se staví hned na začátku startu, aby i selhání uvnitř `LoadConfig` šlo zalogovat a nahlásit.
-- **`Config`** (`LoadConfig()`) — hlavní struct (15 polí: port, DB, JWT, CORS, cookie, rate-limit, frontend Sentry…). Načítá se přes Wire DI (`container_provider.go` → `wire_gen.go`), tedy později při stavbě aplikace.
+- **`StartupConfig`** (`LoadStartup()`) — 6 polí: `LogFormat`, `LogLevel`, `SentryDSN`, `SentryEnvironment`, `SentryRelease`, `DotenvError` (odložená chyba parsování `.env` — logger při LoadStartup ještě neexistuje, `main` ji po jeho sestavení zaloguje jako Warn; `LoadConfig` na téže chybě později tvrdě selže). Čte se **jako první** v `cmd/main.go`, **ještě před** `LoadConfig`. Důvod: logger a error reporter se staví hned na začátku startu, aby i selhání uvnitř `LoadConfig` šlo zalogovat a nahlásit.
+- **`Config`** (`LoadConfig()`) — hlavní struct (26 polí: port, DB + pool, JWT, CORS, cookie, seed, multitenancy, rate-limit, frontend Sentry, run worker…). Načítá se přes Wire DI (`container_provider.go` → `wire_gen.go`), tedy později při stavbě aplikace.
 
-`getEnv(key, fallback)` čte `os.Getenv` a **prázdný řetězec bere jako nenastaveno** → vrátí fallback. To je jediné místo s `os.Getenv` v celém repu (CLAUDE.md invariant: „read all env through the config reader, not raw os.Getenv").
+`getEnv(key, fallback)` čte `os.Getenv` a **prázdný řetězec bere jako nenastaveno** → vrátí fallback. Spolu se sourozenci `getEnvInt` a `getEnvBool` je to jediné místo s `os.Getenv` v celém repu — všechno env teče přes config reader, `cmd/` nikdy nevolá raw `os.Getenv` (viz komentář v `cmd/main.go`).
 
 ```go
 func getEnv(key, fallback string) string {
@@ -50,6 +50,7 @@ Pozn.: `APP_SENTRY_ENVIRONMENT` čtou **oba** structy (BE reporter ze `StartupCo
 | `APP_HTTP_PORT` | `3000` | |
 | `APP_DB_PATH` | `./data/app.db` | |
 | `APP_DB_JOURNAL_MODE` | `WAL` | `.env.example` má `DELETE` (bind-mount dev DB) |
+| `APP_DB_MAX_CONNS` | `0` = auto | Pool cap. Auto = `clamp(2×NumCPU, 4, 32)`. SQLite serializuje zápisy → jde o paměť/backpressure, ne throughput |
 | `APP_JWT_SECRET` | `""` | povinný, validuje `NewJwtService` (ne config) |
 | `APP_JWT_ACCESS_EXPIRATION` | `15m` | parsuje `time.ParseDuration` |
 | `APP_JWT_REFRESH_EXPIRATION` | `168h` | parsuje `time.ParseDuration` |
@@ -61,7 +62,7 @@ Pozn.: `APP_SENTRY_ENVIRONMENT` čtou **oba** structy (BE reporter ze `StartupCo
 | `APP_LOG_FORMAT` / `APP_LOG_LEVEL` | `""` → `json` / `info` | ve `StartupConfig` |
 | `APP_SEED_ADMIN_PASSWORD` | `""` | povinný jen pro `./bin/app seed` |
 
-Bool proměnné: parsuje se přesně řetězec `"true"` → `true`, cokoli jiného → `false` (`getEnv(...) == "true"`).
+Bool proměnné: parsují se přísně přes `getEnvBool` — akceptuje jen `"true"` / `"false"`, prázdno = default, cokoli jiného shodí `LoadConfig` s chybou (překlep nesmí tiše znamenat `false` — u `APP_COOKIE_SECURE` by to znamenalo insecure cookies).
 
 ## Recipe
 
@@ -71,7 +72,7 @@ Bool proměnné: parsuje se přesně řetězec `"true"` → `true`, cokoli jiné
    - logger/reporter na začátku startu → přidej pole do `StartupConfig` + řádek v `LoadStartup()`.
    - cokoli jiného (běh aplikace, DI) → přidej pole do `Config` + řádek v `LoadConfig()`.
 2. Čti vždy přes `getEnv("APP_X", "<default>")` — nikdy `os.Getenv` napřímo.
-3. Pro duration použij `time.ParseDuration` (vrať chybu jako u `APP_JWT_*`); pro bool `getEnv(...) == "true"`.
+3. Pro duration použij `time.ParseDuration` (vrať chybu jako u `APP_JWT_*`); pro bool přidej klíč do smyčky s `getEnvBool`, pro int použij `getEnvInt` — obě helpery vrací chybu, tu propaguj.
 4. Přidej řádek do `.env.example` s komentářem (formát + default + kdy je potřeba).
 5. Zdokumentuj v tabulce `docs/framework/configuration.md`.
 6. Pokud měníš signaturu, kterou bere Wire → `make di`.
@@ -79,7 +80,7 @@ Bool proměnné: parsuje se přesně řetězec `"true"` → `true`, cokoli jiné
 ## Invariants & pitfalls
 
 - **Jediná cesta k env je `getEnv`.** Žádné `os.Getenv` roztroušené po `cmd/` — vše přes config reader (CLAUDE.md invariant).
-- **`LoadConfig` jen parsuje, nevaliduje doménově.** Jediné, na čem může selhat, je špatný duration (`APP_JWT_*`). Ostatní validace žijí jinde:
+- **`LoadConfig` selže rychle na rozbité konfiguraci.** Může selhat na: rozbitém `.env` (parse error je fatální), překlepu v bool (`getEnvBool` bere jen `true`/`false`), špatném intu (`APP_DB_MAX_CONNS`, run-worker limity), špatném duration a nekladné `APP_JWT_*` expiraci (sign guard — token nesmí vzniknout prošlý/nekonečný). Hlubší doménové validace žijí jinde: Ostatní validace žijí jinde:
   - JWT secret min. **32 znaků** → `NewJwtService` (`minJWTSecretLen` v `app/infrastructure/security/jwt.go`). Chybějící/krátký secret shodí stavbu aplikace přes Wire, ne `LoadConfig`.
   - Journal mode whitelist `WAL|DELETE|MEMORY` → `NewSqliteManager` (`app/infrastructure/database/sqlite_manager.go`), ne config.
 - **Default v kódu ≠ hodnota v `.env.example`** u dvou proměnných: `APP_COOKIE_SECURE` (kód `true`, soubor `false`) a `APP_DB_JOURNAL_MODE` (kód `WAL`, soubor `DELETE`). `.env.example` je laděný na lokální dev; produkce drží kódové defaulty.

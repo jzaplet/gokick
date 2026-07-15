@@ -70,6 +70,32 @@ func TestLogoutHandler_WithoutClaimsReturnsAuthError(t *testing.T) {
 	}
 }
 
+func TestLogoutHandler_RecordsAuditEvent(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "logout_audit.db"))
+	u := fx.SeedUser(t, "alice", "pwd", "user")
+	fx.SeedRefreshToken(t, u.ID, time.Now().Add(24*time.Hour))
+
+	authCtx, collector := shared.ContextWithAuditCollector(
+		shared.ContextWithClaims(ctx, &shared.AuthClaims{
+			UserID: u.ID, Role: "user", Nickname: u.Nickname,
+		}),
+	)
+
+	handler := NewLogoutHandler(fx.Tokens)
+	if err := handler.Handle(authCtx, LogoutCommand{}); err != nil {
+		t.Fatalf("logout: %v", err)
+	}
+
+	events := collector.Flush()
+	if len(events) != 1 {
+		t.Fatalf("expected exactly one audit event, got %d: %+v", len(events), events)
+	}
+	if events[0].Action != "auth.logout" || events[0].TargetID != u.ID {
+		t.Fatalf("expected auth.logout for %s, got %+v", u.ID, events[0])
+	}
+}
+
 func TestLogoutCommand_RequiredPermission(t *testing.T) {
 	if got := (LogoutCommand{}).RequiredPermission(); got != "auth:logout" {
 		t.Fatalf("expected permission auth:logout, got %q", got)
