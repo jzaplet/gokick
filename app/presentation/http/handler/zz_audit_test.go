@@ -187,9 +187,13 @@ func TestAdminUsersHandler_List_Returns200WithSeededUsers(t *testing.T) {
 		t.Fatalf("status: got %d want 200; body=%s", rec.Code, rec.Body.String())
 	}
 
-	var dtos []adminUserDTO
-	if err := json.Unmarshal(rec.Body.Bytes(), &dtos); err != nil {
+	var body adminUserListResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode list body: %v", err)
+	}
+	dtos := body.Items
+	if body.Total != len(dtos) {
+		t.Fatalf("total %d != %d items on an unfiltered single page", body.Total, len(dtos))
 	}
 
 	byNick := make(map[string]adminUserDTO, len(dtos))

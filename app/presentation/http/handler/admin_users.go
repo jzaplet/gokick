@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"strconv"
 
 	"gokick/app/application/bus"
 	usercmd "gokick/app/application/user/command"
@@ -70,15 +71,40 @@ type updateUserRequest struct {
 	Role     string `json:"role"`
 }
 
-func (h *AdminUsersHandler) List(w http.ResponseWriter, r *http.Request) {
-	q := userqry.ListUsersQuery{}
+//gkts:assets/app/Admin/types/AdminUserListResponse.ts AdminUserListResponse
+type adminUserListResponse struct {
+	Items []adminUserDTO `json:"items"`
+	Total int            `json:"total"`
+}
 
-	users, err := bus.Query(
+// listUsersQueryFromRequest maps the grid's query string onto the query
+// object. Values arrive raw — the query handler whitelists sort and clamps
+// paging, so a hand-edited deep link degrades gracefully instead of erroring.
+func listUsersQueryFromRequest(r *http.Request) userqry.ListUsersQuery {
+	qs := r.URL.Query()
+	page, _ := strconv.Atoi(qs.Get("page"))
+	perPage, _ := strconv.Atoi(qs.Get("per_page"))
+	return userqry.ListUsersQuery{
+		Page:     page,
+		PerPage:  perPage,
+		SortBy:   qs.Get("sort_by"),
+		SortDir:  qs.Get("sort_dir"),
+		Nickname: qs.Get("nickname"),
+		Email:    qs.Get("email"),
+		Role:     qs.Get("role"),
+		Active:   qs.Get("active"),
+	}
+}
+
+func (h *AdminUsersHandler) List(w http.ResponseWriter, r *http.Request) {
+	q := listUsersQueryFromRequest(r)
+
+	page, err := bus.Query(
 		r.Context(),
 		h.queryBus,
 		"ListUsers",
 		q,
-		func(ctx context.Context) ([]user.User, error) {
+		func(ctx context.Context) (user.ListPage, error) {
 			return h.listUsers.Handle(ctx, q)
 		},
 	)
@@ -88,12 +114,15 @@ func (h *AdminUsersHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dtos := make([]adminUserDTO, len(users))
-	for i, u := range users {
+	dtos := make([]adminUserDTO, len(page.Items))
+	for i, u := range page.Items {
 		dtos[i] = toAdminUserDTO(u)
 	}
 
-	h.resp.JSON(r.Context(), w, http.StatusOK, dtos)
+	h.resp.JSON(r.Context(), w, http.StatusOK, adminUserListResponse{
+		Items: dtos,
+		Total: page.Total,
+	})
 }
 
 // Get returns one user in the caller's tenant (GET /admin/users/{id}) — the
