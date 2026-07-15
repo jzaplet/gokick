@@ -42,10 +42,9 @@ Validace je **server-side**; frontend jen propisuje. Klíčový je vzor **kdo vl
 ## Recipe
 Přidáváš/upravuješ formulář (vzor self-contained):
 
-1. **Typ chyb** v `types/XxxErrors.ts` — všechny klíče optional, vždy `general`, názvy 1:1 jako pole backendu:
+1. **Typ chyb** v `types/XxxErrors.ts` — všechny klíče optional, vždy `general`, názvy 1:1 jako pole backendu — jen ta, ke kterým backend field-chybu opravdu vrací (špatné staré heslo chodí jako AuthError do `general`):
    ```typescript
    export type ChangePasswordErrors = { general?: string; new_password?: string };
-(a k větě „názvy 1:1 jako pole backendu" doplnit: „— jen ta, ke kterým backend field-chybu opravdu vrací; špatné staré heslo chodí jako AuthError do general")
    ```
 2. **State** — `reactive` pro data, `ref` pro chyby a loading:
    ```typescript
@@ -83,7 +82,7 @@ Přidáváš/upravuješ formulář (vzor self-contained):
 - **Nulová FE validace.** Single source of truth je doména. Frontend nikdy nekontroluje délku/formát/povinnost — jen `type` (nativní browser kontrola). Duplikát pravidel se rozejde a útočník ho obejde.
 - **`result.success === false`, ne `!result.success`.** Projekt vynucuje explicitní boolean check (CLAUDE.md). Stejně `=== true` u `if`.
 - **`authFetch` na chráněné, `apiFetch` na veřejné.** `authFetch` (z `@/app-ui/Auth`) navíc na 401 jednou auto-refreshne token — formulář se o auth stav nestará. Veřejné endpointy bez retry → `apiFetch` z `@/app-ui/Fetch`.
-- **Klíče `TErrors` musí sedět na názvy polí backendu.** Pole, jehož jméno nemá v `TErrors` protějšek — a `ValidationError` s prázdným `Field` — spadne do `general` (fallback `body["general"]` v `app/presentation/http/response/response.go`). Když chyba „mizí" do alertu místo k poli, zkontroluj, že se klíče shodují.
+- **Klíče `TErrors` musí sedět na názvy polí backendu — a hlídá to gate.** `make errfields-check` (v `make lint`, `gk errfields`) porovnává Go `ValidationError{Field: …}` literály s klíči všech `*Errors` typů obousměrně: field bez FE domova i fantomový FE klíč = fail; `general` je konvenční catch-all, ne-formulářové fieldy nesou `//gkerrf:exempt <důvod>`. Pole, jehož jméno nemá v `TErrors` protějšek — a `ValidationError` s prázdným `Field` — spadne do `general` (fallback `body["general"]` v `app/presentation/http/response/response.go`). Když chyba „mizí" do alertu místo k poli, zkontroluj, že se klíče shodují.
 - **Jedna chyba, jeden klíč.** Backend vrací první chybu, na kterou narazí — víc klíčů najednou nechodí. Nepiš frontend tak, že čeká kolekci chyb.
 
 ## Related
