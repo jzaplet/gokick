@@ -37,6 +37,8 @@ const toggle = (): void => {
     <div>
         <button
             type="button"
+            :aria-expanded="isOpen"
+            :aria-label="hasActiveFilters === true ? `${label} (active filters applied)` : undefined"
             :class="[
                 'inline-flex items-center gap-1.5 cursor-pointer',
                 'px-3 py-1.5 rounded-lg',

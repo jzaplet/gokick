@@ -105,6 +105,7 @@ const isManageable = (): boolean => {
                     <Button
                         variant="secondary"
                         size="xs"
+                        aria-label="Activate user"
                         :disabled="isManageable() === false"
                         @click="$emit('activate', user)"
                     >

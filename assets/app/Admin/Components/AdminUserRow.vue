@@ -97,6 +97,7 @@ const isSelf = (): boolean => {
                     <Button
                         variant="secondary"
                         size="xs"
+                        aria-label="Activate user"
                         @click="$emit('activate', user)"
                     >
                         <TapIcon />

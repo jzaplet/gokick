@@ -63,6 +63,7 @@ const goTo = (target: number): void => {
             <button
                 type="button"
                 :disabled="page <= 1"
+                aria-label="Previous page"
                 :class="[
                     'p-1.5 rounded border border-gray-300',
                     'hover:bg-gray-50 cursor-pointer',
@@ -89,6 +90,7 @@ const goTo = (target: number): void => {
             <button
                 type="button"
                 :disabled="page >= totalPages"
+                aria-label="Next page"
                 :class="[
                     'p-1.5 rounded border border-gray-300',
                     'hover:bg-gray-50 cursor-pointer',
