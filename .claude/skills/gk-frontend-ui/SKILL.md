@@ -33,7 +33,7 @@ Kód je rozdělený na dvě poloviny:
 ## How it works
 
 **Doménová organizace** (`assets/app/<Domain>/`, reálné domény: `Admin`, `Auth`, `Dashboard`, `Home`, `Layout`, `Platform`, `Profile`):
-- **`Views/`** — routované obrazovky, jsou to **orchestrátory**: poskládají layout, namountují pár komponent, předají props. Business logika sem nepatří. Příklad: `app/Admin/Views/AdminUsersView.vue`.
+- **`Views/`** — routované obrazovky, jsou to **orchestrátory**: poskládají layout, namountují pár komponent, předají props. Business logika sem nepatří. Příklad: `assets/app/Admin/Views/AdminUsersView.vue`.
 - **`Components/`** — doménové, samostatné kusy: formuláře (`UserForm.vue`), řádky gridu (`AdminUserRow.vue`), karty. Tabulku samotnou doména nevlastní — skládá ji sdílený `app-ui/DataGrid`, kterému doména dodá jen `<tr>` do slotu `#rows`.
 - **`types/`** — typové definice, jeden typ na soubor. Wire DTO typy (`AdminUser.ts`, `UserFormData.ts`) generuje z Go structů `make ts-gen` (tsgen, hlavička `DO NOT EDIT` — needituj ručně, uprav Go struct); ručně píšeš jen FE-lokální typy (`UserFormErrors.ts`).
 
@@ -72,7 +72,7 @@ Kód je rozdělený na dvě poloviny:
 - **Každá route deklaruje `meta.requiresAuth`** — bez něj neprojde typ `AppRoute`. Zrcadlí backendové `Permissioned` / `SkipPermission`.
 - **Žádné hard-coded permission stringy ve `assets/`** — vždy `Permission` enum z `@/app/Auth/enums/resources` (jeden zdroj pravdy, zrcadlí backend). Detail → `/gk-permissions`.
 - **Tailwind v template:** dlouhé seznamy tříd (5+ utilit) přes `:class="[...]"` array, krátké (1–4) jako plain `class="..."`. SVG `d` atribut lámej po ~120 znacích.
-- **`app-ui/` má výjimku** na single-word názvy komponent (`Button`, `Input`) — jinde `multi-word-component-names`. Importuj z barrel `index.ts`, ne z vnitřního souboru.
+- **`app-ui/` má výjimku** na single-word názvy komponent (`Button`, `Input`) — jinde `multi-word-component-names`. Barrel `index.ts` mají jen `Fetch/` a `Auth/` (dvě složky s veřejným API místo hromady souborů) — z těch importuj přes barrel. Zbytek `app-ui/` barrel nemá a importuje se přímo souborem: `@/app-ui/DataGrid/DataGrid.vue`.
 
 ## Related
 

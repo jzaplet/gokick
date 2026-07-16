@@ -42,7 +42,7 @@ ověří, že všechno (styl, architektura, testy) je v pořádku, než to pošl
 
 ### Kde testy žijí (layout)
 
-- **Go testy** (`_test.go`) — VŽDY vedle svého balíčku (`app/**`), nikdy v `tests/`.
+- **Go testy** (`_test.go`) — VŽDY vedle svého balíčku (`app/**`, `cmd/**`, `tools/gk/**`), nikdy v `tests/`.
   Jazykový idiom, ne preference: white-box testy potřebují package scope
   (neexportované symboly) a `zz_*` konformanční gaty skenují vlastní adresář
   přes `runtime.Caller`. Přesun by je rozbil.
@@ -87,7 +87,7 @@ svůj produkční balíček (vypadá to jako cyklus), jsou v `.go-arch-lint.yml`
 `excludeFiles`.
 
 ### Quality gate
-`make test` = `yarn test` (vitest) + `go test ./app/... ./cmd/...`.
+`make test` = `yarn test` (vitest) + `go test ./app/... ./cmd/...` + `cd tools/gk && go test ./...` (dev nástroje tsgen/boundary/errfields/docpaths jsou vlastní modul, takže je `./app/...` nepokrývá).
 `make lint` = ESLint + `vue-tsc` (type-check) + `knip` (dead code) + `golangci-lint` + `make arch-check` (go-arch-lint) + `format-check` (golines) + `ts-check` (Go→TS parita typů) + `boundary-check` (wire DTO hranice) + `errfields-check` (parita chybových polí) + `documan-lint`.
 CI (`.github/workflows/validate.yml`): job `validate` = `make install` → `make lint` → `make test` → `make build`, se `SKIP_DOCUMAN=1` (dokumentaci v CI validuje samostatný `.github/workflows/documan.yml` přes `docker/documan/Dockerfile`); paralelní job `e2e` spouští `make e2e` (durable-run process-lifecycle testy, viz `tests/e2e/README.md`).
 

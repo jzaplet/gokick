@@ -23,7 +23,7 @@ transakci, audit, eventy). Handler tak řeší jen byznys, nic víc.
   dispatchnou až po commitu, kdy běží autorizace.
 - Když přidáváš nový handler a ladíš „proč mi to vrací error, že chybí permission".
 - **NEtýká** se psaní samotných handlerů (→ `/gk-commands`, `/gk-queries`),
-  domain eventů (→ `/gk-domain-events`), ani DI registrace busů (→ `/gk-di`). — a stejně opravit oba odkazy v Related (`/gk-domain-events`, `/gk-di`).
+  domain eventů (→ `/gk-domain-events`), ani DI registrace busů (→ `/gk-di`).
 
 ## For non-tech / juniors
 Představ si bus jako **pásovou linku ve fabrice**. Na začátek položíš požadavek
@@ -159,7 +159,7 @@ Command, který něco vrací (bulk operace vrací počet dotčených řádků), 
 ## Related
 - Skills: `/gk-commands`, `/gk-queries` (psaní handlerů), `/gk-domain-events`
   (domain eventy), `/gk-audit` (audit trail), `/gk-runs` (durable runs),
-  `/gk-wire` (DI registrace busů)
+  `/gk-di` (DI registrace busů)
 - Kód: `app/application/bus/` (`bus.go`, `command.go`, `system_command.go`, `query.go`, `event.go`, `dispatch.go`, `exec.go`, `void.go`), `app/application/bus/middleware/` (`base.go`,
   `recovery.go`, `logging.go`, `authorize.go`, `tenant.go`, `audit.go`, `run_dispatcher.go`,
   `events.go`, `transaction.go`), `app/infrastructure/di/container_provider.go`,

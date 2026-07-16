@@ -117,8 +117,7 @@ kontexty jsou vyjmenované ručně.
   `bus` v doméně.
 - **Žádné cross-context importy.** `domain/user/` nesmí importovat `domain/token/`.
   Sdílené typy patří do `domain/shared/`.
-- **Command/query přes bus, nikdy přímo.** HTTP handler posílá přes
-  **Command/query přes bus, nikdy přímo.** HTTP handler posílá přes `bus.Dispatch` / `bus.DispatchVoid` (command) a `bus.Query` (query) — typované na `*CommandBus` / `*QueryBus`, takže záměna busu neprojde kompilací; bus dodá recovery, logging, autorizaci, tenant a transakci.
+- **Command/query přes bus, nikdy přímo.** HTTP handler posílá přes `bus.Dispatch` / `bus.DispatchVoid` (command) a `bus.Query` (query) — typované na `*CommandBus` / `*QueryBus`, takže záměna busu neprojde kompilací; bus dodá recovery, logging, autorizaci, tenant a transakci.
 - **Každý command/query deklaruje permission** — buď `Permissioned`
   (`RequiredPermission() string`) nebo `SkipPermission` (`SkipPermissionCheck()`),
   oba z `app/domain/shared/permission.go`. Když chybí obojí, `AuthorizeMiddleware`

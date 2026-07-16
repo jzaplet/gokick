@@ -105,19 +105,6 @@ result, err := bus.Query(
 )
 ```
 
-```go
-// app/presentation/http/handler/dashboard.go
-result, err := bus.Exec(
-    r.Context(),
-    h.queryBus.Bus,            // *bus.QueryBus
-    "GetAdminDashboard",        // jméno do logů
-    q,                          // samotná query (nese permission)
-    func(ctx context.Context) (dashboardqry.AdminDashboard, error) {
-        return h.adminDash.Handle(ctx, q)
-    },
-)
-```
-
 **QueryBus middleware chain** je krátký a jen čtecí — `BaseChain` v
 `app/application/bus/middleware/base.go`:
 

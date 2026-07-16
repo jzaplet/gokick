@@ -163,7 +163,7 @@ Taking `*CommandBus`/`*QueryBus` makes the bus↔operation pairing compile-check
 | `config/` | `LoadConfig()` from `.env` via godotenv → `*Config` struct |
 | `database/` | `SqliteManager` (connection, WAL, `_txlock=immediate`, `busy_timeout`, `foreign_keys` via DSN), `MigrationManager` (Goose), transaction context (`BeginTx`/`Commit`/`Rollback`) |
 | `sqlite/` | `BaseRepository` (embed in repos for transparent tx support via `r.Conn(ctx)`) |
-| `sqlite/user/` | `user.Repository` impl (incl. `RecordFailedLogin` / `ResetFailedLogin` / `RecordLogin` raw-pool on purpose; tenant-scoped admin reads/writes + cross-tenant platform reads) |
+| `sqlite/user/` | `user.Repository` impl (incl. `RecordFailedLogin` / `ResetFailedLogin` / `RecordLogin` raw-pool on purpose; tenant-scoped admin reads/writes + cross-tenant platform reads/writes — the `*AcrossTenants` set, superadmin rows excluded by the statements themselves) |
 | `sqlite/token/` | `token.Repository` implementation |
 | `sqlite/run/` | `run.Repository` implementation (owner-fenced; julianday/ms time discipline shared via `sqlite/sqltime.go`) |
 | `sqlite/tenant/` | `tenant.Repository` implementation (row-level multitenancy boundary) |

@@ -89,7 +89,9 @@ Přidání nové akce nad **existující** entitou (např. další command):
    `app/infrastructure/sqlite/<ctx>/repository.go` (vždy přes `r.Conn(ctx)`),
    a její podpis do `Repository` interface v `app/domain/<ctx>/`.
 2. **Command / Query** — nový soubor v `app/application/<ctx>/command/`
-   (zápis) nebo `…/query/` (čtení): V kroku 2: „struct, `RequiredPermission()` **nebo** `SkipPermissionCheck()` (interface `SkipPermission`), `NewXxxHandler(...)` constructor, `Handle(ctx, …)`". V Invariants: „— `RequiredPermission()` nebo explicitní `SkipPermissionCheck()`.".
+   (zápis) nebo `…/query/` (čtení): struct, `RequiredPermission()` **nebo**
+   `SkipPermissionCheck()` (interface `SkipPermission`), `NewXxxHandler(...)`
+   constructor, `Handle(ctx, …)`.
 3. **Handler** — přidej metodu na existující handler v
    `app/presentation/http/handler/` (DTO + `request.DecodeJSON` + `bus.DispatchVoid`/
    `bus.Query`). Nový handler = nový soubor + constructor + pole na `Server`.
@@ -113,7 +115,8 @@ do `sqlite_repos`. Detail: `/gk-architecture`.
 ## Invariants & pitfalls
 
 - **Každý command/query MUSÍ deklarovat permission** — `RequiredPermission()`
-  nebo explicitní `SkipPermission()`. Zapomenutí obojího = runtime error z
+  nebo explicitní `SkipPermissionCheck()` (interface `SkipPermission`).
+  Zapomenutí obojího = runtime error z
   `AuthorizeMiddleware`. A permissioned command/query patří i do
   `providePermissionsRegistry()`.
 - **Bus dispatch je povinný** — z handleru nikdy nevolej `Handle(...)` přímo.

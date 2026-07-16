@@ -65,7 +65,7 @@ Plníš jen `Action`, `TargetType`, `TargetID`, `Metadata`. Zbytek doplní middl
 **3. Repozitář píše mimo transakci** — `app/infrastructure/sqlite/audit/repository.go`
 volá `r.DB.DB()` (raw connection pool), **ne** `r.Conn(ctx)`. Proto INSERT
 necommituje spolu s business transakcí a přežije její rollback. Schema:
-`migrations/20260517000003_create_audit_log.sql`.
+`migrations/20260327000001_init_schema.sql`.
 
 **Pozice v chainu (klíčová)** — audit leží **vně** transakce:
 ```
@@ -121,6 +121,6 @@ Přidat audit zápis do command handleru:
   per-request collector vzor)
 - Kód: `app/domain/shared/audit.go`, `app/application/bus/middleware/audit.go`,
   `app/infrastructure/sqlite/audit/repository.go`,
-  `migrations/20260517000003_create_audit_log.sql`,
+  `migrations/20260327000001_init_schema.sql`,
   `app/infrastructure/di/container_provider.go` (`wire.Bind` AuditLogger),
   `app/presentation/http/middleware/ip.go` (actor IP)
