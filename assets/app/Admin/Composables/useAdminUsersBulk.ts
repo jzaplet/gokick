@@ -1,4 +1,4 @@
-import type { ComputedRef } from 'vue';
+import type { ComputedRef, Ref } from 'vue';
 import { computed, ref } from 'vue';
 import type { GridState } from '@/app-ui/DataGrid/createGridState';
 import type { BulkAction } from '@/app-ui/BulkActions/BulkActionBar.vue';
@@ -14,12 +14,20 @@ type AdminGridFilters = {
     active: string;
 };
 
-type BulkActionKey = 'activate' | 'deactivate' | 'delete';
+// Activation is deliberately NOT a bulk action — it is a per-row action on
+// inactive users (aibobr parity), still confirmed and still served by the
+// bulk-active endpoint with a single id.
+type BulkActionKey = 'deactivate' | 'delete';
 
 type BulkConfirm = {
     title: string;
     message: string;
     confirmText: string;
+};
+
+type ActivateTarget = {
+    id: string;
+    nickname: string;
 };
 
 type AdminUsersBulk = {
@@ -28,18 +36,21 @@ type AdminUsersBulk = {
     handleBulkAction: (key: string) => void;
     runPendingBulk: () => Promise<void>;
     cancelPendingBulk: () => void;
+    userToActivate: Ref<ActivateTarget | null>;
+    askActivate: (user: ActivateTarget) => void;
+    cancelActivate: () => void;
+    runActivate: () => Promise<void>;
 };
 
 // The bulk half of the admin users grid: builds the dual-mode payload (ids, or
 // all_filtered + the CURRENT filter set) for the two bulk endpoints, and
-// resets selection + reloads after success. EVERY bulk action is destructive
-// at scale, so each one goes through the confirm modal — nothing fires until
-// runPendingBulk. Extracted from the view — views stay orchestrators.
+// resets selection + reloads after success. EVERY destructive action is
+// confirmed first — nothing fires until runPendingBulk / runActivate.
+// Extracted from the view — views stay orchestrators.
 export const useAdminUsersBulk = (grid: GridState<AdminGridFilters>): AdminUsersBulk => {
     const { success, error } = useToast();
 
     const bulkActions: BulkAction[] = [
-        { key: 'activate', label: 'Activate' },
         { key: 'deactivate', label: 'Deactivate' },
         { key: 'delete', label: 'Delete' },
     ];
@@ -49,13 +60,6 @@ export const useAdminUsersBulk = (grid: GridState<AdminGridFilters>): AdminUsers
     const bulkConfirm = computed((): BulkConfirm | null => {
         const count = String(grid.selectedCount.value);
 
-        if (pendingBulk.value === 'activate') {
-            return {
-                title: 'Activate selected users',
-                message: `Activate ${count} selected user(s)?`,
-                confirmText: 'Activate',
-            };
-        }
         if (pendingBulk.value === 'deactivate') {
             return {
                 title: 'Deactivate selected users',
@@ -74,7 +78,7 @@ export const useAdminUsersBulk = (grid: GridState<AdminGridFilters>): AdminUsers
         return null;
     });
 
-    const runBulkActive = async (setActive: boolean): Promise<void> => {
+    const runBulkDeactivate = async (): Promise<void> => {
         const body: BulkActiveUsersRequest = {
             ids: grid.selectedIds(),
             all_filtered: grid.isAllFilteredSelected.value,
@@ -82,7 +86,7 @@ export const useAdminUsersBulk = (grid: GridState<AdminGridFilters>): AdminUsers
             email: grid.filters.email,
             role: grid.filters.role,
             active: grid.filters.active,
-            set_active: setActive,
+            set_active: false,
         };
         const result = await authFetch<null, { general?: string }, BulkActiveUsersRequest>(
             'POST',
@@ -96,7 +100,7 @@ export const useAdminUsersBulk = (grid: GridState<AdminGridFilters>): AdminUsers
             return;
         }
 
-        success(setActive === true ? 'Selected users activated.' : 'Selected users deactivated.');
+        success('Selected users deactivated.');
         grid.clearSelection();
         await grid.reload();
     };
@@ -128,7 +132,7 @@ export const useAdminUsersBulk = (grid: GridState<AdminGridFilters>): AdminUsers
     };
 
     const handleBulkAction = (key: string): void => {
-        if (key === 'activate' || key === 'deactivate' || key === 'delete') {
+        if (key === 'deactivate' || key === 'delete') {
             pendingBulk.value = key;
         }
     };
@@ -140,10 +144,8 @@ export const useAdminUsersBulk = (grid: GridState<AdminGridFilters>): AdminUsers
 
         if (action === 'delete') {
             await runBulkDelete();
-        } else if (action === 'activate') {
-            await runBulkActive(true);
         } else if (action === 'deactivate') {
-            await runBulkActive(false);
+            await runBulkDeactivate();
         }
     };
 
@@ -151,5 +153,61 @@ export const useAdminUsersBulk = (grid: GridState<AdminGridFilters>): AdminUsers
         pendingBulk.value = null;
     };
 
-    return { bulkActions, bulkConfirm, handleBulkAction, runPendingBulk, cancelPendingBulk };
+    // Per-row activation: the confirm modal arms here, the endpoint is the
+    // bulk-active one narrowed to a single id.
+    const userToActivate = ref<ActivateTarget | null>(null);
+
+    const askActivate = (user: ActivateTarget): void => {
+        userToActivate.value = user;
+    };
+
+    const cancelActivate = (): void => {
+        userToActivate.value = null;
+    };
+
+    const runActivate = async (): Promise<void> => {
+        if (userToActivate.value === null) {
+            return;
+        }
+
+        const target = userToActivate.value;
+
+        userToActivate.value = null;
+
+        const body: BulkActiveUsersRequest = {
+            ids: [target.id],
+            all_filtered: false,
+            nickname: '',
+            email: '',
+            role: '',
+            active: '',
+            set_active: true,
+        };
+        const result = await authFetch<null, { general?: string }, BulkActiveUsersRequest>(
+            'POST',
+            '/api/v1/admin/users/bulk-active',
+            { body },
+        );
+
+        if (result.success === false) {
+            error(result.data.general ?? 'Activation failed.');
+
+            return;
+        }
+
+        success(`User ${target.nickname} activated.`);
+        await grid.reload();
+    };
+
+    return {
+        bulkActions,
+        bulkConfirm,
+        handleBulkAction,
+        runPendingBulk,
+        cancelPendingBulk,
+        userToActivate,
+        askActivate,
+        cancelActivate,
+        runActivate,
+    };
 };

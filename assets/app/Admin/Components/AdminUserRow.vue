@@ -5,6 +5,7 @@ import { roleBadge } from '@/app-ui/Users/roleBadge';
 import Button from '@/app-ui/Buttons/Button.vue';
 import CheckBox from '@/app-ui/Inputs/CheckBox.vue';
 import EditIcon from '@/app-ui/Icons/EditIcon.vue';
+import TapIcon from '@/app-ui/Icons/TapIcon.vue';
 import TrashIcon from '@/app-ui/Icons/TrashIcon.vue';
 
 // One admin-list row, rendered into DataGrid's #rows slot (the grid never
@@ -19,6 +20,7 @@ const { user, selectable, selected } = defineProps<{
 defineEmits<{
     edit: [user: AdminUser];
     delete: [user: AdminUser];
+    activate: [user: AdminUser];
     toggleSelect: [user: AdminUser];
 }>();
 
@@ -87,6 +89,14 @@ const isSelf = (): boolean => {
         </td>
         <td class="px-4 py-3 whitespace-nowrap text-right text-sm">
             <div class="flex items-center justify-end gap-1">
+                <Button
+                    v-if="user.active === false"
+                    variant="secondary"
+                    size="xs"
+                    @click="$emit('activate', user)"
+                >
+                    <TapIcon />
+                </Button>
                 <Button
                     variant="secondary"
                     size="xs"

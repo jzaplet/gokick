@@ -1,4 +1,4 @@
-import type { ComputedRef } from 'vue';
+import type { ComputedRef, Ref } from 'vue';
 import { computed, ref } from 'vue';
 import type { GridState } from '@/app-ui/DataGrid/createGridState';
 import type { BulkAction } from '@/app-ui/BulkActions/BulkActionBar.vue';
@@ -15,12 +15,20 @@ type PlatformGridFilters = {
     active: string;
 };
 
-type BulkActionKey = 'activate' | 'deactivate' | 'delete';
+// Activation is deliberately NOT a bulk action — it is a per-row action on
+// inactive users (aibobr parity), still confirmed and still served by the
+// bulk-active endpoint with a single id.
+type BulkActionKey = 'deactivate' | 'delete';
 
 type BulkConfirm = {
     title: string;
     message: string;
     confirmText: string;
+};
+
+type ActivateTarget = {
+    id: string;
+    nickname: string;
 };
 
 type PlatformUsersBulk = {
@@ -29,16 +37,20 @@ type PlatformUsersBulk = {
     handleBulkAction: (key: string) => void;
     runPendingBulk: () => Promise<void>;
     cancelPendingBulk: () => void;
+    userToActivate: Ref<ActivateTarget | null>;
+    askActivate: (user: ActivateTarget) => void;
+    cancelActivate: () => void;
+    runActivate: () => Promise<void>;
 };
 
 // The bulk half of the platform users grid — the cross-tenant twin of
-// useAdminUsersBulk (the payload carries the tenant filter too). EVERY bulk
-// action goes through the confirm modal — nothing fires until runPendingBulk.
+// useAdminUsersBulk (the payload carries the tenant filter too). EVERY
+// destructive action is confirmed first — nothing fires until
+// runPendingBulk / runActivate.
 export const usePlatformUsersBulk = (grid: GridState<PlatformGridFilters>): PlatformUsersBulk => {
     const { success, error } = useToast();
 
     const bulkActions: BulkAction[] = [
-        { key: 'activate', label: 'Activate' },
         { key: 'deactivate', label: 'Deactivate' },
         { key: 'delete', label: 'Delete' },
     ];
@@ -48,13 +60,6 @@ export const usePlatformUsersBulk = (grid: GridState<PlatformGridFilters>): Plat
     const bulkConfirm = computed((): BulkConfirm | null => {
         const count = String(grid.selectedCount.value);
 
-        if (pendingBulk.value === 'activate') {
-            return {
-                title: 'Activate selected users',
-                message: `Activate ${count} selected user(s)?`,
-                confirmText: 'Activate',
-            };
-        }
         if (pendingBulk.value === 'deactivate') {
             return {
                 title: 'Deactivate selected users',
@@ -73,7 +78,7 @@ export const usePlatformUsersBulk = (grid: GridState<PlatformGridFilters>): Plat
         return null;
     });
 
-    const runBulkActive = async (setActive: boolean): Promise<void> => {
+    const runBulkDeactivate = async (): Promise<void> => {
         const body: PlatformBulkActiveUsersRequest = {
             ids: grid.selectedIds(),
             all_filtered: grid.isAllFilteredSelected.value,
@@ -82,7 +87,7 @@ export const usePlatformUsersBulk = (grid: GridState<PlatformGridFilters>): Plat
             email: grid.filters.email,
             role: grid.filters.role,
             active: grid.filters.active,
-            set_active: setActive,
+            set_active: false,
         };
         const result = await authFetch<null, { general?: string }, PlatformBulkActiveUsersRequest>(
             'POST',
@@ -96,7 +101,7 @@ export const usePlatformUsersBulk = (grid: GridState<PlatformGridFilters>): Plat
             return;
         }
 
-        success(setActive === true ? 'Selected users activated.' : 'Selected users deactivated.');
+        success('Selected users deactivated.');
         grid.clearSelection();
         await grid.reload();
     };
@@ -129,7 +134,7 @@ export const usePlatformUsersBulk = (grid: GridState<PlatformGridFilters>): Plat
     };
 
     const handleBulkAction = (key: string): void => {
-        if (key === 'activate' || key === 'deactivate' || key === 'delete') {
+        if (key === 'deactivate' || key === 'delete') {
             pendingBulk.value = key;
         }
     };
@@ -141,10 +146,8 @@ export const usePlatformUsersBulk = (grid: GridState<PlatformGridFilters>): Plat
 
         if (action === 'delete') {
             await runBulkDelete();
-        } else if (action === 'activate') {
-            await runBulkActive(true);
         } else if (action === 'deactivate') {
-            await runBulkActive(false);
+            await runBulkDeactivate();
         }
     };
 
@@ -152,5 +155,62 @@ export const usePlatformUsersBulk = (grid: GridState<PlatformGridFilters>): Plat
         pendingBulk.value = null;
     };
 
-    return { bulkActions, bulkConfirm, handleBulkAction, runPendingBulk, cancelPendingBulk };
+    // Per-row activation: the confirm modal arms here, the endpoint is the
+    // bulk-active one narrowed to a single id.
+    const userToActivate = ref<ActivateTarget | null>(null);
+
+    const askActivate = (user: ActivateTarget): void => {
+        userToActivate.value = user;
+    };
+
+    const cancelActivate = (): void => {
+        userToActivate.value = null;
+    };
+
+    const runActivate = async (): Promise<void> => {
+        if (userToActivate.value === null) {
+            return;
+        }
+
+        const target = userToActivate.value;
+
+        userToActivate.value = null;
+
+        const body: PlatformBulkActiveUsersRequest = {
+            ids: [target.id],
+            all_filtered: false,
+            tenant: '',
+            nickname: '',
+            email: '',
+            role: '',
+            active: '',
+            set_active: true,
+        };
+        const result = await authFetch<null, { general?: string }, PlatformBulkActiveUsersRequest>(
+            'POST',
+            '/api/v1/platform/users/bulk-active',
+            { body },
+        );
+
+        if (result.success === false) {
+            error(result.data.general ?? 'Activation failed.');
+
+            return;
+        }
+
+        success(`User ${target.nickname} activated.`);
+        await grid.reload();
+    };
+
+    return {
+        bulkActions,
+        bulkConfirm,
+        handleBulkAction,
+        runPendingBulk,
+        cancelPendingBulk,
+        userToActivate,
+        askActivate,
+        cancelActivate,
+        runActivate,
+    };
 };

@@ -3,7 +3,8 @@ import { createGridState } from '@/app-ui/DataGrid/createGridState';
 import { useAdminUsersBulk } from '@/app/Admin/Composables/useAdminUsersBulk';
 
 // The composable talks to the API through authFetch — the mock lets the test
-// pin the CONFIRM GATE: no request may leave before runPendingBulk.
+// pin the CONFIRM GATE: no request may leave before runPendingBulk /
+// runActivate.
 type AuthFetchCall = (
     method: string,
     url: string,
@@ -38,14 +39,25 @@ describe('useAdminUsersBulk', () => {
         authFetchMock.mockResolvedValue({ success: true, status: 204, data: null });
     });
 
-    it('every action arms the confirm modal and fires NOTHING until confirmed', () => {
+    it('offers only deactivate and delete as bulk actions', () => {
+        const bulk = useAdminUsersBulk(makeGrid());
+
+        expect(bulk.bulkActions.map((a: { key: string }) => a.key)).toEqual(['deactivate', 'delete']);
+
+        // Activation is a per-row action — the bulk path must ignore it.
+        bulk.handleBulkAction('activate');
+
+        expect(bulk.bulkConfirm.value).toBeNull();
+    });
+
+    it('every bulk action arms the confirm modal and fires NOTHING until confirmed', () => {
         const grid = makeGrid();
 
         grid.toggleRow('u1');
 
         const bulk = useAdminUsersBulk(grid);
 
-        for (const key of ['activate', 'deactivate', 'delete']) {
+        for (const key of ['deactivate', 'delete']) {
             bulk.handleBulkAction(key);
 
             expect(bulk.bulkConfirm.value).not.toBeNull();
@@ -100,7 +112,7 @@ describe('useAdminUsersBulk', () => {
         expect(bulk.bulkConfirm.value).toBeNull();
     });
 
-    it('routes activate/deactivate to bulk-active with set_active', async (): Promise<void> => {
+    it('routes deactivate to bulk-active with set_active false', async (): Promise<void> => {
         const grid = makeGrid();
 
         grid.toggleRow('u1');
@@ -127,15 +139,41 @@ describe('useAdminUsersBulk', () => {
         );
     });
 
-    it('ignores unknown action keys', () => {
-        const grid = makeGrid();
+    it('activates a single row only after the confirm', async (): Promise<void> => {
+        const bulk = useAdminUsersBulk(makeGrid());
 
-        grid.toggleRow('u1');
+        bulk.askActivate({ id: 'u7', nickname: 'alice' });
 
-        const bulk = useAdminUsersBulk(grid);
+        expect(bulk.userToActivate.value?.nickname).toBe('alice');
+        expect(authFetchMock).not.toHaveBeenCalled();
 
-        bulk.handleBulkAction('nope');
+        await bulk.runActivate();
 
-        expect(bulk.bulkConfirm.value).toBeNull();
+        expect(authFetchMock).toHaveBeenCalledWith(
+            'POST',
+            '/api/v1/admin/users/bulk-active',
+            {
+                body: {
+                    ids: ['u7'],
+                    all_filtered: false,
+                    nickname: '',
+                    email: '',
+                    role: '',
+                    active: '',
+                    set_active: true,
+                },
+            },
+        );
+        expect(bulk.userToActivate.value).toBeNull();
+    });
+
+    it('cancelActivate disarms without a request', () => {
+        const bulk = useAdminUsersBulk(makeGrid());
+
+        bulk.askActivate({ id: 'u7', nickname: 'alice' });
+        bulk.cancelActivate();
+
+        expect(bulk.userToActivate.value).toBeNull();
+        expect(authFetchMock).not.toHaveBeenCalled();
     });
 });

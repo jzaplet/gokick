@@ -139,6 +139,10 @@ const {
     handleBulkAction,
     runPendingBulk,
     cancelPendingBulk,
+    userToActivate,
+    askActivate,
+    cancelActivate,
+    runActivate,
 } = usePlatformUsersBulk(grid);
 
 onMounted(async (): Promise<void> => {
@@ -233,6 +237,7 @@ onMounted(async (): Promise<void> => {
                             :selected="grid.isSelected(user.id)"
                             @edit="goToEdit"
                             @delete="askDelete"
+                            @activate="askActivate"
                             @toggle-select="grid.toggleRow(user.id)"
                         />
                         <tr v-if="users.length === 0">
@@ -274,6 +279,18 @@ onMounted(async (): Promise<void> => {
                 cancel-text="Cancel"
                 @confirm="runPendingBulk"
                 @cancel="cancelPendingBulk"
+            />
+
+            <ConfirmModal
+                :show="userToActivate !== null"
+                title="Activate user"
+                :message="userToActivate === null
+                    ? ''
+                    : `Activate user ${userToActivate.nickname}?`"
+                confirm-text="Activate"
+                cancel-text="Cancel"
+                @confirm="runActivate"
+                @cancel="cancelActivate"
             />
         </div>
     </div>
