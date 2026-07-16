@@ -190,3 +190,67 @@ func (r *Repository) BulkSetActive(
 	}
 	return res.RowsAffected()
 }
+
+// platformBulkFilterWhere renders the platform grid filters against a bare
+// users statement (DELETE/UPDATE cannot join) — the tenant-name filter goes
+// through a subquery.
+func platformBulkFilterWhere(f user.PlatformListFilters) (string, []any) {
+	where, args := listFilterWhere(f.ListFilters)
+	if f.Tenant != "" {
+		where += ` AND tenant_id IN (SELECT t.id FROM tenants t WHERE t.name LIKE ?)`
+		args = append(args, "%"+f.Tenant+"%")
+	}
+	return where, args
+}
+
+func platformBulkWhere(sel user.PlatformBulkSelection) (string, []any) {
+	where := ` AND id != ?`
+	args := []any{sel.ExcludeID}
+	if sel.AllFiltered {
+		fw, fargs := platformBulkFilterWhere(sel.Filters)
+		return where + fw, append(args, fargs...)
+	}
+	where += ` AND id IN (` + strings.TrimSuffix(strings.Repeat("?,", len(sel.IDs)), ",") + `)`
+	for _, id := range sel.IDs {
+		args = append(args, id)
+	}
+	return where, args
+}
+
+// BulkDeleteAcrossTenants is BulkDelete's platform twin: any tenant (marker
+// below), superadmin rows and the actor always spared.
+func (r *Repository) BulkDeleteAcrossTenants(
+	ctx context.Context,
+	sel user.PlatformBulkSelection,
+) (int64, error) {
+	if sel.IsEmpty() {
+		return 0, nil
+	}
+	where, args := platformBulkWhere(sel)
+	res, err := r.Conn(ctx).ExecContext(ctx,
+		`DELETE FROM users /* tenant-scope-exempt: platform superadmin */
+		  WHERE role != 'superadmin'`+where, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+func (r *Repository) BulkSetActiveAcrossTenants(
+	ctx context.Context,
+	sel user.PlatformBulkSelection,
+	active bool,
+) (int64, error) {
+	if sel.IsEmpty() {
+		return 0, nil
+	}
+	where, args := platformBulkWhere(sel)
+	res, err := r.Conn(ctx).ExecContext(ctx,
+		`UPDATE users /* tenant-scope-exempt: platform superadmin */
+		    SET active = ?, updated_at = ? WHERE role != 'superadmin'`+where,
+		append([]any{active, time.Now().UTC()}, args...)...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}

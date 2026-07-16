@@ -106,6 +106,16 @@ type PlatformRepository interface {
 	// superadmin reads any user in any tenant); returns (nil, nil) when absent.
 	FindByIDAcrossTenants(ctx context.Context, id string) (*PlatformRow, error)
 
+	// BulkDeleteAcrossTenants / BulkSetActiveAcrossTenants are the platform
+	// twins of the tenant-scoped bulk writes: any tenant, superadmin rows and
+	// the selection's ExcludeID always spared, affected count returned.
+	BulkDeleteAcrossTenants(ctx context.Context, sel PlatformBulkSelection) (int64, error)
+	BulkSetActiveAcrossTenants(
+		ctx context.Context,
+		sel PlatformBulkSelection,
+		active bool,
+	) (int64, error)
+
 	// CountAcrossTenants counts all users across all tenants (platform dashboard).
 	CountAcrossTenants(ctx context.Context) (int, error)
 

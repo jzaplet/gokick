@@ -315,7 +315,11 @@ func providePermissionsRegistry() *shared.PermissionsRegistry {
 		platformqry.GetUserQuery{},
 		platformqry.ListTenantsQuery{},
 		platformqry.GetStatsQuery{},
+		usercmd.BulkDeleteUsersCommand{},
+		usercmd.BulkSetUsersActiveCommand{},
 		platformcmd.UpdatePlatformUserCommand{},
+		platformcmd.BulkDeletePlatformUsersCommand{},
+		platformcmd.BulkSetPlatformUsersActiveCommand{},
 		platformcmd.DeletePlatformUserCommand{},
 		// CLI-only (shared.CLIOnly): dispatched via the SystemCommandBus, no HTTP
 		// route. NewPermissionsRegistry filters them out so their permission never
@@ -391,6 +395,8 @@ func CreateApplication(
 		platformqry.NewGetStatsHandler,
 		platformcmd.NewUpdatePlatformUserHandler,
 		platformcmd.NewDeletePlatformUserHandler,
+		platformcmd.NewBulkDeletePlatformUsersHandler,
+		platformcmd.NewBulkSetPlatformUsersActiveHandler,
 		platformcmd.NewCreateSuperAdminHandler,
 		tenantcmd.NewCreateTenantHandler,
 		tenantqry.NewGetTenantHandler,

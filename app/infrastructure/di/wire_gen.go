@@ -116,7 +116,9 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	listTenantsHandler := query4.NewListTenantsHandler(tenantRepository)
 	updatePlatformUserHandler := command4.NewUpdatePlatformUserHandler(userRepository, passwordHasher)
 	deletePlatformUserHandler := command4.NewDeletePlatformUserHandler(userRepository)
-	platformHandler := handler.NewPlatformHandler(responder, queryBus, commandBus, getStatsHandler, listAllUsersHandler, queryGetUserHandler, listTenantsHandler, updatePlatformUserHandler, deletePlatformUserHandler)
+	bulkDeletePlatformUsersHandler := command4.NewBulkDeletePlatformUsersHandler(userRepository)
+	bulkSetPlatformUsersActiveHandler := command4.NewBulkSetPlatformUsersActiveHandler(userRepository)
+	platformHandler := handler.NewPlatformHandler(responder, queryBus, commandBus, getStatsHandler, listAllUsersHandler, queryGetUserHandler, listTenantsHandler, updatePlatformUserHandler, deletePlatformUserHandler, bulkDeletePlatformUsersHandler, bulkSetPlatformUsersActiveHandler)
 	debugRunHandler := handler.NewDebugRunHandler(responder, repository)
 	serverServer := server.NewServer(configConfig, logger, reporter, jwtService, responder, rateLimiters, ipExtractor, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler, platformHandler, debugRunHandler)
 	v2 := provideSchedulerJobs(tokenRepository)
@@ -389,5 +391,5 @@ func provideRunWorker(
 }
 
 func providePermissionsRegistry() *shared.PermissionsRegistry {
-	return shared.NewPermissionsRegistry([]shared.Permissioned{command.LogoutCommand{}, command2.ChangePasswordCommand{}, query.GetProfileQuery{}, command3.CreateUserCommand{}, command3.UpdateUserCommand{}, command3.DeleteUserCommand{}, query2.ListUsersQuery{}, query2.GetUserQuery{}, query3.GetUserDashboardQuery{}, query3.GetAdminDashboardQuery{}, query4.ListAllUsersQuery{}, query4.GetUserQuery{}, query4.ListTenantsQuery{}, query4.GetStatsQuery{}, command4.UpdatePlatformUserCommand{}, command4.DeletePlatformUserCommand{}, command4.CreateSuperAdminCommand{}, command5.CreateTenantCommand{}, query5.GetTenantQuery{}})
+	return shared.NewPermissionsRegistry([]shared.Permissioned{command.LogoutCommand{}, command2.ChangePasswordCommand{}, query.GetProfileQuery{}, command3.CreateUserCommand{}, command3.UpdateUserCommand{}, command3.DeleteUserCommand{}, query2.ListUsersQuery{}, query2.GetUserQuery{}, query3.GetUserDashboardQuery{}, query3.GetAdminDashboardQuery{}, query4.ListAllUsersQuery{}, query4.GetUserQuery{}, query4.ListTenantsQuery{}, query4.GetStatsQuery{}, command3.BulkDeleteUsersCommand{}, command3.BulkSetUsersActiveCommand{}, command4.UpdatePlatformUserCommand{}, command4.BulkDeletePlatformUsersCommand{}, command4.BulkSetPlatformUsersActiveCommand{}, command4.DeletePlatformUserCommand{}, command4.CreateSuperAdminCommand{}, command5.CreateTenantCommand{}, query5.GetTenantQuery{}})
 }

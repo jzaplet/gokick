@@ -3,17 +3,21 @@ import type { PlatformUser } from '@/app/Platform/types/PlatformUser';
 import { Role } from '@/app/Auth/enums/roles';
 import { roleBadge } from '@/app-ui/Users/roleBadge';
 import Button from '@/app-ui/Buttons/Button.vue';
+import CheckBox from '@/app-ui/Inputs/CheckBox.vue';
 import EditIcon from '@/app-ui/Icons/EditIcon.vue';
 import TrashIcon from '@/app-ui/Icons/TrashIcon.vue';
 
 // One platform-list row (cross-tenant), rendered into DataGrid's #rows slot.
-const { user } = defineProps<{
+const { user, selectable, selected } = defineProps<{
     user: PlatformUser;
+    selectable?: boolean;
+    selected?: boolean;
 }>();
 
 defineEmits<{
     edit: [user: PlatformUser];
     delete: [user: PlatformUser];
+    toggleSelect: [user: PlatformUser];
 }>();
 
 const formatLastLogin = (value: string | null): string => {
@@ -33,6 +37,17 @@ const isManageable = (): boolean => {
 
 <template>
     <tr class="hover:bg-gray-50">
+        <td
+            v-if="selectable === true"
+            class="px-3 sm:px-6 py-4 w-10"
+        >
+            <CheckBox
+                :model-value="selected"
+                :disabled="isManageable() === false"
+                :sr-label="`Select ${user.nickname}`"
+                @update:model-value="$emit('toggleSelect', user)"
+            />
+        </td>
         <td class="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
             {{ user.tenant_name }}
         </td>

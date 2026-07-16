@@ -154,3 +154,16 @@ type BulkSelection struct {
 func (s BulkSelection) IsEmpty() bool {
 	return !s.AllFiltered && len(s.IDs) == 0
 }
+
+// PlatformBulkSelection is BulkSelection's cross-tenant twin: the platform
+// grid filters (incl. tenant name) instead of the tenant-scoped ones.
+type PlatformBulkSelection struct {
+	IDs         []string
+	AllFiltered bool
+	Filters     PlatformListFilters
+	ExcludeID   string
+}
+
+func (s PlatformBulkSelection) IsEmpty() bool {
+	return !s.AllFiltered && len(s.IDs) == 0
+}

@@ -248,6 +248,14 @@ func (s *Server) registerRoutes() *http.ServeMux {
 	mux.Handle("GET /api/v1/platform/stats", authed(http.HandlerFunc(s.platform.Stats)))
 	mux.Handle("GET /api/v1/platform/users", authed(http.HandlerFunc(s.platform.Users)))
 	mux.Handle("GET /api/v1/platform/users/{id}", authed(http.HandlerFunc(s.platform.GetUser)))
+	mux.Handle(
+		"POST /api/v1/platform/users/bulk-delete",
+		authed(http.HandlerFunc(s.platform.BulkDeleteUsers)),
+	)
+	mux.Handle(
+		"POST /api/v1/platform/users/bulk-active",
+		authed(http.HandlerFunc(s.platform.BulkActiveUsers)),
+	)
 	mux.Handle("GET /api/v1/platform/tenants", authed(http.HandlerFunc(s.platform.Tenants)))
 	mux.Handle("PUT /api/v1/platform/users/{id}", authed(http.HandlerFunc(s.platform.UpdateUser)))
 	mux.Handle(

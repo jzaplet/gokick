@@ -19,6 +19,8 @@ type Props = {
     disabled?: boolean;
     name?: string;
     size?: FieldSize;
+    // flat drops the drop shadow — filter panels want chrome-less inputs.
+    flat?: boolean;
 };
 
 const props = defineProps<Props>();
@@ -62,11 +64,12 @@ useFieldValueSync(() => props.modelValue, selectValue);
             :name="name"
             :value="selectValue"
             :disabled="disabled"
-            class="w-full border rounded-lg shadow-sm bg-white
+            class="w-full border rounded-lg bg-white
         transition-colors focus:outline-none focus:ring-2
         focus:ring-orange-500 focus:border-orange-500
         appearance-none cursor-pointer"
             :class="[
+                props.flat === true ? '' : 'shadow-sm',
                 fieldSizeClass(size),
                 error
                     ? 'border-red-300 focus:ring-red-500'

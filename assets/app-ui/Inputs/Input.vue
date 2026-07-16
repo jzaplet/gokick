@@ -20,6 +20,8 @@ type Props = {
     statusVariant?: 'success' | 'info';
     size?: FieldSize;
     withSpinner?: boolean;
+    // flat drops the drop shadow — filter panels want chrome-less inputs.
+    flat?: boolean;
 };
 
 const props = defineProps<Props>();
@@ -96,10 +98,11 @@ onMounted(() => {
             :type="type || 'text'"
             :placeholder="placeholder"
             :disabled="disabled"
-            class="w-full border rounded-lg shadow-sm bg-white
+            class="w-full border rounded-lg bg-white
         transition-colors focus:outline-none focus:ring-2
         focus:ring-orange-500 focus:border-orange-500"
             :class="[
+                props.flat === true ? '' : 'shadow-sm',
                 fieldSizeClass(size),
                 withSpinner && (size === 'xl' || size === 'lg')
                     ? 'pr-12'

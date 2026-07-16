@@ -28,6 +28,8 @@ type PlatformHandler struct {
 	listTenants *platformqry.ListTenantsHandler
 	updateUser  *platformcmd.UpdatePlatformUserHandler
 	deleteUser  *platformcmd.DeletePlatformUserHandler
+	bulkDelete  *platformcmd.BulkDeletePlatformUsersHandler
+	bulkActive  *platformcmd.BulkSetPlatformUsersActiveHandler
 }
 
 func NewPlatformHandler(
@@ -40,6 +42,8 @@ func NewPlatformHandler(
 	listTenants *platformqry.ListTenantsHandler,
 	updateUser *platformcmd.UpdatePlatformUserHandler,
 	deleteUser *platformcmd.DeletePlatformUserHandler,
+	bulkDelete *platformcmd.BulkDeletePlatformUsersHandler,
+	bulkActive *platformcmd.BulkSetPlatformUsersActiveHandler,
 ) *PlatformHandler {
 	return &PlatformHandler{
 		resp:        resp,
@@ -51,6 +55,8 @@ func NewPlatformHandler(
 		listTenants: listTenants,
 		updateUser:  updateUser,
 		deleteUser:  deleteUser,
+		bulkDelete:  bulkDelete,
+		bulkActive:  bulkActive,
 	}
 }
 
@@ -90,6 +96,29 @@ type platformUserListResponse struct {
 type platformTenantListResponse struct {
 	Items []platformTenantDTO `json:"items"`
 	Total int                 `json:"total"`
+}
+
+//gkts:assets/app/Platform/types/PlatformBulkDeleteUsersRequest.ts PlatformBulkDeleteUsersRequest noguard
+type platformBulkDeleteUsersRequest struct {
+	IDs         []string `json:"ids"`
+	AllFiltered bool     `json:"all_filtered"`
+	Tenant      string   `json:"tenant"`
+	Nickname    string   `json:"nickname"`
+	Email       string   `json:"email"`
+	Role        string   `json:"role"`
+	Active      string   `json:"active"`
+}
+
+//gkts:assets/app/Platform/types/PlatformBulkActiveUsersRequest.ts PlatformBulkActiveUsersRequest noguard
+type platformBulkActiveUsersRequest struct {
+	IDs         []string `json:"ids"`
+	AllFiltered bool     `json:"all_filtered"`
+	Tenant      string   `json:"tenant"`
+	Nickname    string   `json:"nickname"`
+	Email       string   `json:"email"`
+	Role        string   `json:"role"`
+	Active      string   `json:"active"`
+	SetActive   bool     `json:"set_active"`
 }
 
 //gkts:assets/app/Platform/types/PlatformUserFormData.ts PlatformUserFormData noguard
@@ -278,6 +307,81 @@ func (h *PlatformHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		cmd,
 		func(ctx context.Context) error {
 			return h.deleteUser.Handle(ctx, cmd)
+		},
+	)
+	if err != nil {
+		h.resp.HandleError(r.Context(), w, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BulkDeleteUsers removes the platform grid's selection (cross-tenant).
+func (h *PlatformHandler) BulkDeleteUsers(w http.ResponseWriter, r *http.Request) {
+	var body platformBulkDeleteUsersRequest
+	if err := request.DecodeJSON(w, r, &body); err != nil {
+		h.resp.HandleError(r.Context(), w, err)
+
+		return
+	}
+
+	cmd := platformcmd.BulkDeletePlatformUsersCommand{
+		IDs:         body.IDs,
+		AllFiltered: body.AllFiltered,
+		Tenant:      body.Tenant,
+		Nickname:    body.Nickname,
+		Email:       body.Email,
+		Role:        body.Role,
+		Active:      body.Active,
+	}
+
+	err := bus.DispatchVoid(
+		r.Context(),
+		h.commandBus,
+		"BulkDeletePlatformUsers",
+		cmd,
+		func(ctx context.Context) error {
+			return h.bulkDelete.Handle(ctx, cmd)
+		},
+	)
+	if err != nil {
+		h.resp.HandleError(r.Context(), w, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BulkActiveUsers flips the active flag for the platform grid's selection.
+func (h *PlatformHandler) BulkActiveUsers(w http.ResponseWriter, r *http.Request) {
+	var body platformBulkActiveUsersRequest
+	if err := request.DecodeJSON(w, r, &body); err != nil {
+		h.resp.HandleError(r.Context(), w, err)
+
+		return
+	}
+
+	cmd := platformcmd.BulkSetPlatformUsersActiveCommand{
+		IDs:         body.IDs,
+		AllFiltered: body.AllFiltered,
+		Tenant:      body.Tenant,
+		Nickname:    body.Nickname,
+		Email:       body.Email,
+		Role:        body.Role,
+		Active:      body.Active,
+		SetActive:   body.SetActive,
+	}
+
+	err := bus.DispatchVoid(
+		r.Context(),
+		h.commandBus,
+		"BulkSetPlatformUsersActive",
+		cmd,
+		func(ctx context.Context) error {
+			return h.bulkActive.Handle(ctx, cmd)
 		},
 	)
 	if err != nil {

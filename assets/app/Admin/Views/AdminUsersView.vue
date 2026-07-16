@@ -18,9 +18,7 @@ import Input from '@/app-ui/Inputs/Input.vue';
 import Select from '@/app-ui/Inputs/Select.vue';
 import AdminUserRow from '@/app/Admin/Components/AdminUserRow.vue';
 import BulkActionBar from '@/app-ui/BulkActions/BulkActionBar.vue';
-import type { BulkAction } from '@/app-ui/BulkActions/BulkActionBar.vue';
-import type { BulkDeleteUsersRequest } from '@/app/Admin/types/BulkDeleteUsersRequest';
-import type { BulkActiveUsersRequest } from '@/app/Admin/types/BulkActiveUsersRequest';
+import { useAdminUsersBulk } from '@/app/Admin/Composables/useAdminUsersBulk';
 import { useAuth } from '@/app-ui/Auth';
 import { computed } from 'vue';
 
@@ -138,78 +136,12 @@ const allPageSelected = computed<boolean>(() =>
     pageSelectableIds.value.length > 0
     && pageSelectableIds.value.every((id) => grid.isSelected(id) === true));
 
-const bulkActions: BulkAction[] = [
-    { key: 'activate', label: 'Activate' },
-    { key: 'deactivate', label: 'Deactivate' },
-    { key: 'delete', label: 'Delete', variant: 'danger' },
-];
-
-const confirmBulkDelete = ref(false);
-
-const runBulkActive = async (setActive: boolean): Promise<void> => {
-    const body: BulkActiveUsersRequest = {
-        ids: grid.selectedIds(),
-        all_filtered: grid.isAllFilteredSelected.value,
-        nickname: grid.filters.nickname,
-        email: grid.filters.email,
-        role: grid.filters.role,
-        active: grid.filters.active,
-        set_active: setActive,
-    };
-    const result = await authFetch<null, { general?: string }, BulkActiveUsersRequest>(
-        'POST',
-        '/api/v1/admin/users/bulk-active',
-        { body },
-    );
-
-    if (result.success === false) {
-        error(result.data.general ?? 'Bulk update failed.');
-
-        return;
-    }
-
-    success(setActive === true ? 'Selected users activated.' : 'Selected users deactivated.');
-    grid.clearSelection();
-    await grid.reload();
-};
-
-const runBulkDelete = async (): Promise<void> => {
-    confirmBulkDelete.value = false;
-
-    const body: BulkDeleteUsersRequest = {
-        ids: grid.selectedIds(),
-        all_filtered: grid.isAllFilteredSelected.value,
-        nickname: grid.filters.nickname,
-        email: grid.filters.email,
-        role: grid.filters.role,
-        active: grid.filters.active,
-    };
-    const result = await authFetch<null, { general?: string }, BulkDeleteUsersRequest>(
-        'POST',
-        '/api/v1/admin/users/bulk-delete',
-        { body },
-    );
-
-    if (result.success === false) {
-        error(result.data.general ?? 'Bulk delete failed.');
-
-        return;
-    }
-
-    success('Selected users deleted.');
-    grid.clearSelection();
-    await grid.reload();
-};
-
-const handleBulkAction = (key: string): void => {
-    if (key === 'delete') {
-        confirmBulkDelete.value = true;
-    } else if (key === 'activate') {
-        void runBulkActive(true);
-    } else if (key === 'deactivate') {
-        void runBulkActive(false);
-    }
-};
+const {
+    bulkActions,
+    confirmBulkDelete,
+    handleBulkAction,
+    runBulkDelete,
+} = useAdminUsersBulk(grid);
 
 onMounted(async (): Promise<void> => {
     await grid.init();
@@ -248,25 +180,31 @@ onMounted(async (): Promise<void> => {
                         v-model="grid.filters.nickname"
                         label="Nickname"
                         placeholder="Search nickname"
+                        flat
                         size="sm"
                     />
                     <Input
                         v-model="grid.filters.email"
                         label="Email"
                         placeholder="Search email"
+                        flat
                         size="sm"
                     />
                     <Select
-                        v-model="grid.filters.role"
+                        :model-value="grid.filters.role"
                         label="Role"
                         :options="roleOptions"
+                        flat
                         size="sm"
+                        @update:model-value="grid.filters.role = $event ?? ''"
                     />
                     <Select
-                        v-model="grid.filters.active"
+                        :model-value="grid.filters.active"
                         label="Status"
                         :options="activeOptions"
+                        flat
                         size="sm"
+                        @update:model-value="grid.filters.active = $event ?? ''"
                     />
                 </div>
             </FilterPanel>

@@ -15,6 +15,10 @@ import Pagination from '@/app-ui/Pagination/Pagination.vue';
 import Input from '@/app-ui/Inputs/Input.vue';
 import Select from '@/app-ui/Inputs/Select.vue';
 import PlatformUserRow from '@/app/Platform/Components/PlatformUserRow.vue';
+import BulkActionBar from '@/app-ui/BulkActions/BulkActionBar.vue';
+import { usePlatformUsersBulk } from '@/app/Platform/Composables/usePlatformUsersBulk';
+import { Role } from '@/app/Auth/enums/roles';
+import { computed } from 'vue';
 
 const router = useRouter();
 const { success, error } = useToast();
@@ -116,6 +120,24 @@ const confirmDelete = async (): Promise<void> => {
     await grid.reload();
 };
 
+// Selection: superadmin rows are never selectable (the BE spares them and
+// the actor too), so "page selected" means every manageable row on the page.
+const pageSelectableIds = computed<string[]>(() =>
+    users.value
+        .filter((u) => u.role !== Role.SuperAdmin)
+        .map((u) => u.id));
+
+const allPageSelected = computed<boolean>(() =>
+    pageSelectableIds.value.length > 0
+    && pageSelectableIds.value.every((id) => grid.isSelected(id) === true));
+
+const {
+    bulkActions,
+    confirmBulkDelete,
+    handleBulkAction,
+    runBulkDelete,
+} = usePlatformUsersBulk(grid);
+
 onMounted(async (): Promise<void> => {
     await grid.init();
 });
@@ -138,52 +160,75 @@ onMounted(async (): Promise<void> => {
                         v-model="grid.filters.tenant"
                         label="Tenant"
                         placeholder="Search tenant"
+                        flat
                         size="sm"
                     />
                     <Input
                         v-model="grid.filters.nickname"
                         label="Nickname"
                         placeholder="Search nickname"
+                        flat
                         size="sm"
                     />
                     <Input
                         v-model="grid.filters.email"
                         label="Email"
                         placeholder="Search email"
+                        flat
                         size="sm"
                     />
                     <Select
-                        v-model="grid.filters.role"
+                        :model-value="grid.filters.role"
                         label="Role"
                         :options="roleOptions"
+                        flat
                         size="sm"
+                        @update:model-value="grid.filters.role = $event ?? ''"
                     />
                     <Select
-                        v-model="grid.filters.active"
+                        :model-value="grid.filters.active"
                         label="Status"
                         :options="activeOptions"
+                        flat
                         size="sm"
+                        @update:model-value="grid.filters.active = $event ?? ''"
                     />
                 </div>
             </FilterPanel>
+
+            <BulkActionBar
+                :count="grid.selectedCount.value"
+                :total="grid.total.value"
+                :is-all-filtered="grid.isAllFilteredSelected.value"
+                :actions="bulkActions"
+                @action="handleBulkAction"
+                @select-all-filtered="grid.selectAllFiltered"
+                @clear="grid.clearSelection"
+            />
 
             <DataGrid
                 :columns="columns"
                 :sort="grid.sort.value"
                 :is-loading="grid.isLoading.value"
+                selectable
+                :all-selected="allPageSelected"
                 @sort="grid.handleSort"
+                @toggle-page="grid.togglePage(pageSelectableIds)"
             >
                 <template #rows>
                     <PlatformUserRow
                         v-for="user in users"
                         :key="user.id"
                         :user="user"
+                        selectable
+                        :selected="grid.isSelected(user.id)"
                         @edit="goToEdit"
                         @delete="askDelete"
+                        @toggle-select="grid.toggleRow(user.id)"
                     />
                     <tr v-if="users.length === 0">
                         <td
-                            :colspan="columns.length"
+                            :colspan="columns.length + 1"
                             class="px-6 py-8 text-center text-sm text-gray-500"
                         >
                             No users
@@ -209,6 +254,17 @@ onMounted(async (): Promise<void> => {
                 cancel-text="Cancel"
                 @confirm="confirmDelete"
                 @cancel="cancelDelete"
+            />
+
+            <ConfirmModal
+                :show="confirmBulkDelete === true"
+                title="Delete selected users"
+                :message="`Really delete ${String(grid.selectedCount.value)} selected user(s)?
+                    This action is irreversible.`"
+                confirm-text="Delete"
+                cancel-text="Cancel"
+                @confirm="runBulkDelete"
+                @cancel="confirmBulkDelete = false"
             />
         </div>
     </div>

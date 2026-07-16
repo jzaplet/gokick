@@ -79,6 +79,7 @@ onMounted(async (): Promise<void> => {
                         v-model="grid.filters.name"
                         label="Tenant"
                         placeholder="Search tenant"
+                        flat
                         size="sm"
                     />
                 </div>
