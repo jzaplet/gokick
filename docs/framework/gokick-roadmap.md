@@ -91,6 +91,7 @@ Vedlejší cíl: roztříštěnost dev nástrojů (`cmd/` vs samostatný modul p
 
 - `cmd/` = samotná aplikace (zůstává — to je produkt).
 - `audit/tool` = dočasný tracker — **odstraněn** po dopracování backlogu (teardown 2026-07-15; archiv na PR #24).
+<!-- gkdoc:ignore tools/tsgen — historické umístění před migrací, kterou tahle odškrtnutá položka popisuje -->
 - [x] `tools/tsgen` → **jeden `tools/gk` modul** se sub-příkazy (`gk tsgen generate|check`, `gk boundary`, `gk errfields` — analyzery ② a ④ přibyly přesně takhle: subpackage + case v dispatcheru, žádný další `go.mod`; sdílené kusy žijí v `tools/gk/internal/tool`). Vlastní `go.mod` je nutnost — codegen píše na stdout i do souborů, což lint invarianty hlavního modulu (jediná logovací cesta) zakazují.
 - **Ustálený stav = dva moduly:** `cmd/` (app) + `tools/gk` (dev codegen/checks). *(platí už teď)*
 - **Make surface se nemění** — codegen se skládá do `make lint` (drift = fail); regen dává ruční `make ts-gen` (mirror `make di`), takže se vynutí sám; 5 hlavních příkazů v README zůstává jedinou plochou. *„Code-gen, na který si nikdy nevzpomeneš, protože se vynutí sám."*

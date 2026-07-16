@@ -51,6 +51,9 @@ Když command neimplementuje ani jedno, `AuthorizeMiddleware` vrátí runtime er
 Transakci, autorizaci, audit i rozeslání eventů řídí middleware v busu — handler o nich neví.
 
 ## Recipe
+
+<!-- gkdoc:ignore app/application/user/command/archive_user.go — vymyšlený command, který si recept zakládá -->
+
 Přidání nového command handleru (např. `ArchiveUser`):
 
 1. Vytvoř `app/application/user/command/archive_user.go`.

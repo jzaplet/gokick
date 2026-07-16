@@ -76,6 +76,10 @@ description: 'Volitelné.'   # popis stránky
 
 ## Šablony
 
+<!-- gkdoc:ignore docs/moje-sekce/.list.md — ukázková sekce, kterou si návod zakládá -->
+<!-- gkdoc:ignore docs/moje-sekce/moje-stranka.md — ukázková stránka, kterou si návod zakládá -->
+<!-- gkdoc:ignore docs/moje-sekce/podsekce/.list.md — ukázková podsekce, kterou si návod zakládá -->
+
 ### Nová sekce (složka + index)
 Soubor: `docs/moje-sekce/.list.md`
 ```yaml

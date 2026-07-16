@@ -1,4 +1,5 @@
 .PHONY: install build serve dev di install-tools go-deps lint format format-check test arch-check \
+        ts-gen ts-check boundary-check errfields-check docpaths-check \
         e2e e2e-crash-recovery e2e-at-least-once e2e-sigterm-drain e2e-terminal-failure \
         fe-deps fe-dev fe-build fe-clean \
         migrate-create migrate-up migrate-down migrate-status \
@@ -80,6 +81,7 @@ lint:
 	$(MAKE) ts-check
 	$(MAKE) boundary-check
 	$(MAKE) errfields-check
+	$(MAKE) docpaths-check
 	$(MAKE) documan-lint
 
 # Fail if any Go file is not golines-formatted. golines is not covered by
@@ -126,6 +128,14 @@ boundary-check:
 # Escape: //gkerrf:exempt <reason> for fields that never render in a form.
 errfields-check:
 	cd tools/gk && go run . errfields
+
+# Every repo path and /gk-* skill link the docs and skills cite must resolve —
+# the first gate on prose. It checks that pointers land, not that the prose is
+# true, so it catches the rot every drift sweep re-found (a squashed migration,
+# a renamed skill, a moved file) and nothing subtler.
+# Escape: <!-- gkdoc:ignore <path> — <reason> --> for fictional examples.
+docpaths-check:
+	cd tools/gk && go run . docpaths
 
 # Migrations
 migrate-create:

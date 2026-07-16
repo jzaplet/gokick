@@ -104,6 +104,9 @@ kontexty jsou vyjmenované ručně.
 
 ### Recipe: přidat nový bounded kontext (např. `order`)
 
+<!-- gkdoc:ignore app/domain/order/ — vymyšlený kontext, který si recept zakládá -->
+<!-- gkdoc:ignore app/infrastructure/sqlite/order/ — vymyšlený kontext, který si recept zakládá -->
+
 1. Vytvoř `app/domain/order/` + `app/infrastructure/sqlite/order/`.
 2. V `.go-arch-lint.yml`: přidej komponentu `domain_order` (`in: domain/order/**`),
    přidej `infrastructure/sqlite/order/**` do `sqlite_repos`.
