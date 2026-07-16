@@ -1,8 +1,8 @@
 # A doc whose every pointer resolves
 
-Prose citing a real file: `.claude/skills/gk-real/SKILL.md`.
+Prose citing a real file: `docs/other.md`.
 
-A line anchor inside that file: `.claude/skills/gk-real/SKILL.md:1`.
+A line anchor inside that file: `docs/other.md:1`.
 
 A subtree pattern: `docs/**` and a Go package pattern `docs/...`.
 

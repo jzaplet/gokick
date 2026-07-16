@@ -55,8 +55,21 @@ import (
 	"gokick-gk/internal/tool"
 )
 
-// docRoots are the trees whose prose this gate reads.
-var docRoots = []string{".claude/skills", "docs"}
+// scan says which trees to read and where skills live. It is a parameter, not
+// a constant, for one blunt reason: the test fixture would otherwise need a
+// real `.claude/skills/` directory, and every tool that discovers skills by
+// globbing for that path — Claude Code included — would load the fixture's
+// fake skill as if it were this repo's. A gate must not pollute the thing it
+// guards.
+type scan struct {
+	docRoots  []string // trees whose prose is read
+	skillsDir string   // where a /gk-<name> reference resolves
+}
+
+var repoScan = scan{
+	docRoots:  []string{".claude/skills", "docs"},
+	skillsDir: ".claude/skills",
+}
 
 // repoRoots anchor a backtick span to the filesystem: a candidate must start
 // with one of these, so prose shorthand holding a slash is never mistaken for
@@ -106,7 +119,7 @@ func Run(args []string) {
 	if err != nil {
 		fatalf("%v", err)
 	}
-	res, err := run(root)
+	res, err := run(root, repoScan)
 	if err != nil {
 		fatalf("%v", err)
 	}
@@ -118,20 +131,20 @@ func Run(args []string) {
 }
 
 // run scans every doc under root. It is the testable half of Run.
-func run(root string) (*result, error) {
-	docs, err := collectDocs(root)
+func run(root string, sc scan) (*result, error) {
+	docs, err := collectDocs(root, sc)
 	if err != nil {
 		return nil, err
 	}
 	if len(docs) == 0 {
 		return nil, fmt.Errorf(
 			"found no .md files under %s — the gate is looking in the wrong place",
-			strings.Join(docRoots, ", "))
+			strings.Join(sc.docRoots, ", "))
 	}
 
 	res := &result{docs: len(docs)}
 	for _, doc := range docs {
-		v, n, err := checkDoc(root, doc)
+		v, n, err := checkDoc(root, doc, sc)
 		if err != nil {
 			return nil, err
 		}
@@ -149,9 +162,9 @@ func run(root string) (*result, error) {
 // collectDocs walks docRoots for markdown files, sorted for stable output. A
 // missing root is not an error: a fixture module carries only the tree its
 // case needs.
-func collectDocs(root string) ([]string, error) {
+func collectDocs(root string, sc scan) ([]string, error) {
 	var docs []string
-	for _, dir := range docRoots {
+	for _, dir := range sc.docRoots {
 		if _, err := os.Stat(filepath.Join(root, dir)); err != nil {
 			continue
 		}
@@ -181,7 +194,7 @@ func collectDocs(root string) ([]string, error) {
 
 // checkDoc verifies every path citation and skill reference in one doc and
 // returns its violations plus the number of path candidates it examined.
-func checkDoc(root, doc string) ([]violation, int, error) {
+func checkDoc(root, doc string, sc scan) ([]violation, int, error) {
 	src, err := os.ReadFile(filepath.Join(root, doc))
 	if err != nil {
 		return nil, 0, fmt.Errorf("read %s: %w", doc, err)
@@ -209,11 +222,12 @@ func checkDoc(root, doc string) ([]violation, int, error) {
 		}
 		for _, m := range skillRef.FindAllStringSubmatch(line, -1) {
 			name := "gk-" + m[1]
-			if _, err := os.Stat(filepath.Join(root, ".claude/skills", name, "SKILL.md")); err != nil {
+			if _, err := os.Stat(filepath.Join(root, sc.skillsDir, name, "SKILL.md")); err != nil {
 				violations = append(violations, violation{doc, i + 1,
 					fmt.Sprintf(
-						"skill reference /%s has no .claude/skills/%s/SKILL.md",
+						"skill reference /%s has no %s/%s/SKILL.md",
 						name,
+						sc.skillsDir,
 						name,
 					)})
 			}

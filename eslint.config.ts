@@ -2,6 +2,7 @@ import eslint from '@eslint/js'
 import stylistic from '@stylistic/eslint-plugin'
 import tseslint from 'typescript-eslint'
 import pluginVue from 'eslint-plugin-vue'
+import sonarjs from 'eslint-plugin-sonarjs'
 
 // @ts-ignore
 export default tseslint.config(
@@ -115,9 +116,19 @@ export default tseslint.config(
 
       // --- Size / depth gates (audit ratchet — enabled as preconditions clear) ---
       // Measured green 2026-07-13: largest file 193 lines, max nesting depth 3.
-      // complexity 10 and no-as follow once their preconditions are cleared.
+      // The rest of the ratchet landed separately: no-as and cognitive
+      // complexity have their own blocks below. Cyclomatic complexity is NOT
+      // coming — see the cognitive-complexity block for why.
       'max-lines': ['error', { max: 300, skipBlankLines: true, skipComments: true }],
       'max-depth': ['error', 4],
+      // NOT max-lines-per-function, though Go gates function length via funlen.
+      // It is not the same measurement here: Go's "methods" are separate
+      // top-level funcs that funlen bills one by one, while a JS factory's
+      // methods are closures INSIDE it, so the rule bills all of them to the
+      // parent. createGridState is 149 lines of ~15 small closures at cognitive
+      // complexity 11 — followable, and splitting it would only scatter the
+      // state it exists to hold. File size (max-lines) plus cognitive
+      // complexity cover this shape; a line count per function does not.
 
       // Stylistic — overrides beyond the preset
       '@stylistic/max-len': ['error', {
@@ -186,6 +197,37 @@ export default tseslint.config(
   // TBody from the literal) and keep payloads flowing from typed variables, not
   // ad-hoc literals. Scoped to assets/ — transport tests in tests/ exercise the
   // mechanics with ad-hoc bodies on purpose.
+  // --- Ratchet: no type assertions ---
+  // `as` is the one construct that lets a value LIE about its type with zero
+  // diagnostics — the opposite of everything the parity loop enforces. The
+  // runtime-guard boundary cleared the inventory down to two irreducible casts
+  // (parseResponse's caller-supplied generics, where there is no guard to
+  // call); both carry an eslint-disable naming the reason, the same way the
+  // Go raw-pool exceptions do. `as const` is NOT an assertion in this rule's
+  // eyes (verified) — the Role/Permission enums keep working untouched.
+  {
+    files: ['assets/**/*.{ts,vue}'],
+    rules: {
+      '@typescript-eslint/consistent-type-assertions': ['error', { assertionStyle: 'never' }],
+    },
+  },
+
+  // --- Cognitive complexity (Campbell's metric — the Go half is gocognit) ---
+  // Measures how hard code is to FOLLOW, not how many paths it has: +1 per
+  // break in linear flow, plus a penalty for nesting. Deliberately NOT
+  // cyclomatic (ESLint's `complexity`, Go's `cyclop`) — that one bills a flat
+  // validation chain the same as deep nesting and pushes you to hide branches
+  // in helpers rather than simplify them.
+  // 15 is the metric's default and the ceiling the code already meets
+  // (parseResponse sits exactly at it) — a ratchet, so no slack by design.
+  {
+    files: ['assets/**/*.{ts,vue}'],
+    plugins: { sonarjs },
+    rules: {
+      'sonarjs/cognitive-complexity': ['error', 15],
+    },
+  },
+
   {
     files: ['assets/**/*.{ts,vue}'],
     rules: {

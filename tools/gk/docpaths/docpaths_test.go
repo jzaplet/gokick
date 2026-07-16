@@ -6,6 +6,11 @@ import (
 	"testing"
 )
 
+// fixtureScan keeps the fixtures out of a real .claude/skills/ directory —
+// otherwise every tool that finds skills by globbing that path (Claude Code
+// included) would load the fixture's fake skill as one of this repo's.
+var fixtureScan = scan{docRoots: []string{"skills", "docs"}, skillsDir: "skills"}
+
 // details flattens a scan into "file:line: detail" strings for assertion.
 func details(res *result) []string {
 	out := make([]string, 0, len(res.violations))
@@ -30,7 +35,7 @@ func hasDetail(res *result, want string) bool {
 // a placeholder gets switched off within a week, so each of those shapes is a
 // regression test, not decoration.
 func TestRun_CleanFixtureHasNoViolations(t *testing.T) {
-	res, err := run(filepath.Join("testdata", "clean"))
+	res, err := run(filepath.Join("testdata", "clean"), fixtureScan)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -46,7 +51,7 @@ func TestRun_CleanFixtureHasNoViolations(t *testing.T) {
 // The gate must bite on every dead-reference class it claims to cover — this
 // is the test that proves it is not a no-op.
 func TestRun_DeadFixtureFlagsEveryClass(t *testing.T) {
-	res, err := run(filepath.Join("testdata", "dead"))
+	res, err := run(filepath.Join("testdata", "dead"), fixtureScan)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -69,7 +74,7 @@ func TestRun_DeadFixtureFlagsEveryClass(t *testing.T) {
 // An escape marker must actually silence its path — otherwise the only way to
 // keep a fictional example is to switch the gate off.
 func TestRun_IgnoreMarkerSilencesItsPath(t *testing.T) {
-	res, err := run(filepath.Join("testdata", "clean"))
+	res, err := run(filepath.Join("testdata", "clean"), fixtureScan)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
