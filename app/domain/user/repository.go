@@ -31,6 +31,12 @@ type Repository interface {
 	FindByNickname(ctx context.Context, nickname string) (*User, error)
 	FindAll(ctx context.Context) ([]User, error)
 
+	// FindPage is the paged/filtered/sorted admin list read behind the users
+	// grid — same tenant scoping and superadmin exclusion as FindAll. Criteria
+	// arrive pre-normalized (whitelisted sort, clamped paging); the returned
+	// page carries the filtered total for the client-side pager.
+	FindPage(ctx context.Context, criteria ListCriteria) (ListPage, error)
+
 	// RecordLogin stamps last_login_at = now for the user on a successful login.
 	// Best-effort analytics; raw pool like ResetFailedLogin (login runs outside
 	// the bus tx by design), so it neither blocks login nor ties the stamp to

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import type { AdminUser } from '@/app/Admin/types/AdminUser';
-import { isAdminUser } from '@/app/Admin/types/AdminUser';
-import { arrayOf } from '@/app-ui/Fetch';
+import type { AdminUserListResponse } from '@/app/Admin/types/AdminUserListResponse';
+import { isAdminUserListResponse } from '@/app/Admin/types/AdminUserListResponse';
+import type { GridColumn } from '@/app-ui/DataGrid/createGridState';
+import { createGridState } from '@/app-ui/DataGrid/createGridState';
 import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { authFetch } from '@/app-ui/Auth';
@@ -9,32 +11,73 @@ import { useToast } from '@/app-ui/Toast/useToast';
 import Button from '@/app-ui/Buttons/Button.vue';
 import PlusIcon from '@/app-ui/Icons/PlusIcon.vue';
 import ConfirmModal from '@/app-ui/Modals/ConfirmModal.vue';
-import Spinner from '@/app-ui/Loading/Spinner.vue';
-import UsersTable from '@/app/Admin/Components/UsersTable.vue';
+import DataGrid from '@/app-ui/DataGrid/DataGrid.vue';
+import FilterPanel from '@/app-ui/FilterPanel/FilterPanel.vue';
+import Pagination from '@/app-ui/Pagination/Pagination.vue';
+import Input from '@/app-ui/Inputs/Input.vue';
+import Select from '@/app-ui/Inputs/Select.vue';
+import AdminUserRow from '@/app/Admin/Components/AdminUserRow.vue';
 
 const router = useRouter();
 const { success, error } = useToast();
 
 const users = ref<AdminUser[]>([]);
-const isLoading = ref(true);
 const userToDelete = ref<AdminUser | null>(null);
 
-const fetchUsers = async (): Promise<void> => {
-    isLoading.value = true;
-    const result = await authFetch<AdminUser[]>('GET', '/api/v1/admin/users', {
-        validate: arrayOf(isAdminUser),
-    });
+const columns: GridColumn[] = [
+    { key: 'nickname', label: 'Nickname', sortable: true },
+    { key: 'email', label: 'Email', sortable: true },
+    { key: 'role', label: 'Role', sortable: true },
+    { key: 'actions', label: 'Actions', align: 'right' },
+];
 
-    isLoading.value = false;
+const roleOptions = [
+    { value: '', label: 'All roles' },
+    { value: 'admin', label: 'admin' },
+    { value: 'user', label: 'user' },
+];
 
-    if (result.success === false) {
-        error('Failed to load user list.');
+const activeOptions = [
+    { value: '', label: 'All statuses' },
+    { value: '1', label: 'Active' },
+    { value: '0', label: 'Inactive' },
+];
 
-        return;
-    }
+const grid = createGridState({
+    defaultSort: { column: 'nickname', direction: 'ASC' },
+    filters: { nickname: '', email: '', role: '', active: '' },
+    syncUrl: true,
+    load: async ({ page, perPage, sort, filters }) => {
+        const params = new URLSearchParams({
+            page: String(page),
+            per_page: String(perPage),
+            sort_by: sort.column,
+            sort_dir: sort.direction,
+        });
 
-    users.value = result.data;
-};
+        for (const [key, value] of Object.entries(filters)) {
+            if (value !== '') {
+                params.set(key, value);
+            }
+        }
+
+        const result = await authFetch<AdminUserListResponse>(
+            'GET',
+            `/api/v1/admin/users?${params.toString()}`,
+            { validate: isAdminUserListResponse },
+        );
+
+        if (result.success === false) {
+            error('Failed to load user list.');
+
+            return { ok: false };
+        }
+
+        users.value = result.data.items;
+
+        return { ok: true, total: result.data.total };
+    },
+});
 
 const goToCreate = (): void => {
     void router.push({ name: 'admin-users-new' });
@@ -73,11 +116,11 @@ const confirmDelete = async (): Promise<void> => {
     }
 
     success(`User ${target.nickname} deleted.`);
-    await fetchUsers();
+    await grid.reload();
 };
 
 onMounted(async (): Promise<void> => {
-    await fetchUsers();
+    await grid.init();
 });
 </script>
 
@@ -103,18 +146,69 @@ onMounted(async (): Promise<void> => {
                 </Button>
             </div>
 
-            <div
-                v-if="isLoading === true"
-                class="flex items-center justify-center py-12"
+            <FilterPanel
+                storage-key="admin-users"
+                :has-active-filters="grid.hasActiveFilters.value"
+                @clear="grid.clearFilters"
             >
-                <Spinner />
-            </div>
+                <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <Input
+                        v-model="grid.filters.nickname"
+                        label="Nickname"
+                        placeholder="Search nickname"
+                        size="sm"
+                    />
+                    <Input
+                        v-model="grid.filters.email"
+                        label="Email"
+                        placeholder="Search email"
+                        size="sm"
+                    />
+                    <Select
+                        v-model="grid.filters.role"
+                        label="Role"
+                        :options="roleOptions"
+                        size="sm"
+                    />
+                    <Select
+                        v-model="grid.filters.active"
+                        label="Status"
+                        :options="activeOptions"
+                        size="sm"
+                    />
+                </div>
+            </FilterPanel>
 
-            <UsersTable
-                v-else
-                :users="users"
-                @edit="goToEdit"
-                @delete="askDelete"
+            <DataGrid
+                :columns="columns"
+                :sort="grid.sort.value"
+                :is-loading="grid.isLoading.value"
+                @sort="grid.handleSort"
+            >
+                <template #rows>
+                    <AdminUserRow
+                        v-for="user in users"
+                        :key="user.id"
+                        :user="user"
+                        @edit="goToEdit"
+                        @delete="askDelete"
+                    />
+                    <tr v-if="users.length === 0">
+                        <td
+                            :colspan="columns.length"
+                            class="px-6 py-8 text-center text-sm text-gray-500"
+                        >
+                            No users
+                        </td>
+                    </tr>
+                </template>
+            </DataGrid>
+
+            <Pagination
+                :page="grid.page.value"
+                :per-page="grid.perPage.value"
+                :total="grid.total.value"
+                @update:page="grid.handlePageChange"
             />
 
             <ConfirmModal
