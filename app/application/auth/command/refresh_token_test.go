@@ -95,6 +95,27 @@ func TestRefreshTokenHandler_Success(t *testing.T) {
 	fx.AssertTokenCount(t, 2)
 }
 
+// A user deactivated after their session was issued cannot refresh it — the
+// active flag is enforced on the rotation path, ending the session.
+func TestRefreshTokenHandler_InactiveUserCannotRefresh(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "refresh_inactive.db"))
+	u := fx.SeedUser(t, "alice", "pwd", "user")
+	raw := fx.SeedRefreshToken(t, u.ID, time.Now().Add(24*time.Hour))
+
+	if _, err := fx.DB.DB().Exec(`UPDATE users SET active = 0 WHERE id = ?`, u.ID); err != nil {
+		t.Fatalf("deactivate: %v", err)
+	}
+
+	handler := NewRefreshTokenHandler(fx.Users, fx.Tokens, fx.Jwt)
+
+	_, err := handler.Handle(ctx, RefreshTokenCommand{RawToken: raw})
+	var authErr *shared.AuthError
+	if !errors.As(err, &authErr) {
+		t.Fatalf("inactive user refresh must map to *shared.AuthError, got %T: %v", err, err)
+	}
+}
+
 func TestRefreshTokenHandler_Expired(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "refresh_expired.db"))

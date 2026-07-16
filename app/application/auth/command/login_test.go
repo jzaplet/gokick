@@ -74,6 +74,28 @@ func TestLoginHandler_WrongPassword(t *testing.T) {
 	}
 }
 
+// A deactivated account cannot log in even with the correct password: the
+// active flag is enforced AFTER Verify, and the error stays neutral.
+func TestLoginHandler_InactiveUserCannotLogIn(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_inactive.db"))
+	u := fx.SeedUser(t, "carol", "super-secret", "user")
+
+	if _, err := fx.DB.DB().Exec(`UPDATE users SET active = 0 WHERE id = ?`, u.ID); err != nil {
+		t.Fatalf("deactivate: %v", err)
+	}
+
+	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
+
+	_, err := handler.Handle(ctx, LoginCommand{Nickname: "carol", Password: "super-secret"})
+	var authErr *shared.AuthError
+	if !errors.As(err, &authErr) {
+		t.Fatalf("expected *shared.AuthError for inactive user, got %T: %v", err, err)
+	}
+
+	fx.AssertTokenCount(t, 0)
+}
+
 func TestLoginHandler_UnknownUser(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_unknown.db"))

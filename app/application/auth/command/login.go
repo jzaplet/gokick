@@ -127,6 +127,19 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (IssuedSess
 		return IssuedSession{}, &shared.AuthError{Message: "invalid credentials"}
 	}
 
+	// Deactivated accounts cannot start a session. Checked AFTER Verify (like
+	// locked) so the bcrypt cost is already paid uniformly and the active
+	// state can't leak via response timing; the error stays neutral so it
+	// reveals neither that the nickname exists nor that it is disabled.
+	if !u.Active {
+		audit.Record(shared.AuditEvent{
+			Action:     "auth.login.blocked_inactive",
+			TargetType: "user",
+			TargetID:   u.ID,
+		})
+		return IssuedSession{}, &shared.AuthError{Message: "invalid credentials"}
+	}
+
 	// Successful login → clear the counter so the next failure cycle
 	// starts fresh. Best-effort; a transient DB error here shouldn't
 	// block an otherwise-valid login.
