@@ -140,7 +140,7 @@ Největší (a jediný zásadní) strop: single-node SQLite (single-writer) + sc
 
 ### 🟢 Výkon `8,5 → 10`
 
-- **Keyset stránkování** všech list dotazů (dnes `FindAll` tahá celou tabulku).
+- **Keyset stránkování** místo `LIMIT/OFFSET` — list dotazy (`FindPage`, `FindPageAcrossTenants`, `OverviewPageAcrossTenants`) dnes stránkují offsetem: hluboká stránka musí naskenovat a zahodit všechny předchozí řádky, a souběžný zápis může řádek na hranici stránky duplikovat nebo úplně vynechat.
 - **Cache vrstva** (in-proc / Redis) pro hot reads.
 - **Benchmarky + pprof** profily.
 

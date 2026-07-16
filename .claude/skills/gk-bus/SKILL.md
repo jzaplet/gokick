@@ -106,18 +106,18 @@ blokuje kaskádový `Collect` z event handlerů (`ContextWithoutEventCollector`)
 ## Recipe
 ### Recipe: dispatch query z HTTP handleru (čtení)
 ```go
-users, err := bus.Query(
+page, err := bus.Query(
     r.Context(),
     h.queryBus,                // *QueryBus — párování hlídá kompilátor
     "ListUsers",               // štítek do logu
     q,                         // query value (musí mít Permissioned/SkipPermission)
-    func(ctx context.Context) ([]user.User, error) {
+    func(ctx context.Context) (user.ListPage, error) {
         return h.listUsers.Handle(ctx, q)
     },
 )
 if err != nil { h.resp.HandleError(r.Context(), w, err); return }
 ```
-(reálný vzor: `app/presentation/http/handler/admin_users.go:76`)
+(reálný vzor: `app/presentation/http/handler/admin_users.go:139`)
 
 ### Recipe: dispatch command z HTTP handleru (zápis)
 ```go
@@ -126,7 +126,11 @@ err := bus.DispatchVoid(
     func(ctx context.Context) error { return h.createUser.Handle(ctx, cmd) },
 )
 ```
-(reálný vzor: `app/presentation/http/handler/admin_users.go:139`)
+(reálný vzor: `app/presentation/http/handler/admin_users.go:205`)
+
+Command, který něco vrací (bulk operace vrací počet dotčených řádků), jde přes
+`bus.Dispatch[R]` místo `DispatchVoid` — zbytek chainu je identický (vzor:
+`app/presentation/http/handler/admin_users.go:297`).
 
 ### Recipe: nová stanice (middleware)
 1. Napiš `func XxxMiddleware(deps...) bus.Middleware` v `middleware/`.

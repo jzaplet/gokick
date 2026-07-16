@@ -34,7 +34,7 @@ Kód je rozdělený na dvě poloviny:
 
 **Doménová organizace** (`assets/app/<Domain>/`, reálné domény: `Admin`, `Auth`, `Dashboard`, `Home`, `Layout`, `Platform`, `Profile`):
 - **`Views/`** — routované obrazovky, jsou to **orchestrátory**: poskládají layout, namountují pár komponent, předají props. Business logika sem nepatří. Příklad: `app/Admin/Views/AdminUsersView.vue`.
-- **`Components/`** — doménové, samostatné kusy: formuláře (`UserForm.vue`), tabulky (`UsersTable.vue`), karty.
+- **`Components/`** — doménové, samostatné kusy: formuláře (`UserForm.vue`), řádky gridu (`AdminUserRow.vue`), karty. Tabulku samotnou doména nevlastní — skládá ji sdílený `app-ui/DataGrid`, kterému doména dodá jen `<tr>` do slotu `#rows`.
 - **`types/`** — typové definice, jeden typ na soubor. Wire DTO typy (`AdminUser.ts`, `UserFormData.ts`) generuje z Go structů `make ts-gen` (tsgen, hlavička `DO NOT EDIT` — needituj ručně, uprav Go struct); ručně píšeš jen FE-lokální typy (`UserFormErrors.ts`).
 
 **Sdílené `app-ui/`** — generic, znovupoužitelné napříč doménami. Klíčové vstupní body (importuj z barrelu, ne z konkrétního souboru):

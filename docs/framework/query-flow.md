@@ -36,14 +36,14 @@ Když potřebuješ **přečíst data** (seznam, detail) a vrátit je z endpointu
 
 ```go
 func (h *AdminUsersHandler) List(w http.ResponseWriter, r *http.Request) {
-    q := userqry.ListUsersQuery{}
+    q := listUsersQueryFromRequest(r) // stav gridu (stránka, řazení, filtry) z query stringu
 
-    users, err := bus.Query(
+    page, err := bus.Query(
         r.Context(),
         h.queryBus,
         "ListUsers",
         q,
-        func(ctx context.Context) ([]user.User, error) {
+        func(ctx context.Context) (user.ListPage, error) {
             return h.listUsers.Handle(ctx, q)
         },
     )
@@ -52,11 +52,14 @@ func (h *AdminUsersHandler) List(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    dtos := make([]adminUserDTO, len(users)) // entity → DTO
-    for i, u := range users {
+    dtos := make([]adminUserDTO, len(page.Items)) // entity → DTO
+    for i, u := range page.Items {
         dtos[i] = toAdminUserDTO(u)
     }
-    h.resp.JSON(r.Context(), w, http.StatusOK, dtos)
+    h.resp.JSON(r.Context(), w, http.StatusOK, adminUserListResponse{
+        Items: dtos,
+        Total: page.Total, // celkový počet PŘED stránkováním — grid z něj počítá pager
+    })
 }
 ```
 

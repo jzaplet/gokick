@@ -63,7 +63,8 @@ Defaulty (`config.go`): `APP_RATE_LIMIT_LOGIN = 10/min`, `APP_RATE_LIMIT_REFRESH
 2. Lock check (`u.LockedUntil`) je **až po** `Verify`, aby zamčená větev nebyla měřitelně rychlejší.
 3. Selhání (neznámý / špatné heslo) → `handleFailedLogin`: audit `auth.login.failed`, a pro známé a nezamčené uživatele `users.RecordFailedLogin(...)`; když pokus překročí threshold, audit `auth.account.locked`.
 4. Zamčený účet se správným heslem → audit `auth.login.blocked_while_locked`, vrátí stejný neutrální `AuthError` (401).
-5. Úspěch → `ResetFailedLogin` (počítadlo na 0), vydá tokeny, audit `auth.login.succeeded`.
+5. Deaktivovaný účet (`u.Active == false`) se správným heslem → audit `auth.login.blocked_inactive`, vrátí stejný neutrální `AuthError` (401). Kontrola je — stejně jako lock — **až po** `Verify`, aby ani „účet je vypnutý" neuniklo časem.
+6. Úspěch → `ResetFailedLogin` (počítadlo na 0), vydá tokeny, audit `auth.login.succeeded`.
 
 **Atomicita počítadla** (`infrastructure/sqlite/user/repository.go`): `RecordFailedLogin` je jediný SQL `UPDATE ... CASE` — rozhodne reset (mimo okno) / inkrement / lock (na/přes threshold) atomicky, žádný read-modify-write race. `RecordFailedLogin` i `ResetFailedLogin` zapisují přes **raw pool** (`r.DB.DB()`), ne přes tx-aware `r.Conn(ctx)` — jsou to single-statement auto-commity, takže počítadlo přežije nezávisle na jakékoli okolní transakci. Navíc `LoginCommand` deklaruje `SkipTransaction()`, aby handler nebyl obalený write-tx, která by se s tím raw-pool zápisem pod SQLite zadeadlockovala (viz `/gk-repositories`).
 
