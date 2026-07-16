@@ -74,46 +74,49 @@ onMounted(async (): Promise<void> => {
                 :has-active-filters="grid.hasActiveFilters.value"
                 @clear="grid.clearFilters"
             >
-                <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <Input
                         v-model="grid.filters.name"
                         label="Tenant"
                         placeholder="Search tenant"
                         flat
                         size="sm"
+                        :active="grid.filters.name !== ''"
                     />
                 </div>
             </FilterPanel>
 
-            <DataGrid
-                :columns="columns"
-                :sort="grid.sort.value"
-                :is-loading="grid.isLoading.value"
-                @sort="grid.handleSort"
-            >
-                <template #rows>
-                    <PlatformTenantRow
-                        v-for="tenant in tenants"
-                        :key="tenant.id"
-                        :tenant="tenant"
-                    />
-                    <tr v-if="tenants.length === 0">
-                        <td
-                            :colspan="columns.length"
-                            class="px-6 py-8 text-center text-sm text-gray-500"
-                        >
-                            No tenants
-                        </td>
-                    </tr>
-                </template>
-            </DataGrid>
+            <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <DataGrid
+                    :columns="columns"
+                    :sort="grid.sort.value"
+                    :is-loading="grid.isLoading.value"
+                    @sort="grid.handleSort"
+                >
+                    <template #rows>
+                        <PlatformTenantRow
+                            v-for="tenant in tenants"
+                            :key="tenant.id"
+                            :tenant="tenant"
+                        />
+                        <tr v-if="tenants.length === 0">
+                            <td
+                                :colspan="columns.length"
+                                class="px-4 py-8 text-center text-gray-400"
+                            >
+                                No tenants
+                            </td>
+                        </tr>
+                    </template>
+                </DataGrid>
 
-            <Pagination
-                :page="grid.page.value"
-                :per-page="grid.perPage.value"
-                :total="grid.total.value"
-                @update:page="grid.handlePageChange"
-            />
+                <Pagination
+                    :page="grid.page.value"
+                    :per-page="grid.perPage.value"
+                    :total="grid.total.value"
+                    @update:page="grid.handlePageChange"
+                />
+            </div>
         </div>
     </div>
 </template>

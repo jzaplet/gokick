@@ -8,11 +8,11 @@ const { tenant } = defineProps<{
 </script>
 
 <template>
-    <tr class="hover:bg-gray-50">
-        <td class="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+    <tr class="hover:bg-gray-50 transition-colors">
+        <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
             {{ tenant.name }}
         </td>
-        <td class="px-3 sm:px-6 py-4 whitespace-nowrap text-sm">
+        <td class="px-4 py-3 whitespace-nowrap text-sm">
             <span
                 :class="[
                     'inline-flex px-2 py-1',
@@ -25,7 +25,7 @@ const { tenant } = defineProps<{
                 {{ tenant.plan }}
             </span>
         </td>
-        <td class="px-3 sm:px-6 py-4 whitespace-nowrap text-right text-sm text-gray-500">
+        <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-500">
             {{ tenant.user_count }}
         </td>
     </tr>

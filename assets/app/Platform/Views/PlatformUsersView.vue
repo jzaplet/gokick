@@ -155,13 +155,14 @@ onMounted(async (): Promise<void> => {
                 :has-active-filters="grid.hasActiveFilters.value"
                 @clear="grid.clearFilters"
             >
-                <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                     <Input
                         v-model="grid.filters.tenant"
                         label="Tenant"
                         placeholder="Search tenant"
                         flat
                         size="sm"
+                        :active="grid.filters.tenant !== ''"
                     />
                     <Input
                         v-model="grid.filters.nickname"
@@ -169,6 +170,7 @@ onMounted(async (): Promise<void> => {
                         placeholder="Search nickname"
                         flat
                         size="sm"
+                        :active="grid.filters.nickname !== ''"
                     />
                     <Input
                         v-model="grid.filters.email"
@@ -176,6 +178,7 @@ onMounted(async (): Promise<void> => {
                         placeholder="Search email"
                         flat
                         size="sm"
+                        :active="grid.filters.email !== ''"
                     />
                     <Select
                         :model-value="grid.filters.role"
@@ -183,6 +186,7 @@ onMounted(async (): Promise<void> => {
                         :options="roleOptions"
                         flat
                         size="sm"
+                        :active="grid.filters.role !== ''"
                         @update:model-value="grid.filters.role = $event ?? ''"
                     />
                     <Select
@@ -191,6 +195,7 @@ onMounted(async (): Promise<void> => {
                         :options="activeOptions"
                         flat
                         size="sm"
+                        :active="grid.filters.active !== ''"
                         @update:model-value="grid.filters.active = $event ?? ''"
                     />
                 </div>
@@ -206,43 +211,45 @@ onMounted(async (): Promise<void> => {
                 @clear="grid.clearSelection"
             />
 
-            <DataGrid
-                :columns="columns"
-                :sort="grid.sort.value"
-                :is-loading="grid.isLoading.value"
-                selectable
-                :all-selected="allPageSelected"
-                @sort="grid.handleSort"
-                @toggle-page="grid.togglePage(pageSelectableIds)"
-            >
-                <template #rows>
-                    <PlatformUserRow
-                        v-for="user in users"
-                        :key="user.id"
-                        :user="user"
-                        selectable
-                        :selected="grid.isSelected(user.id)"
-                        @edit="goToEdit"
-                        @delete="askDelete"
-                        @toggle-select="grid.toggleRow(user.id)"
-                    />
-                    <tr v-if="users.length === 0">
-                        <td
-                            :colspan="columns.length + 1"
-                            class="px-6 py-8 text-center text-sm text-gray-500"
-                        >
-                            No users
-                        </td>
-                    </tr>
-                </template>
-            </DataGrid>
+            <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <DataGrid
+                    :columns="columns"
+                    :sort="grid.sort.value"
+                    :is-loading="grid.isLoading.value"
+                    selectable
+                    :all-selected="allPageSelected"
+                    @sort="grid.handleSort"
+                    @toggle-page="grid.togglePage(pageSelectableIds)"
+                >
+                    <template #rows>
+                        <PlatformUserRow
+                            v-for="user in users"
+                            :key="user.id"
+                            :user="user"
+                            selectable
+                            :selected="grid.isSelected(user.id)"
+                            @edit="goToEdit"
+                            @delete="askDelete"
+                            @toggle-select="grid.toggleRow(user.id)"
+                        />
+                        <tr v-if="users.length === 0">
+                            <td
+                                :colspan="columns.length + 1"
+                                class="px-4 py-8 text-center text-gray-400"
+                            >
+                                No users
+                            </td>
+                        </tr>
+                    </template>
+                </DataGrid>
 
-            <Pagination
-                :page="grid.page.value"
-                :per-page="grid.perPage.value"
-                :total="grid.total.value"
-                @update:page="grid.handlePageChange"
-            />
+                <Pagination
+                    :page="grid.page.value"
+                    :per-page="grid.perPage.value"
+                    :total="grid.total.value"
+                    @update:page="grid.handlePageChange"
+                />
+            </div>
 
             <ConfirmModal
                 :show="userToDelete !== null"

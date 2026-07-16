@@ -12,22 +12,27 @@ const make = (count: number, total: number, isAllFiltered = false): BarWrapper =
             isAllFiltered,
             actions: [
                 { key: 'activate', label: 'Activate' },
-                { key: 'delete', label: 'Delete', variant: 'danger' },
+                { key: 'delete', label: 'Delete' },
             ],
         },
     });
+
+const openDropdown = async (wrapper: BarWrapper): Promise<void> => {
+    // The orange count pill is the first button in the bar.
+    await wrapper.find('button').trigger('click');
+};
 
 describe('BulkActionBar', () => {
     it('renders nothing without a selection', () => {
         expect(make(0, 50).find('div').exists()).toBe(false);
     });
 
-    it('shows the manual count and the escalation to all filtered', async (): Promise<void> => {
+    it('shows the summary and the escalation to all filtered', async (): Promise<void> => {
         const wrapper = make(3, 50);
 
-        expect(wrapper.text()).toContain('3 selected');
+        expect(wrapper.text()).toContain('Selected: 3 / 50');
 
-        const escalate = wrapper.findAll('button').find((b) => b.text().includes('Select all 50'));
+        const escalate = wrapper.findAll('button').find((b) => b.text().includes('Select all (50)'));
 
         expect(escalate).toBeDefined();
 
@@ -39,20 +44,40 @@ describe('BulkActionBar', () => {
     it('shows the all-filtered summary WITHOUT the escalation link', () => {
         const wrapper = make(50, 50, true);
 
-        expect(wrapper.text()).toContain('All 50 filtered selected');
-        expect(wrapper.findAll('button').some((b) => b.text().includes('Select all'))).toBe(false);
+        expect(wrapper.text()).toContain('Selected: all (50)');
+        expect(wrapper.findAll('button').some((b) => b.text().includes('Select all ('))).toBe(false);
     });
 
-    it('emits the action key and clear', async (): Promise<void> => {
+    it('opens the dropdown and emits the action key', async (): Promise<void> => {
         const wrapper = make(2, 50);
-        const buttons = wrapper.findAll('button');
 
-        await buttons.find((b) => b.text() === 'Delete')?.trigger('click');
+        // Actions live in the dropdown — hidden until the pill is clicked.
+        expect(wrapper.findAll('button').some((b) => b.text().includes('Delete'))).toBe(false);
+
+        await openDropdown(wrapper);
+
+        const item = wrapper.findAll('button').find((b) => b.text().includes('Delete (2x)'));
+
+        expect(item).toBeDefined();
+
+        await item?.trigger('click');
 
         expect(wrapper.emitted('action')).toEqual([['delete']]);
+    });
 
-        await buttons.find((b) => b.text() === 'Clear')?.trigger('click');
+    it('emits clear from the dropdown item and the inline link', async (): Promise<void> => {
+        const wrapper = make(2, 50);
 
-        expect(wrapper.emitted('clear')).toHaveLength(1);
+        await openDropdown(wrapper);
+
+        const clears = wrapper.findAll('button').filter((b) => b.text() === 'Clear selection');
+
+        // One inside the dropdown, one inline at the end of the bar.
+        expect(clears).toHaveLength(2);
+
+        await clears[0]?.trigger('click');
+        await clears[1]?.trigger('click');
+
+        expect(wrapper.emitted('clear')).toHaveLength(2);
     });
 });

@@ -36,10 +36,15 @@ const isManageable = (): boolean => {
 </script>
 
 <template>
-    <tr class="hover:bg-gray-50">
+    <tr
+        :class="[
+            'hover:bg-gray-50 transition-colors',
+            selected === true ? 'bg-orange-50' : '',
+        ]"
+    >
         <td
             v-if="selectable === true"
-            class="px-3 sm:px-6 py-4 w-10"
+            class="w-10 px-4 py-3"
         >
             <CheckBox
                 :model-value="selected"
@@ -48,10 +53,10 @@ const isManageable = (): boolean => {
                 @update:model-value="$emit('toggleSelect', user)"
             />
         </td>
-        <td class="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+        <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
             {{ user.tenant_name }}
         </td>
-        <td class="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
             {{ user.nickname }}
             <span
                 v-if="user.active === false"
@@ -62,14 +67,14 @@ const isManageable = (): boolean => {
                 ]"
             >Inactive</span>
         </td>
-        <td class="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
             <span v-if="user.email !== ''">{{ user.email }}</span>
             <span
                 v-else
                 class="text-gray-300"
             >—</span>
         </td>
-        <td class="px-3 sm:px-6 py-4 whitespace-nowrap text-sm">
+        <td class="px-4 py-3 whitespace-nowrap text-sm">
             <span
                 :class="[
                     'inline-flex px-2 py-1',
@@ -80,22 +85,22 @@ const isManageable = (): boolean => {
                 {{ user.role }}
             </span>
         </td>
-        <td class="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
             {{ formatLastLogin(user.last_login_at) }}
         </td>
-        <td class="px-3 sm:px-6 py-4 whitespace-nowrap text-right text-sm">
-            <div class="flex items-center justify-end gap-1 sm:gap-2">
+        <td class="px-4 py-3 whitespace-nowrap text-right text-sm">
+            <div class="flex items-center justify-end gap-1">
                 <Button
-                    variant="ghost"
-                    size="sm"
+                    variant="secondary"
+                    size="xs"
                     :disabled="isManageable() === false"
                     @click="$emit('edit', user)"
                 >
                     <EditIcon />
                 </Button>
                 <Button
-                    variant="ghost"
-                    size="sm"
+                    variant="danger"
+                    size="xs"
                     :disabled="isManageable() === false"
                     @click="$emit('delete', user)"
                 >

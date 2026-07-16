@@ -30,7 +30,7 @@ export const usePlatformUsersBulk = (grid: GridState<PlatformGridFilters>): Plat
     const bulkActions: BulkAction[] = [
         { key: 'activate', label: 'Activate' },
         { key: 'deactivate', label: 'Deactivate' },
-        { key: 'delete', label: 'Delete', variant: 'danger' },
+        { key: 'delete', label: 'Delete' },
     ];
 
     const confirmBulkDelete = ref(false);

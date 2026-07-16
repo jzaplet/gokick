@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
+import ChevronDownIcon from '@/app-ui/Icons/ChevronDownIcon.vue';
 
-// Collapsible filter panel above a grid (ported from aibobr): a MINIMAL
-// toggle — plain text with a chevron, turning into a filled orange pill when
-// filters are active so the narrowed list is impossible to miss. Remembers
-// its open/closed state per grid in localStorage and opens itself when
-// filters are active on mount (a deep link with filters must show WHY the
-// list is narrowed). The inputs are the consumer's slot; clear-all lives
-// inside the panel under them.
+// Collapsible filter panel above a grid (aibobr parity): a MINIMAL toggle —
+// plain text with a chevron, turning into a filled orange pill when filters
+// are active so the narrowed list is impossible to miss. Remembers its
+// open/closed state per grid in localStorage and opens itself when filters
+// are active on mount (a deep link with filters must show WHY the list is
+// narrowed). The inputs are the consumer's slot; the mini clear-all link
+// lives inside the panel under them.
 const { storageKey, label = 'Filters', hasActiveFilters } = defineProps<{
     storageKey: string;
     label?: string;
@@ -37,53 +38,45 @@ const toggle = (): void => {
         <button
             type="button"
             :class="[
-                'inline-flex items-center gap-2 cursor-pointer',
-                'px-3 py-1.5 rounded-md',
+                'inline-flex items-center gap-1.5 cursor-pointer',
+                'px-3 py-1.5 rounded-lg',
                 'text-sm font-medium transition-colors',
                 hasActiveFilters === true
                     ? 'bg-orange-500 text-white hover:bg-orange-600'
-                    : '-ml-3 text-gray-700 hover:text-gray-900',
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100',
             ]"
             @click="toggle"
         >
             {{ label }}
-            <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                aria-hidden="true"
+            <ChevronDownIcon
                 :class="[
-                    'w-4 h-4 transition-transform',
+                    'w-3.5 h-3.5 transition-transform duration-200',
                     isOpen === true ? 'rotate-180' : '',
                 ]"
-            >
-                <path
-                    stroke="currentColor"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="m6 9 6 6 6-6"
-                />
-            </svg>
+            />
         </button>
 
         <div
             v-show="isOpen === true"
-            class="mt-3 bg-white rounded-lg shadow-md px-4 sm:px-6 py-4"
+            class="mt-3 bg-white border border-gray-200 rounded-xl p-4"
         >
             <slot />
-            <button
-                type="button"
-                :class="[
-                    'mt-3 text-sm underline cursor-pointer',
-                    hasActiveFilters === true
-                        ? 'text-orange-700 hover:text-orange-900'
-                        : 'text-gray-400 cursor-not-allowed',
-                ]"
-                :disabled="hasActiveFilters === false"
-                @click="emit('clear')"
-            >
-                Clear filters
-            </button>
+
+            <div class="flex mt-3 ml-1">
+                <button
+                    type="button"
+                    :disabled="hasActiveFilters === false"
+                    :class="[
+                        'text-xs underline underline-offset-2 transition-colors',
+                        hasActiveFilters === true
+                            ? 'text-red-400 hover:text-red-600 cursor-pointer'
+                            : 'text-gray-300 cursor-default',
+                    ]"
+                    @click="emit('clear')"
+                >
+                    Clear filters
+                </button>
+            </div>
         </div>
     </div>
 </template>

@@ -28,7 +28,7 @@ const onChange = (event: Event): void => {
         :aria-label="srLabel"
         :class="[
             'w-4 h-4 rounded',
-            'border-gray-300 text-orange-600',
+            'border-gray-300 text-orange-500',
             'focus:ring-orange-500',
             'cursor-pointer disabled:cursor-not-allowed disabled:opacity-40',
         ]"
