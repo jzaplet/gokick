@@ -1,8 +1,34 @@
 import { reactive, ref } from 'vue';
+import { arrayOf, isNumber, isRecord, isString, nullable } from '@/app-ui/Fetch/guards';
 import type { ToastType } from './types/ToastType';
 import type { Toast } from './types/Toast';
 
 const TOAST_STORAGE_KEY = 'persistent-toasts';
+
+type StoredToasts = {
+    toasts: Toast[];
+    sleepingToasts: Toast[];
+};
+
+// localStorage is an untrusted boundary for the same reason the wire is: the
+// value outlives the code that wrote it (it survives deploys), so a payload
+// from an older schema — or a hand-edited one — is a real input, not a
+// hypothetical. Hence the same discipline and the same primitives as the wire
+// guards, rather than asserting the shape and hoping.
+const isToastType = (v: unknown): v is ToastType =>
+    v === 'success' || v === 'error' || v === 'info' || v === 'warning';
+
+const isToast = (v: unknown): v is Toast =>
+    isRecord(v)
+    && isNumber(v['id'])
+    && isToastType(v['type'])
+    && isString(v['message'])
+    && nullable(isNumber)(v['duration']);
+
+const isStoredToasts = (v: unknown): v is StoredToasts =>
+    isRecord(v)
+    && arrayOf(isToast)(v['toasts'])
+    && arrayOf(isToast)(v['sleepingToasts']);
 
 const storage
     = typeof localStorage !== 'undefined'
@@ -121,28 +147,26 @@ const loadToasts = (): void => {
 
     // loadToasts() runs at module-evaluation time (App.vue → ToastContainer →
     // useToast import), so an unguarded throw here bricks the whole app with a
-    // white screen at bootstrap. localStorage survives across deploys, so one
-    // corrupt or schema-changed 'persistent-toasts' value would poison every
-    // future load until cleared by hand. Recover instead: drop the bad key and
-    // start with empty state — a lost toast history is never worth a dead app.
-    // Long-term hardening (versioning/validating the persisted shape) is tracked
-    // separately with the BE↔FE parity follow-up. (F-076)
+    // white screen at bootstrap. Recover instead: drop the bad key and start
+    // with empty state — a lost toast history is never worth a dead app. The
+    // catch covers malformed JSON; isStoredToasts covers well-formed JSON of
+    // the wrong shape, which an assertion used to wave through — a stale
+    // schema then surfaced as `toast.type` being undefined deep in the render,
+    // far from its cause. (F-076; explicit schema VERSIONING is still open.)
     try {
-        const parsed: {
-            toasts: Toast[];
-            sleepingToasts: Toast[];
-        } = JSON.parse(storedToasts) as {
-            toasts: Toast[];
-            sleepingToasts: Toast[];
-        };
+        const parsed: unknown = JSON.parse(storedToasts);
 
-        const { toasts: active, sleepingToasts: sleeping } = parsed;
+        if (isStoredToasts(parsed) === false) {
+            storage.removeItem(TOAST_STORAGE_KEY);
 
-        for (const toast of active) {
+            return;
+        }
+
+        for (const toast of parsed.toasts) {
             addToast(toast.type, toast.message, toast.duration);
         }
 
-        for (const toast of sleeping) {
+        for (const toast of parsed.sleepingToasts) {
             sleepingToasts.push(toast);
         }
 
