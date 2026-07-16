@@ -79,6 +79,21 @@ func TestListTenants_GridCriteria(t *testing.T) {
 		t.Fatalf("name filter: got %+v", page.Items)
 	}
 
+	// Plan filter is an exact match — flip acme to a paid tier and expect only
+	// acme back (page AND total).
+	if _, err = fx.DB.DB().Exec(
+		`UPDATE tenants SET plan = 'pro' WHERE id = ?`, tenantA.ID,
+	); err != nil {
+		t.Fatalf("flip plan: %v", err)
+	}
+	page, err = h.Handle(superCtx(), ListTenantsQuery{Plan: "pro"})
+	if err != nil {
+		t.Fatalf("plan filter: %v", err)
+	}
+	if page.Total != 1 || page.Items[0].Name != "acme" || page.Items[0].Plan != "pro" {
+		t.Fatalf("plan filter: got %+v", page.Items)
+	}
+
 	// Name ASC orders Default (capital D) before acme and beta — page 2 of
 	// size 1 is therefore acme.
 	page, err = h.Handle(superCtx(), ListTenantsQuery{Page: 2, PerPage: 1})

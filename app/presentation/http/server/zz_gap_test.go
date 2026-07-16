@@ -214,7 +214,7 @@ func boundServer(t *testing.T) (*Server, *testfx.Fixture) {
 	dashboard := handler.NewDashboardHandler(testResponder(),
 		qryBus,
 		dashboardqry.NewGetUserDashboardHandler(),
-		dashboardqry.NewGetAdminDashboardHandler(),
+		dashboardqry.NewGetAdminDashboardHandler(fx.Users),
 	)
 
 	s := &Server{
@@ -402,9 +402,11 @@ func TestRegisterRoutes_BindsAdminAndDashboardRoutesToHandlers(t *testing.T) {
 				rec.Body.String(),
 			)
 		}
-		if !strings.Contains(rec.Body.String(), "admin dashboard") {
+		// The admin dashboard returns the user-stat counts (users_active /
+		// users_total) — the user dashboard's message body would miss both keys.
+		if !strings.Contains(rec.Body.String(), "users_total") {
 			t.Fatalf(
-				"dashboard/admin body %q missing 'admin dashboard' — route bound to the wrong query",
+				"dashboard/admin body %q missing 'users_total' — route bound to the wrong query",
 				rec.Body.String(),
 			)
 		}

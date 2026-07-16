@@ -145,9 +145,9 @@ onMounted(async (): Promise<void> => {
 </script>
 
 <template>
-    <div class="py-12 px-4 sm:px-6 lg:px-8">
-        <div class="max-w-6xl mx-auto space-y-6">
-            <h1 class="text-3xl font-extrabold text-gray-900">
+    <div>
+        <div class="space-y-6">
+            <h1 class="text-2xl font-bold text-gray-900">
                 Platform users
             </h1>
 

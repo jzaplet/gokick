@@ -17,6 +17,7 @@ type ListTenantsQuery struct {
 	SortBy  string
 	SortDir string
 	Name    string
+	Plan    string
 }
 
 func (ListTenantsQuery) RequiredPermission() string { return "platform:overview" }
@@ -38,7 +39,7 @@ func (h *ListTenantsHandler) Handle(
 		PerPage: q.PerPage,
 		Sort:    tenant.SortColumnFrom(q.SortBy),
 		SortDir: shared.SortDirectionFrom(q.SortDir),
-		Filters: tenant.ListFilters{Name: q.Name},
+		Filters: tenant.ListFilters{Name: q.Name, Plan: q.Plan},
 	}.Normalize()
 
 	return h.tenants.OverviewPage(ctx, criteria)

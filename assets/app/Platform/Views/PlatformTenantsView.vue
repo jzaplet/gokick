@@ -4,13 +4,15 @@ import type { PlatformTenantListResponse } from '@/app/Platform/types/PlatformTe
 import { isPlatformTenantListResponse } from '@/app/Platform/types/PlatformTenantListResponse';
 import type { GridColumn } from '@/app-ui/DataGrid/createGridState';
 import { createGridState } from '@/app-ui/DataGrid/createGridState';
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { authFetch } from '@/app-ui/Auth';
 import { useToast } from '@/app-ui/Toast/useToast';
 import DataGrid from '@/app-ui/DataGrid/DataGrid.vue';
 import FilterPanel from '@/app-ui/FilterPanel/FilterPanel.vue';
 import Pagination from '@/app-ui/Pagination/Pagination.vue';
 import Input from '@/app-ui/Inputs/Input.vue';
+import Select from '@/app-ui/Inputs/Select.vue';
+import BulkActionBar from '@/app-ui/BulkActions/BulkActionBar.vue';
 import PlatformTenantRow from '@/app/Platform/Components/PlatformTenantRow.vue';
 
 const { error } = useToast();
@@ -23,9 +25,14 @@ const columns: GridColumn[] = [
     { key: 'users', label: 'Users', sortable: true, align: 'right' },
 ];
 
+const planOptions = [
+    { value: '', label: 'All plans' },
+    { value: 'free', label: 'free' },
+];
+
 const grid = createGridState({
     defaultSort: { column: 'name', direction: 'ASC' },
-    filters: { name: '' },
+    filters: { name: '', plan: '' },
     syncUrl: true,
     load: async ({ page, perPage, sort, filters }) => {
         const params = new URLSearchParams({
@@ -35,8 +42,10 @@ const grid = createGridState({
             sort_dir: sort.direction,
         });
 
-        if (filters.name !== '') {
-            params.set('name', filters.name);
+        for (const [key, value] of Object.entries(filters)) {
+            if (value !== '') {
+                params.set(key, value);
+            }
         }
 
         const result = await authFetch<PlatformTenantListResponse>(
@@ -57,15 +66,24 @@ const grid = createGridState({
     },
 });
 
+// No bulk operations exist for tenants YET — the bar still offers the
+// selection mechanics (select page / all filtered / clear), so actions can
+// land here later without UI work.
+const pageIds = computed<string[]>(() => tenants.value.map((t) => t.id));
+
+const allPageSelected = computed<boolean>(() =>
+    pageIds.value.length > 0
+    && pageIds.value.every((id) => grid.isSelected(id) === true));
+
 onMounted(async (): Promise<void> => {
     await grid.init();
 });
 </script>
 
 <template>
-    <div class="py-12 px-4 sm:px-6 lg:px-8">
-        <div class="max-w-5xl mx-auto space-y-6">
-            <h1 class="text-3xl font-extrabold text-gray-900">
+    <div>
+        <div class="space-y-6">
+            <h1 class="text-2xl font-bold text-gray-900">
                 Tenants
             </h1>
 
@@ -83,25 +101,49 @@ onMounted(async (): Promise<void> => {
                         size="sm"
                         :active="grid.filters.name !== ''"
                     />
+                    <Select
+                        :model-value="grid.filters.plan"
+                        label="Plan"
+                        :options="planOptions"
+                        flat
+                        size="sm"
+                        :active="grid.filters.plan !== ''"
+                        @update:model-value="grid.filters.plan = $event ?? ''"
+                    />
                 </div>
             </FilterPanel>
+
+            <BulkActionBar
+                :count="grid.selectedCount.value"
+                :total="grid.total.value"
+                :is-all-filtered="grid.isAllFilteredSelected.value"
+                :actions="[]"
+                @select-all-filtered="grid.selectAllFiltered"
+                @clear="grid.clearSelection"
+            />
 
             <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
                 <DataGrid
                     :columns="columns"
                     :sort="grid.sort.value"
                     :is-loading="grid.isLoading.value"
+                    selectable
+                    :all-selected="allPageSelected"
                     @sort="grid.handleSort"
+                    @toggle-page="grid.togglePage(pageIds)"
                 >
                     <template #rows>
                         <PlatformTenantRow
                             v-for="tenant in tenants"
                             :key="tenant.id"
                             :tenant="tenant"
+                            selectable
+                            :selected="grid.isSelected(tenant.id)"
+                            @toggle-select="grid.toggleRow(tenant.id)"
                         />
                         <tr v-if="tenants.length === 0">
                             <td
-                                :colspan="columns.length"
+                                :colspan="columns.length + 1"
                                 class="px-4 py-8 text-center text-gray-400"
                             >
                                 No tenants

@@ -230,6 +230,7 @@ func (h *PlatformHandler) Tenants(w http.ResponseWriter, r *http.Request) {
 		SortBy:  qs.Get("sort_by"),
 		SortDir: qs.Get("sort_dir"),
 		Name:    qs.Get("name"),
+		Plan:    qs.Get("plan"),
 	}
 
 	result, err := bus.Query(

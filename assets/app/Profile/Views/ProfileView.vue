@@ -7,9 +7,9 @@ const { user } = useAuth();
 </script>
 
 <template>
-    <div class="py-12 px-4 sm:px-6 lg:px-8">
+    <div>
         <div class="max-w-2xl mx-auto space-y-8">
-            <h1 class="text-3xl font-extrabold text-gray-900">
+            <h1 class="text-2xl font-bold text-gray-900">
                 Profile
             </h1>
 

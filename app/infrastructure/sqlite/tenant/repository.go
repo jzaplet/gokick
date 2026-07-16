@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"gokick/app/domain/tenant"
 	"gokick/app/infrastructure/database"
@@ -82,11 +83,19 @@ func (r *Repository) OverviewPage(
 	ctx context.Context,
 	c tenant.ListCriteria,
 ) (tenant.ListPage, error) {
-	where := ""
+	conds := []string{}
 	args := []any{}
 	if c.Filters.Name != "" {
-		where = ` WHERE t.name LIKE ?`
+		conds = append(conds, "t.name LIKE ?")
 		args = append(args, "%"+c.Filters.Name+"%")
+	}
+	if c.Filters.Plan != "" {
+		conds = append(conds, "t.plan = ?")
+		args = append(args, c.Filters.Plan)
+	}
+	where := ""
+	if len(conds) > 0 {
+		where = ` WHERE ` + strings.Join(conds, " AND ")
 	}
 
 	page := tenant.ListPage{Items: []tenant.Overview{}}

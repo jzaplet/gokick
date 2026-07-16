@@ -107,7 +107,7 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	bulkSetUsersActiveHandler := command3.NewBulkSetUsersActiveHandler(userRepository)
 	adminUsersHandler := handler.NewAdminUsersHandler(responder, commandBus, queryBus, listUsersHandler, getUserHandler, createUserHandler, updateUserHandler, deleteUserHandler, bulkDeleteUsersHandler, bulkSetUsersActiveHandler)
 	getUserDashboardHandler := query3.NewGetUserDashboardHandler()
-	getAdminDashboardHandler := query3.NewGetAdminDashboardHandler()
+	getAdminDashboardHandler := query3.NewGetAdminDashboardHandler(userRepository)
 	dashboardHandler := handler.NewDashboardHandler(responder, queryBus, getUserDashboardHandler, getAdminDashboardHandler)
 	tenantRepository := tenant.NewRepository(sqliteManager)
 	getStatsHandler := query4.NewGetStatsHandler(tenantRepository, userRepository)

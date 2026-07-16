@@ -150,15 +150,15 @@ onMounted(async (): Promise<void> => {
 </script>
 
 <template>
-    <div class="py-12 px-4 sm:px-6 lg:px-8">
-        <div class="max-w-5xl mx-auto space-y-6">
+    <div>
+        <div class="space-y-6">
             <div
                 :class="[
                     'flex flex-col gap-4',
                     'sm:flex-row sm:items-center sm:justify-between',
                 ]"
             >
-                <h1 class="text-3xl font-extrabold text-gray-900">
+                <h1 class="text-2xl font-bold text-gray-900">
                     User management
                 </h1>
 

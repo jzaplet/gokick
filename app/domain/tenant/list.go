@@ -21,6 +21,9 @@ func SortColumnFrom(v string) SortColumn {
 
 type ListFilters struct {
 	Name string
+	// Plan filters by exact billing tier (the FE offers the known tiers in a
+	// select); empty means all plans.
+	Plan string
 }
 
 const (

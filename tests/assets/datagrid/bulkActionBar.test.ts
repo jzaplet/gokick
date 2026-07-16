@@ -65,6 +65,20 @@ describe('BulkActionBar', () => {
         expect(wrapper.emitted('action')).toEqual([['delete']]);
     });
 
+    it('offers only deselect when there are no actions (tenants grid)', async (): Promise<void> => {
+        const wrapper = mount(BulkActionBar, {
+            props: { count: 2, total: 5, isAllFiltered: false, actions: [] },
+        });
+
+        await openDropdown(wrapper);
+
+        const items = wrapper.findAll('button').filter((b) => b.text() !== '');
+
+        // Pill, dropdown "Clear selection", escalation link, inline clear.
+        expect(items.some((b) => b.text() === 'Clear selection')).toBe(true);
+        expect(items.some((b) => b.text().includes('(2x)'))).toBe(false);
+    });
+
     it('emits clear from the dropdown item and the inline link', async (): Promise<void> => {
         const wrapper = make(2, 50);
 
