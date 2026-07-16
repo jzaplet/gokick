@@ -2,6 +2,11 @@ package user
 
 import "gokick/app/domain/shared"
 
+// Role is the wire contract for a user's role, not just a Go VO: tsgen emits it
+// as the FE's Role const + type + guard (which is why the consts below must stay
+// resolvable to string literals — see tools/gk/tsgen/union.go).
+//
+//gkts:assets/app/Auth/enums/roles.ts Role union
 type Role string
 
 const (

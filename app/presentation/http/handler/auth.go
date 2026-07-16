@@ -9,6 +9,7 @@ import (
 	authcmd "gokick/app/application/auth/command"
 	"gokick/app/application/bus"
 	"gokick/app/domain/shared"
+	"gokick/app/domain/user"
 	"gokick/app/presentation/http/request"
 	"gokick/app/presentation/http/response"
 )
@@ -69,11 +70,11 @@ type loginRequest struct {
 
 //gkts:assets/app-ui/Auth/types/AuthUser.ts AuthUser
 type userDTO struct {
-	ID          string   `json:"id"`
-	Nickname    string   `json:"nickname"`
-	Email       string   `json:"email"`
-	Role        string   `json:"role"`
-	Permissions []string `json:"permissions"`
+	ID          string    `json:"id"`
+	Nickname    string    `json:"nickname"`
+	Email       string    `json:"email"`
+	Role        user.Role `json:"role"`
+	Permissions []string  `json:"permissions"`
 }
 
 //gkts:assets/app-ui/Auth/types/LoginResponse.ts LoginResponse
@@ -217,7 +218,7 @@ func (h *AuthHandler) writeAuthResponse(
 			ID:          result.User.ID,
 			Nickname:    result.User.Nickname,
 			Email:       result.User.Email,
-			Role:        result.User.Role,
+			Role:        user.Role(result.User.Role),
 			Permissions: h.registry.ForRole(result.User.Role),
 		},
 	})

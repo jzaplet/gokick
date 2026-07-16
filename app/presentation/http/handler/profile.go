@@ -68,7 +68,7 @@ func (h *ProfileHandler) Get(w http.ResponseWriter, r *http.Request) {
 		ID:          u.ID,
 		Nickname:    u.Nickname,
 		Email:       u.Email,
-		Role:        u.Role,
+		Role:        user.Role(u.Role),
 		Permissions: h.registry.ForRole(u.Role),
 	})
 }

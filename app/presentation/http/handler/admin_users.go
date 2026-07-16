@@ -54,27 +54,27 @@ func NewAdminUsersHandler(
 
 //gkts:assets/app/Admin/types/AdminUser.ts AdminUser
 type adminUserDTO struct {
-	ID       string `json:"id"`
-	Nickname string `json:"nickname"`
-	Email    string `json:"email"`
-	Role     string `json:"role"`
-	Active   bool   `json:"active"`
+	ID       string    `json:"id"`
+	Nickname string    `json:"nickname"`
+	Email    string    `json:"email"`
+	Role     user.Role `json:"role"`
+	Active   bool      `json:"active"`
 }
 
 //gkts:assets/app/Admin/types/UserFormData.ts UserFormData noguard
 type createUserRequest struct {
-	Nickname string `json:"nickname"`
-	Password string `json:"password"`
-	Email    string `json:"email"`
-	Role     string `json:"role"`
+	Nickname string    `json:"nickname"`
+	Password string    `json:"password"`
+	Email    string    `json:"email"`
+	Role     user.Role `json:"role"`
 }
 
 //gkts:assets/app/Admin/types/UserFormData.ts UserFormData noguard
 type updateUserRequest struct {
-	Nickname string `json:"nickname"`
-	Password string `json:"password"`
-	Email    string `json:"email"`
-	Role     string `json:"role"`
+	Nickname string    `json:"nickname"`
+	Password string    `json:"password"`
+	Email    string    `json:"email"`
+	Role     user.Role `json:"role"`
 }
 
 //gkts:assets/app/Admin/types/AdminUserListResponse.ts AdminUserListResponse
@@ -199,7 +199,7 @@ func (h *AdminUsersHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Nickname: body.Nickname,
 		Password: body.Password,
 		Email:    body.Email,
-		Role:     body.Role,
+		Role:     string(body.Role),
 	}
 
 	err := bus.DispatchVoid(
@@ -233,7 +233,7 @@ func (h *AdminUsersHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Nickname: body.Nickname,
 		Password: body.Password,
 		Email:    body.Email,
-		Role:     body.Role,
+		Role:     string(body.Role),
 	}
 
 	err := bus.DispatchVoid(
@@ -290,7 +290,7 @@ func (h *AdminUsersHandler) BulkDelete(w http.ResponseWriter, r *http.Request) {
 		AllFiltered: body.AllFiltered,
 		Nickname:    body.Nickname,
 		Email:       body.Email,
-		Role:        body.Role,
+		Role:        string(body.Role),
 		Active:      body.Active,
 	}
 
@@ -326,7 +326,7 @@ func (h *AdminUsersHandler) BulkActive(w http.ResponseWriter, r *http.Request) {
 		AllFiltered: body.AllFiltered,
 		Nickname:    body.Nickname,
 		Email:       body.Email,
-		Role:        body.Role,
+		Role:        string(body.Role),
 		Active:      body.Active,
 		SetActive:   body.SetActive,
 	}
@@ -354,7 +354,7 @@ func toAdminUserDTO(u user.User) adminUserDTO {
 		ID:       u.ID,
 		Nickname: u.Nickname,
 		Email:    u.Email,
-		Role:     u.Role,
+		Role:     user.Role(u.Role),
 		Active:   u.Active,
 	}
 }

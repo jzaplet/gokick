@@ -2,6 +2,8 @@ import { describe, expect, it, vi, beforeAll, beforeEach } from 'vitest';
 import { nextTick } from 'vue';
 import { syncSentryUser } from '@/app-ui/Sentry/syncUser';
 import { user } from '@/app-ui/Auth/state';
+import type { AuthUser } from '@/app-ui/Auth/types/AuthUser';
+import { Role } from '@/app/Auth/enums/roles';
 
 // vi.hoisted so the spy exists before the (also hoisted) vi.mock factory runs —
 // syncUser.ts imports @sentry/vue at module load. vitest lifts both above the
@@ -10,11 +12,13 @@ const setUserMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@sentry/vue', () => ({ setUser: setUserMock }));
 
-const alice = {
+// Typed, not inferred: without the annotation TS widens `role` to string and
+// the AuthUser assignment below stops compiling — the union is the point.
+const alice: AuthUser = {
     id: 'u-7',
     nickname: 'alice',
     email: 'alice@example.com',
-    role: 'admin',
+    role: Role.Admin,
     permissions: [],
 };
 
