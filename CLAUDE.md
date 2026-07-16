@@ -118,11 +118,13 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
 
 **Query pattern** (`application/<ctx>/query/`):
 ```go
-type ListUsersQuery struct{}
+// Grid state as it arrived on the wire; Handle normalizes it into whitelisted
+// domain criteria (unknown sort / out-of-range page fall back, never 400).
+type ListUsersQuery struct { Page, PerPage int; SortBy, SortDir, Nickname, Email, Role, Active string }
 func (q ListUsersQuery) RequiredPermission() string { return "admin:users:read" }
 
 type ListUsersHandler struct { repo user.Repository }
-func (h *ListUsersHandler) Handle(ctx context.Context, q ListUsersQuery) ([]user.User, error) { ... }
+func (h *ListUsersHandler) Handle(ctx context.Context, q ListUsersQuery) (user.ListPage, error) { ... }
 ```
 
 **Permission rules:**
@@ -142,8 +144,12 @@ func (h *ListUsersHandler) Handle(ctx context.Context, q ListUsersQuery) ([]user
 bus.DispatchVoid(ctx, h.commandBus, "CreateUser", cmd, func(ctx context.Context) error {
     return h.createUser.Handle(ctx, cmd)
 })
+// Command (typed return — e.g. a bulk op's affected count):
+bus.Dispatch(ctx, h.commandBus, "BulkDeleteUsers", cmd, func(ctx context.Context) (int64, error) {
+    return h.bulkDelete.Handle(ctx, cmd)
+})
 // Query (typed return):
-bus.Query(ctx, h.queryBus, "ListUsers", q, func(ctx context.Context) ([]user.User, error) {
+bus.Query(ctx, h.queryBus, "ListUsers", q, func(ctx context.Context) (user.ListPage, error) {
     return h.listUsers.Handle(ctx, q)
 })
 ```
@@ -157,7 +163,7 @@ Taking `*CommandBus`/`*QueryBus` makes the bus↔operation pairing compile-check
 | `config/` | `LoadConfig()` from `.env` via godotenv → `*Config` struct |
 | `database/` | `SqliteManager` (connection, WAL, `_txlock=immediate`, `busy_timeout`, `foreign_keys` via DSN), `MigrationManager` (Goose), transaction context (`BeginTx`/`Commit`/`Rollback`) |
 | `sqlite/` | `BaseRepository` (embed in repos for transparent tx support via `r.Conn(ctx)`) |
-| `sqlite/user/` | `user.Repository` impl (incl. `RecordFailedLogin` / `ResetFailedLogin` / `RecordLogin` raw-pool on purpose; tenant-scoped admin reads/writes + cross-tenant platform reads) |
+| `sqlite/user/` | `user.Repository` impl (incl. `RecordFailedLogin` / `ResetFailedLogin` / `RecordLogin` raw-pool on purpose; tenant-scoped admin reads/writes + cross-tenant platform reads/writes — the `*AcrossTenants` set, superadmin rows excluded by the statements themselves) |
 | `sqlite/token/` | `token.Repository` implementation |
 | `sqlite/run/` | `run.Repository` implementation (owner-fenced; julianday/ms time discipline shared via `sqlite/sqltime.go`) |
 | `sqlite/tenant/` | `tenant.Repository` implementation (row-level multitenancy boundary) |

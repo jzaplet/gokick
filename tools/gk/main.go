@@ -11,6 +11,7 @@ import (
 	"os"
 
 	"gokick-gk/boundary"
+	"gokick-gk/docpaths"
 	"gokick-gk/errfields"
 	"gokick-gk/tsgen"
 )
@@ -26,6 +27,8 @@ func main() {
 		boundary.Run(args)
 	case "errfields":
 		errfields.Run(args)
+	case "docpaths":
+		docpaths.Run(args)
 	default:
 		fmt.Fprintf(os.Stderr, "gk: unknown tool %q\n\n", tool)
 		usage()
@@ -39,6 +42,7 @@ tools:
   tsgen generate|check   TypeScript types from //gkts-annotated Go DTOs
   boundary               wire payloads must be //gkts-annotated named structs
   errfields              Go ValidationError fields ↔ FE *Errors keys parity
+  docpaths               every path/skill a doc cites must resolve
 `)
 	os.Exit(2)
 }

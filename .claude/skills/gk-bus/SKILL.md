@@ -23,7 +23,7 @@ transakci, audit, eventy). Handler tak řeší jen byznys, nic víc.
   dispatchnou až po commitu, kdy běží autorizace.
 - Když přidáváš nový handler a ladíš „proč mi to vrací error, že chybí permission".
 - **NEtýká** se psaní samotných handlerů (→ `/gk-commands`, `/gk-queries`),
-  domain eventů (→ `/gk-domain-events`), ani DI registrace busů (→ `/gk-di`). — a stejně opravit oba odkazy v Related (`/gk-domain-events`, `/gk-di`).
+  domain eventů (→ `/gk-domain-events`), ani DI registrace busů (→ `/gk-di`).
 
 ## For non-tech / juniors
 Představ si bus jako **pásovou linku ve fabrice**. Na začátek položíš požadavek
@@ -106,18 +106,18 @@ blokuje kaskádový `Collect` z event handlerů (`ContextWithoutEventCollector`)
 ## Recipe
 ### Recipe: dispatch query z HTTP handleru (čtení)
 ```go
-users, err := bus.Query(
+page, err := bus.Query(
     r.Context(),
     h.queryBus,                // *QueryBus — párování hlídá kompilátor
     "ListUsers",               // štítek do logu
     q,                         // query value (musí mít Permissioned/SkipPermission)
-    func(ctx context.Context) ([]user.User, error) {
+    func(ctx context.Context) (user.ListPage, error) {
         return h.listUsers.Handle(ctx, q)
     },
 )
 if err != nil { h.resp.HandleError(r.Context(), w, err); return }
 ```
-(reálný vzor: `app/presentation/http/handler/admin_users.go:76`)
+(reálný vzor: `app/presentation/http/handler/admin_users.go:139`)
 
 ### Recipe: dispatch command z HTTP handleru (zápis)
 ```go
@@ -126,7 +126,11 @@ err := bus.DispatchVoid(
     func(ctx context.Context) error { return h.createUser.Handle(ctx, cmd) },
 )
 ```
-(reálný vzor: `app/presentation/http/handler/admin_users.go:139`)
+(reálný vzor: `app/presentation/http/handler/admin_users.go:205`)
+
+Command, který něco vrací (bulk operace vrací počet dotčených řádků), jde přes
+`bus.Dispatch[R]` místo `DispatchVoid` — zbytek chainu je identický (vzor:
+`app/presentation/http/handler/admin_users.go:297`).
 
 ### Recipe: nová stanice (middleware)
 1. Napiš `func XxxMiddleware(deps...) bus.Middleware` v `middleware/`.
@@ -155,7 +159,7 @@ err := bus.DispatchVoid(
 ## Related
 - Skills: `/gk-commands`, `/gk-queries` (psaní handlerů), `/gk-domain-events`
   (domain eventy), `/gk-audit` (audit trail), `/gk-runs` (durable runs),
-  `/gk-wire` (DI registrace busů)
+  `/gk-di` (DI registrace busů)
 - Kód: `app/application/bus/` (`bus.go`, `command.go`, `system_command.go`, `query.go`, `event.go`, `dispatch.go`, `exec.go`, `void.go`), `app/application/bus/middleware/` (`base.go`,
   `recovery.go`, `logging.go`, `authorize.go`, `tenant.go`, `audit.go`, `run_dispatcher.go`,
   `events.go`, `transaction.go`), `app/infrastructure/di/container_provider.go`,

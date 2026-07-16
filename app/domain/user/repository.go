@@ -29,6 +29,16 @@ type Repository interface {
 	// (nil, nil) when no such row exists (absent, other tenant, or a superadmin).
 	FindScopedByID(ctx context.Context, id string) (*User, error)
 	FindByNickname(ctx context.Context, nickname string) (*User, error)
+
+	// FindAll has NO production caller by design — the users grid reads through
+	// FindPage. It survives as the tenant-isolation probe (tenant_isolation_test,
+	// superadmin_guard_test, bulk_users_test): "every row this tenant can see",
+	// unpaged. That shape is the point — FindPage clamps PerPage at
+	// ListPerPageMax, so a probe built on it could only ever prove "no leak in
+	// the first page", and a probe must be dumber than the code it audits. It
+	// stays on the PORT, not on the sqlite struct, so every adapter (the planned
+	// Postgres one included) has to prove isolation. Do not delete it as dead
+	// code; do not "optimize" it into FindPage.
 	FindAll(ctx context.Context) ([]User, error)
 
 	// FindPage is the paged/filtered/sorted admin list read behind the users

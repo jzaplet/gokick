@@ -10,7 +10,7 @@ import (
 	"gokick/app/internal/testfx"
 )
 
-// OverviewPage is the cross-tenant GROUP BY aggregate behind the superadmin
+// OverviewPageAcrossTenants is the cross-tenant GROUP BY aggregate behind the superadmin
 // tenant overview. It must count each tenant's users correctly, INCLUDING a
 // tenant with zero users (the LEFT JOIN must yield 0, not drop it) — the exact
 // shape the product reuses to SUM the tenant_usage ledger.
@@ -25,11 +25,11 @@ func TestTenantRepository_OverviewPage_CountsAcrossTenants(t *testing.T) {
 	fx.SeedUserInTenant(t, "anna", "user", tenantA.ID)
 	fx.SeedUserInTenant(t, "bob", "admin", tenantB.ID)
 
-	page, err := fx.PlatformTenants.OverviewPage(ctx, tenant.ListCriteria{
+	page, err := fx.PlatformTenants.OverviewPageAcrossTenants(ctx, tenant.ListCriteria{
 		Page: 1, PerPage: 100, Sort: tenant.SortByName, SortDir: shared.SortAsc,
 	}.Normalize())
 	if err != nil {
-		t.Fatalf("OverviewPage: %v", err)
+		t.Fatalf("OverviewPageAcrossTenants: %v", err)
 	}
 
 	counts := map[string]int{}

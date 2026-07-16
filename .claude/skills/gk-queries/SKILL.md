@@ -42,8 +42,17 @@ Query žije v `app/application/<context>/query/` — např.
 **Tři části** (viz `list_users.go`):
 
 ```go
-// 1) Query struct — drží filtry/parametry (klidně prázdný).
-type ListUsersQuery struct{}
+// 1) Query struct — drží parametry tak, jak přišly po drátě (syrové stringy).
+type ListUsersQuery struct {
+    Page     int
+    PerPage  int
+    SortBy   string
+    SortDir  string
+    Nickname string
+    Email    string
+    Role     string
+    Active   string
+}
 
 // 2) Permission — POVINNÉ (viz Invariants).
 func (ListUsersQuery) RequiredPermission() string { return "admin:users:read" }
@@ -53,13 +62,30 @@ type ListUsersHandler struct{ users user.Repository }
 func NewListUsersHandler(users user.Repository) *ListUsersHandler {
     return &ListUsersHandler{users: users}
 }
-func (h *ListUsersHandler) Handle(ctx context.Context, _ ListUsersQuery) ([]user.User, error) {
-    return h.users.FindAll(ctx)
+func (h *ListUsersHandler) Handle(ctx context.Context, q ListUsersQuery) (user.ListPage, error) {
+    // Handle syrový vstup normalizuje do whitelistovaných doménových kritérií:
+    // neznámý sloupec/směr a stránka mimo rozsah spadnou na default, ne na 400
+    // — řazení a stránkování jsou UX preference, ne kontrakt.
+    criteria := user.ListCriteria{
+        Page:    q.Page,
+        PerPage: q.PerPage,
+        Sort:    user.SortColumnFrom(q.SortBy),
+        SortDir: shared.SortDirectionFrom(q.SortDir),
+        Filters: user.ListFilters{
+            Nickname: q.Nickname,
+            Email:    q.Email,
+            Role:     q.Role,
+            Active:   q.Active,
+        },
+    }.Normalize()
+
+    return h.users.FindPage(ctx, criteria)
 }
 ```
 
-**Návratový typ je libovolný** — slice entit (`[]user.User`) i vlastní DTO struct
-(`AdminDashboard{ Message string }` v `get_admin_dashboard.go`).
+**Návratový typ je libovolný** — stránka dat (`user.ListPage`, tj. `Items` + `Total`)
+i vlastní DTO struct (`AdminDashboard{ UsersActive, UsersTotal int }`
+v `get_admin_dashboard.go`).
 
 **Dispatch z HTTP handleru** přes generický `bus.Query[R]`
 (`app/application/bus/dispatch.go`) — `R` je typ výsledku, takže návrat je typovaný.
@@ -71,19 +97,6 @@ bus↔operace hlídá kompilátor — query nejde omylem poslat na command bus:
 result, err := bus.Query(
     r.Context(),
     h.queryBus,                 // *bus.QueryBus
-    "GetAdminDashboard",        // jméno do logů
-    q,                          // samotná query (nese permission)
-    func(ctx context.Context) (dashboardqry.AdminDashboard, error) {
-        return h.adminDash.Handle(ctx, q)
-    },
-)
-```
-
-```go
-// app/presentation/http/handler/dashboard.go
-result, err := bus.Exec(
-    r.Context(),
-    h.queryBus.Bus,            // *bus.QueryBus
     "GetAdminDashboard",        // jméno do logů
     q,                          // samotná query (nese permission)
     func(ctx context.Context) (dashboardqry.AdminDashboard, error) {

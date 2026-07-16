@@ -70,8 +70,9 @@ Asymetrie hintu JE ten self-heal: `clearAuth` (`Auth/state.ts`) schválně **nem
 ## Recipe
 
 ### Recipe: zavolat chráněný endpoint z komponenty
-1. Importuj: `import { authFetch } from '@/app-ui/Auth';` + generovaný guard: `import { isAdminUser } from '@/app/Admin/types/AdminUser';` a `arrayOf` z `@/app-ui/Fetch/guards`.
-2. Zavolej s typy i guardem: `const r = await authFetch<AdminUser[], UserFormErrors>('GET', '/api/v1/admin/users', { validate: arrayOf(isAdminUser) });` — bez `validate` se volání s `TData ≠ null` nezkompiluje.
+1. Importuj: `import { authFetch } from '@/app-ui/Auth';` + generovaný guard k tomu, co endpoint **reálně** vrací: `import { isAdminUserListResponse } from '@/app/Admin/types/AdminUserListResponse';` (u endpointu vracejícího holé pole navíc `arrayOf` z `@/app-ui/Fetch/guards`).
+2. Zavolej s typy i guardem: `const r = await authFetch<AdminUserListResponse>('GET', '/api/v1/admin/users?page=1', { validate: isAdminUserListResponse });` — bez `validate` se volání s `TData ≠ null` nezkompiluje.
+   **Guard musí sedět na skutečný tvar odpovědi.** List endpointy jsou stránkované, takže vracejí `{ items, total }`, ne pole — `arrayOf(isAdminUser)` by se tu přeložil (TS tvar odpovědi nezná), ale za běhu by vrátil false → `{ general: 'Invalid response shape' }` + hlášení do Sentry. To je přesně to špatné spárování URL↔typ z Pitfalls. `arrayOf(guard)` patří jen na endpoint, který holé pole opravdu vrací.
 3. Větvi přes `if (r.success === true)` / `=== false` (nikdy `if (!r…)` — viz CLAUDE.md FE pravidla).
 4. Chybu napoj na formulářové pole: backend keyuje chyby podle pole → `errors.value = r.data;` (detail v `/gk-errors`).
 
