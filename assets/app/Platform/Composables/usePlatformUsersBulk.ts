@@ -1,5 +1,5 @@
-import type { Ref } from 'vue';
-import { ref } from 'vue';
+import type { ComputedRef } from 'vue';
+import { computed, ref } from 'vue';
 import type { GridState } from '@/app-ui/DataGrid/createGridState';
 import type { BulkAction } from '@/app-ui/BulkActions/BulkActionBar.vue';
 import type { PlatformBulkDeleteUsersRequest } from '@/app/Platform/types/PlatformBulkDeleteUsersRequest';
@@ -15,15 +15,25 @@ type PlatformGridFilters = {
     active: string;
 };
 
+type BulkActionKey = 'activate' | 'deactivate' | 'delete';
+
+type BulkConfirm = {
+    title: string;
+    message: string;
+    confirmText: string;
+};
+
 type PlatformUsersBulk = {
     bulkActions: BulkAction[];
-    confirmBulkDelete: Ref<boolean>;
+    bulkConfirm: ComputedRef<BulkConfirm | null>;
     handleBulkAction: (key: string) => void;
-    runBulkDelete: () => Promise<void>;
+    runPendingBulk: () => Promise<void>;
+    cancelPendingBulk: () => void;
 };
 
 // The bulk half of the platform users grid — the cross-tenant twin of
-// useAdminUsersBulk (the payload carries the tenant filter too).
+// useAdminUsersBulk (the payload carries the tenant filter too). EVERY bulk
+// action goes through the confirm modal — nothing fires until runPendingBulk.
 export const usePlatformUsersBulk = (grid: GridState<PlatformGridFilters>): PlatformUsersBulk => {
     const { success, error } = useToast();
 
@@ -33,7 +43,35 @@ export const usePlatformUsersBulk = (grid: GridState<PlatformGridFilters>): Plat
         { key: 'delete', label: 'Delete' },
     ];
 
-    const confirmBulkDelete = ref(false);
+    const pendingBulk = ref<BulkActionKey | null>(null);
+
+    const bulkConfirm = computed((): BulkConfirm | null => {
+        const count = String(grid.selectedCount.value);
+
+        if (pendingBulk.value === 'activate') {
+            return {
+                title: 'Activate selected users',
+                message: `Activate ${count} selected user(s)?`,
+                confirmText: 'Activate',
+            };
+        }
+        if (pendingBulk.value === 'deactivate') {
+            return {
+                title: 'Deactivate selected users',
+                message: `Deactivate ${count} selected user(s)?`,
+                confirmText: 'Deactivate',
+            };
+        }
+        if (pendingBulk.value === 'delete') {
+            return {
+                title: 'Delete selected users',
+                message: `Really delete ${count} selected user(s)? This action is irreversible.`,
+                confirmText: 'Delete',
+            };
+        }
+
+        return null;
+    });
 
     const runBulkActive = async (setActive: boolean): Promise<void> => {
         const body: PlatformBulkActiveUsersRequest = {
@@ -64,8 +102,6 @@ export const usePlatformUsersBulk = (grid: GridState<PlatformGridFilters>): Plat
     };
 
     const runBulkDelete = async (): Promise<void> => {
-        confirmBulkDelete.value = false;
-
         const body: PlatformBulkDeleteUsersRequest = {
             ids: grid.selectedIds(),
             all_filtered: grid.isAllFilteredSelected.value,
@@ -93,14 +129,28 @@ export const usePlatformUsersBulk = (grid: GridState<PlatformGridFilters>): Plat
     };
 
     const handleBulkAction = (key: string): void => {
-        if (key === 'delete') {
-            confirmBulkDelete.value = true;
-        } else if (key === 'activate') {
-            void runBulkActive(true);
-        } else if (key === 'deactivate') {
-            void runBulkActive(false);
+        if (key === 'activate' || key === 'deactivate' || key === 'delete') {
+            pendingBulk.value = key;
         }
     };
 
-    return { bulkActions, confirmBulkDelete, handleBulkAction, runBulkDelete };
+    const runPendingBulk = async (): Promise<void> => {
+        const action = pendingBulk.value;
+
+        pendingBulk.value = null;
+
+        if (action === 'delete') {
+            await runBulkDelete();
+        } else if (action === 'activate') {
+            await runBulkActive(true);
+        } else if (action === 'deactivate') {
+            await runBulkActive(false);
+        }
+    };
+
+    const cancelPendingBulk = (): void => {
+        pendingBulk.value = null;
+    };
+
+    return { bulkActions, bulkConfirm, handleBulkAction, runPendingBulk, cancelPendingBulk };
 };

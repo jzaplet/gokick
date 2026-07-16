@@ -138,9 +138,10 @@ const allPageSelected = computed<boolean>(() =>
 
 const {
     bulkActions,
-    confirmBulkDelete,
+    bulkConfirm,
     handleBulkAction,
-    runBulkDelete,
+    runPendingBulk,
+    cancelPendingBulk,
 } = useAdminUsersBulk(grid);
 
 onMounted(async (): Promise<void> => {
@@ -276,14 +277,13 @@ onMounted(async (): Promise<void> => {
             />
 
             <ConfirmModal
-                :show="confirmBulkDelete === true"
-                title="Delete selected users"
-                :message="`Really delete ${String(grid.selectedCount.value)} selected user(s)?
-                    This action is irreversible.`"
-                confirm-text="Delete"
+                :show="bulkConfirm !== null"
+                :title="bulkConfirm?.title ?? ''"
+                :message="bulkConfirm?.message ?? ''"
+                :confirm-text="bulkConfirm?.confirmText ?? 'Confirm'"
                 cancel-text="Cancel"
-                @confirm="runBulkDelete"
-                @cancel="confirmBulkDelete = false"
+                @confirm="runPendingBulk"
+                @cancel="cancelPendingBulk"
             />
         </div>
     </div>
