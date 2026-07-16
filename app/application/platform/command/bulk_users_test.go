@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/user"
 	"gokick/app/internal/testfx"
 )
 
@@ -14,6 +15,22 @@ func superadminCtx(id string) context.Context {
 	return shared.ContextWithClaims(context.Background(), &shared.AuthClaims{
 		UserID: id, Role: "superadmin", Nickname: "root",
 	})
+}
+
+// allPlatformRows reads every user across tenants (paged read, big page) for
+// the count-based assertions after a bulk op.
+func allPlatformRows(t *testing.T, fx *testfx.Fixture) []user.PlatformRow {
+	t.Helper()
+	page, err := fx.PlatformUsers.FindPageAcrossTenants(
+		context.Background(),
+		user.PlatformListCriteria{
+			Page: 1, PerPage: 1000, Sort: user.SortByTenant, SortDir: shared.SortAsc,
+		}.Normalize(),
+	)
+	if err != nil {
+		t.Fatalf("read all platform rows: %v", err)
+	}
+	return page.Items
 }
 
 // Cross-tenant bulk delete by the tenant-name filter: only the matching
@@ -36,10 +53,7 @@ func TestBulkDeletePlatformUsers_AllFilteredByTenant(t *testing.T) {
 		t.Fatalf("bulk delete: %v", err)
 	}
 
-	rows, err := fx.PlatformUsers.FindAllAcrossTenants(context.Background())
-	if err != nil {
-		t.Fatalf("find all: %v", err)
-	}
+	rows := allPlatformRows(t, fx)
 	if len(rows) != 2 {
 		t.Fatalf("want bob + root to survive, got %d rows", len(rows))
 	}

@@ -5,14 +5,16 @@ import (
 	"path/filepath"
 	"testing"
 
+	"gokick/app/domain/shared"
+	"gokick/app/domain/tenant"
 	"gokick/app/internal/testfx"
 )
 
-// OverviewAcrossTenants is the cross-tenant GROUP BY aggregate behind
-// the superadmin tenant overview. It must count each tenant's users correctly,
-// INCLUDING a tenant with zero users (the LEFT JOIN must yield 0, not drop it) —
-// the exact shape the product reuses to SUM the tenant_usage ledger.
-func TestTenantRepository_OverviewAcrossTenants(t *testing.T) {
+// OverviewPage is the cross-tenant GROUP BY aggregate behind the superadmin
+// tenant overview. It must count each tenant's users correctly, INCLUDING a
+// tenant with zero users (the LEFT JOIN must yield 0, not drop it) — the exact
+// shape the product reuses to SUM the tenant_usage ledger.
+func TestTenantRepository_OverviewPage_CountsAcrossTenants(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_overview.db"))
 
@@ -23,14 +25,16 @@ func TestTenantRepository_OverviewAcrossTenants(t *testing.T) {
 	fx.SeedUserInTenant(t, "anna", "user", tenantA.ID)
 	fx.SeedUserInTenant(t, "bob", "admin", tenantB.ID)
 
-	rows, err := fx.PlatformTenants.OverviewAcrossTenants(ctx)
+	page, err := fx.PlatformTenants.OverviewPage(ctx, tenant.ListCriteria{
+		Page: 1, PerPage: 100, Sort: tenant.SortByName, SortDir: shared.SortAsc,
+	}.Normalize())
 	if err != nil {
-		t.Fatalf("OverviewAcrossTenants: %v", err)
+		t.Fatalf("OverviewPage: %v", err)
 	}
 
 	counts := map[string]int{}
 	plans := map[string]string{}
-	for _, r := range rows {
+	for _, r := range page.Items {
 		counts[r.ID] = r.UserCount
 		plans[r.ID] = r.Plan
 	}

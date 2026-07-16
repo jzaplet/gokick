@@ -115,9 +115,9 @@ func platformFilterWhere(f user.PlatformListFilters) (string, []any) {
 	return where, args
 }
 
-// FindPageAcrossTenants is the platform users grid read — the paged shape of
-// FindAllAcrossTenants (cross-tenant on purpose, marker below). The secondary
-// nickname sort keeps pages stable when the primary column has ties.
+// FindPageAcrossTenants is the platform users grid read — cross-tenant on
+// purpose (marker below), joined to the tenant name. The secondary nickname
+// sort keeps pages stable when the primary column has ties.
 func (r *Repository) FindPageAcrossTenants(
 	ctx context.Context,
 	c user.PlatformListCriteria,

@@ -91,23 +91,19 @@ type Repository interface {
 type PlatformRepository interface {
 	Repository
 
-	// FindAllAcrossTenants returns every user (joined to its tenant name)
-	// regardless of tenant — the deliberate INVERSE of FindAll's tenant scoping.
-	// The query carries a tenant-scope-exempt marker so the conformance gate
-	// admits it consciously.
-	FindAllAcrossTenants(ctx context.Context) ([]PlatformRow, error)
-
 	// FindPageAcrossTenants is the paged/filtered/sorted platform users grid
-	// read — FindAllAcrossTenants' scope with FindPage's shape (criteria
-	// pre-normalized, filtered total included).
+	// read — FindPage's shape without the tenant scoping (every tenant, joined
+	// to the tenant name). Criteria pre-normalized, filtered total included; the
+	// query carries a tenant-scope-exempt marker so the conformance gate admits
+	// it consciously.
 	FindPageAcrossTenants(
 		ctx context.Context,
 		criteria PlatformListCriteria,
 	) (PlatformListPage, error)
 
 	// FindByIDAcrossTenants is the cross-tenant read-one behind the platform
-	// read-one endpoint (GET /platform/users/{id}) — the by-id INVERSE of
-	// FindAllAcrossTenants, joined to the tenant name. No tenant filter (a
+	// read-one endpoint (GET /platform/users/{id}) — the by-id inverse of
+	// FindAll's tenant scoping, joined to the tenant name. No tenant filter (a
 	// superadmin reads any user in any tenant); returns (nil, nil) when absent.
 	FindByIDAcrossTenants(ctx context.Context, id string) (*PlatformRow, error)
 

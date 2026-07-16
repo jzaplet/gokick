@@ -143,26 +143,10 @@ func (r *Repository) FindAll(ctx context.Context) ([]user.User, error) {
 	return users, err
 }
 
-// FindAllAcrossTenants is the platform-plane read: every user, all tenants,
-// joined to its tenant name — the deliberate inverse of FindAll. It does NOT call
-// r.Tenant(ctx); the marker makes the cross-tenant scope explicit to the
-// conformance gate. INNER JOIN is safe (tenant_id is a NOT NULL FK). Ordered by
-// tenant then nickname so the superadmin list groups naturally.
-func (r *Repository) FindAllAcrossTenants(ctx context.Context) ([]user.PlatformRow, error) {
-	var rows []user.PlatformRow
-	err := r.Conn(ctx).SelectContext(ctx, &rows,
-		`SELECT u.id, u.nickname, u.email, u.role, u.active, u.tenant_id,
-		        t.name AS tenant_name, u.last_login_at
-		   FROM users u
-		   JOIN tenants t ON t.id = u.tenant_id /* tenant-scope-exempt: platform superadmin */
-		  ORDER BY t.name, u.nickname`)
-	return rows, err
-}
-
 // FindByIDAcrossTenants is the platform-plane read-one: one user in ANY tenant,
-// joined to its tenant name — the by-id inverse of FindAllAcrossTenants. It does
-// NOT scope by tenant_id; the marker makes the cross-tenant read explicit to the
-// conformance gate. Not-found returns (nil, nil).
+// joined to its tenant name — the by-id inverse of FindAll's tenant scoping. It
+// does NOT scope by tenant_id; the marker makes the cross-tenant read explicit
+// to the conformance gate. Not-found returns (nil, nil).
 func (r *Repository) FindByIDAcrossTenants(
 	ctx context.Context,
 	id string,
