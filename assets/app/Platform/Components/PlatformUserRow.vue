@@ -58,14 +58,6 @@ const isManageable = (): boolean => {
         </td>
         <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
             {{ user.nickname }}
-            <span
-                v-if="user.active === false"
-                :class="[
-                    'ml-2 inline-flex px-2 py-0.5',
-                    'text-xs font-semibold rounded-full',
-                    'bg-gray-100 text-gray-600',
-                ]"
-            >Inactive</span>
         </td>
         <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
             <span v-if="user.email !== ''">{{ user.email }}</span>
@@ -83,6 +75,19 @@ const isManageable = (): boolean => {
                 ]"
             >
                 {{ user.role }}
+            </span>
+        </td>
+        <td class="px-4 py-3 whitespace-nowrap text-sm">
+            <span
+                :class="[
+                    'inline-flex px-2 py-1',
+                    'text-xs font-semibold rounded-full',
+                    user.active === true
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-gray-100 text-gray-600',
+                ]"
+            >
+                {{ user.active === true ? 'Active' : 'Inactive' }}
             </span>
         </td>
         <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">

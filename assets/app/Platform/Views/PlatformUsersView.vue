@@ -31,8 +31,10 @@ const columns: GridColumn[] = [
     { key: 'nickname', label: 'Nickname', sortable: true },
     { key: 'email', label: 'Email', sortable: true },
     { key: 'role', label: 'Role', sortable: true },
+    { key: 'active', label: 'Active' },
     { key: 'last_login', label: 'Last login', sortable: true },
-    { key: 'actions', label: 'Actions', align: 'right' },
+    // The actions column carries no heading (aibobr parity).
+    { key: 'actions', label: '', align: 'right' },
 ];
 
 const roleOptions = [
