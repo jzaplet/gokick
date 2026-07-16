@@ -122,6 +122,9 @@ const confirmDelete = async (): Promise<void> => {
     }
 
     success(`User ${target.nickname} deleted.`);
+    // Drop the now-gone row from any active selection so it can't inflate the
+    // bulk count or ride the next bulk payload as a ghost id.
+    grid.deselect(target.id);
     await grid.reload();
 };
 

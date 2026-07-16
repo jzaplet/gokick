@@ -61,6 +61,7 @@ export type GridState<F extends Record<string, string>> = {
     handlePageChange: (page: number) => void;
     clearFilters: () => void;
     isSelected: (id: string) => boolean;
+    deselect: (id: string) => void;
     toggleRow: (id: string) => void;
     togglePage: (ids: string[]) => void;
     selectAllFiltered: () => void;
@@ -301,6 +302,21 @@ export const createGridState = <F extends Record<string, string>>(
         allFiltered.value = true;
     };
 
+    // Drop one id from the manual selection — used when a single row is deleted
+    // out from under a selection, so its ghost id can't inflate the count or
+    // ride the next bulk payload. A no-op in allFiltered mode: the deleted row
+    // simply drops out of the filter set on the next reload.
+    const deselect = (id: string): void => {
+        if (selected.value.has(id) === false) {
+            return;
+        }
+
+        const next = new Set(selected.value);
+
+        next.delete(id);
+        selected.value = next;
+    };
+
     return {
         page: readonly(page),
         perPage: readonly(perPage),
@@ -320,6 +336,7 @@ export const createGridState = <F extends Record<string, string>>(
         clearFilters,
         isSelected: (id: string): boolean =>
             allFiltered.value === true || selected.value.has(id) === true,
+        deselect,
         toggleRow,
         togglePage,
         selectAllFiltered,

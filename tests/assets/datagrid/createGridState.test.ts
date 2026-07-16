@@ -126,6 +126,26 @@ describe('createGridState', () => {
         expect(grid.selectedIds()).toEqual(['b']);
     });
 
+    it('deselect drops one id from the manual selection (deleted-row ghost cleanup)', (): void => {
+        const { grid } = makeGrid();
+
+        grid.toggleRow('a');
+        grid.toggleRow('b');
+
+        expect(grid.selectedCount.value).toBe(2);
+
+        grid.deselect('a');
+
+        expect(grid.selectedCount.value).toBe(1);
+        expect(grid.isSelected('a')).toBe(false);
+        expect(grid.selectedIds()).toEqual(['b']);
+
+        // Deselecting an id that was never selected is a harmless no-op.
+        grid.deselect('zzz');
+
+        expect(grid.selectedCount.value).toBe(1);
+    });
+
     it('allFiltered selection counts the TOTAL without enumerating ids', async (): Promise<void> => {
         const { grid } = makeGrid({ total: 1234 });
 
