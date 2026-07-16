@@ -22,17 +22,34 @@ var update = flag.Bool("update", false, "rewrite the golden files from current o
 
 func generate(t *testing.T, dir string) (map[string]string, error) {
 	t.Helper()
-	dtos, err := collect(dir)
+
+	return generateOpt(t, dir, false)
+}
+
+// generateOpt runs the real pipeline against a fixture module. The fixture's
+// own directory stands in for the repo's app/, so a fixture package's import
+// path is "fixture/<subdir>" — which is what its files import each other by.
+func generateOpt(t *testing.T, dir string, optionalReady bool) (map[string]string, error) {
+	t.Helper()
+	tree, err := parseTree(dir, "fixture")
 	if err != nil {
 		return nil, err
 	}
-	byGo, err := indexDTOs(dtos)
+	dtos, err := collect(tree)
+	if err != nil {
+		return nil, err
+	}
+	unions, err := collectUnions(tree, buildConstIndex(tree))
+	if err != nil {
+		return nil, err
+	}
+	byGo, err := indexDTOs(dtos, unions)
 	if err != nil {
 		return nil, err
 	}
 	// optionalReady=false mirrors the real repo: guards.ts does not export
 	// `optional` until the first omitempty DTO ships it.
-	return render(dtos, byGo, false)
+	return render(dtos, unions, byGo, optionalReady)
 }
 
 func TestGolden_FixturesRenderExactly(t *testing.T) {
@@ -130,15 +147,7 @@ func TestErrors_BadInputFailsLoudly(t *testing.T) {
 // Once guards.ts ships the helper (probe true), the same omitempty fixture
 // must render optional(...) instead of erroring — the refusal self-disarms.
 func TestOmitempty_RendersOnceHelperExists(t *testing.T) {
-	dtos, err := collect(filepath.Join("testdata", "omitempty"))
-	if err != nil {
-		t.Fatalf("collect: %v", err)
-	}
-	byGo, err := indexDTOs(dtos)
-	if err != nil {
-		t.Fatalf("index: %v", err)
-	}
-	files, err := render(dtos, byGo, true)
+	files, err := generateOpt(t, filepath.Join("testdata", "omitempty"), true)
 	if err != nil {
 		t.Fatalf("render with optionalReady: %v", err)
 	}
@@ -194,4 +203,67 @@ func TestOrphans_FindsStaleGeneratedFilesOnly(t *testing.T) {
 	if len(got) != 1 || got[0] != stale {
 		t.Fatalf("orphans = %v, want exactly [%s] (hand-written files untouched)", got, stale)
 	}
+}
+
+// The union fixture pins the risky half of union emission: the values do NOT
+// live with the type. `vo.Tier`'s consts are conversions of another package's
+// constants (`Tier(canon.TierGold)`) — the exact shape user.Role uses so the
+// authorization ladder and the value object share one definition. A tool that
+// only reads the declaring file finds no literal at all, so this is the hop
+// that must keep working.
+func TestUnion_ResolvesConstantsAcrossPackages(t *testing.T) {
+	files, err := generate(t, filepath.Join("testdata", "union"))
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	tiers, ok := files["out/tiers.ts"]
+	if !ok {
+		t.Fatalf("no union file emitted; got %v", keysOf(files))
+	}
+	for _, want := range []string{
+		"export const Tier = {",
+		"    Gold: 'gold',",     // resolved THROUGH the conversion into canon
+		"    Silver: 'silver',", // ...and the const-name prefix stripped for TS
+		"} as const;",
+		"export type Tier = typeof Tier[keyof typeof Tier];",
+		"export const isTier = (v: unknown): v is Tier =>",
+		"    v === Tier.Gold",
+		"    || v === Tier.Silver;",
+	} {
+		if !strings.Contains(tiers, want) {
+			t.Errorf("union output missing %q; got:\n%s", want, tiers)
+		}
+	}
+	// A cast here would land in a DO-NOT-EDIT file and trip the no-as ratchet;
+	// `as const` is the one form that rule allows.
+	if strings.Contains(tiers, "Object.values") || strings.Contains(tiers, "as string") {
+		t.Errorf("guard must be cast-free:\n%s", tiers)
+	}
+
+	// A DTO field typed with the union must reference it, not widen to string.
+	badge, ok := files["out/Badge.ts"]
+	if !ok {
+		t.Fatalf("no DTO file emitted; got %v", keysOf(files))
+	}
+	for _, want := range []string{
+		"import type { Tier } from '@/out/tiers';",
+		"import { isTier } from '@/out/tiers';",
+		"    tier: Tier;",
+		"&& isTier(v['tier'])",
+	} {
+		if !strings.Contains(badge, want) {
+			t.Errorf("DTO output missing %q; got:\n%s", want, badge)
+		}
+	}
+}
+
+func keysOf(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+
+	return out
 }

@@ -68,14 +68,14 @@ type platformStatsDTO struct {
 
 //gkts:assets/app/Platform/types/PlatformUser.ts PlatformUser
 type platformUserDTO struct {
-	ID          string  `json:"id"`
-	Nickname    string  `json:"nickname"`
-	Email       string  `json:"email"`
-	Role        string  `json:"role"`
-	Active      bool    `json:"active"`
-	TenantID    string  `json:"tenant_id"`
-	TenantName  string  `json:"tenant_name"`
-	LastLoginAt *string `json:"last_login_at"`
+	ID          string    `json:"id"`
+	Nickname    string    `json:"nickname"`
+	Email       string    `json:"email"`
+	Role        user.Role `json:"role"`
+	Active      bool      `json:"active"`
+	TenantID    string    `json:"tenant_id"`
+	TenantName  string    `json:"tenant_name"`
+	LastLoginAt *string   `json:"last_login_at"`
 }
 
 //gkts:assets/app/Platform/types/PlatformTenant.ts PlatformTenant
@@ -123,10 +123,10 @@ type platformBulkActiveUsersRequest struct {
 
 //gkts:assets/app/Platform/types/PlatformUserFormData.ts PlatformUserFormData noguard
 type platformUserRequest struct {
-	Nickname string `json:"nickname"`
-	Password string `json:"password"`
-	Email    string `json:"email"`
-	Role     string `json:"role"`
+	Nickname string    `json:"nickname"`
+	Password string    `json:"password"`
+	Email    string    `json:"email"`
+	Role     user.Role `json:"role"`
 }
 
 func (h *PlatformHandler) Stats(w http.ResponseWriter, r *http.Request) {
@@ -277,7 +277,7 @@ func (h *PlatformHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		Nickname: body.Nickname,
 		Password: body.Password,
 		Email:    body.Email,
-		Role:     body.Role,
+		Role:     string(body.Role),
 	}
 
 	err := bus.DispatchVoid(
@@ -334,7 +334,7 @@ func (h *PlatformHandler) BulkDeleteUsers(w http.ResponseWriter, r *http.Request
 		Tenant:      body.Tenant,
 		Nickname:    body.Nickname,
 		Email:       body.Email,
-		Role:        body.Role,
+		Role:        string(body.Role),
 		Active:      body.Active,
 	}
 
@@ -371,7 +371,7 @@ func (h *PlatformHandler) BulkActiveUsers(w http.ResponseWriter, r *http.Request
 		Tenant:      body.Tenant,
 		Nickname:    body.Nickname,
 		Email:       body.Email,
-		Role:        body.Role,
+		Role:        string(body.Role),
 		Active:      body.Active,
 		SetActive:   body.SetActive,
 	}
@@ -405,7 +405,7 @@ func toPlatformUserDTO(row user.PlatformRow) platformUserDTO {
 		ID:          row.ID,
 		Nickname:    row.Nickname,
 		Email:       row.Email,
-		Role:        row.Role,
+		Role:        user.Role(row.Role),
 		Active:      row.Active,
 		TenantID:    row.TenantID,
 		TenantName:  row.TenantName,

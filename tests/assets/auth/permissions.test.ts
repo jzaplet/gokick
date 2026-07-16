@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import { clearAuth, user } from '@/app-ui/Auth';
 import { hasPermission } from '@/app-ui/Auth/permissions';
 import { Permission } from '@/app/Auth/enums/resources';
+import type { Role } from '@/app/Auth/enums/roles';
 
 // hasPermission is now a uniform membership check over the server-supplied,
 // role-filtered permission list (registry.ForRole ships it on every login/refresh)
@@ -9,7 +10,7 @@ import { Permission } from '@/app/Auth/enums/resources';
 // that role. The critical boundary (an admin is NOT granted platform:*) is pinned
 // by the admin list simply not containing it — the Go side guarantees that.
 
-const setLoggedIn = (role: string, permissions: string[]): void => {
+const setLoggedIn = (role: Role, permissions: string[]): void => {
     user.value = {
         id: 'u-1',
         nickname: 'alice',

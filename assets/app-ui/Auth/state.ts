@@ -54,15 +54,16 @@ export const scheduleRetry = (delayMs: number, fn: () => void): void => {
 export const establishSession = (data: unknown, onExpiry: () => void): boolean => {
     // Structure comes from the GENERATED guard (the same one login/refresh pass
     // to the fetch layer — this re-check keeps the seam safe when called
-    // directly, e.g. from tests). The extra checks are SEMANTIC: an empty
-    // token, a non-finite expiration or an empty role is structurally valid
-    // but not a usable session (setAccessToken('') + scheduleRefresh(NaN)
-    // would spin a hot refresh loop).
+    // directly, e.g. from tests). The extra checks are SEMANTIC: an empty token
+    // or a non-finite expiration is structurally valid but not a usable session
+    // (setAccessToken('') + scheduleRefresh(NaN) would spin a hot refresh loop).
+    // The role needs no check here: since it is generated as a union, isRole
+    // inside the guard already rejects '' — the codegen absorbed what used to
+    // be a hand-written semantic check.
     if (
         isLoginResponse(data) === false
         || data.access_token === ''
         || Number.isFinite(data.access_expiration) === false
-        || data.user.role === ''
     ) {
         return false;
     }

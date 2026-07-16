@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 import type { Router } from 'vue-router';
 import AppSidebar from '@/app/Layout/AppSidebar.vue';
 import { clearAuth, user } from '@/app-ui/Auth';
+import type { Role } from '@/app/Auth/enums/roles';
 
 // The sidebar owns the role-aware nav (moved from the old top header): a
 // superadmin sees ONLY the platform plane, an admin sees admin tools, a plain
@@ -29,7 +30,7 @@ const makeRouter = (): Router => createRouter({
     })),
 });
 
-const seedUser = (role: string, permissions: string[]): void => {
+const seedUser = (role: Role, permissions: string[]): void => {
     user.value = { id: 'u-1', nickname: 'alice', email: '', role, permissions };
 };
 

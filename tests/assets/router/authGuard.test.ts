@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import type { Router } from 'vue-router';
 import { type AppRoute, authGuard } from '@/router';
+import type { Role } from '@/app/Auth/enums/roles';
 import { clearAuth, isAuthenticated, user } from '@/app-ui/Auth';
 
 const Blank = { template: '<div />' };
@@ -40,7 +41,7 @@ const makeTestRouter = (): Router => {
     return router;
 };
 
-const setLoggedIn = (role: string, permissions: string[] = []): void => {
+const setLoggedIn = (role: Role, permissions: string[] = []): void => {
     user.value = {
         id: 'u-1',
         nickname: 'alice',
