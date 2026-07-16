@@ -7,6 +7,7 @@ import CheckBox from '@/app-ui/Inputs/CheckBox.vue';
 import EditIcon from '@/app-ui/Icons/EditIcon.vue';
 import TapIcon from '@/app-ui/Icons/TapIcon.vue';
 import TrashIcon from '@/app-ui/Icons/TrashIcon.vue';
+import Tooltip from '@/app-ui/Tooltip/Tooltip.vue';
 
 // One admin-list row, rendered into DataGrid's #rows slot (the grid never
 // dictates cell markup). Self-delete stays disabled — an admin must not saw
@@ -89,14 +90,18 @@ const isSelf = (): boolean => {
         </td>
         <td class="px-4 py-3 whitespace-nowrap text-right text-sm">
             <div class="flex items-center justify-end gap-1">
-                <Button
+                <Tooltip
                     v-if="user.active === false"
-                    variant="secondary"
-                    size="xs"
-                    @click="$emit('activate', user)"
+                    text="Activate user"
                 >
-                    <TapIcon />
-                </Button>
+                    <Button
+                        variant="secondary"
+                        size="xs"
+                        @click="$emit('activate', user)"
+                    >
+                        <TapIcon />
+                    </Button>
+                </Tooltip>
                 <Button
                     variant="secondary"
                     size="xs"
