@@ -60,13 +60,13 @@ var overviewSortSQL = map[tenant.SortColumn]string{
 	tenant.SortByUsers: "user_count",
 }
 
-// OverviewPage is the platform tenants grid read — each tenant plus its user
+// OverviewPageAcrossTenants is the platform tenants grid read — each tenant plus its user
 // count (a GROUP BY tenant_id aggregate) with paging, filters and a whitelisted
 // sort. The LEFT JOIN touches the tenant-owned users table cross-tenant, so the
 // query carries the platform exempt marker (tenants itself is control-plane /
 // exempt). The COUNT runs over tenants alone (the aggregate join would distort
 // it); the page query keeps the LEFT JOIN for the user_count column.
-func (r *Repository) OverviewPage(
+func (r *Repository) OverviewPageAcrossTenants(
 	ctx context.Context,
 	c tenant.ListCriteria,
 ) (tenant.ListPage, error) {

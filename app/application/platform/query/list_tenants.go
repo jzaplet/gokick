@@ -42,5 +42,5 @@ func (h *ListTenantsHandler) Handle(
 		Filters: tenant.ListFilters{Name: q.Name, Plan: q.Plan},
 	}.Normalize()
 
-	return h.tenants.OverviewPage(ctx, criteria)
+	return h.tenants.OverviewPageAcrossTenants(ctx, criteria)
 }

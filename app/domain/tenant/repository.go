@@ -24,10 +24,10 @@ type Repository interface {
 type PlatformRepository interface {
 	Repository
 
-	// OverviewPage is the paged/filtered/sorted platform tenants grid read: every
+	// OverviewPageAcrossTenants is the paged/filtered/sorted platform tenants grid read: every
 	// tenant with its user count (a GROUP BY aggregate), paged by the grid
 	// criteria. Cross-tenant by design (platform:overview).
-	OverviewPage(ctx context.Context, criteria ListCriteria) (ListPage, error)
+	OverviewPageAcrossTenants(ctx context.Context, criteria ListCriteria) (ListPage, error)
 
 	// CountAcrossTenants returns the total number of tenants (platform dashboard).
 	CountAcrossTenants(ctx context.Context) (int, error)
