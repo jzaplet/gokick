@@ -4,6 +4,8 @@ import type { GridState } from '@/app-ui/DataGrid/createGridState';
 import type { BulkAction } from '@/app-ui/BulkActions/BulkActionBar.vue';
 import type { PlatformBulkDeleteUsersRequest } from '@/app/Platform/types/PlatformBulkDeleteUsersRequest';
 import type { PlatformBulkActiveUsersRequest } from '@/app/Platform/types/PlatformBulkActiveUsersRequest';
+import type { BulkResult } from '@/app-ui/BulkActions/BulkResult';
+import { isBulkResult } from '@/app-ui/BulkActions/BulkResult';
 import { authFetch } from '@/app-ui/Auth';
 import { useToast } from '@/app-ui/Toast/useToast';
 
@@ -48,7 +50,7 @@ type PlatformUsersBulk = {
 // destructive action is confirmed first — nothing fires until
 // runPendingBulk / runActivate.
 export const usePlatformUsersBulk = (grid: GridState<PlatformGridFilters>): PlatformUsersBulk => {
-    const { success, error } = useToast();
+    const { success, info, error } = useToast();
 
     const bulkActions: BulkAction[] = [
         { key: 'deactivate', label: 'Deactivate' },
@@ -58,6 +60,12 @@ export const usePlatformUsersBulk = (grid: GridState<PlatformGridFilters>): Plat
     const pendingBulk = ref<BulkActionKey | null>(null);
 
     const bulkConfirm = computed((): BulkConfirm | null => {
+        // Selection vanished under the open modal (a debounced filter change
+        // cleared it): close rather than confirm an empty operation.
+        if (grid.selectedCount.value === 0) {
+            return null;
+        }
+
         const count = String(grid.selectedCount.value);
 
         if (pendingBulk.value === 'deactivate') {
@@ -78,6 +86,19 @@ export const usePlatformUsersBulk = (grid: GridState<PlatformGridFilters>): Plat
         return null;
     });
 
+    // The server reports the actual affected count — 0 means the selection
+    // collapsed to rows it spared (superadmins, the actor) or ids that no
+    // longer exist, so a success toast would lie.
+    const reportBulk = (affected: number, verb: string): void => {
+        if (affected === 0) {
+            info('No users were changed.');
+
+            return;
+        }
+
+        success(`${String(affected)} user(s) ${verb}.`);
+    };
+
     const runBulkDeactivate = async (): Promise<void> => {
         const body: PlatformBulkActiveUsersRequest = {
             ids: grid.selectedIds(),
@@ -89,10 +110,10 @@ export const usePlatformUsersBulk = (grid: GridState<PlatformGridFilters>): Plat
             active: grid.filters.active,
             set_active: false,
         };
-        const result = await authFetch<null, { general?: string }, PlatformBulkActiveUsersRequest>(
+        const result = await authFetch<BulkResult, { general?: string }, PlatformBulkActiveUsersRequest>(
             'POST',
             '/api/v1/platform/users/bulk-active',
-            { body },
+            { body, validate: isBulkResult },
         );
 
         if (result.success === false) {
@@ -101,7 +122,7 @@ export const usePlatformUsersBulk = (grid: GridState<PlatformGridFilters>): Plat
             return;
         }
 
-        success('Selected users deactivated.');
+        reportBulk(result.data.affected, 'deactivated');
         grid.clearSelection();
         await grid.reload();
     };
@@ -116,10 +137,10 @@ export const usePlatformUsersBulk = (grid: GridState<PlatformGridFilters>): Plat
             role: grid.filters.role,
             active: grid.filters.active,
         };
-        const result = await authFetch<null, { general?: string }, PlatformBulkDeleteUsersRequest>(
+        const result = await authFetch<BulkResult, { general?: string }, PlatformBulkDeleteUsersRequest>(
             'POST',
             '/api/v1/platform/users/bulk-delete',
-            { body },
+            { body, validate: isBulkResult },
         );
 
         if (result.success === false) {
@@ -128,7 +149,7 @@ export const usePlatformUsersBulk = (grid: GridState<PlatformGridFilters>): Plat
             return;
         }
 
-        success('Selected users deleted.');
+        reportBulk(result.data.affected, 'deleted');
         grid.clearSelection();
         await grid.reload();
     };
@@ -143,6 +164,13 @@ export const usePlatformUsersBulk = (grid: GridState<PlatformGridFilters>): Plat
         const action = pendingBulk.value;
 
         pendingBulk.value = null;
+
+        // The selection may have cleared under the modal (debounced filter
+        // change) between arming and confirming — do nothing rather than post
+        // an empty payload that the backend rejects.
+        if (grid.selectedCount.value === 0) {
+            return;
+        }
 
         if (action === 'delete') {
             await runBulkDelete();
@@ -186,10 +214,10 @@ export const usePlatformUsersBulk = (grid: GridState<PlatformGridFilters>): Plat
             active: '',
             set_active: true,
         };
-        const result = await authFetch<null, { general?: string }, PlatformBulkActiveUsersRequest>(
+        const result = await authFetch<BulkResult, { general?: string }, PlatformBulkActiveUsersRequest>(
             'POST',
             '/api/v1/platform/users/bulk-active',
-            { body },
+            { body, validate: isBulkResult },
         );
 
         if (result.success === false) {
@@ -198,7 +226,11 @@ export const usePlatformUsersBulk = (grid: GridState<PlatformGridFilters>): Plat
             return;
         }
 
-        success(`User ${target.nickname} activated.`);
+        if (result.data.affected === 0) {
+            info('No change — the user may no longer exist.');
+        } else {
+            success(`User ${target.nickname} activated.`);
+        }
         await grid.reload();
     };
 

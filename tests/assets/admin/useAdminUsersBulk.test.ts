@@ -9,7 +9,7 @@ type AuthFetchCall = (
     method: string,
     url: string,
     options?: { body?: Record<string, unknown> },
-) => Promise<{ success: true; status: number; data: null }>;
+) => Promise<{ success: true; status: number; data: { affected: number } }>;
 
 const authFetchMock = vi.hoisted(() => vi.fn<AuthFetchCall>());
 
@@ -18,7 +18,7 @@ vi.mock('@/app-ui/Auth', () => ({
 }));
 
 vi.mock('@/app-ui/Toast/useToast', () => ({
-    useToast: () => ({ success: vi.fn(), error: vi.fn() }),
+    useToast: () => ({ success: vi.fn(), info: vi.fn(), error: vi.fn() }),
 }));
 
 const makeGrid = (): ReturnType<typeof createGridState<{
@@ -36,7 +36,7 @@ const makeGrid = (): ReturnType<typeof createGridState<{
 describe('useAdminUsersBulk', () => {
     beforeEach(() => {
         authFetchMock.mockReset();
-        authFetchMock.mockResolvedValue({ success: true, status: 204, data: null });
+        authFetchMock.mockResolvedValue({ success: true, status: 200, data: { affected: 1 } });
     });
 
     it('offers only deactivate and delete as bulk actions', () => {
@@ -95,20 +95,18 @@ describe('useAdminUsersBulk', () => {
         await bulk.runPendingBulk();
 
         expect(authFetchMock).toHaveBeenCalledTimes(1);
-        expect(authFetchMock).toHaveBeenCalledWith(
-            'POST',
-            '/api/v1/admin/users/bulk-delete',
-            {
-                body: {
-                    ids: ['u1'],
-                    all_filtered: false,
-                    nickname: '',
-                    email: '',
-                    role: '',
-                    active: '',
-                },
-            },
-        );
+        const call = authFetchMock.mock.calls[0];
+
+        expect(call?.[0]).toBe('POST');
+        expect(call?.[1]).toBe('/api/v1/admin/users/bulk-delete');
+        expect(call?.[2]?.body).toEqual({
+            ids: ['u1'],
+            all_filtered: false,
+            nickname: '',
+            email: '',
+            role: '',
+            active: '',
+        });
         expect(bulk.bulkConfirm.value).toBeNull();
     });
 
@@ -122,21 +120,19 @@ describe('useAdminUsersBulk', () => {
         bulk.handleBulkAction('deactivate');
         await bulk.runPendingBulk();
 
-        expect(authFetchMock).toHaveBeenCalledWith(
-            'POST',
-            '/api/v1/admin/users/bulk-active',
-            {
-                body: {
-                    ids: ['u1'],
-                    all_filtered: false,
-                    nickname: '',
-                    email: '',
-                    role: '',
-                    active: '',
-                    set_active: false,
-                },
-            },
-        );
+        const call = authFetchMock.mock.calls[0];
+
+        expect(call?.[0]).toBe('POST');
+        expect(call?.[1]).toBe('/api/v1/admin/users/bulk-active');
+        expect(call?.[2]?.body).toEqual({
+            ids: ['u1'],
+            all_filtered: false,
+            nickname: '',
+            email: '',
+            role: '',
+            active: '',
+            set_active: false,
+        });
     });
 
     it('activates a single row only after the confirm', async (): Promise<void> => {
@@ -149,21 +145,19 @@ describe('useAdminUsersBulk', () => {
 
         await bulk.runActivate();
 
-        expect(authFetchMock).toHaveBeenCalledWith(
-            'POST',
-            '/api/v1/admin/users/bulk-active',
-            {
-                body: {
-                    ids: ['u7'],
-                    all_filtered: false,
-                    nickname: '',
-                    email: '',
-                    role: '',
-                    active: '',
-                    set_active: true,
-                },
-            },
-        );
+        const call = authFetchMock.mock.calls[0];
+
+        expect(call?.[0]).toBe('POST');
+        expect(call?.[1]).toBe('/api/v1/admin/users/bulk-active');
+        expect(call?.[2]?.body).toEqual({
+            ids: ['u7'],
+            all_filtered: false,
+            nickname: '',
+            email: '',
+            role: '',
+            active: '',
+            set_active: true,
+        });
         expect(bulk.userToActivate.value).toBeNull();
     });
 
@@ -174,6 +168,27 @@ describe('useAdminUsersBulk', () => {
         bulk.cancelActivate();
 
         expect(bulk.userToActivate.value).toBeNull();
+        expect(authFetchMock).not.toHaveBeenCalled();
+    });
+
+    it('disarms the confirm modal and fires nothing when the selection clears underneath it', async (): Promise<void> => {
+        const grid = makeGrid();
+
+        grid.toggleRow('u1');
+
+        const bulk = useAdminUsersBulk(grid);
+
+        bulk.handleBulkAction('delete');
+
+        expect(bulk.bulkConfirm.value).not.toBeNull();
+
+        // A debounced filter change clears the selection while the modal is open.
+        grid.clearSelection();
+
+        expect(bulk.bulkConfirm.value).toBeNull();
+
+        await bulk.runPendingBulk();
+
         expect(authFetchMock).not.toHaveBeenCalled();
     });
 });

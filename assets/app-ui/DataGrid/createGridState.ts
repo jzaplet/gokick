@@ -1,5 +1,5 @@
 import type { ComputedRef, Ref, UnwrapNestedRefs } from 'vue';
-import { computed, reactive, readonly, ref, watch } from 'vue';
+import { computed, nextTick, reactive, readonly, ref, watch } from 'vue';
 import { createDebounce } from '@/app-ui/Debounce/createDebounce';
 
 // Headless server-side grid state (ported from aibobr): one factory holds
@@ -154,6 +154,11 @@ export const createGridState = <F extends Record<string, string>>(
 
     const debounce = createDebounce(options.debounceMs ?? 400);
 
+    // True only while init() applies the URL into the filters — the filter
+    // watcher must ignore those programmatic writes, or a filtered deep link
+    // would reset the page to 1 and fire a second (duplicate) load.
+    let urlSyncing = false;
+
     const reload = async (): Promise<void> => {
         if (options.syncUrl === true) {
             writeUrl(page.value, sort.value, filterRecord, options.defaultSort);
@@ -172,6 +177,17 @@ export const createGridState = <F extends Record<string, string>>(
 
         if (outcome.ok === true) {
             total.value = outcome.total;
+
+            // Clamp an out-of-range page and re-fetch: a bulk delete can empty
+            // the last page, and a hand-edited ?page=999 deep link must degrade
+            // gracefully instead of stranding the user on an empty page whose
+            // pager has hidden itself.
+            const maxPage = Math.max(1, Math.ceil(total.value / perPage.value));
+
+            if (page.value > maxPage) {
+                page.value = maxPage;
+                await reload();
+            }
         }
     };
 
@@ -181,6 +197,10 @@ export const createGridState = <F extends Record<string, string>>(
     };
 
     watch(filters, (): void => {
+        if (urlSyncing === true) {
+            return;
+        }
+
         debounce.run((): void => {
             page.value = 1;
             clearSelection();
@@ -215,17 +235,33 @@ export const createGridState = <F extends Record<string, string>>(
 
     const init = async (): Promise<void> => {
         if (options.syncUrl === true) {
+            urlSyncing = true;
             readUrl(page, sort, filterRecord, {
                 sort: options.defaultSort,
                 keys: Object.keys(options.filters),
             });
+            // Let the filter watcher flush (and skip, thanks to urlSyncing)
+            // before we clear the flag and issue the single initial load.
+            await nextTick();
+            urlSyncing = false;
         }
 
         await reload();
     };
 
+    // In allFiltered mode a per-row toggle can't be expressed as "all except
+    // this" (the ids aren't enumerated), so any toggle DROPS the escalation to
+    // an empty selection — clear + reselect. This deliberately trades the
+    // "all-except-a-few" convenience for safety: the previous behavior turned
+    // "uncheck a row to spare it" into "select ONLY that row", so a bulk delete
+    // removed exactly the row the user meant to keep.
     const toggleRow = (id: string): void => {
-        allFiltered.value = false;
+        if (allFiltered.value === true) {
+            clearSelection();
+
+            return;
+        }
+
         const next = new Set(selected.value);
 
         if (next.has(id) === true) {
@@ -238,7 +274,14 @@ export const createGridState = <F extends Record<string, string>>(
     };
 
     const togglePage = (ids: string[]): void => {
-        allFiltered.value = false;
+        // The header checkbox reads "all selected" in allFiltered mode, so a
+        // click means deselect — clear, don't re-add the page.
+        if (allFiltered.value === true) {
+            clearSelection();
+
+            return;
+        }
+
         const next = new Set(selected.value);
         const allPresent = ids.every((id) => next.has(id) === true);
 

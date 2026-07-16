@@ -4,6 +4,8 @@ import type { GridState } from '@/app-ui/DataGrid/createGridState';
 import type { BulkAction } from '@/app-ui/BulkActions/BulkActionBar.vue';
 import type { BulkDeleteUsersRequest } from '@/app/Admin/types/BulkDeleteUsersRequest';
 import type { BulkActiveUsersRequest } from '@/app/Admin/types/BulkActiveUsersRequest';
+import type { BulkResult } from '@/app-ui/BulkActions/BulkResult';
+import { isBulkResult } from '@/app-ui/BulkActions/BulkResult';
 import { authFetch } from '@/app-ui/Auth';
 import { useToast } from '@/app-ui/Toast/useToast';
 
@@ -48,7 +50,7 @@ type AdminUsersBulk = {
 // confirmed first — nothing fires until runPendingBulk / runActivate.
 // Extracted from the view — views stay orchestrators.
 export const useAdminUsersBulk = (grid: GridState<AdminGridFilters>): AdminUsersBulk => {
-    const { success, error } = useToast();
+    const { success, info, error } = useToast();
 
     const bulkActions: BulkAction[] = [
         { key: 'deactivate', label: 'Deactivate' },
@@ -58,6 +60,12 @@ export const useAdminUsersBulk = (grid: GridState<AdminGridFilters>): AdminUsers
     const pendingBulk = ref<BulkActionKey | null>(null);
 
     const bulkConfirm = computed((): BulkConfirm | null => {
+        // Selection vanished under the open modal (a debounced filter change
+        // cleared it): close rather than confirm an empty operation.
+        if (grid.selectedCount.value === 0) {
+            return null;
+        }
+
         const count = String(grid.selectedCount.value);
 
         if (pendingBulk.value === 'deactivate') {
@@ -78,6 +86,19 @@ export const useAdminUsersBulk = (grid: GridState<AdminGridFilters>): AdminUsers
         return null;
     });
 
+    // The server reports the actual affected count — 0 means the selection
+    // collapsed to rows it spared (the actor, superadmins) or ids that no
+    // longer exist, so a success toast would lie.
+    const reportBulk = (affected: number, verb: string): void => {
+        if (affected === 0) {
+            info('No users were changed.');
+
+            return;
+        }
+
+        success(`${String(affected)} user(s) ${verb}.`);
+    };
+
     const runBulkDeactivate = async (): Promise<void> => {
         const body: BulkActiveUsersRequest = {
             ids: grid.selectedIds(),
@@ -88,10 +109,10 @@ export const useAdminUsersBulk = (grid: GridState<AdminGridFilters>): AdminUsers
             active: grid.filters.active,
             set_active: false,
         };
-        const result = await authFetch<null, { general?: string }, BulkActiveUsersRequest>(
+        const result = await authFetch<BulkResult, { general?: string }, BulkActiveUsersRequest>(
             'POST',
             '/api/v1/admin/users/bulk-active',
-            { body },
+            { body, validate: isBulkResult },
         );
 
         if (result.success === false) {
@@ -100,7 +121,7 @@ export const useAdminUsersBulk = (grid: GridState<AdminGridFilters>): AdminUsers
             return;
         }
 
-        success('Selected users deactivated.');
+        reportBulk(result.data.affected, 'deactivated');
         grid.clearSelection();
         await grid.reload();
     };
@@ -114,10 +135,10 @@ export const useAdminUsersBulk = (grid: GridState<AdminGridFilters>): AdminUsers
             role: grid.filters.role,
             active: grid.filters.active,
         };
-        const result = await authFetch<null, { general?: string }, BulkDeleteUsersRequest>(
+        const result = await authFetch<BulkResult, { general?: string }, BulkDeleteUsersRequest>(
             'POST',
             '/api/v1/admin/users/bulk-delete',
-            { body },
+            { body, validate: isBulkResult },
         );
 
         if (result.success === false) {
@@ -126,7 +147,7 @@ export const useAdminUsersBulk = (grid: GridState<AdminGridFilters>): AdminUsers
             return;
         }
 
-        success('Selected users deleted.');
+        reportBulk(result.data.affected, 'deleted');
         grid.clearSelection();
         await grid.reload();
     };
@@ -141,6 +162,13 @@ export const useAdminUsersBulk = (grid: GridState<AdminGridFilters>): AdminUsers
         const action = pendingBulk.value;
 
         pendingBulk.value = null;
+
+        // The selection may have cleared under the modal (debounced filter
+        // change) between arming and confirming — do nothing rather than post
+        // an empty payload that the backend rejects.
+        if (grid.selectedCount.value === 0) {
+            return;
+        }
 
         if (action === 'delete') {
             await runBulkDelete();
@@ -183,10 +211,10 @@ export const useAdminUsersBulk = (grid: GridState<AdminGridFilters>): AdminUsers
             active: '',
             set_active: true,
         };
-        const result = await authFetch<null, { general?: string }, BulkActiveUsersRequest>(
+        const result = await authFetch<BulkResult, { general?: string }, BulkActiveUsersRequest>(
             'POST',
             '/api/v1/admin/users/bulk-active',
-            { body },
+            { body, validate: isBulkResult },
         );
 
         if (result.success === false) {
@@ -195,7 +223,11 @@ export const useAdminUsersBulk = (grid: GridState<AdminGridFilters>): AdminUsers
             return;
         }
 
-        success(`User ${target.nickname} activated.`);
+        if (result.data.affected === 0) {
+            info('No change — the user may no longer exist.');
+        } else {
+            success(`User ${target.nickname} activated.`);
+        }
         await grid.reload();
     };
 
