@@ -338,12 +338,12 @@ func (h *PlatformHandler) BulkDeleteUsers(w http.ResponseWriter, r *http.Request
 		Active:      body.Active,
 	}
 
-	err := bus.DispatchVoid(
+	affected, err := bus.Dispatch(
 		r.Context(),
 		h.commandBus,
 		"BulkDeletePlatformUsers",
 		cmd,
-		func(ctx context.Context) error {
+		func(ctx context.Context) (int64, error) {
 			return h.bulkDelete.Handle(ctx, cmd)
 		},
 	)
@@ -353,7 +353,7 @@ func (h *PlatformHandler) BulkDeleteUsers(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	h.resp.JSON(r.Context(), w, http.StatusOK, bulkResultDTO{Affected: affected})
 }
 
 // BulkActiveUsers flips the active flag for the platform grid's selection.
@@ -376,12 +376,12 @@ func (h *PlatformHandler) BulkActiveUsers(w http.ResponseWriter, r *http.Request
 		SetActive:   body.SetActive,
 	}
 
-	err := bus.DispatchVoid(
+	affected, err := bus.Dispatch(
 		r.Context(),
 		h.commandBus,
 		"BulkSetPlatformUsersActive",
 		cmd,
-		func(ctx context.Context) error {
+		func(ctx context.Context) (int64, error) {
 			return h.bulkActive.Handle(ctx, cmd)
 		},
 	)
@@ -391,7 +391,7 @@ func (h *PlatformHandler) BulkActiveUsers(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	h.resp.JSON(r.Context(), w, http.StatusOK, bulkResultDTO{Affected: affected})
 }
 
 func toPlatformUserDTO(row user.PlatformRow) platformUserDTO {

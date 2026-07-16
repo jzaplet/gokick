@@ -104,6 +104,16 @@ type bulkActiveUsersRequest struct {
 	SetActive   bool     `json:"set_active"`
 }
 
+// bulkResultDTO is the shape both admin and platform bulk endpoints return —
+// the affected-row count, so the client can tell "N changed" from "the
+// selection collapsed to rows the server spared" (a bare 204 could not). Shared
+// across handlers (same package); one gkts annotation.
+//
+//gkts:assets/app-ui/BulkActions/BulkResult.ts BulkResult
+type bulkResultDTO struct {
+	Affected int64 `json:"affected"`
+}
+
 // listUsersQueryFromRequest maps the grid's query string onto the query
 // object. Values arrive raw — the query handler whitelists sort and clamps
 // paging, so a hand-edited deep link degrades gracefully instead of erroring.
@@ -284,12 +294,12 @@ func (h *AdminUsersHandler) BulkDelete(w http.ResponseWriter, r *http.Request) {
 		Active:      body.Active,
 	}
 
-	err := bus.DispatchVoid(
+	affected, err := bus.Dispatch(
 		r.Context(),
 		h.commandBus,
 		"BulkDeleteUsers",
 		cmd,
-		func(ctx context.Context) error {
+		func(ctx context.Context) (int64, error) {
 			return h.bulkDelete.Handle(ctx, cmd)
 		},
 	)
@@ -299,7 +309,7 @@ func (h *AdminUsersHandler) BulkDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	h.resp.JSON(r.Context(), w, http.StatusOK, bulkResultDTO{Affected: affected})
 }
 
 // BulkActive flips the active flag for the grid's selection.
@@ -321,12 +331,12 @@ func (h *AdminUsersHandler) BulkActive(w http.ResponseWriter, r *http.Request) {
 		SetActive:   body.SetActive,
 	}
 
-	err := bus.DispatchVoid(
+	affected, err := bus.Dispatch(
 		r.Context(),
 		h.commandBus,
 		"BulkSetUsersActive",
 		cmd,
-		func(ctx context.Context) error {
+		func(ctx context.Context) (int64, error) {
 			return h.bulkActive.Handle(ctx, cmd)
 		},
 	)
@@ -336,7 +346,7 @@ func (h *AdminUsersHandler) BulkActive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	h.resp.JSON(r.Context(), w, http.StatusOK, bulkResultDTO{Affected: affected})
 }
 
 func toAdminUserDTO(u user.User) adminUserDTO {

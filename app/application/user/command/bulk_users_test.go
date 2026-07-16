@@ -25,7 +25,7 @@ func TestBulkDeleteUsers_ByIDsExcludesActor(t *testing.T) {
 	bob := fx.SeedUser(t, "bob", "pwd", "user")
 
 	h := NewBulkDeleteUsersHandler(fx.Users)
-	err := h.Handle(actorCtx(root.ID), BulkDeleteUsersCommand{
+	_, err := h.Handle(actorCtx(root.ID), BulkDeleteUsersCommand{
 		IDs: []string{alice.ID, bob.ID, root.ID},
 	})
 	if err != nil {
@@ -50,7 +50,7 @@ func TestBulkDeleteUsers_AllFilteredHonorsFilters(t *testing.T) {
 	carol := fx.SeedUser(t, "carol", "pwd", "admin")
 
 	h := NewBulkDeleteUsersHandler(fx.Users)
-	err := h.Handle(actorCtx(root.ID), BulkDeleteUsersCommand{
+	_, err := h.Handle(actorCtx(root.ID), BulkDeleteUsersCommand{
 		AllFiltered: true,
 		Role:        "admin",
 	})
@@ -77,11 +77,69 @@ func TestBulkDeleteUsers_EmptySelectionIsValidationError(t *testing.T) {
 	root := fx.SeedUser(t, "root", "pwd", "admin")
 
 	h := NewBulkDeleteUsersHandler(fx.Users)
-	err := h.Handle(actorCtx(root.ID), BulkDeleteUsersCommand{})
+	_, err := h.Handle(actorCtx(root.ID), BulkDeleteUsersCommand{})
 
 	var verr *shared.ValidationError
 	if !errors.As(err, &verr) {
 		t.Fatalf("want ValidationError for an empty selection, got %v", err)
+	}
+}
+
+// Activate does NOT exclude the actor — activating yourself is safe, and
+// excluding the actor would make a self-activate a silent no-op.
+func TestBulkSetUsersActive_ActivateIncludesActor(t *testing.T) {
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "bulk_self_activate.db"))
+	root := fx.SeedUser(t, "root", "pwd", "admin")
+
+	if _, err := fx.DB.DB().Exec(`UPDATE users SET active = 0 WHERE id = ?`, root.ID); err != nil {
+		t.Fatalf("deactivate root: %v", err)
+	}
+
+	h := NewBulkSetUsersActiveHandler(fx.Users)
+	affected, err := h.Handle(actorCtx(root.ID), BulkSetUsersActiveCommand{
+		IDs:       []string{root.ID},
+		SetActive: true,
+	})
+	if err != nil {
+		t.Fatalf("self-activate: %v", err)
+	}
+	if affected != 1 {
+		t.Fatalf("self-activate must affect the actor's row, got affected=%d", affected)
+	}
+
+	actor, err := fx.Users.FindByID(context.Background(), root.ID)
+	if err != nil || actor == nil {
+		t.Fatalf("find root: %v", err)
+	}
+	if actor.Active != true {
+		t.Fatal("the actor must be reactivated by a self-activate")
+	}
+}
+
+// An unrecognized active filter value on the destructive bulk path is a hard
+// error — otherwise a dropped condition silently widens the operation.
+func TestBulkDeleteUsers_InvalidActiveFilterIsRejected(t *testing.T) {
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "bulk_invalid_active.db"))
+	root := fx.SeedUser(t, "root", "pwd", "admin")
+	fx.SeedUser(t, "alice", "pwd", "user")
+
+	h := NewBulkDeleteUsersHandler(fx.Users)
+	_, err := h.Handle(actorCtx(root.ID), BulkDeleteUsersCommand{
+		AllFiltered: true,
+		Active:      "true",
+	})
+
+	var verr *shared.ValidationError
+	if !errors.As(err, &verr) {
+		t.Fatalf("want ValidationError for a bad active filter, got %v", err)
+	}
+
+	remaining, err := fx.Users.FindAll(context.Background())
+	if err != nil {
+		t.Fatalf("find all: %v", err)
+	}
+	if len(remaining) != 2 {
+		t.Fatalf("no rows may be deleted when the filter is rejected, got %d", len(remaining))
 	}
 }
 
@@ -93,7 +151,7 @@ func TestBulkSetUsersActive_DeactivatesTargetsNotActor(t *testing.T) {
 	alice := fx.SeedUser(t, "alice", "pwd", "user")
 
 	h := NewBulkSetUsersActiveHandler(fx.Users)
-	err := h.Handle(actorCtx(root.ID), BulkSetUsersActiveCommand{
+	_, err := h.Handle(actorCtx(root.ID), BulkSetUsersActiveCommand{
 		IDs:       []string{alice.ID, root.ID},
 		SetActive: false,
 	})

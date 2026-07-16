@@ -68,7 +68,10 @@ func (r *Repository) FindPage(ctx context.Context, c user.ListCriteria) (user.Li
 		// Unreachable via SortColumnFrom; belt against a future raw criteria.
 		col = "nickname"
 	}
-	orderBy := fmt.Sprintf(` ORDER BY %s %s`, col, c.SortDir)
+	// Secondary id sort is the tie-break anchor: without it, rows equal on the
+	// primary column (role, email…) have an unspecified order across the
+	// LIMIT/OFFSET page boundary, so a row could appear on two pages or none.
+	orderBy := fmt.Sprintf(` ORDER BY %s %s, id ASC`, col, c.SortDir)
 	err := r.Conn(ctx).SelectContext(ctx, &page.Items,
 		`SELECT * `+base+where+orderBy+` LIMIT ? OFFSET ?`,
 		append(args, c.PerPage, c.Offset())...)
@@ -142,12 +145,17 @@ func (r *Repository) FindPageAcrossTenants(
 	return page, err
 }
 
-// bulkWhere renders the dual-mode selection: the actor is always excluded
-// (self-protection), then either the filter set (AllFiltered) or an explicit
-// id list narrows the statement.
+// bulkWhere renders the dual-mode selection: an optional actor exclusion
+// (self-protection for delete/deactivate — activate leaves it empty since
+// activating yourself is harmless), then either the filter set (AllFiltered)
+// or an explicit id list narrows the statement.
 func bulkWhere(sel user.BulkSelection) (string, []any) {
-	where := ` AND id != ?`
-	args := []any{sel.ExcludeID}
+	where := ""
+	args := []any{}
+	if sel.ExcludeID != "" {
+		where += ` AND id != ?`
+		args = append(args, sel.ExcludeID)
+	}
 	if sel.AllFiltered {
 		fw, fargs := listFilterWhere(sel.Filters)
 		return where + fw, append(args, fargs...)
@@ -204,8 +212,12 @@ func platformBulkFilterWhere(f user.PlatformListFilters) (string, []any) {
 }
 
 func platformBulkWhere(sel user.PlatformBulkSelection) (string, []any) {
-	where := ` AND id != ?`
-	args := []any{sel.ExcludeID}
+	where := ""
+	args := []any{}
+	if sel.ExcludeID != "" {
+		where += ` AND id != ?`
+		args = append(args, sel.ExcludeID)
+	}
 	if sel.AllFiltered {
 		fw, fargs := platformBulkFilterWhere(sel.Filters)
 		return where + fw, append(args, fargs...)

@@ -49,6 +49,9 @@ func (c ListCriteria) Normalize() ListCriteria {
 	if c.PerPage > ListPerPageMax {
 		c.PerPage = ListPerPageMax
 	}
+	// Clamp the direction (the column is whitelisted by overviewSortSQL; the
+	// direction is interpolated into ORDER BY).
+	c.SortDir = shared.SortDirectionFrom(string(c.SortDir))
 	return c
 }
 

@@ -9,7 +9,8 @@ import (
 
 // Platform bulk commands — the cross-tenant twins of the admin bulk pair.
 // Same dual-mode selection (ids, or all_filtered + the platform filter set
-// incl. tenant name), same actor exclusion; superadmin rows are spared by the
+// incl. tenant name), same actor exclusion for delete/deactivate (not
+// activate), same affected-count return; superadmin rows are spared by the
 // repository statements themselves.
 
 type BulkDeletePlatformUsersCommand struct {
@@ -38,13 +39,16 @@ func platformBulkSelection(
 	ids []string,
 	allFiltered bool,
 	filters user.PlatformListFilters,
-	actorID string,
+	excludeID string,
 ) (user.PlatformBulkSelection, error) {
+	if !user.ValidActiveFilter(filters.Active) {
+		return user.PlatformBulkSelection{}, &shared.ValidationError{Message: "invalid active filter value"}
+	}
 	sel := user.PlatformBulkSelection{
 		IDs:         ids,
 		AllFiltered: allFiltered,
 		Filters:     filters,
-		ExcludeID:   actorID,
+		ExcludeID:   excludeID,
 	}
 	if sel.IsEmpty() {
 		return user.PlatformBulkSelection{}, &shared.ValidationError{Message: "nothing selected"}
@@ -52,41 +56,61 @@ func platformBulkSelection(
 	return sel, nil
 }
 
+func platformBulkAuditMeta(affected int64, sel user.PlatformBulkSelection) map[string]any {
+	m := map[string]any{"affected": affected, "all_filtered": sel.AllFiltered}
+	if sel.AllFiltered {
+		m["filters"] = map[string]any{
+			"tenant":   sel.Filters.Tenant,
+			"nickname": sel.Filters.Nickname,
+			"email":    sel.Filters.Email,
+			"role":     sel.Filters.Role,
+			"active":   sel.Filters.Active,
+		}
+	} else {
+		m["ids"] = sel.IDs
+	}
+	return m
+}
+
+func platformFilters(tenant, nickname, email, role, active string) user.PlatformListFilters {
+	return user.PlatformListFilters{
+		ListFilters: user.ListFilters{
+			Nickname: nickname,
+			Email:    email,
+			Role:     role,
+			Active:   active,
+		},
+		Tenant: tenant,
+	}
+}
+
 func (h *BulkDeletePlatformUsersHandler) Handle(
 	ctx context.Context,
 	cmd BulkDeletePlatformUsersCommand,
-) error {
+) (int64, error) {
 	claims, err := shared.RequireClaims(ctx)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
-	filters := user.PlatformListFilters{
-		ListFilters: user.ListFilters{
-			Nickname: cmd.Nickname,
-			Email:    cmd.Email,
-			Role:     cmd.Role,
-			Active:   cmd.Active,
-		},
-		Tenant: cmd.Tenant,
-	}
+	filters := platformFilters(cmd.Tenant, cmd.Nickname, cmd.Email, cmd.Role, cmd.Active)
 	sel, err := platformBulkSelection(cmd.IDs, cmd.AllFiltered, filters, claims.UserID)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	affected, err := h.users.BulkDeleteAcrossTenants(ctx, sel)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
 		Action:     "user.bulk_deleted",
 		TargetType: "user",
-		Metadata:   map[string]any{"affected": affected, "all_filtered": sel.AllFiltered},
+		Metadata:   platformBulkAuditMeta(affected, sel),
 	})
 
-	return nil
+	return affected, nil
 }
 
 type BulkSetPlatformUsersActiveCommand struct {
@@ -117,29 +141,26 @@ func NewBulkSetPlatformUsersActiveHandler(
 func (h *BulkSetPlatformUsersActiveHandler) Handle(
 	ctx context.Context,
 	cmd BulkSetPlatformUsersActiveCommand,
-) error {
+) (int64, error) {
 	claims, err := shared.RequireClaims(ctx)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
-	filters := user.PlatformListFilters{
-		ListFilters: user.ListFilters{
-			Nickname: cmd.Nickname,
-			Email:    cmd.Email,
-			Role:     cmd.Role,
-			Active:   cmd.Active,
-		},
-		Tenant: cmd.Tenant,
+	excludeID := claims.UserID
+	if cmd.SetActive {
+		excludeID = ""
 	}
-	sel, err := platformBulkSelection(cmd.IDs, cmd.AllFiltered, filters, claims.UserID)
+
+	filters := platformFilters(cmd.Tenant, cmd.Nickname, cmd.Email, cmd.Role, cmd.Active)
+	sel, err := platformBulkSelection(cmd.IDs, cmd.AllFiltered, filters, excludeID)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	affected, err := h.users.BulkSetActiveAcrossTenants(ctx, sel, cmd.SetActive)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	action := "user.bulk_deactivated"
@@ -149,8 +170,8 @@ func (h *BulkSetPlatformUsersActiveHandler) Handle(
 	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
 		Action:     action,
 		TargetType: "user",
-		Metadata:   map[string]any{"affected": affected, "all_filtered": sel.AllFiltered},
+		Metadata:   platformBulkAuditMeta(affected, sel),
 	})
 
-	return nil
+	return affected, nil
 }

@@ -45,6 +45,16 @@ type ListFilters struct {
 	Active   string
 }
 
+// ValidActiveFilter reports whether the tri-state active value is one the
+// filter builders actually honor. On the READ path an unknown value is
+// harmlessly ignored, but on the destructive BULK path it must be a hard
+// error: an unrecognized "active" silently drops the condition, widening
+// "delete inactive" into "delete everyone". Callers on the bulk path reject
+// anything this returns false for.
+func ValidActiveFilter(active string) bool {
+	return active == "" || active == "1" || active == "0"
+}
+
 const (
 	ListPerPageDefault = 25
 	ListPerPageMax     = 100
@@ -72,6 +82,11 @@ func (c ListCriteria) Normalize() ListCriteria {
 	if c.PerPage > ListPerPageMax {
 		c.PerPage = ListPerPageMax
 	}
+	// Clamp the direction to the whitelist too — the sort COLUMN is guarded by
+	// listSortSQL, but the direction is interpolated into ORDER BY, so a raw
+	// criteria value must not reach the query. SortDirectionFrom falls back to
+	// ASC for anything but "DESC".
+	c.SortDir = shared.SortDirectionFrom(string(c.SortDir))
 	return c
 }
 
@@ -128,6 +143,7 @@ func (c PlatformListCriteria) Normalize() PlatformListCriteria {
 	if c.PerPage > ListPerPageMax {
 		c.PerPage = ListPerPageMax
 	}
+	c.SortDir = shared.SortDirectionFrom(string(c.SortDir))
 	return c
 }
 

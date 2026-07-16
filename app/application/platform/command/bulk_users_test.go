@@ -28,7 +28,7 @@ func TestBulkDeletePlatformUsers_AllFilteredByTenant(t *testing.T) {
 	root := fx.SeedUser(t, "root", "pwd", "superadmin")
 
 	h := NewBulkDeletePlatformUsersHandler(fx.PlatformUsers)
-	err := h.Handle(superadminCtx(root.ID), BulkDeletePlatformUsersCommand{
+	_, err := h.Handle(superadminCtx(root.ID), BulkDeletePlatformUsersCommand{
 		AllFiltered: true,
 		Tenant:      "acm",
 	})
@@ -58,7 +58,7 @@ func TestBulkSetPlatformUsersActive_ByIDs(t *testing.T) {
 	root := fx.SeedUser(t, "root", "pwd", "superadmin")
 
 	h := NewBulkSetPlatformUsersActiveHandler(fx.PlatformUsers)
-	err := h.Handle(superadminCtx(root.ID), BulkSetPlatformUsersActiveCommand{
+	_, err := h.Handle(superadminCtx(root.ID), BulkSetPlatformUsersActiveCommand{
 		IDs:       []string{alice.ID, root.ID},
 		SetActive: false,
 	})
@@ -88,7 +88,7 @@ func TestBulkDeletePlatformUsers_EmptySelectionIsValidationError(t *testing.T) {
 	root := fx.SeedUser(t, "root", "pwd", "superadmin")
 
 	h := NewBulkDeletePlatformUsersHandler(fx.PlatformUsers)
-	err := h.Handle(superadminCtx(root.ID), BulkDeletePlatformUsersCommand{})
+	_, err := h.Handle(superadminCtx(root.ID), BulkDeletePlatformUsersCommand{})
 
 	var verr *shared.ValidationError
 	if !errors.As(err, &verr) {
