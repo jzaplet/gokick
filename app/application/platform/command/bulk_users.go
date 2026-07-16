@@ -42,7 +42,9 @@ func platformBulkSelection(
 	excludeID string,
 ) (user.PlatformBulkSelection, error) {
 	if !user.ValidActiveFilter(filters.Active) {
-		return user.PlatformBulkSelection{}, &shared.ValidationError{Message: "invalid active filter value"}
+		return user.PlatformBulkSelection{}, &shared.ValidationError{
+			Message: "invalid active filter value",
+		}
 	}
 	sel := user.PlatformBulkSelection{
 		IDs:         ids,

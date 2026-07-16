@@ -192,6 +192,20 @@ func (r *Repository) CountAcrossTenants(ctx context.Context) (int, error) {
 	return n, err
 }
 
+// CountByActive returns the tenant-scoped total + active user counts for the
+// admin dashboard in one query (SUM over the 0/1 active column). Same scoping
+// as FindAll/FindPage: this tenant, non-superadmin rows.
+func (r *Repository) CountByActive(ctx context.Context) (int, int, error) {
+	var row struct {
+		Total  int `db:"total"`
+		Active int `db:"active"`
+	}
+	err := r.Conn(ctx).GetContext(ctx, &row,
+		`SELECT COUNT(*) AS total, COALESCE(SUM(active), 0) AS active
+		   FROM users WHERE tenant_id=? AND role != 'superadmin'`, r.Tenant(ctx))
+	return row.Total, row.Active, err
+}
+
 // UpdateAcrossTenants is the platform-plane write: a superadmin edits a user in
 // ANY tenant. Unlike Update it carries no tenant filter (the marker makes that
 // explicit), but it still excludes superadmin rows so no platform account can be

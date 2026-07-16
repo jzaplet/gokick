@@ -25,6 +25,9 @@ const columns: GridColumn[] = [
     { key: 'users', label: 'Users', sortable: true, align: 'right' },
 ];
 
+// Mirrors the backend plan tiers (domain/tenant PlanFree). Only "free" exists
+// today; when a paid tier ships (the tenant.go "free/paid…" note), add it here
+// so the filter can reach it — the BE matches any plan string exactly.
 const planOptions = [
     { value: '', label: 'All plans' },
     { value: 'free', label: 'free' },

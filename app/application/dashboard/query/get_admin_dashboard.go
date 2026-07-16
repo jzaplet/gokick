@@ -3,7 +3,6 @@ package query
 import (
 	"context"
 
-	"gokick/app/domain/shared"
 	"gokick/app/domain/user"
 )
 
@@ -27,30 +26,18 @@ func NewGetAdminDashboardHandler(users user.Repository) *GetAdminDashboardHandle
 	return &GetAdminDashboardHandler{users: users}
 }
 
-// Handle reads both counts off the grid read (FindPage with PerPage 1 — the
-// Total is what we're after); a dedicated COUNT method would be a second
-// code path to keep tenant-scoped for the same numbers.
+// Handle reads both counts in a single tenant-scoped aggregate (CountByActive)
+// — the platform dashboard already took this dedicated-count altitude
+// (CountAcrossTenants); the admin dashboard now mirrors it instead of running
+// two grid page reads that hydrate and discard a full user row each.
 func (h *GetAdminDashboardHandler) Handle(
 	ctx context.Context,
 	_ GetAdminDashboardQuery,
 ) (AdminDashboard, error) {
-	base := user.ListCriteria{
-		PerPage: 1,
-		Sort:    user.SortColumnFrom(""),
-		SortDir: shared.SortDirectionFrom(""),
-	}
-
-	all, err := h.users.FindPage(ctx, base.Normalize())
+	total, active, err := h.users.CountByActive(ctx)
 	if err != nil {
 		return AdminDashboard{}, err
 	}
 
-	activeOnly := base
-	activeOnly.Filters = user.ListFilters{Active: "1"}
-	active, err := h.users.FindPage(ctx, activeOnly.Normalize())
-	if err != nil {
-		return AdminDashboard{}, err
-	}
-
-	return AdminDashboard{UsersActive: active.Total, UsersTotal: all.Total}, nil
+	return AdminDashboard{UsersActive: active, UsersTotal: total}, nil
 }

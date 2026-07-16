@@ -37,6 +37,11 @@ type Repository interface {
 	// page carries the filtered total for the client-side pager.
 	FindPage(ctx context.Context, criteria ListCriteria) (ListPage, error)
 
+	// CountByActive returns the tenant-scoped total and active (non-superadmin)
+	// user counts in ONE query — the admin dashboard stat, instead of abusing
+	// the grid page read (SELECT * LIMIT 1) as a counter.
+	CountByActive(ctx context.Context) (total, active int, err error)
+
 	// BulkDelete removes every selected non-superadmin user in the caller's
 	// tenant EXCEPT the selection's ExcludeID (the acting admin) and returns the
 	// affected count. Selection is dual-mode: explicit ids, or the filter set
