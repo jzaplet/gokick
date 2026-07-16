@@ -87,12 +87,21 @@ export const parseResponse = async <TData, TError>(
 
         // No guard = a TData `null` endpoint (204/no-content): nothing to
         // validate, nothing to hand out.
+        // The cast is irreducible, not laziness: the "no validate ⇔ TData is
+        // null" invariant lives in apiFetch's OVERLOADS, which this generic
+        // body cannot see. There is also nothing to guard — a 204 has no body.
+        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- see above
         return { success: true, status: response.status, data: null as TData };
     }
 
     if (isRecord(json)) {
         // A real JSON error OBJECT, declared (not validated) as the endpoint's
         // TError — field-key parity is `gk errfields` (follow-up ④).
+        // The cast is irreducible: TError is caller-supplied, so there is no
+        // guard to call. isRecord above pins the one property consumers rely
+        // on — it IS an object, mergeable into errors.value — so a primitive
+        // never reaches here; only the exact key set is unproven.
+        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- see above
         return { success: false, status: response.status, data: json as TError };
     }
 
