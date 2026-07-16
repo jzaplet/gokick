@@ -1,38 +1,90 @@
 <script setup lang="ts">
 import type { PlatformUser } from '@/app/Platform/types/PlatformUser';
-import { isPlatformUser } from '@/app/Platform/types/PlatformUser';
-import { arrayOf } from '@/app-ui/Fetch';
+import type { PlatformUserListResponse } from '@/app/Platform/types/PlatformUserListResponse';
+import { isPlatformUserListResponse } from '@/app/Platform/types/PlatformUserListResponse';
+import type { GridColumn } from '@/app-ui/DataGrid/createGridState';
+import { createGridState } from '@/app-ui/DataGrid/createGridState';
 import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { authFetch } from '@/app-ui/Auth';
 import { useToast } from '@/app-ui/Toast/useToast';
 import ConfirmModal from '@/app-ui/Modals/ConfirmModal.vue';
-import Spinner from '@/app-ui/Loading/Spinner.vue';
-import PlatformUsersTable from '@/app/Platform/Components/PlatformUsersTable.vue';
+import DataGrid from '@/app-ui/DataGrid/DataGrid.vue';
+import FilterPanel from '@/app-ui/FilterPanel/FilterPanel.vue';
+import Pagination from '@/app-ui/Pagination/Pagination.vue';
+import Input from '@/app-ui/Inputs/Input.vue';
+import Select from '@/app-ui/Inputs/Select.vue';
+import PlatformUserRow from '@/app/Platform/Components/PlatformUserRow.vue';
+import BulkActionBar from '@/app-ui/BulkActions/BulkActionBar.vue';
+import { usePlatformUsersBulk } from '@/app/Platform/Composables/usePlatformUsersBulk';
+import { Role } from '@/app/Auth/enums/roles';
+import { computed } from 'vue';
 
 const router = useRouter();
 const { success, error } = useToast();
 
 const users = ref<PlatformUser[]>([]);
-const isLoading = ref(true);
 const userToDelete = ref<PlatformUser | null>(null);
 
-const fetchUsers = async (): Promise<void> => {
-    isLoading.value = true;
-    const result = await authFetch<PlatformUser[]>('GET', '/api/v1/platform/users', {
-        validate: arrayOf(isPlatformUser),
-    });
+const columns: GridColumn[] = [
+    { key: 'tenant', label: 'Tenant', sortable: true },
+    { key: 'nickname', label: 'Nickname', sortable: true },
+    { key: 'email', label: 'Email', sortable: true },
+    { key: 'role', label: 'Role', sortable: true },
+    { key: 'active', label: 'Active' },
+    { key: 'last_login', label: 'Last login', sortable: true },
+    // The actions column carries no heading (aibobr parity).
+    { key: 'actions', label: '', align: 'right' },
+];
 
-    isLoading.value = false;
+const roleOptions = [
+    { value: '', label: 'All roles' },
+    { value: 'superadmin', label: 'superadmin' },
+    { value: 'admin', label: 'admin' },
+    { value: 'user', label: 'user' },
+];
 
-    if (result.success === false) {
-        error('Failed to load user list.');
+const activeOptions = [
+    { value: '', label: 'All statuses' },
+    { value: '1', label: 'Active' },
+    { value: '0', label: 'Inactive' },
+];
 
-        return;
-    }
+const grid = createGridState({
+    defaultSort: { column: 'tenant', direction: 'ASC' },
+    filters: { tenant: '', nickname: '', email: '', role: '', active: '' },
+    syncUrl: true,
+    load: async ({ page, perPage, sort, filters }) => {
+        const params = new URLSearchParams({
+            page: String(page),
+            per_page: String(perPage),
+            sort_by: sort.column,
+            sort_dir: sort.direction,
+        });
 
-    users.value = result.data;
-};
+        for (const [key, value] of Object.entries(filters)) {
+            if (value !== '') {
+                params.set(key, value);
+            }
+        }
+
+        const result = await authFetch<PlatformUserListResponse>(
+            'GET',
+            `/api/v1/platform/users?${params.toString()}`,
+            { validate: isPlatformUserListResponse },
+        );
+
+        if (result.success === false) {
+            error('Failed to load user list.');
+
+            return { ok: false };
+        }
+
+        users.value = result.data.items;
+
+        return { ok: true, total: result.data.total };
+    },
+});
 
 const goToEdit = (user: PlatformUser): void => {
     void router.push({ name: 'platform-users-edit', params: { id: user.id } });
@@ -67,34 +119,148 @@ const confirmDelete = async (): Promise<void> => {
     }
 
     success(`User ${target.nickname} deleted.`);
-    await fetchUsers();
+    // Drop the now-gone row from any active selection so it can't inflate the
+    // bulk count or ride the next bulk payload as a ghost id.
+    grid.deselect(target.id);
+    await grid.reload();
 };
 
+// Selection: superadmin rows are never selectable (the BE spares them and
+// the actor too), so "page selected" means every manageable row on the page.
+const pageSelectableIds = computed<string[]>(() =>
+    users.value
+        .filter((u) => u.role !== Role.SuperAdmin)
+        .map((u) => u.id));
+
+const allPageSelected = computed<boolean>(() =>
+    pageSelectableIds.value.length > 0
+    && pageSelectableIds.value.every((id) => grid.isSelected(id) === true));
+
+const {
+    bulkActions,
+    bulkConfirm,
+    handleBulkAction,
+    runPendingBulk,
+    cancelPendingBulk,
+    userToActivate,
+    askActivate,
+    cancelActivate,
+    runActivate,
+} = usePlatformUsersBulk(grid);
+
 onMounted(async (): Promise<void> => {
-    await fetchUsers();
+    await grid.init();
 });
 </script>
 
 <template>
-    <div class="py-12 px-4 sm:px-6 lg:px-8">
-        <div class="max-w-5xl mx-auto space-y-6">
-            <h1 class="text-3xl font-extrabold text-gray-900">
-                Users
+    <div>
+        <div class="space-y-6">
+            <h1 class="text-2xl font-bold text-gray-900">
+                Platform users
             </h1>
 
-            <div
-                v-if="isLoading === true"
-                class="flex items-center justify-center py-12"
+            <FilterPanel
+                storage-key="platform-users"
+                :has-active-filters="grid.hasActiveFilters.value"
+                @clear="grid.clearFilters"
             >
-                <Spinner />
-            </div>
+                <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                    <Input
+                        v-model="grid.filters.tenant"
+                        label="Tenant"
+                        placeholder="Search tenant"
+                        flat
+                        size="sm"
+                        :active="grid.filters.tenant !== ''"
+                    />
+                    <Input
+                        v-model="grid.filters.nickname"
+                        label="Nickname"
+                        placeholder="Search nickname"
+                        flat
+                        size="sm"
+                        :active="grid.filters.nickname !== ''"
+                    />
+                    <Input
+                        v-model="grid.filters.email"
+                        label="Email"
+                        placeholder="Search email"
+                        flat
+                        size="sm"
+                        :active="grid.filters.email !== ''"
+                    />
+                    <Select
+                        :model-value="grid.filters.role"
+                        label="Role"
+                        :options="roleOptions"
+                        flat
+                        size="sm"
+                        :active="grid.filters.role !== ''"
+                        @update:model-value="grid.filters.role = $event ?? ''"
+                    />
+                    <Select
+                        :model-value="grid.filters.active"
+                        label="Status"
+                        :options="activeOptions"
+                        flat
+                        size="sm"
+                        :active="grid.filters.active !== ''"
+                        @update:model-value="grid.filters.active = $event ?? ''"
+                    />
+                </div>
+            </FilterPanel>
 
-            <PlatformUsersTable
-                v-else
-                :users="users"
-                @edit="goToEdit"
-                @delete="askDelete"
+            <BulkActionBar
+                :count="grid.selectedCount.value"
+                :total="grid.total.value"
+                :is-all-filtered="grid.isAllFilteredSelected.value"
+                :actions="bulkActions"
+                @action="handleBulkAction"
+                @select-all-filtered="grid.selectAllFiltered"
+                @clear="grid.clearSelection"
             />
+
+            <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <DataGrid
+                    :columns="columns"
+                    :sort="grid.sort.value"
+                    :is-loading="grid.isLoading.value"
+                    selectable
+                    :all-selected="allPageSelected"
+                    @sort="grid.handleSort"
+                    @toggle-page="grid.togglePage(pageSelectableIds)"
+                >
+                    <template #rows>
+                        <PlatformUserRow
+                            v-for="user in users"
+                            :key="user.id"
+                            :user="user"
+                            selectable
+                            :selected="grid.isSelected(user.id)"
+                            @edit="goToEdit"
+                            @delete="askDelete"
+                            @activate="askActivate"
+                            @toggle-select="grid.toggleRow(user.id)"
+                        />
+                        <tr v-if="users.length === 0">
+                            <td
+                                :colspan="columns.length + 1"
+                                class="px-4 py-8 text-center text-gray-400"
+                            >
+                                No users
+                            </td>
+                        </tr>
+                    </template>
+                </DataGrid>
+
+                <Pagination
+                    :page="grid.page.value"
+                    :per-page="grid.perPage.value"
+                    :total="grid.total.value"
+                    @update:page="grid.handlePageChange"
+                />
+            </div>
 
             <ConfirmModal
                 :show="userToDelete !== null"
@@ -106,6 +272,28 @@ onMounted(async (): Promise<void> => {
                 cancel-text="Cancel"
                 @confirm="confirmDelete"
                 @cancel="cancelDelete"
+            />
+
+            <ConfirmModal
+                :show="bulkConfirm !== null"
+                :title="bulkConfirm?.title ?? ''"
+                :message="bulkConfirm?.message ?? ''"
+                :confirm-text="bulkConfirm?.confirmText ?? 'Confirm'"
+                cancel-text="Cancel"
+                @confirm="runPendingBulk"
+                @cancel="cancelPendingBulk"
+            />
+
+            <ConfirmModal
+                :show="userToActivate !== null"
+                title="Activate user"
+                :message="userToActivate === null
+                    ? ''
+                    : `Activate user ${userToActivate.nickname}?`"
+                confirm-text="Activate"
+                cancel-text="Cancel"
+                @confirm="runActivate"
+                @cancel="cancelActivate"
             />
         </div>
     </div>

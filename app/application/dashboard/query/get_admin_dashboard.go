@@ -3,33 +3,41 @@ package query
 import (
 	"context"
 
-	"gokick/app/domain/shared"
+	"gokick/app/domain/user"
 )
 
 type GetAdminDashboardQuery struct{}
 
 func (GetAdminDashboardQuery) RequiredPermission() string { return "admin:dashboard:read" }
 
+// AdminDashboard carries the tenant's user stats for the stat cards (active
+// count big, total small — aibobr parity). It replaced the placeholder
+// welcome message.
 type AdminDashboard struct {
-	Message string
+	UsersActive int
+	UsersTotal  int
 }
 
-type GetAdminDashboardHandler struct{}
-
-func NewGetAdminDashboardHandler() *GetAdminDashboardHandler {
-	return &GetAdminDashboardHandler{}
+type GetAdminDashboardHandler struct {
+	users user.Repository
 }
 
+func NewGetAdminDashboardHandler(users user.Repository) *GetAdminDashboardHandler {
+	return &GetAdminDashboardHandler{users: users}
+}
+
+// Handle reads both counts in a single tenant-scoped aggregate (CountByActive)
+// — the platform dashboard already took this dedicated-count altitude
+// (CountAcrossTenants); the admin dashboard now mirrors it instead of running
+// two grid page reads that hydrate and discard a full user row each.
 func (h *GetAdminDashboardHandler) Handle(
 	ctx context.Context,
 	_ GetAdminDashboardQuery,
 ) (AdminDashboard, error) {
-	claims, err := shared.RequireClaims(ctx)
+	total, active, err := h.users.CountByActive(ctx)
 	if err != nil {
 		return AdminDashboard{}, err
 	}
 
-	return AdminDashboard{
-		Message: "Welcome " + claims.Nickname + " — this is a placeholder admin dashboard.",
-	}, nil
+	return AdminDashboard{UsersActive: active, UsersTotal: total}, nil
 }

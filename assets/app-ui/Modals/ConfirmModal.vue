@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Button from '@/app-ui/Buttons/Button.vue';
 import WarningIcon from '@/app-ui/Icons/WarningIcon.vue';
 
 const {
@@ -93,36 +94,23 @@ const handleCancel = (): void => {
                                 </div>
                             </div>
                             <div
-                                class="px-4 py-3 sm:px-6 bg-gray-50 sm:flex sm:flex-row-reverse"
+                                :class="[
+                                    'px-4 py-3 sm:px-6 bg-gray-50',
+                                    'flex flex-col-reverse sm:flex-row sm:justify-end gap-2',
+                                ]"
                             >
-                                <button
-                                    type="button"
-                                    class="w-full inline-flex justify-center
-                    px-4 py-2 sm:ml-3 sm:w-auto
-                    text-base font-medium text-white sm:text-sm
-                    bg-red-600 border border-transparent
-                    rounded-md shadow-sm hover:bg-red-700
-                    focus:outline-none focus:ring-2
-                    focus:ring-offset-2 focus:ring-red-500
-                    cursor-pointer"
-                                    @click="handleConfirm"
-                                >
-                                    {{ confirmText }}
-                                </button>
-                                <button
-                                    type="button"
-                                    class="mt-3 w-full inline-flex justify-center
-                    sm:mt-0 sm:ml-3 sm:w-auto px-4 py-2
-                    text-base font-medium text-gray-700 sm:text-sm
-                    bg-white border border-gray-300
-                    rounded-lg shadow-sm hover:bg-gray-50
-                    focus:outline-none focus:ring-2
-                    focus:ring-offset-2 focus:ring-orange-500
-                    cursor-pointer disabled:cursor-not-allowed"
+                                <Button
+                                    variant="secondary"
                                     @click="handleCancel"
                                 >
                                     {{ cancelText }}
-                                </button>
+                                </Button>
+                                <Button
+                                    variant="danger"
+                                    @click="handleConfirm"
+                                >
+                                    {{ confirmText }}
+                                </Button>
                             </div>
                         </div>
                     </Transition>

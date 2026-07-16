@@ -233,6 +233,14 @@ func (s *Server) registerRoutes() *http.ServeMux {
 	mux.Handle("GET /api/v1/admin/users", authed(http.HandlerFunc(s.adminUsers.List)))
 	mux.Handle("GET /api/v1/admin/users/{id}", authed(http.HandlerFunc(s.adminUsers.Get)))
 	mux.Handle("POST /api/v1/admin/users", authed(http.HandlerFunc(s.adminUsers.Create)))
+	mux.Handle(
+		"POST /api/v1/admin/users/bulk-delete",
+		authed(http.HandlerFunc(s.adminUsers.BulkDelete)),
+	)
+	mux.Handle(
+		"POST /api/v1/admin/users/bulk-active",
+		authed(http.HandlerFunc(s.adminUsers.BulkActive)),
+	)
 	mux.Handle("PUT /api/v1/admin/users/{id}", authed(http.HandlerFunc(s.adminUsers.Update)))
 	mux.Handle("DELETE /api/v1/admin/users/{id}", authed(http.HandlerFunc(s.adminUsers.Delete)))
 
@@ -240,6 +248,14 @@ func (s *Server) registerRoutes() *http.ServeMux {
 	mux.Handle("GET /api/v1/platform/stats", authed(http.HandlerFunc(s.platform.Stats)))
 	mux.Handle("GET /api/v1/platform/users", authed(http.HandlerFunc(s.platform.Users)))
 	mux.Handle("GET /api/v1/platform/users/{id}", authed(http.HandlerFunc(s.platform.GetUser)))
+	mux.Handle(
+		"POST /api/v1/platform/users/bulk-delete",
+		authed(http.HandlerFunc(s.platform.BulkDeleteUsers)),
+	)
+	mux.Handle(
+		"POST /api/v1/platform/users/bulk-active",
+		authed(http.HandlerFunc(s.platform.BulkActiveUsers)),
+	)
 	mux.Handle("GET /api/v1/platform/tenants", authed(http.HandlerFunc(s.platform.Tenants)))
 	mux.Handle("PUT /api/v1/platform/users/{id}", authed(http.HandlerFunc(s.platform.UpdateUser)))
 	mux.Handle(

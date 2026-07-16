@@ -73,6 +73,13 @@ func (h *RefreshTokenHandler) Handle(
 				// genuinely gone. That IS a definitive auth failure — end the session.
 				return &shared.AuthError{Message: "user no longer exists"}
 			}
+			if !u.Active {
+				// Deactivated after this session was issued: end it. Access tokens
+				// are stateless so deactivation bites at the next refresh (within
+				// one access-token TTL), not instantly — immediate revocation would
+				// be a separate, heavier change.
+				return &shared.AuthError{Message: "account is inactive"}
+			}
 			// issueSession's Save is its final write — the contract Rotate's
 			// issue-before-consume ordering relies on.
 			res, err = issueSession(ctx, h.jwt, h.tokens, u)

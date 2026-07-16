@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"time"
 
 	"gokick/app/application/bus"
@@ -27,6 +28,8 @@ type PlatformHandler struct {
 	listTenants *platformqry.ListTenantsHandler
 	updateUser  *platformcmd.UpdatePlatformUserHandler
 	deleteUser  *platformcmd.DeletePlatformUserHandler
+	bulkDelete  *platformcmd.BulkDeletePlatformUsersHandler
+	bulkActive  *platformcmd.BulkSetPlatformUsersActiveHandler
 }
 
 func NewPlatformHandler(
@@ -39,6 +42,8 @@ func NewPlatformHandler(
 	listTenants *platformqry.ListTenantsHandler,
 	updateUser *platformcmd.UpdatePlatformUserHandler,
 	deleteUser *platformcmd.DeletePlatformUserHandler,
+	bulkDelete *platformcmd.BulkDeletePlatformUsersHandler,
+	bulkActive *platformcmd.BulkSetPlatformUsersActiveHandler,
 ) *PlatformHandler {
 	return &PlatformHandler{
 		resp:        resp,
@@ -50,6 +55,8 @@ func NewPlatformHandler(
 		listTenants: listTenants,
 		updateUser:  updateUser,
 		deleteUser:  deleteUser,
+		bulkDelete:  bulkDelete,
+		bulkActive:  bulkActive,
 	}
 }
 
@@ -77,6 +84,41 @@ type platformTenantDTO struct {
 	Name      string `json:"name"`
 	Plan      string `json:"plan"`
 	UserCount int    `json:"user_count"`
+}
+
+//gkts:assets/app/Platform/types/PlatformUserListResponse.ts PlatformUserListResponse
+type platformUserListResponse struct {
+	Items []platformUserDTO `json:"items"`
+	Total int               `json:"total"`
+}
+
+//gkts:assets/app/Platform/types/PlatformTenantListResponse.ts PlatformTenantListResponse
+type platformTenantListResponse struct {
+	Items []platformTenantDTO `json:"items"`
+	Total int                 `json:"total"`
+}
+
+//gkts:assets/app/Platform/types/PlatformBulkDeleteUsersRequest.ts PlatformBulkDeleteUsersRequest noguard
+type platformBulkDeleteUsersRequest struct {
+	IDs         []string `json:"ids"`
+	AllFiltered bool     `json:"all_filtered"`
+	Tenant      string   `json:"tenant"`
+	Nickname    string   `json:"nickname"`
+	Email       string   `json:"email"`
+	Role        string   `json:"role"`
+	Active      string   `json:"active"`
+}
+
+//gkts:assets/app/Platform/types/PlatformBulkActiveUsersRequest.ts PlatformBulkActiveUsersRequest noguard
+type platformBulkActiveUsersRequest struct {
+	IDs         []string `json:"ids"`
+	AllFiltered bool     `json:"all_filtered"`
+	Tenant      string   `json:"tenant"`
+	Nickname    string   `json:"nickname"`
+	Email       string   `json:"email"`
+	Role        string   `json:"role"`
+	Active      string   `json:"active"`
+	SetActive   bool     `json:"set_active"`
 }
 
 //gkts:assets/app/Platform/types/PlatformUserFormData.ts PlatformUserFormData noguard
@@ -112,14 +154,27 @@ func (h *PlatformHandler) Stats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PlatformHandler) Users(w http.ResponseWriter, r *http.Request) {
-	q := platformqry.ListAllUsersQuery{}
+	qs := r.URL.Query()
+	page, _ := strconv.Atoi(qs.Get("page"))
+	perPage, _ := strconv.Atoi(qs.Get("per_page"))
+	q := platformqry.ListAllUsersQuery{
+		Page:     page,
+		PerPage:  perPage,
+		SortBy:   qs.Get("sort_by"),
+		SortDir:  qs.Get("sort_dir"),
+		Nickname: qs.Get("nickname"),
+		Email:    qs.Get("email"),
+		Role:     qs.Get("role"),
+		Active:   qs.Get("active"),
+		Tenant:   qs.Get("tenant"),
+	}
 
-	rows, err := bus.Query(
+	result, err := bus.Query(
 		r.Context(),
 		h.queryBus,
 		"PlatformListUsers",
 		q,
-		func(ctx context.Context) ([]user.PlatformRow, error) {
+		func(ctx context.Context) (user.PlatformListPage, error) {
 			return h.listUsers.Handle(ctx, q)
 		},
 	)
@@ -129,12 +184,15 @@ func (h *PlatformHandler) Users(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dtos := make([]platformUserDTO, len(rows))
-	for i, row := range rows {
+	dtos := make([]platformUserDTO, len(result.Items))
+	for i, row := range result.Items {
 		dtos[i] = toPlatformUserDTO(row)
 	}
 
-	h.resp.JSON(r.Context(), w, http.StatusOK, dtos)
+	h.resp.JSON(r.Context(), w, http.StatusOK, platformUserListResponse{
+		Items: dtos,
+		Total: result.Total,
+	})
 }
 
 // GetUser returns one user in ANY tenant (GET /platform/users/{id}) — the
@@ -163,14 +221,24 @@ func (h *PlatformHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PlatformHandler) Tenants(w http.ResponseWriter, r *http.Request) {
-	q := platformqry.ListTenantsQuery{}
+	qs := r.URL.Query()
+	page, _ := strconv.Atoi(qs.Get("page"))
+	perPage, _ := strconv.Atoi(qs.Get("per_page"))
+	q := platformqry.ListTenantsQuery{
+		Page:    page,
+		PerPage: perPage,
+		SortBy:  qs.Get("sort_by"),
+		SortDir: qs.Get("sort_dir"),
+		Name:    qs.Get("name"),
+		Plan:    qs.Get("plan"),
+	}
 
-	rows, err := bus.Query(
+	result, err := bus.Query(
 		r.Context(),
 		h.queryBus,
 		"PlatformListTenants",
 		q,
-		func(ctx context.Context) ([]tenant.Overview, error) {
+		func(ctx context.Context) (tenant.ListPage, error) {
 			return h.listTenants.Handle(ctx, q)
 		},
 	)
@@ -180,8 +248,8 @@ func (h *PlatformHandler) Tenants(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dtos := make([]platformTenantDTO, len(rows))
-	for i, t := range rows {
+	dtos := make([]platformTenantDTO, len(result.Items))
+	for i, t := range result.Items {
 		dtos[i] = platformTenantDTO{
 			ID:        t.ID,
 			Name:      t.Name,
@@ -190,7 +258,10 @@ func (h *PlatformHandler) Tenants(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.resp.JSON(r.Context(), w, http.StatusOK, dtos)
+	h.resp.JSON(r.Context(), w, http.StatusOK, platformTenantListResponse{
+		Items: dtos,
+		Total: result.Total,
+	})
 }
 
 func (h *PlatformHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -246,6 +317,81 @@ func (h *PlatformHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// BulkDeleteUsers removes the platform grid's selection (cross-tenant).
+func (h *PlatformHandler) BulkDeleteUsers(w http.ResponseWriter, r *http.Request) {
+	var body platformBulkDeleteUsersRequest
+	if err := request.DecodeJSON(w, r, &body); err != nil {
+		h.resp.HandleError(r.Context(), w, err)
+
+		return
+	}
+
+	cmd := platformcmd.BulkDeletePlatformUsersCommand{
+		IDs:         body.IDs,
+		AllFiltered: body.AllFiltered,
+		Tenant:      body.Tenant,
+		Nickname:    body.Nickname,
+		Email:       body.Email,
+		Role:        body.Role,
+		Active:      body.Active,
+	}
+
+	affected, err := bus.Dispatch(
+		r.Context(),
+		h.commandBus,
+		"BulkDeletePlatformUsers",
+		cmd,
+		func(ctx context.Context) (int64, error) {
+			return h.bulkDelete.Handle(ctx, cmd)
+		},
+	)
+	if err != nil {
+		h.resp.HandleError(r.Context(), w, err)
+
+		return
+	}
+
+	h.resp.JSON(r.Context(), w, http.StatusOK, bulkResultDTO{Affected: affected})
+}
+
+// BulkActiveUsers flips the active flag for the platform grid's selection.
+func (h *PlatformHandler) BulkActiveUsers(w http.ResponseWriter, r *http.Request) {
+	var body platformBulkActiveUsersRequest
+	if err := request.DecodeJSON(w, r, &body); err != nil {
+		h.resp.HandleError(r.Context(), w, err)
+
+		return
+	}
+
+	cmd := platformcmd.BulkSetPlatformUsersActiveCommand{
+		IDs:         body.IDs,
+		AllFiltered: body.AllFiltered,
+		Tenant:      body.Tenant,
+		Nickname:    body.Nickname,
+		Email:       body.Email,
+		Role:        body.Role,
+		Active:      body.Active,
+		SetActive:   body.SetActive,
+	}
+
+	affected, err := bus.Dispatch(
+		r.Context(),
+		h.commandBus,
+		"BulkSetPlatformUsersActive",
+		cmd,
+		func(ctx context.Context) (int64, error) {
+			return h.bulkActive.Handle(ctx, cmd)
+		},
+	)
+	if err != nil {
+		h.resp.HandleError(r.Context(), w, err)
+
+		return
+	}
+
+	h.resp.JSON(r.Context(), w, http.StatusOK, bulkResultDTO{Affected: affected})
 }
 
 func toPlatformUserDTO(row user.PlatformRow) platformUserDTO {

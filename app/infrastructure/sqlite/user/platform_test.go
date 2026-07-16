@@ -6,13 +6,15 @@ import (
 	"testing"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/user"
 	"gokick/app/internal/testfx"
 )
 
-// FindAllAcrossTenants is the inverse of FindAll: it must return users
-// from EVERY tenant, ignoring any tenant in context. The 4a isolation test proves
-// FindAll hides other tenants; this proves the platform read deliberately doesn't.
-func TestUserRepository_FindAllAcrossTenants_SeesAllTenants(t *testing.T) {
+// FindPageAcrossTenants is the inverse of FindPage: it must return users from
+// EVERY tenant, ignoring any tenant in context. The 4a isolation test proves
+// FindPage hides other tenants; this proves the platform read deliberately
+// doesn't, and joins the tenant NAME onto each row.
+func TestUserRepository_FindPageAcrossTenants_SeesAllTenants(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "platform_all_users.db"))
 
 	tenantA := fx.SeedTenant(t, "Acme")
@@ -23,16 +25,19 @@ func TestUserRepository_FindAllAcrossTenants_SeesAllTenants(t *testing.T) {
 
 	// A tenant-A context must NOT scope this read — it spans all tenants.
 	ctxA := shared.ContextWithTenantID(context.Background(), tenantA.ID)
-	all, err := fx.PlatformUsers.FindAllAcrossTenants(ctxA)
+	page, err := fx.PlatformUsers.FindPageAcrossTenants(ctxA, user.PlatformListCriteria{
+		Page: 1, PerPage: 100, Sort: user.SortByTenant, SortDir: shared.SortAsc,
+	}.Normalize())
 	if err != nil {
-		t.Fatalf("FindAllAcrossTenants: %v", err)
+		t.Fatalf("FindPageAcrossTenants: %v", err)
 	}
-	if len(all) != 3 {
-		t.Fatalf("platform read must see all 3 users across tenants, got %d", len(all))
+	if page.Total != 3 || len(page.Items) != 3 {
+		t.Fatalf("platform read must see all 3 users across tenants, got total %d / %d rows",
+			page.Total, len(page.Items))
 	}
 	// Each row must carry its tenant NAME (the JOIN), not just the id.
 	names := map[string]string{}
-	for _, u := range all {
+	for _, u := range page.Items {
 		names[u.TenantID] = u.TenantName
 	}
 	if names[tenantA.ID] != "Acme" || names[tenantB.ID] != "Globex" {

@@ -29,8 +29,9 @@ func TestListAllUsers_SuperadminSeesAllTenants_AdminDenied(t *testing.T) {
 	h := NewListAllUsersHandler(fx.PlatformUsers)
 	q := ListAllUsersQuery{}
 	dispatch := func(ctx context.Context) ([]user.PlatformRow, error) {
-		return testfx.ExecQuery(ctx, queryBus, "PlatformListUsers", q,
-			func(ctx context.Context) ([]user.PlatformRow, error) { return h.Handle(ctx, q) })
+		page, err := testfx.ExecQuery(ctx, queryBus, "PlatformListUsers", q,
+			func(ctx context.Context) (user.PlatformListPage, error) { return h.Handle(ctx, q) })
+		return page.Items, err
 	}
 
 	// Superadmin → sees both tenants' users, each carrying its tenant NAME.
@@ -93,10 +94,13 @@ func TestGetStats_CountsTenantsAndUsers(t *testing.T) {
 		t.Fatalf("user count: got %d want 3 (must include the superadmin)", stats.UserCount)
 	}
 
-	rows, err := fx.PlatformUsers.FindAllAcrossTenants(ctx)
+	page, err := fx.PlatformUsers.FindPageAcrossTenants(ctx, user.PlatformListCriteria{
+		Page: 1, PerPage: 1000, Sort: user.SortByTenant, SortDir: shared.SortAsc,
+	}.Normalize())
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
+	rows := page.Items
 	if len(rows) != stats.UserCount {
 		t.Fatalf("user_count (%d) must match the platform list length (%d)",
 			stats.UserCount, len(rows))

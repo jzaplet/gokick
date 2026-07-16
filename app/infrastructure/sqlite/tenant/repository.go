@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 
 	"gokick/app/domain/tenant"
 	"gokick/app/infrastructure/database"
@@ -53,17 +55,52 @@ func (r *Repository) CountAcrossTenants(ctx context.Context) (int, error) {
 	return n, err
 }
 
-// OverviewAcrossTenants is the platform-plane aggregate: each tenant plus its
-// user count via a single GROUP BY tenant_id. The LEFT JOIN touches the
-// tenant-owned users table cross-tenant, so the query carries the platform
-// exempt marker (tenants itself is control-plane / exempt).
-func (r *Repository) OverviewAcrossTenants(ctx context.Context) ([]tenant.Overview, error) {
-	var rows []tenant.Overview
-	err := r.Conn(ctx).SelectContext(ctx, &rows,
+var overviewSortSQL = map[tenant.SortColumn]string{
+	tenant.SortByName:  "t.name",
+	tenant.SortByUsers: "user_count",
+}
+
+// OverviewPage is the platform tenants grid read — each tenant plus its user
+// count (a GROUP BY tenant_id aggregate) with paging, filters and a whitelisted
+// sort. The LEFT JOIN touches the tenant-owned users table cross-tenant, so the
+// query carries the platform exempt marker (tenants itself is control-plane /
+// exempt). The COUNT runs over tenants alone (the aggregate join would distort
+// it); the page query keeps the LEFT JOIN for the user_count column.
+func (r *Repository) OverviewPage(
+	ctx context.Context,
+	c tenant.ListCriteria,
+) (tenant.ListPage, error) {
+	conds := []string{}
+	args := []any{}
+	if c.Filters.Name != "" {
+		conds = append(conds, "t.name LIKE ?")
+		args = append(args, "%"+c.Filters.Name+"%")
+	}
+	if c.Filters.Plan != "" {
+		conds = append(conds, "t.plan = ?")
+		args = append(args, c.Filters.Plan)
+	}
+	where := ""
+	if len(conds) > 0 {
+		where = ` WHERE ` + strings.Join(conds, " AND ")
+	}
+
+	page := tenant.ListPage{Items: []tenant.Overview{}}
+	if err := r.Conn(ctx).GetContext(ctx, &page.Total,
+		`SELECT COUNT(*) FROM tenants t`+where, args...); err != nil {
+		return tenant.ListPage{}, err
+	}
+
+	col, ok := overviewSortSQL[c.Sort]
+	if !ok {
+		col = "t.name"
+	}
+	orderBy := fmt.Sprintf(` ORDER BY %s %s, t.name ASC`, col, c.SortDir)
+	err := r.Conn(ctx).SelectContext(ctx, &page.Items,
 		`SELECT t.id, t.name, t.plan, COUNT(u.id) AS user_count
 		   FROM tenants t
-		   LEFT JOIN users u ON u.tenant_id = t.id /* tenant-scope-exempt: platform superadmin */
-		  GROUP BY t.id, t.name, t.plan
-		  ORDER BY t.name`)
-	return rows, err
+		   LEFT JOIN users u ON u.tenant_id = t.id /* tenant-scope-exempt: platform superadmin */`+
+			where+` GROUP BY t.id, t.name, t.plan`+orderBy+` LIMIT ? OFFSET ?`,
+		append(args, c.PerPage, c.Offset())...)
+	return page, err
 }

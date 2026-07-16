@@ -37,6 +37,21 @@ type Repository interface {
 	// page carries the filtered total for the client-side pager.
 	FindPage(ctx context.Context, criteria ListCriteria) (ListPage, error)
 
+	// CountByActive returns the tenant-scoped total and active (non-superadmin)
+	// user counts in ONE query — the admin dashboard stat, instead of abusing
+	// the grid page read (SELECT * LIMIT 1) as a counter.
+	CountByActive(ctx context.Context) (total, active int, err error)
+
+	// BulkDelete removes every selected non-superadmin user in the caller's
+	// tenant EXCEPT the selection's ExcludeID (the acting admin) and returns the
+	// affected count. Selection is dual-mode: explicit ids, or the filter set
+	// when AllFiltered is on.
+	BulkDelete(ctx context.Context, sel BulkSelection) (int64, error)
+
+	// BulkSetActive flips the active flag for the selection — same scoping and
+	// self-exclusion as BulkDelete.
+	BulkSetActive(ctx context.Context, sel BulkSelection, active bool) (int64, error)
+
 	// RecordLogin stamps last_login_at = now for the user on a successful login.
 	// Best-effort analytics; raw pool like ResetFailedLogin (login runs outside
 	// the bus tx by design), so it neither blocks login nor ties the stamp to
@@ -76,17 +91,31 @@ type Repository interface {
 type PlatformRepository interface {
 	Repository
 
-	// FindAllAcrossTenants returns every user (joined to its tenant name)
-	// regardless of tenant — the deliberate INVERSE of FindAll's tenant scoping.
-	// The query carries a tenant-scope-exempt marker so the conformance gate
-	// admits it consciously.
-	FindAllAcrossTenants(ctx context.Context) ([]PlatformRow, error)
+	// FindPageAcrossTenants is the paged/filtered/sorted platform users grid
+	// read — FindPage's shape without the tenant scoping (every tenant, joined
+	// to the tenant name). Criteria pre-normalized, filtered total included; the
+	// query carries a tenant-scope-exempt marker so the conformance gate admits
+	// it consciously.
+	FindPageAcrossTenants(
+		ctx context.Context,
+		criteria PlatformListCriteria,
+	) (PlatformListPage, error)
 
 	// FindByIDAcrossTenants is the cross-tenant read-one behind the platform
-	// read-one endpoint (GET /platform/users/{id}) — the by-id INVERSE of
-	// FindAllAcrossTenants, joined to the tenant name. No tenant filter (a
+	// read-one endpoint (GET /platform/users/{id}) — the by-id inverse of
+	// FindAll's tenant scoping, joined to the tenant name. No tenant filter (a
 	// superadmin reads any user in any tenant); returns (nil, nil) when absent.
 	FindByIDAcrossTenants(ctx context.Context, id string) (*PlatformRow, error)
+
+	// BulkDeleteAcrossTenants / BulkSetActiveAcrossTenants are the platform
+	// twins of the tenant-scoped bulk writes: any tenant, superadmin rows and
+	// the selection's ExcludeID always spared, affected count returned.
+	BulkDeleteAcrossTenants(ctx context.Context, sel PlatformBulkSelection) (int64, error)
+	BulkSetActiveAcrossTenants(
+		ctx context.Context,
+		sel PlatformBulkSelection,
+		active bool,
+	) (int64, error)
 
 	// CountAcrossTenants counts all users across all tenants (platform dashboard).
 	CountAcrossTenants(ctx context.Context) (int, error)

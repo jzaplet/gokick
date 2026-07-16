@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import ChevronLeftIcon from '@/app-ui/Icons/ChevronLeftIcon.vue';
 
-// "Showing X–Y of N" + a window of up to five page buttons with prev/next.
+// "X–Y / N" + a window of up to five page buttons with prev/next chevrons.
 // Pure presentation over (page, perPage, total) — the grid state owns the
-// actual paging (ported from aibobr).
+// actual paging. Sits INSIDE the grid card, attached with a top border
+// (aibobr parity); renders nothing for an empty result.
 const { page, perPage, total } = defineProps<{
     page: number;
     perPage: number;
@@ -45,37 +47,41 @@ const goTo = (target: number): void => {
 </script>
 
 <template>
-    <div class="flex flex-col sm:flex-row items-center justify-between gap-3">
+    <div
+        v-if="total > 0"
+        class="flex items-center justify-between border-t border-gray-200 px-4 py-3"
+    >
         <p class="text-sm text-gray-500">
-            Showing {{ rangeFrom }}–{{ rangeTo }} of {{ total }}
+            {{ rangeFrom }}–{{ rangeTo }} / {{ total }}
         </p>
 
         <nav
             v-if="totalPages > 1"
-            class="flex items-center gap-1"
+            class="flex gap-1"
             aria-label="Pagination"
         >
             <button
                 type="button"
                 :disabled="page <= 1"
+                aria-label="Previous page"
                 :class="[
-                    'px-3 py-1.5 rounded-md text-sm font-medium',
-                    'text-gray-700 hover:bg-gray-100',
-                    'disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer',
+                    'p-1.5 rounded border border-gray-300',
+                    'hover:bg-gray-50 cursor-pointer',
+                    'disabled:opacity-40 disabled:cursor-not-allowed',
                 ]"
                 @click="goTo(page - 1)"
             >
-                Prev
+                <ChevronLeftIcon class="w-4 h-4" />
             </button>
             <button
                 v-for="p in pageWindow"
                 :key="p"
                 type="button"
                 :class="[
-                    'px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer',
+                    'px-3 py-1.5 text-sm rounded border cursor-pointer',
                     p === page
-                        ? 'bg-orange-50 text-orange-700'
-                        : 'text-gray-700 hover:bg-gray-100',
+                        ? 'bg-orange-500 text-white border-orange-500'
+                        : 'border-gray-300 hover:bg-gray-50',
                 ]"
                 @click="goTo(p)"
             >
@@ -84,14 +90,15 @@ const goTo = (target: number): void => {
             <button
                 type="button"
                 :disabled="page >= totalPages"
+                aria-label="Next page"
                 :class="[
-                    'px-3 py-1.5 rounded-md text-sm font-medium',
-                    'text-gray-700 hover:bg-gray-100',
-                    'disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer',
+                    'p-1.5 rounded border border-gray-300',
+                    'hover:bg-gray-50 cursor-pointer',
+                    'disabled:opacity-40 disabled:cursor-not-allowed',
                 ]"
                 @click="goTo(page + 1)"
             >
-                Next
+                <ChevronLeftIcon class="w-4 h-4 rotate-180" />
             </button>
         </nav>
     </div>

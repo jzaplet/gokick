@@ -1,5 +1,7 @@
 package user
 
+import "gokick/app/domain/shared"
+
 // List criteria for the paged admin user list. The types live in the domain so
 // the repository port can take ONE grouped criteria value (the param-count gate
 // caps functions at 5 parameters on purpose — page/sort/filter sprawl belongs
@@ -30,19 +32,8 @@ func SortColumnFrom(v string) SortColumn {
 	}
 }
 
-type SortDirection string
-
-const (
-	SortAsc  SortDirection = "ASC"
-	SortDesc SortDirection = "DESC"
-)
-
-func SortDirectionFrom(v string) SortDirection {
-	if SortDirection(v) == SortDesc {
-		return SortDesc
-	}
-	return SortAsc
-}
+// Sort direction lives in domain/shared — the tenant grid needs the same type
+// and bounded contexts must not import each other.
 
 // ListFilters are the admin-list filter values; empty string = filter off.
 // Active is tri-state on purpose ("" all, "1" active, "0" inactive) — a bool
@@ -52,6 +43,16 @@ type ListFilters struct {
 	Email    string
 	Role     string
 	Active   string
+}
+
+// ValidActiveFilter reports whether the tri-state active value is one the
+// filter builders actually honor. On the READ path an unknown value is
+// harmlessly ignored, but on the destructive BULK path it must be a hard
+// error: an unrecognized "active" silently drops the condition, widening
+// "delete inactive" into "delete everyone". Callers on the bulk path reject
+// anything this returns false for.
+func ValidActiveFilter(active string) bool {
+	return active == "" || active == "1" || active == "0"
 }
 
 const (
@@ -64,7 +65,7 @@ type ListCriteria struct {
 	Page    int
 	PerPage int
 	Sort    SortColumn
-	SortDir SortDirection
+	SortDir shared.SortDirection
 	Filters ListFilters
 }
 
@@ -81,6 +82,11 @@ func (c ListCriteria) Normalize() ListCriteria {
 	if c.PerPage > ListPerPageMax {
 		c.PerPage = ListPerPageMax
 	}
+	// Clamp the direction to the whitelist too — the sort COLUMN is guarded by
+	// listSortSQL, but the direction is interpolated into ORDER BY, so a raw
+	// criteria value must not reach the query. SortDirectionFrom falls back to
+	// ASC for anything but "DESC".
+	c.SortDir = shared.SortDirectionFrom(string(c.SortDir))
 	return c
 }
 
@@ -93,4 +99,87 @@ func (c ListCriteria) Offset() int {
 type ListPage struct {
 	Items []User
 	Total int
+}
+
+// Platform-plane list (the superadmin cross-tenant users grid) — a wider sort
+// whitelist (tenant name, last login) and one extra filter (tenant name).
+
+const (
+	SortByTenant    SortColumn = "tenant"
+	SortByLastLogin SortColumn = "last_login"
+)
+
+// PlatformSortColumnFrom whitelists the platform grid's sort; fallback is the
+// tenant column (the pre-grid ORDER BY t.name, u.nickname order).
+func PlatformSortColumnFrom(v string) SortColumn {
+	switch SortColumn(v) {
+	case SortByNickname, SortByEmail, SortByRole, SortByTenant, SortByLastLogin:
+		return SortColumn(v)
+	default:
+		return SortByTenant
+	}
+}
+
+type PlatformListFilters struct {
+	ListFilters
+	Tenant string
+}
+
+type PlatformListCriteria struct {
+	Page    int
+	PerPage int
+	Sort    SortColumn
+	SortDir shared.SortDirection
+	Filters PlatformListFilters
+}
+
+func (c PlatformListCriteria) Normalize() PlatformListCriteria {
+	if c.Page < 1 {
+		c.Page = 1
+	}
+	if c.PerPage < 1 {
+		c.PerPage = ListPerPageDefault
+	}
+	if c.PerPage > ListPerPageMax {
+		c.PerPage = ListPerPageMax
+	}
+	c.SortDir = shared.SortDirectionFrom(string(c.SortDir))
+	return c
+}
+
+func (c PlatformListCriteria) Offset() int {
+	return (c.Page - 1) * c.PerPage
+}
+
+type PlatformListPage struct {
+	Items []PlatformRow
+	Total int
+}
+
+// BulkSelection mirrors the grid's dual-mode selection: explicit ids, or
+// "every row the filters match" WITHOUT enumerating ids (the client sends the
+// filter set instead of a huge id list). ExcludeID is the acting admin — bulk
+// operations never touch the actor, the same self-protection as single delete.
+type BulkSelection struct {
+	IDs         []string
+	AllFiltered bool
+	Filters     ListFilters
+	ExcludeID   string
+}
+
+func (s BulkSelection) IsEmpty() bool {
+	return !s.AllFiltered && len(s.IDs) == 0
+}
+
+// PlatformBulkSelection is BulkSelection's cross-tenant twin: the platform
+// grid filters (incl. tenant name) instead of the tenant-scoped ones.
+type PlatformBulkSelection struct {
+	IDs         []string
+	AllFiltered bool
+	Filters     PlatformListFilters
+	ExcludeID   string
+}
+
+func (s PlatformBulkSelection) IsEmpty() bool {
+	return !s.AllFiltered && len(s.IDs) == 0
 }

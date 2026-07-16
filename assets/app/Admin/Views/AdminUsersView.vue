@@ -17,6 +17,10 @@ import Pagination from '@/app-ui/Pagination/Pagination.vue';
 import Input from '@/app-ui/Inputs/Input.vue';
 import Select from '@/app-ui/Inputs/Select.vue';
 import AdminUserRow from '@/app/Admin/Components/AdminUserRow.vue';
+import BulkActionBar from '@/app-ui/BulkActions/BulkActionBar.vue';
+import { useAdminUsersBulk } from '@/app/Admin/Composables/useAdminUsersBulk';
+import { useAuth } from '@/app-ui/Auth';
+import { computed } from 'vue';
 
 const router = useRouter();
 const { success, error } = useToast();
@@ -28,7 +32,9 @@ const columns: GridColumn[] = [
     { key: 'nickname', label: 'Nickname', sortable: true },
     { key: 'email', label: 'Email', sortable: true },
     { key: 'role', label: 'Role', sortable: true },
-    { key: 'actions', label: 'Actions', align: 'right' },
+    { key: 'active', label: 'Active' },
+    // The actions column carries no heading (aibobr parity).
+    { key: 'actions', label: '', align: 'right' },
 ];
 
 const roleOptions = [
@@ -116,8 +122,36 @@ const confirmDelete = async (): Promise<void> => {
     }
 
     success(`User ${target.nickname} deleted.`);
+    // Drop the now-gone row from any active selection so it can't inflate the
+    // bulk count or ride the next bulk payload as a ghost id.
+    grid.deselect(target.id);
     await grid.reload();
 };
+
+const { user: currentUser } = useAuth();
+
+// Selection: the actor's own row is never selectable (bulk ops exclude the
+// actor on the BE too), so "page selected" means every OTHER row on the page.
+const pageSelectableIds = computed<string[]>(() =>
+    users.value
+        .filter((u) => u.id !== currentUser.value?.id)
+        .map((u) => u.id));
+
+const allPageSelected = computed<boolean>(() =>
+    pageSelectableIds.value.length > 0
+    && pageSelectableIds.value.every((id) => grid.isSelected(id) === true));
+
+const {
+    bulkActions,
+    bulkConfirm,
+    handleBulkAction,
+    runPendingBulk,
+    cancelPendingBulk,
+    userToActivate,
+    askActivate,
+    cancelActivate,
+    runActivate,
+} = useAdminUsersBulk(grid);
 
 onMounted(async (): Promise<void> => {
     await grid.init();
@@ -125,15 +159,15 @@ onMounted(async (): Promise<void> => {
 </script>
 
 <template>
-    <div class="py-12 px-4 sm:px-6 lg:px-8">
-        <div class="max-w-5xl mx-auto space-y-6">
+    <div>
+        <div class="space-y-6">
             <div
                 :class="[
                     'flex flex-col gap-4',
                     'sm:flex-row sm:items-center sm:justify-between',
                 ]"
             >
-                <h1 class="text-3xl font-extrabold text-gray-900">
+                <h1 class="text-2xl font-bold text-gray-900">
                     User management
                 </h1>
 
@@ -151,65 +185,94 @@ onMounted(async (): Promise<void> => {
                 :has-active-filters="grid.hasActiveFilters.value"
                 @clear="grid.clearFilters"
             >
-                <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <Input
                         v-model="grid.filters.nickname"
                         label="Nickname"
                         placeholder="Search nickname"
+                        flat
                         size="sm"
+                        :active="grid.filters.nickname !== ''"
                     />
                     <Input
                         v-model="grid.filters.email"
                         label="Email"
                         placeholder="Search email"
+                        flat
                         size="sm"
+                        :active="grid.filters.email !== ''"
                     />
                     <Select
-                        v-model="grid.filters.role"
+                        :model-value="grid.filters.role"
                         label="Role"
                         :options="roleOptions"
+                        flat
                         size="sm"
+                        :active="grid.filters.role !== ''"
+                        @update:model-value="grid.filters.role = $event ?? ''"
                     />
                     <Select
-                        v-model="grid.filters.active"
+                        :model-value="grid.filters.active"
                         label="Status"
                         :options="activeOptions"
+                        flat
                         size="sm"
+                        :active="grid.filters.active !== ''"
+                        @update:model-value="grid.filters.active = $event ?? ''"
                     />
                 </div>
             </FilterPanel>
 
-            <DataGrid
-                :columns="columns"
-                :sort="grid.sort.value"
-                :is-loading="grid.isLoading.value"
-                @sort="grid.handleSort"
-            >
-                <template #rows>
-                    <AdminUserRow
-                        v-for="user in users"
-                        :key="user.id"
-                        :user="user"
-                        @edit="goToEdit"
-                        @delete="askDelete"
-                    />
-                    <tr v-if="users.length === 0">
-                        <td
-                            :colspan="columns.length"
-                            class="px-6 py-8 text-center text-sm text-gray-500"
-                        >
-                            No users
-                        </td>
-                    </tr>
-                </template>
-            </DataGrid>
-
-            <Pagination
-                :page="grid.page.value"
-                :per-page="grid.perPage.value"
+            <BulkActionBar
+                :count="grid.selectedCount.value"
                 :total="grid.total.value"
-                @update:page="grid.handlePageChange"
+                :is-all-filtered="grid.isAllFilteredSelected.value"
+                :actions="bulkActions"
+                @action="handleBulkAction"
+                @select-all-filtered="grid.selectAllFiltered"
+                @clear="grid.clearSelection"
             />
+
+            <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <DataGrid
+                    :columns="columns"
+                    :sort="grid.sort.value"
+                    :is-loading="grid.isLoading.value"
+                    selectable
+                    :all-selected="allPageSelected"
+                    @sort="grid.handleSort"
+                    @toggle-page="grid.togglePage(pageSelectableIds)"
+                >
+                    <template #rows>
+                        <AdminUserRow
+                            v-for="user in users"
+                            :key="user.id"
+                            :user="user"
+                            selectable
+                            :selected="grid.isSelected(user.id)"
+                            @edit="goToEdit"
+                            @delete="askDelete"
+                            @activate="askActivate"
+                            @toggle-select="grid.toggleRow(user.id)"
+                        />
+                        <tr v-if="users.length === 0">
+                            <td
+                                :colspan="columns.length + 1"
+                                class="px-4 py-8 text-center text-gray-400"
+                            >
+                                No users
+                            </td>
+                        </tr>
+                    </template>
+                </DataGrid>
+
+                <Pagination
+                    :page="grid.page.value"
+                    :per-page="grid.perPage.value"
+                    :total="grid.total.value"
+                    @update:page="grid.handlePageChange"
+                />
+            </div>
 
             <ConfirmModal
                 :show="userToDelete !== null"
@@ -221,6 +284,28 @@ onMounted(async (): Promise<void> => {
                 cancel-text="Cancel"
                 @confirm="confirmDelete"
                 @cancel="cancelDelete"
+            />
+
+            <ConfirmModal
+                :show="bulkConfirm !== null"
+                :title="bulkConfirm?.title ?? ''"
+                :message="bulkConfirm?.message ?? ''"
+                :confirm-text="bulkConfirm?.confirmText ?? 'Confirm'"
+                cancel-text="Cancel"
+                @confirm="runPendingBulk"
+                @cancel="cancelPendingBulk"
+            />
+
+            <ConfirmModal
+                :show="userToActivate !== null"
+                title="Activate user"
+                :message="userToActivate === null
+                    ? ''
+                    : `Activate user ${userToActivate.nickname}?`"
+                confirm-text="Activate"
+                cancel-text="Cancel"
+                @confirm="runActivate"
+                @cancel="cancelActivate"
             />
         </div>
     </div>

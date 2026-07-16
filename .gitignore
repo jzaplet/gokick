@@ -11,3 +11,5 @@ public/*.js
 public/*.css
 public/*.html
 public/assets/
+# Local dev-preview config (machine-specific)
+.claude/launch.json

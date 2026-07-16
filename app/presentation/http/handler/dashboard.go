@@ -35,6 +35,12 @@ type dashboardDTO struct {
 	Message string `json:"message"`
 }
 
+//gkts:assets/app/Dashboard/types/AdminDashboardResponse.ts AdminDashboardResponse
+type adminDashboardDTO struct {
+	UsersActive int `json:"users_active"`
+	UsersTotal  int `json:"users_total"`
+}
+
 func (h *DashboardHandler) User(w http.ResponseWriter, r *http.Request) {
 	q := dashboardqry.GetUserDashboardQuery{}
 
@@ -74,5 +80,8 @@ func (h *DashboardHandler) Admin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resp.JSON(r.Context(), w, http.StatusOK, dashboardDTO{Message: result.Message})
+	h.resp.JSON(r.Context(), w, http.StatusOK, adminDashboardDTO{
+		UsersActive: result.UsersActive,
+		UsersTotal:  result.UsersTotal,
+	})
 }

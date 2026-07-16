@@ -2,7 +2,7 @@
 import type { FieldSize } from '@/app-ui/Inputs/field';
 import { onMounted, ref } from 'vue';
 import { targetValue } from '@/app-ui/Events/eventTarget';
-import { fieldId, fieldSizeClass, useFieldValueSync } from '@/app-ui/Inputs/field';
+import { fieldBorderClass, fieldId, fieldLabelClass, fieldSizeClass, useFieldValueSync } from '@/app-ui/Inputs/field';
 
 type Props = {
     modelValue?: null | string | number;
@@ -20,6 +20,10 @@ type Props = {
     statusVariant?: 'success' | 'info';
     size?: FieldSize;
     withSpinner?: boolean;
+    // flat drops the drop shadow — filter panels want chrome-less inputs.
+    flat?: boolean;
+    // active marks a non-empty filter with an orange border (aibobr parity).
+    active?: boolean;
 };
 
 const props = defineProps<Props>();
@@ -81,7 +85,7 @@ onMounted(() => {
         <label
             v-if="label"
             :for="inputId"
-            class="block text-sm font-medium text-gray-700"
+            :class="fieldLabelClass(size)"
         >
             {{ label }}
             <span
@@ -96,17 +100,16 @@ onMounted(() => {
             :type="type || 'text'"
             :placeholder="placeholder"
             :disabled="disabled"
-            class="w-full border rounded-lg shadow-sm bg-white
+            class="w-full border rounded-lg bg-white
         transition-colors focus:outline-none focus:ring-2
         focus:ring-orange-500 focus:border-orange-500"
             :class="[
+                props.flat === true ? '' : 'shadow-sm',
                 fieldSizeClass(size),
                 withSpinner && (size === 'xl' || size === 'lg')
                     ? 'pr-12'
                     : '',
-                error
-                    ? 'border-red-300 focus:ring-red-500'
-                    : 'border-gray-300 hover:border-gray-400',
+                fieldBorderClass(error, active),
                 disabled && 'bg-gray-50 cursor-not-allowed',
             ]"
             @input="handleInput"

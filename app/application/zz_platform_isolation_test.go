@@ -3,7 +3,7 @@ package application_test
 // Platform-isolation gate (static).
 //
 // The cross-tenant escape-hatch methods on user.Repository (named *AcrossTenants
-// — FindAllAcrossTenants, CountAcrossTenants, UpdateAcrossTenants,
+// — FindPageAcrossTenants, CountAcrossTenants, UpdateAcrossTenants,
 // DeleteAcrossTenants) DELIBERATELY bypass tenant scoping. They are the
 // superadmin platform plane and may be called ONLY from application/platform/**.
 //
@@ -123,7 +123,7 @@ func TestPlatformIsolation_NonPlatformMustNotCallCrossTenant(t *testing.T) {
 func TestPlatformIsolation_FlagsCrossTenantCall(t *testing.T) {
 	const fake = "package fake\n\n" +
 		"func run(r repo, ctx ctx) {\n" +
-		"\t_, _ = r.FindAllAcrossTenants(ctx)\n" +
+		"\t_, _ = r.FindPageAcrossTenants(ctx)\n" +
 		"}\n"
 	if len(crossTenantCalls(t, "fake.go", fake)) == 0 {
 		t.Fatal("a call to a *AcrossTenants method must be detected; the gate does not bite")

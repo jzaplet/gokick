@@ -143,88 +143,10 @@ func (r *Repository) FindAll(ctx context.Context) ([]user.User, error) {
 	return users, err
 }
 
-// listSortSQL maps the whitelisted sort columns onto SQL. The map (not string
-// interpolation of the wire value) IS the injection guard — an unknown column
-// cannot reach the query because SortColumnFrom already collapsed it.
-var listSortSQL = map[user.SortColumn]string{
-	user.SortByNickname: "nickname",
-	user.SortByEmail:    "email",
-	user.SortByRole:     "role",
-}
-
-// listFilterWhere renders the optional filter conditions appended to the
-// tenant-scoped base query. LIKE matches are substring, case-insensitive for
-// ASCII (SQLite default); % and _ typed by the user act as wildcards — an
-// accepted quirk, not worth an ESCAPE dance for an admin search box.
-func listFilterWhere(f user.ListFilters) (string, []any) {
-	where := ""
-	args := []any{}
-	if f.Nickname != "" {
-		where += ` AND nickname LIKE ?`
-		args = append(args, "%"+f.Nickname+"%")
-	}
-	if f.Email != "" {
-		where += ` AND email LIKE ?`
-		args = append(args, "%"+f.Email+"%")
-	}
-	if f.Role != "" {
-		where += ` AND role = ?`
-		args = append(args, f.Role)
-	}
-	if f.Active == "1" || f.Active == "0" {
-		where += ` AND active = ?`
-		args = append(args, f.Active == "1")
-	}
-	return where, args
-}
-
-// FindPage is the admin users grid read: FindAll's scoping plus filters,
-// whitelisted sort and paging, returned together with the filtered total (one
-// consistent snapshot for the pager). Criteria arrive pre-normalized from the
-// query handler.
-func (r *Repository) FindPage(ctx context.Context, c user.ListCriteria) (user.ListPage, error) {
-	where, filterArgs := listFilterWhere(c.Filters)
-	base := `FROM users WHERE tenant_id=? AND role != 'superadmin'`
-	args := append([]any{r.Tenant(ctx)}, filterArgs...)
-
-	page := user.ListPage{Items: []user.User{}}
-	if err := r.Conn(ctx).GetContext(ctx, &page.Total,
-		`SELECT COUNT(*) `+base+where, args...); err != nil {
-		return user.ListPage{}, err
-	}
-
-	col, ok := listSortSQL[c.Sort]
-	if !ok {
-		// Unreachable via SortColumnFrom; belt against a future raw criteria.
-		col = "nickname"
-	}
-	orderBy := fmt.Sprintf(` ORDER BY %s %s`, col, c.SortDir)
-	err := r.Conn(ctx).SelectContext(ctx, &page.Items,
-		`SELECT * `+base+where+orderBy+` LIMIT ? OFFSET ?`,
-		append(args, c.PerPage, c.Offset())...)
-	return page, err
-}
-
-// FindAllAcrossTenants is the platform-plane read: every user, all tenants,
-// joined to its tenant name — the deliberate inverse of FindAll. It does NOT call
-// r.Tenant(ctx); the marker makes the cross-tenant scope explicit to the
-// conformance gate. INNER JOIN is safe (tenant_id is a NOT NULL FK). Ordered by
-// tenant then nickname so the superadmin list groups naturally.
-func (r *Repository) FindAllAcrossTenants(ctx context.Context) ([]user.PlatformRow, error) {
-	var rows []user.PlatformRow
-	err := r.Conn(ctx).SelectContext(ctx, &rows,
-		`SELECT u.id, u.nickname, u.email, u.role, u.active, u.tenant_id,
-		        t.name AS tenant_name, u.last_login_at
-		   FROM users u
-		   JOIN tenants t ON t.id = u.tenant_id /* tenant-scope-exempt: platform superadmin */
-		  ORDER BY t.name, u.nickname`)
-	return rows, err
-}
-
 // FindByIDAcrossTenants is the platform-plane read-one: one user in ANY tenant,
-// joined to its tenant name — the by-id inverse of FindAllAcrossTenants. It does
-// NOT scope by tenant_id; the marker makes the cross-tenant read explicit to the
-// conformance gate. Not-found returns (nil, nil).
+// joined to its tenant name — the by-id inverse of FindAll's tenant scoping. It
+// does NOT scope by tenant_id; the marker makes the cross-tenant read explicit
+// to the conformance gate. Not-found returns (nil, nil).
 func (r *Repository) FindByIDAcrossTenants(
 	ctx context.Context,
 	id string,
@@ -252,6 +174,20 @@ func (r *Repository) CountAcrossTenants(ctx context.Context) (int, error) {
 	err := r.Conn(ctx).GetContext(ctx, &n,
 		`SELECT COUNT(*) FROM users /* tenant-scope-exempt: platform superadmin */`)
 	return n, err
+}
+
+// CountByActive returns the tenant-scoped total + active user counts for the
+// admin dashboard in one query (SUM over the 0/1 active column). Same scoping
+// as FindAll/FindPage: this tenant, non-superadmin rows.
+func (r *Repository) CountByActive(ctx context.Context) (int, int, error) {
+	var row struct {
+		Total  int `db:"total"`
+		Active int `db:"active"`
+	}
+	err := r.Conn(ctx).GetContext(ctx, &row,
+		`SELECT COUNT(*) AS total, COALESCE(SUM(active), 0) AS active
+		   FROM users WHERE tenant_id=? AND role != 'superadmin'`, r.Tenant(ctx))
+	return row.Total, row.Active, err
 }
 
 // UpdateAcrossTenants is the platform-plane write: a superadmin edits a user in

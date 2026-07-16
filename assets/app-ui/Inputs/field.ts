@@ -16,10 +16,33 @@ export const fieldSizeClass = (size: FieldSize | undefined): string => {
         return 'px-4 py-3 text-base';
     }
     if (size === 'sm') {
-        return 'px-2 py-1 text-sm';
+        return 'px-3 py-1.5 text-sm';
     }
 
     return 'px-3 py-2';
+};
+
+// Label size follows the field size: mini labels over the compact (sm) filter
+// fields, standard text-sm everywhere else.
+export const fieldLabelClass = (size: FieldSize | undefined): string =>
+    size === 'sm'
+        ? 'block text-xs font-medium text-gray-700'
+        : 'block text-sm font-medium text-gray-700';
+
+// Border state: error wins, then the active (non-empty filter) orange, then
+// the neutral gray with hover.
+export const fieldBorderClass = (
+    error: string | undefined,
+    active: boolean | undefined,
+): string => {
+    if (error !== undefined && error !== '') {
+        return 'border-red-300 focus:ring-red-500';
+    }
+    if (active === true) {
+        return 'border-orange-400';
+    }
+
+    return 'border-gray-300 hover:border-gray-400';
 };
 
 // Stable id for the label/for pairing: the field name when given, otherwise a

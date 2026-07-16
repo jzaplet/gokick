@@ -68,7 +68,8 @@ describe('createGridState', () => {
         const { grid, calls } = makeGrid();
 
         await grid.init();
-        grid.handlePageChange(3);
+        // Page 2 is in range for total 42 / perPage 25 (2 pages) — no clamp.
+        grid.handlePageChange(2);
 
         expect(calls).toHaveLength(2);
 
@@ -125,6 +126,26 @@ describe('createGridState', () => {
         expect(grid.selectedIds()).toEqual(['b']);
     });
 
+    it('deselect drops one id from the manual selection (deleted-row ghost cleanup)', (): void => {
+        const { grid } = makeGrid();
+
+        grid.toggleRow('a');
+        grid.toggleRow('b');
+
+        expect(grid.selectedCount.value).toBe(2);
+
+        grid.deselect('a');
+
+        expect(grid.selectedCount.value).toBe(1);
+        expect(grid.isSelected('a')).toBe(false);
+        expect(grid.selectedIds()).toEqual(['b']);
+
+        // Deselecting an id that was never selected is a harmless no-op.
+        grid.deselect('zzz');
+
+        expect(grid.selectedCount.value).toBe(1);
+    });
+
     it('allFiltered selection counts the TOTAL without enumerating ids', async (): Promise<void> => {
         const { grid } = makeGrid({ total: 1234 });
 
@@ -151,6 +172,69 @@ describe('createGridState', () => {
         await vi.runAllTimersAsync();
 
         expect(grid.selectedCount.value).toBe(0);
+    });
+
+    it('a toggle in allFiltered mode drops the escalation (no dangerous singleton)', async (): Promise<void> => {
+        const { grid } = makeGrid({ total: 500 });
+
+        await grid.init();
+        grid.selectAllFiltered();
+
+        expect(grid.isAllFilteredSelected.value).toBe(true);
+
+        // Unchecking a row to "spare" it must NOT make it the sole selection.
+        grid.toggleRow('keep-me');
+
+        expect(grid.isAllFilteredSelected.value).toBe(false);
+        expect(grid.selectedCount.value).toBe(0);
+        expect(grid.selectedIds()).toEqual([]);
+
+        // The header checkbox in allFiltered mode clears rather than re-adding.
+        grid.selectAllFiltered();
+        grid.togglePage(['a', 'b']);
+
+        expect(grid.selectedCount.value).toBe(0);
+    });
+
+    it('clamps an out-of-range page and re-fetches the last valid page', async (): Promise<void> => {
+        let total = 100;
+        const calls: LoadCall[] = [];
+        const grid = createGridState<Filters>({
+            defaultSort: { column: 'nickname', direction: 'ASC' },
+            filters: { nickname: '', role: '' },
+            syncUrl: false,
+            load: (args): Promise<GridLoadOutcome> => {
+                calls.push(args);
+
+                return Promise.resolve({ ok: true, total });
+            },
+        });
+
+        await grid.init();
+        grid.handlePageChange(4);
+        await vi.runAllTimersAsync();
+
+        expect(grid.page.value).toBe(4);
+
+        // The result set shrinks to a single page under the current offset.
+        total = 25;
+        await grid.reload();
+
+        expect(grid.page.value).toBe(1);
+        expect(calls[calls.length - 1]).toMatchObject({ page: 1 });
+    });
+
+    it('a filtered deep link loads ONCE and keeps its page', async (): Promise<void> => {
+        window.history.replaceState(null, '', '/admin/users?nickname=jo&page=3');
+        const { grid, calls } = makeGrid({ syncUrl: true, total: 500 });
+
+        await grid.init();
+        // Any stray debounced reload from the URL-applied filters would fire here.
+        await vi.runAllTimersAsync();
+
+        expect(calls).toHaveLength(1);
+        expect(grid.page.value).toBe(3);
+        expect(calls[0]).toMatchObject({ page: 3, filters: { nickname: 'jo', role: '' } });
     });
 
     it('syncUrl mirrors non-default state into the query string and reads it back', async (): Promise<void> => {
