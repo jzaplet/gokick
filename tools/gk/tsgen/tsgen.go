@@ -17,6 +17,13 @@
 //
 //	//gkts:assets/app/Admin/types/UserFormData.ts UserFormData noguard
 //
+// A named string TYPE (not a struct) can instead append `union`, which emits a
+// const object + type + guard from its constants — see union.go for the shape
+// and for why resolving them crosses packages:
+//
+//	//gkts:assets/app/Auth/enums/roles.ts Role union
+//	type Role string
+//
 // Path FIRST is deliberate: a lowercase path right after the colon makes this a
 // genuine gofmt/golines directive, so the formatter leaves it verbatim. A
 // //gkts:<Name> form (uppercase after the colon) is NOT a recognized directive,
@@ -57,6 +64,7 @@ type directive struct {
 	tsName  string // TypeScript type name to emit
 	noguard bool   // suppress the runtime guard (request-only DTOs — FE sends, never receives)
 	tsPath  string // output path, repo-relative (e.g. assets/app-ui/Auth/types/LoginResponse.ts)
+	union   bool   // the annotated type is a named string type → emit const/type/guard (see union.go)
 }
 
 // dtoField is one rendered field: its JSON key, TS type, optionality, and (if the
@@ -92,7 +100,12 @@ func Run(args []string) {
 	}
 	root := repoRoot()
 
-	dtos, err := collect(filepath.Join(root, "app"))
+	tree, err := parseTree(filepath.Join(root, "app"), "gokick/app")
+	if err != nil {
+		fatal("parse: %v", err)
+	}
+
+	dtos, err := collect(tree)
 	if err != nil {
 		fatal("collect: %v", err)
 	}
@@ -100,12 +113,17 @@ func Run(args []string) {
 		fatal("no //gkts: directives found under app/ — nothing to generate")
 	}
 
-	byGo, err := indexDTOs(dtos)
+	unions, err := collectUnions(tree, buildConstIndex(tree))
+	if err != nil {
+		fatal("collect: %v", err)
+	}
+
+	byGo, err := indexDTOs(dtos, unions)
 	if err != nil {
 		fatal("%v", err)
 	}
 
-	files, err := render(dtos, byGo, probeOptionalHelper(root))
+	files, err := render(dtos, unions, byGo, probeOptionalHelper(root))
 	if err != nil {
 		fatal("render: %v", err)
 	}
@@ -122,21 +140,39 @@ func Run(args []string) {
 
 // indexDTOs indexes the DTOs by Go type name so a nested field (e.g. userDTO)
 // resolves to the TS name + import path of the type it maps to.
-func indexDTOs(dtos []dto) (map[string]directive, error) {
-	byGo := make(map[string]directive, len(dtos))
-	for _, d := range dtos {
-		if prev, ok := byGo[d.goName]; ok && prev != d.dir {
-			return nil, fmt.Errorf(
-				"Go type %q carries two conflicting //gkts: directives", d.goName)
+func indexDTOs(dtos []dto, unions []unionDef) (map[string]directive, error) {
+	byGo := make(map[string]directive, len(dtos)+len(unions))
+	add := func(goName string, dir directive) error {
+		if prev, ok := byGo[goName]; ok && prev != dir {
+			return fmt.Errorf(
+				"Go type %q carries two conflicting //gkts: directives", goName)
 		}
-		byGo[d.goName] = d.dir
+		byGo[goName] = dir
+		return nil
+	}
+	for _, d := range dtos {
+		if err := add(d.goName, d.dir); err != nil {
+			return nil, err
+		}
+	}
+	// Unions land in the same index so a DTO field typed `user.Role` resolves to
+	// the union's TS name, import path and guard exactly like a nested DTO does.
+	for _, u := range unions {
+		if err := add(u.goName, u.dir); err != nil {
+			return nil, err
+		}
 	}
 	return byGo, nil
 }
 
-// collect parses every non-test .go file under dir and returns the annotated DTOs.
-func collect(dir string) ([]dto, error) {
-	var dtos []dto
+// parseTree parses every non-test .go file under dir once. Unions need to
+// resolve a constant in ANOTHER package (see union.go), so the whole tree has
+// to be in hand before anything is resolved — hence one parse, two consumers,
+// instead of the walk-and-resolve-inline shape this used to have.
+// basePkg is the import path OF dir itself ("gokick/app"), not the module —
+// every package below it is that path plus its relative directory.
+func parseTree(dir, basePkg string) ([]parsedFile, error) {
+	var files []parsedFile
 	fset := token.NewFileSet()
 	err := filepath.WalkDir(dir, func(path string, e os.DirEntry, err error) error {
 		if err != nil {
@@ -149,6 +185,36 @@ func collect(dir string) ([]dto, error) {
 		if perr != nil {
 			return fmt.Errorf("parse %s: %w", path, perr)
 		}
+		files = append(files, parsedFile{
+			path:    path,
+			pkgPath: pkgPathOf(path, dir, basePkg),
+			file:    f,
+			imports: fileImports(f),
+		})
+		return nil
+	})
+	return files, err
+}
+
+// pkgPathOf derives a file's package import path from its location: tsgen is
+// AST-only (no go/packages), so the directory layout IS the import path.
+func pkgPathOf(filePath, baseDir, basePkg string) string {
+	dir := filepath.Dir(filePath)
+	rel, err := filepath.Rel(baseDir, dir)
+	if err != nil {
+		return ""
+	}
+	if rel == "." {
+		return basePkg
+	}
+	return basePkg + "/" + filepath.ToSlash(rel)
+}
+
+// collect returns the annotated struct DTOs from an already-parsed tree.
+func collect(files []parsedFile) ([]dto, error) {
+	var dtos []dto
+	for _, pf := range files {
+		path, f := pf.path, pf.file
 		for _, decl := range f.Decls {
 			gd, ok := decl.(*ast.GenDecl)
 			if !ok || gd.Tok != token.TYPE {
@@ -167,21 +233,27 @@ func collect(dir string) ([]dto, error) {
 				// `type X struct`) on the GenDecl's doc.
 				dir, ok, derr := parseDirective(ts.Doc, gd.Doc)
 				if derr != nil {
-					return fmt.Errorf("%s: %w", path, derr)
+					return nil, fmt.Errorf("%s: %w", path, derr)
 				}
 				if !ok {
 					continue
 				}
+				if dir.union {
+					return nil, fmt.Errorf(
+						"%s: type %s is a struct but carries a `union` directive",
+						path,
+						ts.Name.Name,
+					)
+				}
 				fields, ferr := structFields(st)
 				if ferr != nil {
-					return fmt.Errorf("%s: type %s: %w", path, ts.Name.Name, ferr)
+					return nil, fmt.Errorf("%s: type %s: %w", path, ts.Name.Name, ferr)
 				}
 				dtos = append(dtos, dto{goName: ts.Name.Name, dir: dir, fields: fields})
 			}
 		}
-		return nil
-	})
-	return dtos, err
+	}
+	return dtos, nil
 }
 
 // parseDirective looks for a //gkts:<path> <Name>[ noguard] line in the given
@@ -207,9 +279,13 @@ func parseDirective(groups ...*ast.CommentGroup) (directive, bool, error) {
 			// DTO out so knip never sees an uncalled guard.
 			case len(f) == 3 && f[2] == "noguard":
 				return directive{tsName: f[1], tsPath: f[0], noguard: true}, true, nil
+			// `union` marks a named string type whose constants become a TS
+			// union + const object + guard, instead of a struct's fields.
+			case len(f) == 3 && f[2] == "union":
+				return directive{tsName: f[1], tsPath: f[0], union: true}, true, nil
 			default:
 				return directive{}, false, fmt.Errorf(
-					"malformed directive %q (want: //gkts:<path> <TSName>[ noguard])", c.Text)
+					"malformed directive %q (want: //gkts:<path> <TSName>[ noguard|union])", c.Text)
 			}
 		}
 	}
@@ -296,6 +372,12 @@ func mapType(expr ast.Expr) (tsType, dep string, sh fieldShape, err error) {
 			// here we just carry the Go name as the dependency.
 			return t.Name, t.Name, fieldShape{kind: "named"}, nil
 		}
+	case *ast.SelectorExpr:
+		// A type from another package (user.Role). Only the type NAME matters —
+		// the registry is keyed by it, exactly like a local named type. A field
+		// whose package-qualified type has no //gkts: directive fails there, not
+		// here, with the same message a local one would get.
+		return t.Sel.Name, t.Sel.Name, fieldShape{kind: "named"}, nil
 	case *ast.ArrayType:
 		// []T -> T[] (never T[]|null). A NIL Go slice marshals to JSON `null`, which
 		// would break `T[]` at runtime — so DTO slice fields MUST be non-nil-
@@ -333,14 +415,31 @@ func mapType(expr ast.Expr) (tsType, dep string, sh fieldShape, err error) {
 
 // render groups DTOs by output file and produces the file contents. It resolves
 // each nested dependency to the TS name + import path of the type it maps to.
-func render(dtos []dto, byGo map[string]directive, optionalReady bool) (map[string]string, error) {
-	// Group the DTOs targeting each file, in the order encountered.
+func render(
+	dtos []dto,
+	unions []unionDef,
+	byGo map[string]directive,
+	optionalReady bool,
+) (map[string]string, error) {
+	// Group the types targeting each file, in the order encountered. Unions go
+	// first: a file that hosts one is the union's own file today, but if a DTO
+	// ever joins it, the value it references must be declared above its use.
 	byFile := map[string][]dto{}
+	unionsByFile := map[string][]unionDef{}
 	var order []string
-	for _, d := range dtos {
-		if _, seen := byFile[d.dir.tsPath]; !seen {
-			order = append(order, d.dir.tsPath)
+	seen := map[string]bool{}
+	mark := func(path string) {
+		if !seen[path] {
+			seen[path] = true
+			order = append(order, path)
 		}
+	}
+	for _, u := range unions {
+		mark(u.dir.tsPath)
+		unionsByFile[u.dir.tsPath] = append(unionsByFile[u.dir.tsPath], u)
+	}
+	for _, d := range dtos {
+		mark(d.dir.tsPath)
 		byFile[d.dir.tsPath] = append(byFile[d.dir.tsPath], d)
 	}
 
@@ -353,6 +452,9 @@ func render(dtos []dto, byGo map[string]directive, optionalReady bool) (map[stri
 
 		// A file may host several types; a name defined here needs no import.
 		localNames := map[string]bool{}
+		for _, u := range unionsByFile[path] {
+			localNames[u.dir.tsName] = true
+		}
 		for _, d := range group {
 			localNames[d.dir.tsName] = true
 		}
@@ -361,8 +463,14 @@ func render(dtos []dto, byGo map[string]directive, optionalReady bool) (map[stri
 		valueImports := map[string]string{} // guard name -> import specifier
 		helpers := map[string]bool{}        // guard primitives used from Fetch/guards
 		var body strings.Builder
-		for i, d := range group {
+		for i, u := range unionsByFile[path] {
 			if i > 0 {
+				body.WriteString("\n")
+			}
+			renderUnion(&body, u)
+		}
+		for i, d := range group {
+			if i > 0 || len(unionsByFile[path]) > 0 {
 				body.WriteString("\n")
 			}
 			if err := renderType(&body, d, byGo, localNames, imports); err != nil {
