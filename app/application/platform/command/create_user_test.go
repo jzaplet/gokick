@@ -201,6 +201,53 @@ func TestCreatePlatformUser_ThroughTheBus_WritesIntoAnotherTenant(t *testing.T) 
 	}
 }
 
+// The UserCreated event must carry the tenant the user actually landed in — the
+// CHOSEN one, not the actor's.
+//
+// No subscriber exists yet (provideEventHandlers is empty but for a commented-out
+// `{Event: "user.created", Handler: welcomeMailer.Handle}`), which is exactly why
+// this is pinned now. Events dispatch after commit in the COMMAND's context, whose
+// active tenant is the superadmin's own — so a future handler reading the tenant
+// from ctx would be right on every pre-existing create path and wrong only here,
+// silently, past the point any request error could surface it. The field is what
+// makes ctx the wrong place to look.
+func TestCreatePlatformUser_EventCarriesTheChosenTenant(t *testing.T) {
+	fx := testfx.NewMultitenant(t, filepath.Join(t.TempDir(), "pcreate_event.db"))
+
+	target := fx.SeedTenant(t, "Stark")
+
+	// The actor's active tenant is the default one — what TenantMiddleware sets
+	// for a superadmin. If the event took its tenant from ctx it would say this.
+	ctx, collector := shared.ContextWithEventCollector(context.Background())
+	ctx = shared.ContextWithTenantID(ctx, shared.DefaultTenantID)
+
+	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher, true)
+	err := h.Handle(ctx, CreatePlatformUserCommand{
+		Nickname: "tony",
+		Password: "correct horse battery staple",
+		Email:    "tony@example.com",
+		Role:     "admin",
+		TenantID: target.ID,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	events := collector.Flush()
+	if len(events) != 1 {
+		t.Fatalf("events: got %d want 1", len(events))
+	}
+	ev, ok := events[0].(user.UserCreated)
+	if !ok {
+		t.Fatalf("expected UserCreated, got %T", events[0])
+	}
+	if ev.TenantID != target.ID {
+		t.Fatalf("event must carry the CHOSEN tenant %q, got %q — a subscriber reading "+
+			"the tenant from ctx would get the actor's (%q)",
+			target.ID, ev.TenantID, shared.DefaultTenantID)
+	}
+}
+
 // The other half of the same coin: the ADMIN create must STILL be refused when it
 // names a tenant other than the active one. SaveAcrossTenants opened a hole in the
 // scope guard; this proves the hole is confined to the platform plane and did not

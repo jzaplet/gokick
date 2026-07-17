@@ -197,11 +197,15 @@ func Create(
 		return nil, err
 	}
 
+	// TenantID comes off the ROW, never off ctx: the platform create runs as a
+	// superadmin whose active tenant is the default one, not the tenant the new
+	// user lands in. See the UserCreated doc.
 	shared.EventCollectorFromContext(ctx).Collect(user.UserCreated{
 		UserID:    u.ID,
 		Nickname:  u.Nickname,
 		Email:     u.Email,
 		Role:      u.Role,
+		TenantID:  u.TenantID,
 		Timestamp: time.Now(),
 	})
 	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
