@@ -17,6 +17,12 @@ const make = (
         slots: { default: '<button>trigger</button>' },
     });
 
+// The arrow is the rotated square: the one span that is neither the bubble nor
+// inside it. Found by shape rather than by a test hook, so the test says what the
+// arrow IS instead of trusting a marker that could outlive the element.
+const arrowOf = (wrapper: TooltipWrapper): ReturnType<TooltipWrapper['find']> =>
+    wrapper.find('span.rotate-45');
+
 describe('Tooltip', () => {
     it('renders the trigger slot with a hover-revealed bubble', () => {
         const wrapper = make('Activate user');
@@ -66,13 +72,59 @@ describe('Tooltip', () => {
         expect(bubble.classes()).not.toContain('right-0');
     });
 
-    // The arrow points at the TRIGGER. A right-aligned bubble is offset from its
-    // trigger, so an arrow centred on the bubble would point at empty space.
-    it('moves the arrow over the trigger when align=right', () => {
-        const arrow = make('why this is off', { align: 'right' })
-            .find('[role="tooltip"] span');
+    // The arrow points at the TRIGGER, at any trigger width. That is only true
+    // because it is positioned against the WRAPPER (which is exactly the trigger's
+    // box) rather than against the bubble — so it must not live inside the bubble.
+    // Nested, its left/right would resolve against the bubble's box, and a
+    // right-aligned bubble is offset from its trigger: the arrow then needs a
+    // hard-coded nudge back, which can only be correct for one trigger width. It
+    // used to be right-3 — right for the single 24px icon button that motivated
+    // align, and wrong for every wider trigger.
+    it('positions the arrow against the wrapper, not inside the bubble', () => {
+        const wrapper = make('why this is off', { align: 'right' });
 
-        expect(arrow.classes()).toContain('right-3');
-        expect(arrow.classes()).not.toContain('left-1/2');
+        expect(wrapper.find('[role="tooltip"] span').exists()).toBe(false);
+    });
+
+    it.each([
+        ['center' as const],
+        ['right' as const],
+    ])('centres the arrow on the trigger when align=%s', (align) => {
+        const arrow = arrowOf(make('why this is off', { align }));
+
+        expect(arrow.classes()).toContain('left-1/2');
+        expect(arrow.classes()).toContain('-translate-x-1/2');
+        // No alignment-specific nudge may survive: it would be a trigger width
+        // baked into a shared component.
+        expect(arrow.classes()).not.toContain('right-3');
+        expect(arrow.classes()).not.toContain('right-0');
+    });
+
+    // The arrow sits astride the bubble's near edge, on the same side the bubble
+    // is. As a child it rode the bubble's frame and inherited this; as a sibling it
+    // resolves against the trigger, so it has to close the gap from its own side.
+    it.each([
+        ['top' as const, 'bottom-full', 'mb-1'],
+        ['bottom' as const, 'top-full', 'mt-1'],
+    ])('anchors the arrow to the %s edge of the trigger', (position, edge, gap) => {
+        const arrow = arrowOf(make('hi', { position }));
+
+        expect(arrow.classes()).toContain(edge);
+        expect(arrow.classes()).toContain(gap);
+    });
+
+    // The arrow is no longer inside the bubble, so nothing hides it for free — it
+    // needs its own v-if and its own transition, or an empty tooltip leaves a
+    // floating diamond and a hovered one animates in two pieces.
+    it('renders NO arrow for empty text', () => {
+        expect(arrowOf(make('')).exists()).toBe(false);
+    });
+
+    it('reveals the arrow on hover exactly like the bubble', () => {
+        const arrow = arrowOf(make('hi'));
+
+        expect(arrow.classes()).toContain('opacity-0');
+        expect(arrow.classes()).toContain('group-hover:opacity-100');
+        expect(arrow.classes()).toContain('pointer-events-none');
     });
 });
