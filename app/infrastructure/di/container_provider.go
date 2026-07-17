@@ -317,16 +317,22 @@ func providePermissionsRegistry() *shared.PermissionsRegistry {
 		platformqry.GetStatsQuery{},
 		usercmd.BulkDeleteUsersCommand{},
 		usercmd.BulkSetUsersActiveCommand{},
+		platformcmd.CreatePlatformUserCommand{},
 		platformcmd.UpdatePlatformUserCommand{},
 		platformcmd.BulkDeletePlatformUsersCommand{},
 		platformcmd.BulkSetPlatformUsersActiveCommand{},
 		platformcmd.DeletePlatformUserCommand{},
+		platformcmd.DeletePlatformTenantCommand{},
+		platformcmd.BulkDeletePlatformTenantsCommand{},
+		// Reached from BOTH the CLI (SystemCommandBus) and the superadmin plane
+		// (POST /api/v1/platform/tenants), so it is no longer CLIOnly — it must
+		// enroll, or the FE would never see platform:tenants:create.
+		tenantcmd.CreateTenantCommand{},
 		// CLI-only (shared.CLIOnly): dispatched via the SystemCommandBus, no HTTP
 		// route. NewPermissionsRegistry filters them out so their permission never
 		// reaches the FE-facing list. Listed here so the marker is the single
 		// exclusion mechanism (drop the marker → the di outcome test fails).
 		platformcmd.CreateSuperAdminCommand{},
-		tenantcmd.CreateTenantCommand{},
 		tenantqry.GetTenantQuery{},
 	})
 }
@@ -393,10 +399,13 @@ func CreateApplication(
 		platformqry.NewGetUserHandler,
 		platformqry.NewListTenantsHandler,
 		platformqry.NewGetStatsHandler,
+		platformcmd.NewCreatePlatformUserHandler,
 		platformcmd.NewUpdatePlatformUserHandler,
 		platformcmd.NewDeletePlatformUserHandler,
 		platformcmd.NewBulkDeletePlatformUsersHandler,
 		platformcmd.NewBulkSetPlatformUsersActiveHandler,
+		platformcmd.NewDeletePlatformTenantHandler,
+		platformcmd.NewBulkDeletePlatformTenantsHandler,
 		platformcmd.NewCreateSuperAdminHandler,
 		tenantcmd.NewCreateTenantHandler,
 		tenantqry.NewGetTenantHandler,

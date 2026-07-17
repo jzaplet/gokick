@@ -9,6 +9,7 @@ import (
 	"gokick/app/application/bus"
 	platformcmd "gokick/app/application/platform/command"
 	platformqry "gokick/app/application/platform/query"
+	tenantcmd "gokick/app/application/tenant/command"
 	"gokick/app/domain/tenant"
 	"gokick/app/domain/user"
 	"gokick/app/presentation/http/request"
@@ -19,17 +20,21 @@ import (
 // (gated platform:overview) plus cross-tenant user management (platform:users:*).
 // Superadmin only; an admin is denied at the bus.
 type PlatformHandler struct {
-	resp        *response.Responder
-	queryBus    *bus.QueryBus
-	commandBus  *bus.CommandBus
-	getStats    *platformqry.GetStatsHandler
-	listUsers   *platformqry.ListAllUsersHandler
-	getUser     *platformqry.GetUserHandler
-	listTenants *platformqry.ListTenantsHandler
-	updateUser  *platformcmd.UpdatePlatformUserHandler
-	deleteUser  *platformcmd.DeletePlatformUserHandler
-	bulkDelete  *platformcmd.BulkDeletePlatformUsersHandler
-	bulkActive  *platformcmd.BulkSetPlatformUsersActiveHandler
+	resp             *response.Responder
+	queryBus         *bus.QueryBus
+	commandBus       *bus.CommandBus
+	getStats         *platformqry.GetStatsHandler
+	listUsers        *platformqry.ListAllUsersHandler
+	getUser          *platformqry.GetUserHandler
+	listTenants      *platformqry.ListTenantsHandler
+	createUser       *platformcmd.CreatePlatformUserHandler
+	updateUser       *platformcmd.UpdatePlatformUserHandler
+	deleteUser       *platformcmd.DeletePlatformUserHandler
+	bulkDelete       *platformcmd.BulkDeletePlatformUsersHandler
+	bulkActive       *platformcmd.BulkSetPlatformUsersActiveHandler
+	createTenant     *tenantcmd.CreateTenantHandler
+	deleteTenant     *platformcmd.DeletePlatformTenantHandler
+	bulkDeleteTenant *platformcmd.BulkDeletePlatformTenantsHandler
 }
 
 func NewPlatformHandler(
@@ -40,23 +45,31 @@ func NewPlatformHandler(
 	listUsers *platformqry.ListAllUsersHandler,
 	getUser *platformqry.GetUserHandler,
 	listTenants *platformqry.ListTenantsHandler,
+	createUser *platformcmd.CreatePlatformUserHandler,
 	updateUser *platformcmd.UpdatePlatformUserHandler,
 	deleteUser *platformcmd.DeletePlatformUserHandler,
 	bulkDelete *platformcmd.BulkDeletePlatformUsersHandler,
 	bulkActive *platformcmd.BulkSetPlatformUsersActiveHandler,
+	createTenant *tenantcmd.CreateTenantHandler,
+	deleteTenant *platformcmd.DeletePlatformTenantHandler,
+	bulkDeleteTenant *platformcmd.BulkDeletePlatformTenantsHandler,
 ) *PlatformHandler {
 	return &PlatformHandler{
-		resp:        resp,
-		queryBus:    queryBus,
-		commandBus:  commandBus,
-		getStats:    getStats,
-		listUsers:   listUsers,
-		getUser:     getUser,
-		listTenants: listTenants,
-		updateUser:  updateUser,
-		deleteUser:  deleteUser,
-		bulkDelete:  bulkDelete,
-		bulkActive:  bulkActive,
+		resp:             resp,
+		queryBus:         queryBus,
+		commandBus:       commandBus,
+		getStats:         getStats,
+		listUsers:        listUsers,
+		getUser:          getUser,
+		listTenants:      listTenants,
+		createUser:       createUser,
+		updateUser:       updateUser,
+		deleteUser:       deleteUser,
+		bulkDelete:       bulkDelete,
+		bulkActive:       bulkActive,
+		createTenant:     createTenant,
+		deleteTenant:     deleteTenant,
+		bulkDeleteTenant: bulkDeleteTenant,
 	}
 }
 
@@ -127,6 +140,34 @@ type platformUserRequest struct {
 	Password string    `json:"password"`
 	Email    string    `json:"email"`
 	Role     user.Role `json:"role"`
+}
+
+// platformCreateUserRequest is deliberately NOT platformUserRequest + a field:
+// create picks the owning tenant, edit must never move a user between tenants
+// (UpdateAcrossTenants has no tenant_id in its SET clause). Sharing one struct
+// would make PUT accept a tenant_id and silently drop it — a lie the wire type
+// would tell the frontend. Two structs, two TS types, no lie.
+//
+//gkts:assets/app/Platform/types/PlatformUserCreateData.ts PlatformUserCreateData noguard
+type platformCreateUserRequest struct {
+	Nickname string    `json:"nickname"`
+	Password string    `json:"password"`
+	Email    string    `json:"email"`
+	Role     user.Role `json:"role"`
+	TenantID string    `json:"tenant_id"`
+}
+
+//gkts:assets/app/Platform/types/PlatformTenantFormData.ts PlatformTenantFormData noguard
+type platformTenantRequest struct {
+	Name string `json:"name"`
+}
+
+//gkts:assets/app/Platform/types/PlatformBulkDeleteTenantsRequest.ts PlatformBulkDeleteTenantsRequest noguard
+type platformBulkDeleteTenantsRequest struct {
+	IDs         []string `json:"ids"`
+	AllFiltered bool     `json:"all_filtered"`
+	Name        string   `json:"name"`
+	Plan        string   `json:"plan"`
 }
 
 func (h *PlatformHandler) Stats(w http.ResponseWriter, r *http.Request) {
@@ -383,6 +424,134 @@ func (h *PlatformHandler) BulkActiveUsers(w http.ResponseWriter, r *http.Request
 		cmd,
 		func(ctx context.Context) (int64, error) {
 			return h.bulkActive.Handle(ctx, cmd)
+		},
+	)
+	if err != nil {
+		h.resp.HandleError(r.Context(), w, err)
+
+		return
+	}
+
+	h.resp.JSON(r.Context(), w, http.StatusOK, bulkResultDTO{Affected: affected})
+}
+
+// CreateUser mints a user in the tenant the superadmin picked. 201 with no body,
+// matching the admin twin — the SPA redirects to the grid, which refetches.
+func (h *PlatformHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
+	var body platformCreateUserRequest
+	if err := request.DecodeJSON(w, r, &body); err != nil {
+		h.resp.HandleError(r.Context(), w, err)
+
+		return
+	}
+
+	cmd := platformcmd.CreatePlatformUserCommand{
+		Nickname: body.Nickname,
+		Password: body.Password,
+		Email:    body.Email,
+		Role:     string(body.Role),
+		TenantID: body.TenantID,
+	}
+
+	err := bus.DispatchVoid(
+		r.Context(),
+		h.commandBus,
+		"PlatformCreateUser",
+		cmd,
+		func(ctx context.Context) error {
+			return h.createUser.Handle(ctx, cmd)
+		},
+	)
+	if err != nil {
+		h.resp.HandleError(r.Context(), w, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+}
+
+// CreateTenant adds a tenant. Dispatches the same command the CLI's create-tenant
+// uses; here the bus's Authorize gate is what confines it to a superadmin.
+func (h *PlatformHandler) CreateTenant(w http.ResponseWriter, r *http.Request) {
+	var body platformTenantRequest
+	if err := request.DecodeJSON(w, r, &body); err != nil {
+		h.resp.HandleError(r.Context(), w, err)
+
+		return
+	}
+
+	cmd := tenantcmd.CreateTenantCommand{Name: body.Name}
+
+	err := bus.DispatchVoid(
+		r.Context(),
+		h.commandBus,
+		"PlatformCreateTenant",
+		cmd,
+		func(ctx context.Context) error {
+			// The handler returns the created tenant; the response deliberately
+			// carries no body (201, admin-create parity), so it is discarded.
+			_, err := h.createTenant.Handle(ctx, cmd)
+
+			return err
+		},
+	)
+	if err != nil {
+		h.resp.HandleError(r.Context(), w, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+}
+
+// DeleteTenant removes one tenant. Refused with a 400 when it still owns users.
+func (h *PlatformHandler) DeleteTenant(w http.ResponseWriter, r *http.Request) {
+	cmd := platformcmd.DeletePlatformTenantCommand{ID: r.PathValue("id")}
+
+	err := bus.DispatchVoid(
+		r.Context(),
+		h.commandBus,
+		"PlatformDeleteTenant",
+		cmd,
+		func(ctx context.Context) error {
+			return h.deleteTenant.Handle(ctx, cmd)
+		},
+	)
+	if err != nil {
+		h.resp.HandleError(r.Context(), w, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// BulkDeleteTenants removes the empty tenants in the grid's selection. Affected
+// counts what actually went — tenants that still have users are skipped, so a
+// partial result is the normal case, not an error.
+func (h *PlatformHandler) BulkDeleteTenants(w http.ResponseWriter, r *http.Request) {
+	var body platformBulkDeleteTenantsRequest
+	if err := request.DecodeJSON(w, r, &body); err != nil {
+		h.resp.HandleError(r.Context(), w, err)
+
+		return
+	}
+
+	cmd := platformcmd.BulkDeletePlatformTenantsCommand{
+		IDs:         body.IDs,
+		AllFiltered: body.AllFiltered,
+		Name:        body.Name,
+		Plan:        body.Plan,
+	}
+
+	affected, err := bus.Dispatch(
+		r.Context(),
+		h.commandBus,
+		"BulkDeletePlatformTenants",
+		cmd,
+		func(ctx context.Context) (int64, error) {
+			return h.bulkDeleteTenant.Handle(ctx, cmd)
 		},
 	)
 	if err != nil {

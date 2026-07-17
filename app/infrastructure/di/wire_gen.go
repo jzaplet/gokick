@@ -114,11 +114,15 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	listAllUsersHandler := query4.NewListAllUsersHandler(userRepository)
 	queryGetUserHandler := query4.NewGetUserHandler(userRepository)
 	listTenantsHandler := query4.NewListTenantsHandler(tenantRepository)
+	createPlatformUserHandler := command4.NewCreatePlatformUserHandler(userRepository, tenantRepository, passwordHasher, multitenancy)
 	updatePlatformUserHandler := command4.NewUpdatePlatformUserHandler(userRepository, passwordHasher)
 	deletePlatformUserHandler := command4.NewDeletePlatformUserHandler(userRepository)
 	bulkDeletePlatformUsersHandler := command4.NewBulkDeletePlatformUsersHandler(userRepository)
 	bulkSetPlatformUsersActiveHandler := command4.NewBulkSetPlatformUsersActiveHandler(userRepository)
-	platformHandler := handler.NewPlatformHandler(responder, queryBus, commandBus, getStatsHandler, listAllUsersHandler, queryGetUserHandler, listTenantsHandler, updatePlatformUserHandler, deletePlatformUserHandler, bulkDeletePlatformUsersHandler, bulkSetPlatformUsersActiveHandler)
+	createTenantHandler := command5.NewCreateTenantHandler(tenantRepository)
+	deletePlatformTenantHandler := command4.NewDeletePlatformTenantHandler(tenantRepository)
+	bulkDeletePlatformTenantsHandler := command4.NewBulkDeletePlatformTenantsHandler(tenantRepository)
+	platformHandler := handler.NewPlatformHandler(responder, queryBus, commandBus, getStatsHandler, listAllUsersHandler, queryGetUserHandler, listTenantsHandler, createPlatformUserHandler, updatePlatformUserHandler, deletePlatformUserHandler, bulkDeletePlatformUsersHandler, bulkSetPlatformUsersActiveHandler, createTenantHandler, deletePlatformTenantHandler, bulkDeletePlatformTenantsHandler)
 	debugRunHandler := handler.NewDebugRunHandler(responder, repository)
 	serverServer := server.NewServer(configConfig, logger, reporter, jwtService, responder, rateLimiters, ipExtractor, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler, platformHandler, debugRunHandler)
 	v2 := provideSchedulerJobs(tokenRepository)
@@ -135,7 +139,6 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	seederSeeder := seeder.NewSeeder(userRepository, tenantRepository, passwordHasher, seedAdminPassword, seedSuperAdminPassword, seedAdminTenant, multitenant, logger)
 	systemCommandBus := provideSystemCommandBus(logger, sqliteManager, eventBus, auditRepository, runDispatcher, reporter)
 	seedCommand := console.NewSeedCommand(seederSeeder, systemCommandBus)
-	createTenantHandler := command5.NewCreateTenantHandler(tenantRepository)
 	getTenantHandler := query5.NewGetTenantHandler(tenantRepository)
 	createUserCommand := console.NewCreateUserCommand(createUserHandler, createTenantHandler, getTenantHandler, configConfig, systemCommandBus)
 	createSuperAdminHandler := command4.NewCreateSuperAdminHandler(userRepository, passwordHasher)
@@ -391,5 +394,5 @@ func provideRunWorker(
 }
 
 func providePermissionsRegistry() *shared.PermissionsRegistry {
-	return shared.NewPermissionsRegistry([]shared.Permissioned{command.LogoutCommand{}, command2.ChangePasswordCommand{}, query.GetProfileQuery{}, command3.CreateUserCommand{}, command3.UpdateUserCommand{}, command3.DeleteUserCommand{}, query2.ListUsersQuery{}, query2.GetUserQuery{}, query3.GetUserDashboardQuery{}, query3.GetAdminDashboardQuery{}, query4.ListAllUsersQuery{}, query4.GetUserQuery{}, query4.ListTenantsQuery{}, query4.GetStatsQuery{}, command3.BulkDeleteUsersCommand{}, command3.BulkSetUsersActiveCommand{}, command4.UpdatePlatformUserCommand{}, command4.BulkDeletePlatformUsersCommand{}, command4.BulkSetPlatformUsersActiveCommand{}, command4.DeletePlatformUserCommand{}, command4.CreateSuperAdminCommand{}, command5.CreateTenantCommand{}, query5.GetTenantQuery{}})
+	return shared.NewPermissionsRegistry([]shared.Permissioned{command.LogoutCommand{}, command2.ChangePasswordCommand{}, query.GetProfileQuery{}, command3.CreateUserCommand{}, command3.UpdateUserCommand{}, command3.DeleteUserCommand{}, query2.ListUsersQuery{}, query2.GetUserQuery{}, query3.GetUserDashboardQuery{}, query3.GetAdminDashboardQuery{}, query4.ListAllUsersQuery{}, query4.GetUserQuery{}, query4.ListTenantsQuery{}, query4.GetStatsQuery{}, command3.BulkDeleteUsersCommand{}, command3.BulkSetUsersActiveCommand{}, command4.CreatePlatformUserCommand{}, command4.UpdatePlatformUserCommand{}, command4.BulkDeletePlatformUsersCommand{}, command4.BulkSetPlatformUsersActiveCommand{}, command4.DeletePlatformUserCommand{}, command4.DeletePlatformTenantCommand{}, command4.BulkDeletePlatformTenantsCommand{}, command5.CreateTenantCommand{}, command4.CreateSuperAdminCommand{}, query5.GetTenantQuery{}})
 }

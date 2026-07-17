@@ -20,7 +20,13 @@ type CreateSuperAdminCommand struct {
 	Email    string
 }
 
-func (CreateSuperAdminCommand) RequiredPermission() string { return "platform:users:create" }
+// Its own permission, NOT the platform:users:create that CreatePlatformUserCommand
+// carries. The two were one string back when minting a superadmin was the only
+// create on this plane; now that a superadmin can also create ORDINARY users over
+// HTTP, one string would name two operations of very different blast radius — and
+// the FE-facing one would drag this CLI-only command's name into the registry.
+// Minting a superadmin is not "creating a user", so it does not borrow that name.
+func (CreateSuperAdminCommand) RequiredPermission() string { return "platform:superadmins:create" }
 
 // CLIOnly: create-superadmin runs only via the CLI/SystemCommandBus (no HTTP
 // route), so its permission stays out of the FE-facing registry. See shared.CLIOnly.

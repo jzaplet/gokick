@@ -7,17 +7,22 @@ import (
 	"gokick/app/domain/tenant"
 )
 
-// CreateTenantCommand creates a tenant. Operator-facing (CLI / superadmin plane);
-// the in-app signup that provisions a tenant per workspace is the product's responsibility.
+// CreateTenantCommand creates a tenant. Operator-facing, and reached two ways:
+// the CLI's create-tenant (SystemCommandBus — operator-trusted, no Authorize)
+// and POST /api/v1/platform/tenants (CommandBus — Authorize enforces
+// platform:tenants:create, so superadmin only). The in-app signup that
+// provisions a tenant per workspace is the product's responsibility.
+//
+// It is NOT CLIOnly: it used to be, back when the CLI was the only way in. The
+// superadmin plane now offers it over HTTP, which is what puts
+// platform:tenants:create in the FE-facing registry. One command serves both —
+// the CLI/HTTP split is a matter of which bus dispatches it, not of what
+// creating a tenant means, and a second copy would be free to drift from this one.
 type CreateTenantCommand struct {
 	Name string
 }
 
 func (CreateTenantCommand) RequiredPermission() string { return "platform:tenants:create" }
-
-// CLIOnly: create-tenant runs only via the CLI/SystemCommandBus (no HTTP route),
-// so its permission stays out of the FE-facing registry. See shared.CLIOnly.
-func (CreateTenantCommand) CLIOnly() {}
 
 type CreateTenantHandler struct {
 	tenants tenant.Repository
