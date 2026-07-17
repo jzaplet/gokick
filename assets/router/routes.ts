@@ -11,7 +11,9 @@ import UserDashboardView from '@/app/Dashboard/Views/UserDashboardView.vue';
 import AdminDashboardView from '@/app/Dashboard/Views/AdminDashboardView.vue';
 import PlatformDashboardView from '@/app/Platform/Views/PlatformDashboardView.vue';
 import PlatformTenantsView from '@/app/Platform/Views/PlatformTenantsView.vue';
+import PlatformTenantCreateView from '@/app/Platform/Views/PlatformTenantCreateView.vue';
 import PlatformUsersView from '@/app/Platform/Views/PlatformUsersView.vue';
+import PlatformUserCreateView from '@/app/Platform/Views/PlatformUserCreateView.vue';
 import PlatformUserEditView from '@/app/Platform/Views/PlatformUserEditView.vue';
 
 // Each route declares its auth posture explicitly (mirrors the backend
@@ -100,12 +102,30 @@ export const routes: AppRoute[] = [
         },
     },
     {
+        path: '/platform/tenants/new',
+        name: 'platform-tenants-new',
+        component: PlatformTenantCreateView,
+        meta: {
+            requiresAuth: true,
+            requiresPermission: Permission.PlatformTenantsCreate,
+        },
+    },
+    {
         path: '/platform/users',
         name: 'platform-users',
         component: PlatformUsersView,
         meta: {
             requiresAuth: true,
             requiresPermission: Permission.PlatformOverview,
+        },
+    },
+    {
+        path: '/platform/users/new',
+        name: 'platform-users-new',
+        component: PlatformUserCreateView,
+        meta: {
+            requiresAuth: true,
+            requiresPermission: Permission.PlatformUsersCreate,
         },
     },
     {

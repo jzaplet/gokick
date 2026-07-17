@@ -10,7 +10,6 @@ import (
 	platformcmd "gokick/app/application/platform/command"
 	platformqry "gokick/app/application/platform/query"
 	tenantcmd "gokick/app/application/tenant/command"
-	"gokick/app/domain/tenant"
 	"gokick/app/domain/user"
 	"gokick/app/presentation/http/request"
 	"gokick/app/presentation/http/response"
@@ -91,24 +90,10 @@ type platformUserDTO struct {
 	LastLoginAt *string   `json:"last_login_at"`
 }
 
-//gkts:assets/app/Platform/types/PlatformTenant.ts PlatformTenant
-type platformTenantDTO struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Plan      string `json:"plan"`
-	UserCount int    `json:"user_count"`
-}
-
 //gkts:assets/app/Platform/types/PlatformUserListResponse.ts PlatformUserListResponse
 type platformUserListResponse struct {
 	Items []platformUserDTO `json:"items"`
 	Total int               `json:"total"`
-}
-
-//gkts:assets/app/Platform/types/PlatformTenantListResponse.ts PlatformTenantListResponse
-type platformTenantListResponse struct {
-	Items []platformTenantDTO `json:"items"`
-	Total int                 `json:"total"`
 }
 
 //gkts:assets/app/Platform/types/PlatformBulkDeleteUsersRequest.ts PlatformBulkDeleteUsersRequest noguard
@@ -155,19 +140,6 @@ type platformCreateUserRequest struct {
 	Email    string    `json:"email"`
 	Role     user.Role `json:"role"`
 	TenantID string    `json:"tenant_id"`
-}
-
-//gkts:assets/app/Platform/types/PlatformTenantFormData.ts PlatformTenantFormData noguard
-type platformTenantRequest struct {
-	Name string `json:"name"`
-}
-
-//gkts:assets/app/Platform/types/PlatformBulkDeleteTenantsRequest.ts PlatformBulkDeleteTenantsRequest noguard
-type platformBulkDeleteTenantsRequest struct {
-	IDs         []string `json:"ids"`
-	AllFiltered bool     `json:"all_filtered"`
-	Name        string   `json:"name"`
-	Plan        string   `json:"plan"`
 }
 
 func (h *PlatformHandler) Stats(w http.ResponseWriter, r *http.Request) {
@@ -259,50 +231,6 @@ func (h *PlatformHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.resp.JSON(r.Context(), w, http.StatusOK, toPlatformUserDTO(*row))
-}
-
-func (h *PlatformHandler) Tenants(w http.ResponseWriter, r *http.Request) {
-	qs := r.URL.Query()
-	page, _ := strconv.Atoi(qs.Get("page"))
-	perPage, _ := strconv.Atoi(qs.Get("per_page"))
-	q := platformqry.ListTenantsQuery{
-		Page:    page,
-		PerPage: perPage,
-		SortBy:  qs.Get("sort_by"),
-		SortDir: qs.Get("sort_dir"),
-		Name:    qs.Get("name"),
-		Plan:    qs.Get("plan"),
-	}
-
-	result, err := bus.Query(
-		r.Context(),
-		h.queryBus,
-		"PlatformListTenants",
-		q,
-		func(ctx context.Context) (tenant.ListPage, error) {
-			return h.listTenants.Handle(ctx, q)
-		},
-	)
-	if err != nil {
-		h.resp.HandleError(r.Context(), w, err)
-
-		return
-	}
-
-	dtos := make([]platformTenantDTO, len(result.Items))
-	for i, t := range result.Items {
-		dtos[i] = platformTenantDTO{
-			ID:        t.ID,
-			Name:      t.Name,
-			Plan:      t.Plan,
-			UserCount: t.UserCount,
-		}
-	}
-
-	h.resp.JSON(r.Context(), w, http.StatusOK, platformTenantListResponse{
-		Items: dtos,
-		Total: result.Total,
-	})
 }
 
 func (h *PlatformHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -469,98 +397,6 @@ func (h *PlatformHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
-}
-
-// CreateTenant adds a tenant. Dispatches the same command the CLI's create-tenant
-// uses; here the bus's Authorize gate is what confines it to a superadmin.
-func (h *PlatformHandler) CreateTenant(w http.ResponseWriter, r *http.Request) {
-	var body platformTenantRequest
-	if err := request.DecodeJSON(w, r, &body); err != nil {
-		h.resp.HandleError(r.Context(), w, err)
-
-		return
-	}
-
-	cmd := tenantcmd.CreateTenantCommand{Name: body.Name}
-
-	err := bus.DispatchVoid(
-		r.Context(),
-		h.commandBus,
-		"PlatformCreateTenant",
-		cmd,
-		func(ctx context.Context) error {
-			// The handler returns the created tenant; the response deliberately
-			// carries no body (201, admin-create parity), so it is discarded.
-			_, err := h.createTenant.Handle(ctx, cmd)
-
-			return err
-		},
-	)
-	if err != nil {
-		h.resp.HandleError(r.Context(), w, err)
-
-		return
-	}
-
-	w.WriteHeader(http.StatusCreated)
-}
-
-// DeleteTenant removes one tenant. Refused with a 400 when it still owns users.
-func (h *PlatformHandler) DeleteTenant(w http.ResponseWriter, r *http.Request) {
-	cmd := platformcmd.DeletePlatformTenantCommand{ID: r.PathValue("id")}
-
-	err := bus.DispatchVoid(
-		r.Context(),
-		h.commandBus,
-		"PlatformDeleteTenant",
-		cmd,
-		func(ctx context.Context) error {
-			return h.deleteTenant.Handle(ctx, cmd)
-		},
-	)
-	if err != nil {
-		h.resp.HandleError(r.Context(), w, err)
-
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// BulkDeleteTenants removes the empty tenants in the grid's selection. Affected
-// counts what actually went — tenants that still have users are skipped, so a
-// partial result is the normal case, not an error.
-func (h *PlatformHandler) BulkDeleteTenants(w http.ResponseWriter, r *http.Request) {
-	var body platformBulkDeleteTenantsRequest
-	if err := request.DecodeJSON(w, r, &body); err != nil {
-		h.resp.HandleError(r.Context(), w, err)
-
-		return
-	}
-
-	cmd := platformcmd.BulkDeletePlatformTenantsCommand{
-		IDs:         body.IDs,
-		AllFiltered: body.AllFiltered,
-		Name:        body.Name,
-		Plan:        body.Plan,
-	}
-
-	affected, err := bus.Dispatch(
-		r.Context(),
-		h.commandBus,
-		"BulkDeletePlatformTenants",
-		cmd,
-		func(ctx context.Context) (int64, error) {
-			return h.bulkDeleteTenant.Handle(ctx, cmd)
-		},
-	)
-	if err != nil {
-		h.resp.HandleError(r.Context(), w, err)
-
-		return
-	}
-
-	h.resp.JSON(r.Context(), w, http.StatusOK, bulkResultDTO{Affected: affected})
 }
 
 func toPlatformUserDTO(row user.PlatformRow) platformUserDTO {

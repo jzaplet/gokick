@@ -5,16 +5,21 @@ import { isPlatformTenantListResponse } from '@/app/Platform/types/PlatformTenan
 import type { GridColumn } from '@/app-ui/DataGrid/createGridState';
 import { createGridState } from '@/app-ui/DataGrid/createGridState';
 import { computed, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { authFetch } from '@/app-ui/Auth';
 import { useToast } from '@/app-ui/Toast/useToast';
+import { usePlatformTenantsBulk } from '@/app/Platform/Composables/usePlatformTenantsBulk';
 import DataGrid from '@/app-ui/DataGrid/DataGrid.vue';
 import FilterPanel from '@/app-ui/FilterPanel/FilterPanel.vue';
 import Pagination from '@/app-ui/Pagination/Pagination.vue';
 import Input from '@/app-ui/Inputs/Input.vue';
 import Select from '@/app-ui/Inputs/Select.vue';
+import Button from '@/app-ui/Buttons/Button.vue';
 import BulkActionBar from '@/app-ui/BulkActions/BulkActionBar.vue';
+import ConfirmModal from '@/app-ui/Modals/ConfirmModal.vue';
 import PlatformTenantRow from '@/app/Platform/Components/PlatformTenantRow.vue';
 
+const router = useRouter();
 const { error } = useToast();
 
 const tenants = ref<PlatformTenant[]>([]);
@@ -23,6 +28,8 @@ const columns: GridColumn[] = [
     { key: 'name', label: 'Tenant', sortable: true },
     { key: 'plan', label: 'Plan' },
     { key: 'users', label: 'Users', sortable: true, align: 'right' },
+    // The actions column carries no heading (aibobr parity).
+    { key: 'actions', label: '', align: 'right' },
 ];
 
 // Mirrors the backend plan tiers (domain/tenant PlanFree). Only "free" exists
@@ -69,14 +76,33 @@ const grid = createGridState({
     },
 });
 
-// No bulk operations exist for tenants YET — the bar still offers the
-// selection mechanics (select page / all filtered / clear), so actions can
-// land here later without UI work.
+const {
+    bulkActions,
+    bulkConfirm,
+    handleBulkAction,
+    runPendingBulk,
+    cancelPendingBulk,
+    tenantToDelete,
+    askDelete,
+    cancelDelete,
+    runDelete,
+} = usePlatformTenantsBulk(grid);
+
+// Every row is selectable, INCLUDING the ones whose delete button is off. The
+// user grids exclude rows the server would spare (self, superadmins) because
+// there a spared row means the whole action silently did nothing to it. Here
+// skipping is the designed outcome — the server deletes the empty tenants in a
+// selection and reports how many — so a "select page → delete" that clears the
+// empty ones and names the rest is exactly the intended flow.
 const pageIds = computed<string[]>(() => tenants.value.map((t) => t.id));
 
 const allPageSelected = computed<boolean>(() =>
     pageIds.value.length > 0
     && pageIds.value.every((id) => grid.isSelected(id) === true));
+
+const goToCreate = (): void => {
+    void router.push({ name: 'platform-tenants-new' });
+};
 
 onMounted(async (): Promise<void> => {
     await grid.init();
@@ -86,9 +112,18 @@ onMounted(async (): Promise<void> => {
 <template>
     <div>
         <div class="space-y-6">
-            <h1 class="text-2xl font-bold text-gray-900">
-                Tenants
-            </h1>
+            <div class="flex items-center justify-between gap-4">
+                <h1 class="text-2xl font-bold text-gray-900">
+                    Tenants
+                </h1>
+
+                <Button
+                    variant="primary"
+                    @click="goToCreate"
+                >
+                    Add tenant
+                </Button>
+            </div>
 
             <FilterPanel
                 storage-key="platform-tenants"
@@ -120,7 +155,8 @@ onMounted(async (): Promise<void> => {
                 :count="grid.selectedCount.value"
                 :total="grid.total.value"
                 :is-all-filtered="grid.isAllFilteredSelected.value"
-                :actions="[]"
+                :actions="bulkActions"
+                @action="handleBulkAction"
                 @select-all-filtered="grid.selectAllFiltered"
                 @clear="grid.clearSelection"
             />
@@ -143,6 +179,7 @@ onMounted(async (): Promise<void> => {
                             selectable
                             :selected="grid.isSelected(tenant.id)"
                             @toggle-select="grid.toggleRow(tenant.id)"
+                            @delete="askDelete"
                         />
                         <tr v-if="tenants.length === 0">
                             <td
@@ -162,6 +199,28 @@ onMounted(async (): Promise<void> => {
                     @update:page="grid.handlePageChange"
                 />
             </div>
+
+            <ConfirmModal
+                :show="tenantToDelete !== null"
+                title="Delete tenant"
+                :message="tenantToDelete === null
+                    ? ''
+                    : `Really delete tenant ${tenantToDelete.name}? This action is irreversible.`"
+                confirm-text="Delete"
+                cancel-text="Cancel"
+                @confirm="runDelete"
+                @cancel="cancelDelete"
+            />
+
+            <ConfirmModal
+                :show="bulkConfirm !== null"
+                :title="bulkConfirm?.title ?? ''"
+                :message="bulkConfirm?.message ?? ''"
+                :confirm-text="bulkConfirm?.confirmText ?? 'Confirm'"
+                cancel-text="Cancel"
+                @confirm="runPendingBulk"
+                @cancel="cancelPendingBulk"
+            />
         </div>
     </div>
 </template>

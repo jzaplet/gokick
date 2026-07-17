@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { PlatformUserFormData } from '@/app/Platform/types/PlatformUserFormData';
+import type { PlatformUserCreateData } from '@/app/Platform/types/PlatformUserCreateData';
 import type { PlatformUserFormErrors } from '@/app/Platform/types/PlatformUserFormErrors';
 import { Role } from '@/app/Auth/enums/roles';
 import { reactive, ref } from 'vue';
@@ -10,33 +10,43 @@ import ErrorAlert from '@/app-ui/Alerts/ErrorAlert.vue';
 
 // Platform's own user form — a deliberate independent copy of Admin's UserForm
 // (F-084, direction B: keep the domains decoupled, no shared abstraction and no
-// app/Platform -> app/Admin import). Same fields as the admin form because the
-// backend contract is the same; the two evolve independently from here.
+// app/Platform -> app/Admin import). The two evolve independently from here, and
+// the tenant picker below is the first place they have actually diverged.
+//
+// The form emits PlatformUserCreateData (the superset). Only the create view
+// sends tenant_id on the wire: an edit must never move a user between tenants, so
+// PUT has no tenant_id in its contract at all and the edit view drops the field
+// explicitly rather than relying on the backend to ignore it.
 const {
     initial = {},
     mode,
     submitLabel,
     isLoading,
     errors,
+    tenants = [],
 } = defineProps<{
-    initial?: Partial<PlatformUserFormData>;
+    initial?: Partial<PlatformUserCreateData>;
     mode: 'create' | 'edit';
     submitLabel: string;
     isLoading: boolean;
     errors: PlatformUserFormErrors;
+    // Selectable tenants — create mode only. The view fetches them; the form
+    // stays dumb.
+    tenants?: { value: string; label: string }[];
 }>();
 
 const emit = defineEmits<{
-    submit: [data: PlatformUserFormData];
+    submit: [data: PlatformUserCreateData];
     cancel: [];
     clearError: [field: keyof PlatformUserFormErrors];
 }>();
 
-const form: PlatformUserFormData = reactive({
+const form: PlatformUserCreateData = reactive({
     nickname: initial.nickname ?? '',
     password: '',
     email: initial.email ?? '',
     role: initial.role ?? Role.User,
+    tenant_id: initial.tenant_id ?? '',
 });
 
 const roleOptions = ref([
@@ -95,6 +105,20 @@ const handleSubmit = (): void => {
             required
             :disabled="isLoading"
             @update:model-value="() => emit('clearError', 'role')"
+        />
+
+        <!-- Create only: a superadmin picks the owning tenant. An edit cannot
+             move a user between tenants, so the field has nothing to offer there. -->
+        <Select
+            v-if="mode === 'create'"
+            v-model="form.tenant_id"
+            name="tenant_id"
+            label="Tenant"
+            :options="tenants"
+            :error="errors.tenant_id"
+            required
+            :disabled="isLoading"
+            @update:model-value="() => emit('clearError', 'tenant_id')"
         />
 
         <ErrorAlert :message="errors.general" />
