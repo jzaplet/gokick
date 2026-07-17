@@ -28,8 +28,8 @@ const users = ref<PlatformUser[]>([]);
 const userToDelete = ref<PlatformUser | null>(null);
 
 const columns: GridColumn[] = [
-    { key: 'tenant', label: 'Tenant', sortable: true },
     { key: 'nickname', label: 'Nickname', sortable: true },
+    { key: 'tenant', label: 'Tenant', sortable: true },
     { key: 'email', label: 'Email', sortable: true },
     { key: 'role', label: 'Role', sortable: true },
     { key: 'active', label: 'Active' },
@@ -52,7 +52,7 @@ const activeOptions = [
 ];
 
 const grid = createGridState({
-    defaultSort: { column: 'tenant', direction: 'ASC' },
+    defaultSort: { column: 'nickname', direction: 'ASC' },
     filters: { tenant: '', nickname: '', email: '', role: '', active: '' },
     syncUrl: true,
     load: async ({ page, perPage, sort, filters }) => {

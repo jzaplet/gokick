@@ -161,7 +161,7 @@ func TestPlatformWriteCommands_AdminDeniedAtBus(t *testing.T) {
 	// Create is the one that matters most: it writes through SaveAcrossTenants,
 	// which is deliberately exempt from the scope guard. The permission string is
 	// the ONLY thing standing between an admin and a row planted in any tenant.
-	ch := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher, false)
+	ch := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher)
 	createCmd := CreatePlatformUserCommand{
 		Nickname: "mallory",
 		Password: "correct horse battery staple",

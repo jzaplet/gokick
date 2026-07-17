@@ -57,10 +57,10 @@ const isManageable = (): boolean => {
             />
         </td>
         <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-            {{ user.tenant_name }}
-        </td>
-        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
             {{ user.nickname }}
+        </td>
+        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+            {{ user.tenant_name }}
         </td>
         <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
             <span v-if="user.email !== ''">{{ user.email }}</span>

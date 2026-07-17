@@ -17,6 +17,7 @@ const errors = ref<PlatformUserFormErrors>({});
 const isLoading = ref(false);
 const isFetching = ref(true);
 const tenantOptions = ref<{ value: string; label: string }[]>([]);
+const initial = ref<Partial<PlatformUserCreateData>>({});
 
 const clearFieldError = (field: keyof PlatformUserFormErrors): void => {
     // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- optional key removal is the intended API
@@ -43,6 +44,20 @@ onMounted(async (): Promise<void> => {
     }
 
     tenantOptions.value = result.data.items.map((t) => ({ value: t.id, label: t.name }));
+
+    // Preselect only when there is nothing to choose. A single-tenant install has
+    // exactly one tenant, so a blank required picker there is a question with one
+    // answer — and the backend would (rightly) reject the blank.
+    //
+    // With several tenants it stays blank ON PURPOSE. Preselecting the first (or
+    // the default tenant) would put a REAL tenant one mis-click away from owning a
+    // new user, silently and irreversibly — an edit cannot move them out. Better a
+    // 400 on the field than a user quietly born in the wrong company.
+    const only = tenantOptions.value[0];
+
+    if (tenantOptions.value.length === 1 && only !== undefined) {
+        initial.value = { tenant_id: only.value };
+    }
 });
 
 const handleSubmit = async (data: PlatformUserCreateData): Promise<void> => {
@@ -90,6 +105,7 @@ const handleCancel = (): void => {
                 v-else
                 mode="create"
                 submit-label="Create"
+                :initial="initial"
                 :is-loading="isLoading"
                 :errors="errors"
                 :tenants="tenantOptions"

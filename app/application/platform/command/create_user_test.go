@@ -20,7 +20,7 @@ func TestCreatePlatformUser_CreatesInTheChosenTenant(t *testing.T) {
 
 	target := fx.SeedTenant(t, "Beta")
 
-	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher, true)
+	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher)
 	err := h.Handle(ctx, CreatePlatformUserCommand{
 		Nickname: "bob",
 		Password: "correct horse battery staple",
@@ -53,7 +53,7 @@ func TestCreatePlatformUser_UnknownTenantIsAFieldError(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.NewMultitenant(t, filepath.Join(t.TempDir(), "pcreate_badtenant.db"))
 
-	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher, true)
+	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher)
 	err := h.Handle(ctx, CreatePlatformUserCommand{
 		Nickname: "bob",
 		Password: "correct horse battery staple",
@@ -74,53 +74,48 @@ func TestCreatePlatformUser_UnknownTenantIsAFieldError(t *testing.T) {
 	}
 }
 
-// Fail-closed: with multitenancy on, a missing tenant must not silently drop the
-// user into the default tenant. It is a form field here, so it earns a 400 rather
-// than shared.RequireTenant's 500 (which signals a non-bus path bug instead).
-func TestCreatePlatformUser_MultitenantRequiresATenant(t *testing.T) {
-	ctx := context.Background()
-	fx := testfx.NewMultitenant(t, filepath.Join(t.TempDir(), "pcreate_notenant.db"))
+// tenant_id is required in BOTH modes, and the table is the assertion: an earlier
+// cut mirrored shared.RequireTenant and quietly defaulted to the default tenant
+// when multitenancy was off. The form marks the field required, so that fallback
+// made the UI lie — leave the picker blank and the user lands in the default
+// tenant anyway, exactly as if you had chosen it.
+//
+// The picker always has at least one option (the default tenant is created by
+// migration), so an empty tenant_id is never "there was nothing to choose". It is
+// a field the caller could see and skipped, and it earns a 400 against that field
+// — in either mode, which is why the flag is gone from the handler entirely.
+func TestCreatePlatformUser_RequiresATenantInEitherMode(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		fx   func(*testing.T, string) *testfx.Fixture
+	}{
+		{"multitenant", testfx.NewMultitenant},
+		{"single-tenant", testfx.New},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			fx := tc.fx(t, filepath.Join(t.TempDir(), "pcreate_notenant.db"))
 
-	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher, true)
-	err := h.Handle(ctx, CreatePlatformUserCommand{
-		Nickname: "bob",
-		Password: "correct horse battery staple",
-		Email:    "bob@example.com",
-		Role:     "user",
-	})
-	if err == nil {
-		t.Fatal("multitenant mode must refuse a create with no tenant")
-	}
-	var ve *shared.ValidationError
-	if !errors.As(err, &ve) || ve.Field != "tenant_id" {
-		t.Fatalf("expected *shared.ValidationError{Field:\"tenant_id\"}, got %T: %v", err, err)
-	}
+			h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher)
+			err := h.Handle(ctx, CreatePlatformUserCommand{
+				Nickname: "bob",
+				Password: "correct horse battery staple",
+				Email:    "bob@example.com",
+				Role:     "user",
+			})
+			if err == nil {
+				t.Fatal("a create with no tenant must be refused, not silently defaulted")
+			}
+			var ve *shared.ValidationError
+			if !errors.As(err, &ve) || ve.Field != "tenant_id" {
+				t.Fatalf("expected *shared.ValidationError{Field:\"tenant_id\"}, got %T: %v",
+					err, err)
+			}
 
-	if got, _ := fx.Users.FindByNickname(ctx, "bob"); got != nil {
-		t.Fatal("no user may be born tenant-less")
-	}
-}
-
-// Single-tenant mode keeps RequireTenant's leniency: there is exactly one tenant
-// to mean, so an absent tenant_id is not ambiguous.
-func TestCreatePlatformUser_SingleTenantDefaultsTheTenant(t *testing.T) {
-	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "pcreate_single.db"))
-
-	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher, false)
-	err := h.Handle(ctx, CreatePlatformUserCommand{
-		Nickname: "bob",
-		Password: "correct horse battery staple",
-		Email:    "bob@example.com",
-		Role:     "user",
-	})
-	if err != nil {
-		t.Fatalf("single-tenant create with no tenant_id must land: %v", err)
-	}
-
-	got, _ := fx.Users.FindByNickname(ctx, "bob")
-	if got == nil || got.TenantID != shared.DefaultTenantID {
-		t.Fatalf("user must land in the default tenant, got %+v", got)
+			if got, _ := fx.Users.FindByNickname(ctx, "bob"); got != nil {
+				t.Fatal("no user may be born tenant-less")
+			}
+		})
 	}
 }
 
@@ -130,7 +125,7 @@ func TestCreatePlatformUser_RefusesTheSuperadminRole(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "pcreate_super.db"))
 
-	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher, false)
+	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher)
 	err := h.Handle(ctx, CreatePlatformUserCommand{
 		Nickname: "root2",
 		Password: "correct horse battery staple",
@@ -174,7 +169,7 @@ func TestCreatePlatformUser_ThroughTheBus_WritesIntoAnotherTenant(t *testing.T) 
 		TenantID: shared.DefaultTenantID,
 	})
 
-	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher, true)
+	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher)
 	cmd := CreatePlatformUserCommand{
 		Nickname: "tony",
 		Password: "correct horse battery staple",
@@ -221,7 +216,7 @@ func TestCreatePlatformUser_EventCarriesTheChosenTenant(t *testing.T) {
 	ctx, collector := shared.ContextWithEventCollector(context.Background())
 	ctx = shared.ContextWithTenantID(ctx, shared.DefaultTenantID)
 
-	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher, true)
+	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher)
 	err := h.Handle(ctx, CreatePlatformUserCommand{
 		Nickname: "tony",
 		Password: "correct horse battery staple",
@@ -284,7 +279,7 @@ func TestCreatePlatformUser_NicknameCollidesAcrossTenants(t *testing.T) {
 	tenantB := fx.SeedTenant(t, "Beta")
 	fx.SeedUserInTenant(t, "bob", "user", tenantA.ID)
 
-	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher, true)
+	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher)
 	err := h.Handle(ctx, CreatePlatformUserCommand{
 		Nickname: "bob",
 		Password: "correct horse battery staple",

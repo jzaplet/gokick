@@ -114,7 +114,7 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	listAllUsersHandler := query4.NewListAllUsersHandler(userRepository)
 	queryGetUserHandler := query4.NewGetUserHandler(userRepository)
 	listTenantsHandler := query4.NewListTenantsHandler(tenantRepository)
-	createPlatformUserHandler := command4.NewCreatePlatformUserHandler(userRepository, tenantRepository, passwordHasher, multitenancy)
+	createPlatformUserHandler := command4.NewCreatePlatformUserHandler(userRepository, tenantRepository, passwordHasher)
 	updatePlatformUserHandler := command4.NewUpdatePlatformUserHandler(userRepository, passwordHasher)
 	deletePlatformUserHandler := command4.NewDeletePlatformUserHandler(userRepository)
 	bulkDeletePlatformUsersHandler := command4.NewBulkDeletePlatformUsersHandler(userRepository)
