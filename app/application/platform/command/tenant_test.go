@@ -101,6 +101,39 @@ func TestDeleteTenant_UnknownTenantIsNotFound(t *testing.T) {
 	}
 }
 
+// The floor under the handler's identity check: the repository refuses the default
+// tenant in the statement itself, the way its bulk sibling already does. The test
+// calls the repository DIRECTLY and deliberately — through the handler it would
+// pass with this floor deleted, because the handler refuses DefaultTenantID before
+// the repository is ever reached. That is the point: a second caller that skips the
+// handler (a cleanup job, a CLI delete-tenant) inherits the emptiness rule for
+// free, and this is what stops it inheriting a hole with it.
+//
+// It lives beside the handler tests rather than in sqlite/tenant/ because testfx
+// imports that package — an internal test there would be an import cycle.
+func TestDeleteIfEmptyAcrossTenants_RefusesTheDefaultTenantInSQL(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_repo_default.db"))
+
+	// No users seeded, so the emptiness condition would happily let this through:
+	// the identity floor is the only thing that can refuse it here.
+	deleted, err := fx.PlatformTenants.DeleteIfEmptyAcrossTenants(ctx, shared.DefaultTenantID)
+	if err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if deleted {
+		t.Fatal("the repository must never report the default tenant as deleted")
+	}
+
+	got, err := fx.Tenants.FindByID(ctx, shared.DefaultTenantID)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got == nil {
+		t.Fatal("the default tenant must survive a direct repository delete")
+	}
+}
+
 // Bulk is partial by design: the empty tenants in the selection go, the ones that
 // still have users stay, and `affected` counts only what actually happened. A
 // selection mixing both must not be all-or-nothing in either direction.

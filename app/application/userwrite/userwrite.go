@@ -149,15 +149,61 @@ func Update(
 	return nil
 }
 
-// Create is the shared body of the user-creation paths (admin CreateUser, the CLI
-// CreateSuperAdmin, and the platform CreatePlatformUser). Each caller validates the
-// raw inputs into value objects in ITS OWN order (so per-handler ValidationError
+// Create is the shared body of the API-facing user-creation paths (admin
+// CreateUser and platform CreatePlatformUser). Each caller validates the raw
+// inputs into value objects in ITS OWN order (so per-handler ValidationError
 // precedence is preserved) and decides the role + tenant, then hands them here.
-// Create enforces nickname uniqueness, hashes the password (AFTER the uniqueness
-// check, so a taken nickname skips the bcrypt cost), persists the user, and
-// announces it ONCE — a user.UserCreated event + a user.created audit record.
-// Single-sourcing the announcement is the point (F-031): superadmin creation
-// previously skipped the event, and a copy-paste body is exactly what let that drift.
+//
+// Create REFUSES the superadmin role, and that refusal is a floor, not a
+// courtesy. Both handlers also refuse it up front — deliberately, because their
+// order fixes which ValidationError wins (a superadmin role beats a bad password)
+// and only they know that order. But a per-handler habit is not an invariant: a
+// fourth create path (invite-accept, self-signup, an import) would ship with no
+// refusal and nothing would fail. Update already refuses in this body for the same
+// reason; Create now matches it. The one sanctioned minter names itself —
+// CreateSuperAdmin below. This is the same defence-in-depth the repo layer applies
+// to the update/delete twins, which re-refuse superadmin rows in the statement.
+func Create(
+	ctx context.Context,
+	d Deps,
+	spec CreateSpec,
+	save func(context.Context, *user.User) error,
+) (*user.User, error) {
+	// Before the uniqueness lookup, so the error precedence matches the handlers
+	// that already refused up front: role beats a taken nickname, either way in.
+	if spec.Role.IsSuperAdmin() {
+		return nil, &shared.ValidationError{
+			Field:   "role",
+			Message: "cannot assign the superadmin role",
+		}
+	}
+
+	return create(ctx, d, spec, save)
+}
+
+// CreateSuperAdmin mints a superadmin: the ONE sanctioned exception to Create's
+// refusal, and the reason that refusal can be a default instead of a habit. It
+// stamps the role itself, so no caller can arrive here meaning to create anything
+// else. Reachable only out-of-band — the CLI's create-superadmin over the
+// SystemCommandBus. (The seeder's superadmin never comes through here: it writes
+// via the repository, so it is untouched by this refusal.)
+func CreateSuperAdmin(
+	ctx context.Context,
+	d Deps,
+	spec CreateSpec,
+	save func(context.Context, *user.User) error,
+) (*user.User, error) {
+	spec.Role = user.RoleSuperAdmin
+
+	return create(ctx, d, spec, save)
+}
+
+// create is the body both entry points share: it enforces nickname uniqueness,
+// hashes the password (AFTER the uniqueness check, so a taken nickname skips the
+// bcrypt cost), persists the user, and announces it ONCE — a user.UserCreated
+// event + a user.created audit record. Single-sourcing the announcement is the
+// point (F-031): superadmin creation previously skipped the event, and a
+// copy-paste body is exactly what let that drift.
 //
 // save is the same seam Update's Plane.Save is, and for the same reason: the
 // tenant-scoped Save and the cross-tenant SaveAcrossTenants differ in NAME, so no
@@ -170,7 +216,7 @@ func Update(
 // identity lookup (nickname is UNIQUE across the whole table), so it must reach
 // across tenants on every plane — a nickname taken in tenant A has to collide with
 // a platform create into tenant B.
-func Create(
+func create(
 	ctx context.Context,
 	d Deps,
 	spec CreateSpec,

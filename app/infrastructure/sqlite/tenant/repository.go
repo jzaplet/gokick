@@ -69,12 +69,23 @@ const emptyTenantCond = ` AND NOT EXISTS (
 	 WHERE u.tenant_id = tenants.id
 )`
 
-// DeleteIfEmptyAcrossTenants deletes the tenant iff it owns no users, reporting
-// whether it did. A false return means it still has users — the caller has
-// already established the tenant exists, so that is the only other outcome.
+// DeleteIfEmptyAcrossTenants deletes the tenant iff it owns no users and is not
+// the default tenant, reporting whether it did. A false return means one of those
+// two refused it — the caller has already established the tenant exists, so there
+// is no third outcome.
+//
+// Both floors live in the statement, matching the bulk twin below (and the user
+// repo's `role != 'superadmin'` twins): the emptiness test rides inside the DELETE
+// so it cannot be a check-then-act, and the default tenant is excluded by identity
+// for the same reason its bulk sibling excludes it — a protected row is the
+// statement's business, not the caller's to remember. DeleteTenantHandler refuses
+// the default tenant first and owns the honest 400; this is the floor under it, so
+// a second caller (a cleanup job, a CLI delete-tenant) cannot inherit the emptiness
+// rule for free and silently lose this one.
 func (r *Repository) DeleteIfEmptyAcrossTenants(ctx context.Context, id string) (bool, error) {
 	res, err := r.Conn(ctx).ExecContext(ctx,
-		`DELETE FROM tenants WHERE id=?`+emptyTenantCond, id)
+		`DELETE FROM tenants WHERE id=? AND id != ?`+emptyTenantCond,
+		id, shared.DefaultTenantID)
 	if err != nil {
 		return false, err
 	}

@@ -25,14 +25,21 @@ type BulkConfirm = {
     confirmText: string;
 };
 
+// What the per-row delete needs off a row: the id to send, the name to name in
+// the toast.
+type DeleteTarget = {
+    id: string;
+    name: string;
+};
+
 export type TenantsBulk = {
     bulkActions: BulkAction[];
     bulkConfirm: ComputedRef<BulkConfirm | null>;
     handleBulkAction: (key: string) => void;
     runPendingBulk: () => Promise<void>;
     cancelPendingBulk: () => void;
-    tenantToDelete: Ref<{ id: string; name: string } | null>;
-    askDelete: (tenant: { id: string; name: string }) => void;
+    tenantToDelete: Ref<DeleteTarget | null>;
+    askDelete: (tenant: DeleteTarget) => void;
     cancelDelete: () => void;
     runDelete: () => Promise<void>;
 };
@@ -43,7 +50,7 @@ export const usePlatformTenantsBulk = (grid: GridState<TenantGridFilters>): Tena
     const bulkActions: BulkAction[] = [{ key: 'delete', label: 'Delete' }];
 
     const pendingBulk = ref<'delete' | null>(null);
-    const tenantToDelete = ref<{ id: string; name: string } | null>(null);
+    const tenantToDelete = ref<DeleteTarget | null>(null);
 
     const bulkConfirm = computed((): BulkConfirm | null => {
         // Selection vanished under the open modal (a debounced filter change
@@ -148,7 +155,7 @@ export const usePlatformTenantsBulk = (grid: GridState<TenantGridFilters>): Tena
     // the audit trail have exactly one implementation on the server. Expected is 1
     // — a skip here means the grid's count was stale, which the toast should say
     // out loud rather than silently report success.
-    const askDelete = (tenant: { id: string; name: string }): void => {
+    const askDelete = (tenant: DeleteTarget): void => {
         tenantToDelete.value = tenant;
     };
 
