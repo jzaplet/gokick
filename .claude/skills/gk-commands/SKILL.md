@@ -42,7 +42,7 @@ Když command neimplementuje ani jedno, `AuthorizeMiddleware` vrátí runtime er
 
 **Vedlejší efekty** se nesbírají přímo, ale přes per-request collectory z ctx:
 - `shared.AuditCollectorFromContext(ctx).Record(...)` — pro security-relevant mutace (`user.created` a `user.role_changed` ve sdíleném `application/userwrite/userwrite.go`, `user.deleted` v `delete_user.go:55`).
-- `shared.EventCollectorFromContext(ctx).Collect(...)` — doménový event (`user.UserCreated` v `userwrite.go:169` — sdílené tělo create, viz F-031), na který reaguje někdo jiný. Detail: `/gk-domain-events`.
+- `shared.EventCollectorFromContext(ctx).Collect(...)` — doménový event (`user.UserCreated` v `userwrite.Create` — sdílené tělo create, viz F-031), na který reaguje někdo jiný. Detail: `/gk-domain-events`.
 
 **Dispatch z HTTP handleru** (detail v `/gk-bus`):
 - bez návratové hodnoty → `bus.DispatchVoid(...)`.
