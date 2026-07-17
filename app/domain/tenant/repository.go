@@ -31,4 +31,19 @@ type PlatformRepository interface {
 
 	// CountAcrossTenants returns the total number of tenants (platform dashboard).
 	CountAcrossTenants(ctx context.Context) (int, error)
+
+	// DeleteIfEmptyAcrossTenants deletes the tenant only when it still owns no
+	// users, reporting whether it did. "If empty" is in the name because it is
+	// the contract, not an implementation detail: the emptiness test and the
+	// delete are ONE statement, so a user created between a caller's check and
+	// its delete cannot slip through (the grid's count is always stale by the
+	// time the click arrives). A false return means the tenant survived because
+	// it still has users — the caller has already established that it exists.
+	DeleteIfEmptyAcrossTenants(ctx context.Context, id string) (bool, error)
+
+	// BulkDeleteEmptyAcrossTenants deletes every SELECTED tenant that owns no
+	// users and returns how many went. Non-empty tenants in the selection are
+	// skipped, not an error: the grid lets a superadmin select freely, and
+	// partial application is what the affected count is for.
+	BulkDeleteEmptyAcrossTenants(ctx context.Context, sel BulkSelection) (int64, error)
 }
