@@ -15,6 +15,7 @@ import Pagination from '@/app-ui/Pagination/Pagination.vue';
 import Input from '@/app-ui/Inputs/Input.vue';
 import Select from '@/app-ui/Inputs/Select.vue';
 import Button from '@/app-ui/Buttons/Button.vue';
+import PlusIcon from '@/app-ui/Icons/PlusIcon.vue';
 import BulkActionBar from '@/app-ui/BulkActions/BulkActionBar.vue';
 import ConfirmModal from '@/app-ui/Modals/ConfirmModal.vue';
 import PlatformTenantRow from '@/app/Platform/Components/PlatformTenantRow.vue';
@@ -121,6 +122,7 @@ onMounted(async (): Promise<void> => {
                     variant="primary"
                     @click="goToCreate"
                 >
+                    <PlusIcon class="w-4 h-4" />
                     Add tenant
                 </Button>
             </div>
