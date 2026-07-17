@@ -115,7 +115,7 @@ onMounted(async (): Promise<void> => {
         <div class="space-y-6">
             <div class="flex items-center justify-between gap-4">
                 <h1 class="text-2xl font-bold text-gray-900">
-                    Tenants
+                    Platform tenants
                 </h1>
 
                 <Button
