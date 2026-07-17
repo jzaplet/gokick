@@ -2,23 +2,23 @@
 import { useRouter } from 'vue-router';
 import { useAuth } from '@/app-ui/Auth';
 import { useToast } from '@/app-ui/Toast/useToast';
-import { Permission } from '@/app/Auth/enums/resources';
+import { homeForRole } from '@/router/homeForRole';
 import Button from '@/app-ui/Buttons/Button.vue';
 
 const router = useRouter();
 const { success } = useToast();
-const { user, isAuthenticated, logout, hasPermission } = useAuth();
+const { user, isAuthenticated, logout } = useAuth();
 
 const goToLogin = (): void => {
     void router.push({ name: 'login' });
 };
 
 const goToDashboard = (): void => {
-    const name = hasPermission(Permission.AdminDashboardRead) === true
-        ? 'admin-dashboard'
-        : 'user-dashboard';
+    if (user.value === null) {
+        return;
+    }
 
-    void router.push({ name });
+    void router.push(homeForRole(user.value.role));
 };
 
 const handleLogout = async (): Promise<void> => {
