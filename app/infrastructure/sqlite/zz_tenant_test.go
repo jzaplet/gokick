@@ -222,6 +222,13 @@ func TestTenantConformance_FileScanExtractsSQL(t *testing.T) {
 // Escape hatch: a guard computed in a HELPER instead of inline reads as a
 // violation here (the call isn't in this function) — answer it with an inline
 // /* tenant-write-exempt: reason */ marker stating why the write is safe.
+//
+// In a NamedExec query, write the marker WITHOUT the colon —
+// /* tenant-write-exempt - reason */. sqlx scans the entire query string for
+// named parameters, comments included, so a `:` in a marker becomes a bind: `: `
+// binds the empty name and the query fails at runtime with "could not find name".
+// Only the marker substring is matched below, so the dash form is equally valid.
+// (Plain Exec/Select queries are unaffected — they never parse `:`.)
 
 const writeExemptMarker = "tenant-write-exempt"
 

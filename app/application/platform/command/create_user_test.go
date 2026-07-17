@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/user"
 	"gokick/app/internal/testfx"
 )
 
@@ -19,7 +20,7 @@ func TestCreatePlatformUser_CreatesInTheChosenTenant(t *testing.T) {
 
 	target := fx.SeedTenant(t, "Beta")
 
-	h := NewCreatePlatformUserHandler(fx.Users, fx.Tenants, fx.Hasher, true)
+	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher, true)
 	err := h.Handle(ctx, CreatePlatformUserCommand{
 		Nickname: "bob",
 		Password: "correct horse battery staple",
@@ -52,7 +53,7 @@ func TestCreatePlatformUser_UnknownTenantIsAFieldError(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.NewMultitenant(t, filepath.Join(t.TempDir(), "pcreate_badtenant.db"))
 
-	h := NewCreatePlatformUserHandler(fx.Users, fx.Tenants, fx.Hasher, true)
+	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher, true)
 	err := h.Handle(ctx, CreatePlatformUserCommand{
 		Nickname: "bob",
 		Password: "correct horse battery staple",
@@ -80,7 +81,7 @@ func TestCreatePlatformUser_MultitenantRequiresATenant(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.NewMultitenant(t, filepath.Join(t.TempDir(), "pcreate_notenant.db"))
 
-	h := NewCreatePlatformUserHandler(fx.Users, fx.Tenants, fx.Hasher, true)
+	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher, true)
 	err := h.Handle(ctx, CreatePlatformUserCommand{
 		Nickname: "bob",
 		Password: "correct horse battery staple",
@@ -106,7 +107,7 @@ func TestCreatePlatformUser_SingleTenantDefaultsTheTenant(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "pcreate_single.db"))
 
-	h := NewCreatePlatformUserHandler(fx.Users, fx.Tenants, fx.Hasher, false)
+	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher, false)
 	err := h.Handle(ctx, CreatePlatformUserCommand{
 		Nickname: "bob",
 		Password: "correct horse battery staple",
@@ -129,7 +130,7 @@ func TestCreatePlatformUser_RefusesTheSuperadminRole(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "pcreate_super.db"))
 
-	h := NewCreatePlatformUserHandler(fx.Users, fx.Tenants, fx.Hasher, false)
+	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher, false)
 	err := h.Handle(ctx, CreatePlatformUserCommand{
 		Nickname: "root2",
 		Password: "correct horse battery staple",
@@ -149,6 +150,81 @@ func TestCreatePlatformUser_RefusesTheSuperadminRole(t *testing.T) {
 	}
 }
 
+// THE regression: a create dispatched through the real bus, which is the only way
+// an active tenant reaches ctx.
+//
+// Every test above calls Handle with a bare context, so no tenant is active and
+// Save's AssertTenantScope has nothing to compare against — it waves the write
+// through. In production TenantMiddleware resolves the superadmin's own tenant
+// (the default one) into ctx, the row names a DIFFERENT tenant, and the guard
+// rejects it: a 500 on a perfectly valid form. Only a bus dispatch shows that,
+// which is why the handler-level tests all passed while the feature was broken.
+func TestCreatePlatformUser_ThroughTheBus_WritesIntoAnotherTenant(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.NewMultitenant(t, filepath.Join(t.TempDir(), "pcreate_bus.db"))
+	cmdBus, _, _ := fx.NewBuses()
+
+	target := fx.SeedTenant(t, "Stark")
+
+	// What the HTTP stack really hands the handler: superadmin claims, and (via
+	// TenantMiddleware) the default tenant as the active scope.
+	superCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{
+		UserID:   "s1",
+		Role:     "superadmin",
+		TenantID: shared.DefaultTenantID,
+	})
+
+	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher, true)
+	cmd := CreatePlatformUserCommand{
+		Nickname: "tony",
+		Password: "correct horse battery staple",
+		Email:    "tony@example.com",
+		Role:     "admin",
+		TenantID: target.ID,
+	}
+	_, err := testfx.ExecCommand(superCtx, cmdBus, "PlatformCreateUser", cmd,
+		func(ctx context.Context) (any, error) { return nil, h.Handle(ctx, cmd) })
+	if err != nil {
+		t.Fatalf("a superadmin must create into another tenant through the bus: %v", err)
+	}
+
+	got, err := fx.Users.FindByNickname(ctx, "tony")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got == nil {
+		t.Fatal("the user must exist")
+	}
+	if got.TenantID != target.ID {
+		t.Fatalf("user must land in the chosen tenant %q, not the actor's own — got %q",
+			target.ID, got.TenantID)
+	}
+}
+
+// The other half of the same coin: the ADMIN create must STILL be refused when it
+// names a tenant other than the active one. SaveAcrossTenants opened a hole in the
+// scope guard; this proves the hole is confined to the platform plane and did not
+// widen Save for everyone.
+func TestCreateUser_AdminPlane_StillCannotCrossTenants(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.NewMultitenant(t, filepath.Join(t.TempDir(), "acreate_cross.db"))
+
+	other := fx.SeedTenant(t, "Victim Corp")
+
+	// An admin acting inside their own tenant, with a row aimed at another one.
+	adminCtx := shared.ContextWithTenantID(ctx, shared.DefaultTenantID)
+	u := user.NewUser("mallory", "hash", "", user.RoleAdmin, other.ID)
+
+	if err := fx.Users.Save(adminCtx, u); err == nil {
+		t.Fatal("Save must still refuse a row aimed outside the active tenant")
+	}
+
+	// ...and the platform port is the ONLY way through.
+	if err := fx.PlatformUsers.SaveAcrossTenants(adminCtx, u); err != nil {
+		t.Fatalf("SaveAcrossTenants is the sanctioned exception: %v", err)
+	}
+}
+
 // A nickname is globally unique (users.nickname UNIQUE), so the collision check
 // must reach ACROSS tenants — a platform create into tenant B must still trip on
 // a nickname held in tenant A. This is why the shared body's FindByNickname is a
@@ -161,7 +237,7 @@ func TestCreatePlatformUser_NicknameCollidesAcrossTenants(t *testing.T) {
 	tenantB := fx.SeedTenant(t, "Beta")
 	fx.SeedUserInTenant(t, "bob", "user", tenantA.ID)
 
-	h := NewCreatePlatformUserHandler(fx.Users, fx.Tenants, fx.Hasher, true)
+	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher, true)
 	err := h.Handle(ctx, CreatePlatformUserCommand{
 		Nickname: "bob",
 		Password: "correct horse battery staple",

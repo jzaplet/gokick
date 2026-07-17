@@ -149,16 +149,33 @@ func Update(
 	return nil
 }
 
-// Create is the shared body of the two user-creation paths (admin CreateUser and
-// the CLI CreateSuperAdmin). Each caller validates the raw inputs into value
-// objects in ITS OWN order (so per-handler ValidationError precedence is
-// preserved) and decides the role + tenant, then hands them here. Create enforces
-// nickname uniqueness, hashes the password (AFTER the uniqueness check, so a taken
-// nickname skips the bcrypt cost), persists the user, and announces it ONCE — a
-// user.UserCreated event + a user.created audit record. Single-sourcing the
-// announcement is the point (F-031): superadmin creation previously skipped the
-// event, and a copy-paste body is exactly what let that drift.
-func Create(ctx context.Context, d Deps, spec CreateSpec) (*user.User, error) {
+// Create is the shared body of the user-creation paths (admin CreateUser, the CLI
+// CreateSuperAdmin, and the platform CreatePlatformUser). Each caller validates the
+// raw inputs into value objects in ITS OWN order (so per-handler ValidationError
+// precedence is preserved) and decides the role + tenant, then hands them here.
+// Create enforces nickname uniqueness, hashes the password (AFTER the uniqueness
+// check, so a taken nickname skips the bcrypt cost), persists the user, and
+// announces it ONCE — a user.UserCreated event + a user.created audit record.
+// Single-sourcing the announcement is the point (F-031): superadmin creation
+// previously skipped the event, and a copy-paste body is exactly what let that drift.
+//
+// save is the same seam Update's Plane.Save is, and for the same reason: the
+// tenant-scoped Save and the cross-tenant SaveAcrossTenants differ in NAME, so no
+// interface can dispatch between them — a closure is the honest seam. The admin
+// and CLI paths pass Save (a row must be born in the active tenant); the platform
+// path passes SaveAcrossTenants, because a superadmin's own tenant is the default
+// one and the chosen tenant is the entire point.
+//
+// The uniqueness check deliberately stays on d.Repo: FindByNickname is a global
+// identity lookup (nickname is UNIQUE across the whole table), so it must reach
+// across tenants on every plane — a nickname taken in tenant A has to collide with
+// a platform create into tenant B.
+func Create(
+	ctx context.Context,
+	d Deps,
+	spec CreateSpec,
+	save func(context.Context, *user.User) error,
+) (*user.User, error) {
 	existing, err := d.Repo.FindByNickname(ctx, string(spec.Nickname))
 	if err != nil {
 		return nil, err
@@ -176,7 +193,7 @@ func Create(ctx context.Context, d Deps, spec CreateSpec) (*user.User, error) {
 	}
 
 	u := user.NewUser(spec.Nickname, hash, spec.Email, spec.Role, spec.TenantID)
-	if err := d.Repo.Save(ctx, u); err != nil {
+	if err := save(ctx, u); err != nil {
 		return nil, err
 	}
 

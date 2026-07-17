@@ -65,6 +65,9 @@ func (h *CreateSuperAdminHandler) Handle(ctx context.Context, cmd CreateSuperAdm
 	// hash + persist + announce go through the shared create body — the same one
 	// CreateUser uses — so the user.created audit AND the UserCreated event fire for
 	// a superadmin too (previously the event was silently skipped; F-031).
+	// Save, not SaveAcrossTenants: this runs on the CLI's SystemCommandBus, which
+	// has no TenantMiddleware, so there is no active scope for Save's guard to
+	// object to — it trusts the row's explicit tenant. Nothing to cross.
 	_, err = userwrite.Create(
 		ctx,
 		userwrite.Deps{Repo: h.users, Hasher: h.password},
@@ -75,6 +78,7 @@ func (h *CreateSuperAdminHandler) Handle(ctx context.Context, cmd CreateSuperAdm
 			Role:     user.RoleSuperAdmin,
 			TenantID: shared.DefaultTenantID,
 		},
+		h.users.Save,
 	)
 	return err
 }

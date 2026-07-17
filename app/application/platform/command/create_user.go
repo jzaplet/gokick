@@ -26,14 +26,14 @@ type CreatePlatformUserCommand struct {
 func (CreatePlatformUserCommand) RequiredPermission() string { return "platform:users:create" }
 
 type CreatePlatformUserHandler struct {
-	users       user.Repository
+	users       user.PlatformRepository
 	tenants     tenant.Repository
 	password    shared.PasswordHasher
 	multitenant shared.Multitenancy
 }
 
 func NewCreatePlatformUserHandler(
-	users user.Repository,
+	users user.PlatformRepository,
 	tenants tenant.Repository,
 	password shared.PasswordHasher,
 	multitenant shared.Multitenancy,
@@ -89,6 +89,11 @@ func (h *CreatePlatformUserHandler) Handle(
 		return err
 	}
 
+	// SaveAcrossTenants, not Save: the superadmin's own tenant is the default one,
+	// so writing into the CHOSEN tenant is a cross-tenant write and Save's scope
+	// guard rejects it — correctly, since that guard is what stops an admin from
+	// planting a row outside their own tenant. This plane is the sanctioned
+	// exception.
 	_, err = userwrite.Create(
 		ctx,
 		userwrite.Deps{Repo: h.users, Hasher: h.password},
@@ -99,6 +104,7 @@ func (h *CreatePlatformUserHandler) Handle(
 			Role:     role,
 			TenantID: tenantID,
 		},
+		h.users.SaveAcrossTenants,
 	)
 
 	return err

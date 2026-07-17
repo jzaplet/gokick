@@ -74,9 +74,12 @@ const blockedReason = (): string => {
         </td>
         <td class="px-4 py-3 whitespace-nowrap text-right text-sm">
             <div class="flex items-center justify-end gap-1">
+                <!-- Right-aligned: this is the last column, so a centred bubble
+                     would hang past the viewport and be clipped by the card. -->
                 <Tooltip
                     :text="blockedReason()"
-                    :max-width="200"
+                    align="right"
+                    :max-width="220"
                 >
                     <Button
                         variant="danger"
