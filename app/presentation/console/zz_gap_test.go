@@ -10,9 +10,8 @@ import (
 	"time"
 
 	platformcmd "gokick/app/application/platform/command"
+	platformqry "gokick/app/application/platform/query"
 	runapp "gokick/app/application/run"
-	tenantcmd "gokick/app/application/tenant/command"
-	tenantqry "gokick/app/application/tenant/query"
 	usercmd "gokick/app/application/user/command"
 	"gokick/app/domain/shared"
 	"gokick/app/infrastructure/config"
@@ -301,8 +300,8 @@ func newCreateUserCmd(fx *testfx.Fixture, multitenant bool) *cobra.Command {
 		fx.Hasher,
 		shared.Multitenancy(multitenant),
 	)
-	createTenant := tenantcmd.NewCreateTenantHandler(fx.Tenants)
-	getTenant := tenantqry.NewGetTenantHandler(fx.Tenants)
+	createTenant := platformcmd.NewCreateTenantHandler(fx.Tenants)
+	getTenant := platformqry.NewGetTenantHandler(fx.Tenants)
 	cmd := NewCreateUserCommand(
 		createUser,
 		createTenant,
@@ -414,7 +413,7 @@ func TestCreateTenantCommand_CreatesTenant(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "ct_create.db"))
 
 	cmd := NewCreateTenantCommand(
-		tenantcmd.NewCreateTenantHandler(fx.Tenants),
+		platformcmd.NewCreateTenantHandler(fx.Tenants),
 		fx.NewSystemBus(),
 	).Command()
 	cmd.SilenceUsage = true

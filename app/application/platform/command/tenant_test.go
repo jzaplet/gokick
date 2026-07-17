@@ -14,15 +14,15 @@ import (
 // users survives. The UI disables the button, but the button is a hint over a
 // count that was stale the moment it rendered — this is the gate that actually
 // holds.
-func TestDeletePlatformTenant_RefusesTenantWithUsers(t *testing.T) {
+func TestDeleteTenant_RefusesTenantWithUsers(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_delete_busy.db"))
 
 	busy := fx.SeedTenant(t, "Beta")
 	fx.SeedUserInTenant(t, "bob", "user", busy.ID)
 
-	h := NewDeletePlatformTenantHandler(fx.PlatformTenants)
-	err := h.Handle(ctx, DeletePlatformTenantCommand{ID: busy.ID})
+	h := NewDeleteTenantHandler(fx.PlatformTenants)
+	err := h.Handle(ctx, DeleteTenantCommand{ID: busy.ID})
 	if err == nil {
 		t.Fatal("deleting a tenant that still has users must be refused")
 	}
@@ -41,14 +41,14 @@ func TestDeletePlatformTenant_RefusesTenantWithUsers(t *testing.T) {
 	}
 }
 
-func TestDeletePlatformTenant_DeletesEmptyTenant(t *testing.T) {
+func TestDeleteTenant_DeletesEmptyTenant(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_delete_empty.db"))
 
 	empty := fx.SeedTenant(t, "Ghost")
 
-	h := NewDeletePlatformTenantHandler(fx.PlatformTenants)
-	if err := h.Handle(ctx, DeletePlatformTenantCommand{ID: empty.ID}); err != nil {
+	h := NewDeleteTenantHandler(fx.PlatformTenants)
+	if err := h.Handle(ctx, DeleteTenantCommand{ID: empty.ID}); err != nil {
 		t.Fatalf("an empty tenant must be deletable: %v", err)
 	}
 
@@ -65,14 +65,14 @@ func TestDeletePlatformTenant_DeletesEmptyTenant(t *testing.T) {
 // a superadmin. Single-tenant mode puts every user in it and runs.tenant_id
 // DEFAULTs to its id, so deleting it would strand rows — the guard must hold even
 // on the empty tenant this test constructs, where the user-count rule would not.
-func TestDeletePlatformTenant_RefusesDefaultTenantEvenWhenEmpty(t *testing.T) {
+func TestDeleteTenant_RefusesDefaultTenantEvenWhenEmpty(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_delete_default.db"))
 
 	// No users seeded: the default tenant is empty here, so only the identity
 	// guard can save it.
-	h := NewDeletePlatformTenantHandler(fx.PlatformTenants)
-	err := h.Handle(ctx, DeletePlatformTenantCommand{ID: shared.DefaultTenantID})
+	h := NewDeleteTenantHandler(fx.PlatformTenants)
+	err := h.Handle(ctx, DeleteTenantCommand{ID: shared.DefaultTenantID})
 	if err == nil {
 		t.Fatal("the default tenant must never be deletable")
 	}
@@ -86,12 +86,12 @@ func TestDeletePlatformTenant_RefusesDefaultTenantEvenWhenEmpty(t *testing.T) {
 	}
 }
 
-func TestDeletePlatformTenant_UnknownTenantIsNotFound(t *testing.T) {
+func TestDeleteTenant_UnknownTenantIsNotFound(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_delete_404.db"))
 
-	h := NewDeletePlatformTenantHandler(fx.PlatformTenants)
-	err := h.Handle(ctx, DeletePlatformTenantCommand{ID: "01920000-0000-7000-8000-000000000000"})
+	h := NewDeleteTenantHandler(fx.PlatformTenants)
+	err := h.Handle(ctx, DeleteTenantCommand{ID: "01920000-0000-7000-8000-000000000000"})
 	if err == nil {
 		t.Fatal("an unknown tenant must be reported, not silently succeed")
 	}
@@ -104,7 +104,7 @@ func TestDeletePlatformTenant_UnknownTenantIsNotFound(t *testing.T) {
 // Bulk is partial by design: the empty tenants in the selection go, the ones that
 // still have users stay, and `affected` counts only what actually happened. A
 // selection mixing both must not be all-or-nothing in either direction.
-func TestBulkDeletePlatformTenants_DeletesOnlyTheEmptyOnes(t *testing.T) {
+func TestBulkDeleteTenants_DeletesOnlyTheEmptyOnes(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_bulk_mixed.db"))
 
@@ -113,8 +113,8 @@ func TestBulkDeletePlatformTenants_DeletesOnlyTheEmptyOnes(t *testing.T) {
 	busy := fx.SeedTenant(t, "Busy")
 	fx.SeedUserInTenant(t, "bob", "user", busy.ID)
 
-	h := NewBulkDeletePlatformTenantsHandler(fx.PlatformTenants)
-	affected, err := h.Handle(ctx, BulkDeletePlatformTenantsCommand{
+	h := NewBulkDeleteTenantsHandler(fx.PlatformTenants)
+	affected, err := h.Handle(ctx, BulkDeleteTenantsCommand{
 		IDs: []string{empty1.ID, empty2.ID, busy.ID},
 	})
 	if err != nil {
@@ -138,14 +138,14 @@ func TestBulkDeletePlatformTenants_DeletesOnlyTheEmptyOnes(t *testing.T) {
 // The default tenant is spared in bulk too — including all-filtered mode, where
 // nobody enumerated an id and the statement is the only thing standing between a
 // broad selection and the tenant the whole single-tenant mode rests on.
-func TestBulkDeletePlatformTenants_SparesDefaultTenantWhenAllFiltered(t *testing.T) {
+func TestBulkDeleteTenants_SparesDefaultTenantWhenAllFiltered(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_bulk_default.db"))
 
 	victim := fx.SeedTenant(t, "Ghost")
 
-	h := NewBulkDeletePlatformTenantsHandler(fx.PlatformTenants)
-	affected, err := h.Handle(ctx, BulkDeletePlatformTenantsCommand{AllFiltered: true})
+	h := NewBulkDeleteTenantsHandler(fx.PlatformTenants)
+	affected, err := h.Handle(ctx, BulkDeleteTenantsCommand{AllFiltered: true})
 	if err != nil {
 		t.Fatalf("all-filtered bulk delete: %v", err)
 	}
@@ -164,15 +164,15 @@ func TestBulkDeletePlatformTenants_SparesDefaultTenantWhenAllFiltered(t *testing
 // All-filtered mode must delete exactly the set the grid showed — the filters are
 // what the superadmin actually saw, so a filter that fails to reach the statement
 // silently widens the blast radius.
-func TestBulkDeletePlatformTenants_AllFilteredHonoursTheNameFilter(t *testing.T) {
+func TestBulkDeleteTenants_AllFilteredHonoursTheNameFilter(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_bulk_filter.db"))
 
 	matching := fx.SeedTenant(t, "Ghost One")
 	other := fx.SeedTenant(t, "Keep Me")
 
-	h := NewBulkDeletePlatformTenantsHandler(fx.PlatformTenants)
-	affected, err := h.Handle(ctx, BulkDeletePlatformTenantsCommand{
+	h := NewBulkDeleteTenantsHandler(fx.PlatformTenants)
+	affected, err := h.Handle(ctx, BulkDeleteTenantsCommand{
 		AllFiltered: true,
 		Name:        "Ghost",
 	})
@@ -191,12 +191,12 @@ func TestBulkDeletePlatformTenants_AllFilteredHonoursTheNameFilter(t *testing.T)
 	}
 }
 
-func TestBulkDeletePlatformTenants_EmptySelectionIsRefused(t *testing.T) {
+func TestBulkDeleteTenants_EmptySelectionIsRefused(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_bulk_none.db"))
 
-	h := NewBulkDeletePlatformTenantsHandler(fx.PlatformTenants)
-	_, err := h.Handle(ctx, BulkDeletePlatformTenantsCommand{})
+	h := NewBulkDeleteTenantsHandler(fx.PlatformTenants)
+	_, err := h.Handle(ctx, BulkDeleteTenantsCommand{})
 	if err == nil {
 		t.Fatal("an empty selection must be refused, not treated as all-filtered")
 	}

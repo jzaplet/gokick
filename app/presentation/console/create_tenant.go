@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"gokick/app/application/bus"
-	tenantcmd "gokick/app/application/tenant/command"
+	platformcmd "gokick/app/application/platform/command"
 	"gokick/app/domain/tenant"
 
 	"github.com/spf13/cobra"
@@ -16,12 +16,12 @@ import (
 // the SystemCommandBus (operator-trusted: no Authorize/Tenant) like the other
 // create-* commands, so the write is transactional and audited.
 type CreateTenantCommand struct {
-	handler *tenantcmd.CreateTenantHandler
+	handler *platformcmd.CreateTenantHandler
 	sysBus  *bus.SystemCommandBus
 }
 
 func NewCreateTenantCommand(
-	handler *tenantcmd.CreateTenantHandler,
+	handler *platformcmd.CreateTenantHandler,
 	sysBus *bus.SystemCommandBus,
 ) *CreateTenantCommand {
 	return &CreateTenantCommand{handler: handler, sysBus: sysBus}
@@ -46,7 +46,7 @@ func (c *CreateTenantCommand) Command() *cobra.Command {
 }
 
 func (c *CreateTenantCommand) run(ctx context.Context, name string) error {
-	cmd := tenantcmd.CreateTenantCommand{Name: name}
+	cmd := platformcmd.CreateTenantCommand{Name: name}
 
 	t, err := bus.SystemDispatch(ctx, c.sysBus, "CreateTenant", cmd,
 		func(ctx context.Context) (*tenant.Tenant, error) {

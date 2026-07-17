@@ -196,14 +196,14 @@ func TestPlatformTenantCommands_AdminDeniedAtBus(t *testing.T) {
 
 	adminCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{UserID: "a1", Role: "admin"})
 
-	th := NewDeletePlatformTenantHandler(fx.PlatformTenants)
-	deleteCmd := DeletePlatformTenantCommand{ID: victim.ID}
+	th := NewDeleteTenantHandler(fx.PlatformTenants)
+	deleteCmd := DeleteTenantCommand{ID: victim.ID}
 	_, delErr := testfx.ExecCommand(adminCtx, cmdBus, "PlatformDeleteTenant", deleteCmd,
 		func(ctx context.Context) (any, error) { return nil, th.Handle(ctx, deleteCmd) })
 	assertPermissionDenied(t, "delete tenant", delErr)
 
-	bh := NewBulkDeletePlatformTenantsHandler(fx.PlatformTenants)
-	bulkCmd := BulkDeletePlatformTenantsCommand{IDs: []string{victim.ID}}
+	bh := NewBulkDeleteTenantsHandler(fx.PlatformTenants)
+	bulkCmd := BulkDeleteTenantsCommand{IDs: []string{victim.ID}}
 	_, bulkErr := testfx.ExecCommand(adminCtx, cmdBus, "BulkDeletePlatformTenants", bulkCmd,
 		func(ctx context.Context) (any, error) { return bh.Handle(ctx, bulkCmd) })
 	assertPermissionDenied(t, "bulk delete tenants", bulkErr)

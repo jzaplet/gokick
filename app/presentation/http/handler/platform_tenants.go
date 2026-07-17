@@ -8,7 +8,6 @@ import (
 	"gokick/app/application/bus"
 	platformcmd "gokick/app/application/platform/command"
 	platformqry "gokick/app/application/platform/query"
-	tenantcmd "gokick/app/application/tenant/command"
 	"gokick/app/domain/shared"
 	"gokick/app/domain/tenant"
 	"gokick/app/presentation/http/request"
@@ -108,7 +107,7 @@ func (h *PlatformHandler) CreateTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cmd := tenantcmd.CreateTenantCommand{Name: body.Name}
+	cmd := platformcmd.CreateTenantCommand{Name: body.Name}
 
 	err := bus.DispatchVoid(
 		r.Context(),
@@ -134,7 +133,7 @@ func (h *PlatformHandler) CreateTenant(w http.ResponseWriter, r *http.Request) {
 
 // DeleteTenant removes one tenant. Refused with a 400 when it still owns users.
 func (h *PlatformHandler) DeleteTenant(w http.ResponseWriter, r *http.Request) {
-	cmd := platformcmd.DeletePlatformTenantCommand{ID: r.PathValue("id")}
+	cmd := platformcmd.DeleteTenantCommand{ID: r.PathValue("id")}
 
 	err := bus.DispatchVoid(
 		r.Context(),
@@ -165,7 +164,7 @@ func (h *PlatformHandler) BulkDeleteTenants(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	cmd := platformcmd.BulkDeletePlatformTenantsCommand{
+	cmd := platformcmd.BulkDeleteTenantsCommand{
 		IDs:         body.IDs,
 		AllFiltered: body.AllFiltered,
 		Name:        body.Name,

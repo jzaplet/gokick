@@ -9,7 +9,6 @@ import (
 	"gokick/app/application/bus"
 	platformcmd "gokick/app/application/platform/command"
 	platformqry "gokick/app/application/platform/query"
-	tenantcmd "gokick/app/application/tenant/command"
 	"gokick/app/domain/user"
 	"gokick/app/presentation/http/request"
 	"gokick/app/presentation/http/response"
@@ -31,9 +30,9 @@ type PlatformHandler struct {
 	deleteUser       *platformcmd.DeletePlatformUserHandler
 	bulkDelete       *platformcmd.BulkDeletePlatformUsersHandler
 	bulkActive       *platformcmd.BulkSetPlatformUsersActiveHandler
-	createTenant     *tenantcmd.CreateTenantHandler
-	deleteTenant     *platformcmd.DeletePlatformTenantHandler
-	bulkDeleteTenant *platformcmd.BulkDeletePlatformTenantsHandler
+	createTenant     *platformcmd.CreateTenantHandler
+	deleteTenant     *platformcmd.DeleteTenantHandler
+	bulkDeleteTenant *platformcmd.BulkDeleteTenantsHandler
 }
 
 func NewPlatformHandler(
@@ -49,9 +48,9 @@ func NewPlatformHandler(
 	deleteUser *platformcmd.DeletePlatformUserHandler,
 	bulkDelete *platformcmd.BulkDeletePlatformUsersHandler,
 	bulkActive *platformcmd.BulkSetPlatformUsersActiveHandler,
-	createTenant *tenantcmd.CreateTenantHandler,
-	deleteTenant *platformcmd.DeletePlatformTenantHandler,
-	bulkDeleteTenant *platformcmd.BulkDeletePlatformTenantsHandler,
+	createTenant *platformcmd.CreateTenantHandler,
+	deleteTenant *platformcmd.DeleteTenantHandler,
+	bulkDeleteTenant *platformcmd.BulkDeleteTenantsHandler,
 ) *PlatformHandler {
 	return &PlatformHandler{
 		resp:             resp,

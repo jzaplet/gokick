@@ -7,23 +7,23 @@ import (
 	"gokick/app/domain/tenant"
 )
 
-// DeletePlatformTenantCommand deletes one tenant (superadmin plane). A tenant is
+// DeleteTenantCommand deletes one tenant (superadmin plane). A tenant is
 // deletable only once it owns no users — see the handler for why that rule lives
 // in three places at once.
-type DeletePlatformTenantCommand struct {
+type DeleteTenantCommand struct {
 	ID string
 }
 
-func (DeletePlatformTenantCommand) RequiredPermission() string { return "platform:tenants:delete" }
+func (DeleteTenantCommand) RequiredPermission() string { return "platform:tenants:delete" }
 
-type DeletePlatformTenantHandler struct {
+type DeleteTenantHandler struct {
 	tenants tenant.PlatformRepository
 }
 
-func NewDeletePlatformTenantHandler(
+func NewDeleteTenantHandler(
 	tenants tenant.PlatformRepository,
-) *DeletePlatformTenantHandler {
-	return &DeletePlatformTenantHandler{tenants: tenants}
+) *DeleteTenantHandler {
+	return &DeleteTenantHandler{tenants: tenants}
 }
 
 // Handle refuses the default tenant, then deletes iff the tenant owns no users.
@@ -35,9 +35,9 @@ func NewDeletePlatformTenantHandler(
 // tenants(id) means the DB itself refuses a widowed row (the backstop, and the
 // reason the count must include superadmins even though the platform user grid
 // hides them — an FK does not care which role holds the reference).
-func (h *DeletePlatformTenantHandler) Handle(
+func (h *DeleteTenantHandler) Handle(
 	ctx context.Context,
-	cmd DeletePlatformTenantCommand,
+	cmd DeleteTenantCommand,
 ) error {
 	// The default tenant is created by migration, not the factory: in
 	// single-tenant mode every user belongs to it and the runs table DEFAULTs to

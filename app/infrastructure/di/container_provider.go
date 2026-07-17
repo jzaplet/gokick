@@ -14,8 +14,6 @@ import (
 	profilecmd "gokick/app/application/profile/command"
 	profileqry "gokick/app/application/profile/query"
 	runapp "gokick/app/application/run"
-	tenantcmd "gokick/app/application/tenant/command"
-	tenantqry "gokick/app/application/tenant/query"
 	usercmd "gokick/app/application/user/command"
 	userqry "gokick/app/application/user/query"
 	"gokick/app/domain/run"
@@ -322,18 +320,18 @@ func providePermissionsRegistry() *shared.PermissionsRegistry {
 		platformcmd.BulkDeletePlatformUsersCommand{},
 		platformcmd.BulkSetPlatformUsersActiveCommand{},
 		platformcmd.DeletePlatformUserCommand{},
-		platformcmd.DeletePlatformTenantCommand{},
-		platformcmd.BulkDeletePlatformTenantsCommand{},
+		platformcmd.DeleteTenantCommand{},
+		platformcmd.BulkDeleteTenantsCommand{},
 		// Reached from BOTH the CLI (SystemCommandBus) and the superadmin plane
 		// (POST /api/v1/platform/tenants), so it is no longer CLIOnly — it must
 		// enroll, or the FE would never see platform:tenants:create.
-		tenantcmd.CreateTenantCommand{},
+		platformcmd.CreateTenantCommand{},
 		// CLI-only (shared.CLIOnly): dispatched via the SystemCommandBus, no HTTP
 		// route. NewPermissionsRegistry filters them out so their permission never
 		// reaches the FE-facing list. Listed here so the marker is the single
 		// exclusion mechanism (drop the marker → the di outcome test fails).
 		platformcmd.CreateSuperAdminCommand{},
-		tenantqry.GetTenantQuery{},
+		platformqry.GetTenantQuery{},
 	})
 }
 
@@ -404,11 +402,11 @@ func CreateApplication(
 		platformcmd.NewDeletePlatformUserHandler,
 		platformcmd.NewBulkDeletePlatformUsersHandler,
 		platformcmd.NewBulkSetPlatformUsersActiveHandler,
-		platformcmd.NewDeletePlatformTenantHandler,
-		platformcmd.NewBulkDeletePlatformTenantsHandler,
+		platformcmd.NewDeleteTenantHandler,
+		platformcmd.NewBulkDeleteTenantsHandler,
 		platformcmd.NewCreateSuperAdminHandler,
-		tenantcmd.NewCreateTenantHandler,
-		tenantqry.NewGetTenantHandler,
+		platformcmd.NewCreateTenantHandler,
+		platformqry.NewGetTenantHandler,
 		dashboardqry.NewGetUserDashboardHandler,
 		dashboardqry.NewGetAdminDashboardHandler,
 		providePublicFS,

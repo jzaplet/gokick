@@ -7,7 +7,7 @@ import (
 	"gokick/app/domain/tenant"
 )
 
-// BulkDeletePlatformTenantsCommand deletes every SELECTED tenant that owns no
+// BulkDeleteTenantsCommand deletes every SELECTED tenant that owns no
 // users. Same dual-mode selection as the user bulk pair (explicit ids, or
 // all_filtered + the tenants grid's filter set).
 //
@@ -15,25 +15,25 @@ import (
 // The two tenants that must survive are refused by the statement rather than
 // filtered out of the selection: the default tenant by id, and any tenant still
 // holding users by the same emptiness condition the single-row delete uses.
-type BulkDeletePlatformTenantsCommand struct {
+type BulkDeleteTenantsCommand struct {
 	IDs         []string
 	AllFiltered bool
 	Name        string
 	Plan        string
 }
 
-func (BulkDeletePlatformTenantsCommand) RequiredPermission() string {
+func (BulkDeleteTenantsCommand) RequiredPermission() string {
 	return "platform:tenants:delete"
 }
 
-type BulkDeletePlatformTenantsHandler struct {
+type BulkDeleteTenantsHandler struct {
 	tenants tenant.PlatformRepository
 }
 
-func NewBulkDeletePlatformTenantsHandler(
+func NewBulkDeleteTenantsHandler(
 	tenants tenant.PlatformRepository,
-) *BulkDeletePlatformTenantsHandler {
-	return &BulkDeletePlatformTenantsHandler{tenants: tenants}
+) *BulkDeleteTenantsHandler {
+	return &BulkDeleteTenantsHandler{tenants: tenants}
 }
 
 // Handle returns how many tenants were actually deleted — NOT how many were
@@ -41,9 +41,9 @@ func NewBulkDeletePlatformTenantsHandler(
 // says two; the caller turns that into an honest toast. Skipping is the designed
 // outcome (the superadmin selects freely), so a non-empty tenant in the
 // selection is not an error.
-func (h *BulkDeletePlatformTenantsHandler) Handle(
+func (h *BulkDeleteTenantsHandler) Handle(
 	ctx context.Context,
-	cmd BulkDeletePlatformTenantsCommand,
+	cmd BulkDeleteTenantsCommand,
 ) (int64, error) {
 	sel := tenant.BulkSelection{
 		IDs:         cmd.IDs,
