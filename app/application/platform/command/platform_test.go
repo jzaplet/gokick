@@ -158,10 +158,59 @@ func TestPlatformWriteCommands_AdminDeniedAtBus(t *testing.T) {
 		func(ctx context.Context) (any, error) { return nil, dh.Handle(ctx, deleteCmd) })
 	assertPermissionDenied(t, "delete", delErr)
 
-	// The denied writes never ran — bob is untouched.
+	// Create is the one that matters most: it writes through SaveAcrossTenants,
+	// which is deliberately exempt from the scope guard. The permission string is
+	// the ONLY thing standing between an admin and a row planted in any tenant.
+	ch := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher, false)
+	createCmd := CreatePlatformUserCommand{
+		Nickname: "mallory",
+		Password: "correct horse battery staple",
+		Email:    "m@x.com",
+		Role:     "admin",
+		TenantID: shared.DefaultTenantID,
+	}
+	_, createErr := testfx.ExecCommand(adminCtx, cmdBus, "PlatformCreateUser", createCmd,
+		func(ctx context.Context) (any, error) { return nil, ch.Handle(ctx, createCmd) })
+	assertPermissionDenied(t, "create user", createErr)
+
+	// The denied writes never ran — bob is untouched and mallory never existed.
 	got, err := fx.Users.FindByID(ctx, victim.ID)
 	if err != nil || got.Nickname != "bob" {
 		t.Fatal("admin-denied platform writes must not have executed")
+	}
+	if m, _ := fx.Users.FindByNickname(ctx, "mallory"); m != nil {
+		t.Fatal("a denied platform create must not have written a row")
+	}
+}
+
+// The tenant write commands get the same treatment, for the same reason: each
+// gates on a platform:* string, and a fat-fingered admin:* one would hand a
+// tenant admin the power to delete tenants (or mint them) with every other test
+// still green. Create-tenant is included because it is no longer CLIOnly — the
+// bus's Authorize is now the only thing gating it on the HTTP path.
+func TestPlatformTenantCommands_AdminDeniedAtBus(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "platform_tenant_authz.db"))
+	victim := fx.SeedTenant(t, "Ghost")
+	cmdBus, _, _ := fx.NewBuses()
+
+	adminCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{UserID: "a1", Role: "admin"})
+
+	th := NewDeletePlatformTenantHandler(fx.PlatformTenants)
+	deleteCmd := DeletePlatformTenantCommand{ID: victim.ID}
+	_, delErr := testfx.ExecCommand(adminCtx, cmdBus, "PlatformDeleteTenant", deleteCmd,
+		func(ctx context.Context) (any, error) { return nil, th.Handle(ctx, deleteCmd) })
+	assertPermissionDenied(t, "delete tenant", delErr)
+
+	bh := NewBulkDeletePlatformTenantsHandler(fx.PlatformTenants)
+	bulkCmd := BulkDeletePlatformTenantsCommand{IDs: []string{victim.ID}}
+	_, bulkErr := testfx.ExecCommand(adminCtx, cmdBus, "BulkDeletePlatformTenants", bulkCmd,
+		func(ctx context.Context) (any, error) { return bh.Handle(ctx, bulkCmd) })
+	assertPermissionDenied(t, "bulk delete tenants", bulkErr)
+
+	// The tenant survived both denied deletes.
+	if got, _ := fx.Tenants.FindByID(ctx, victim.ID); got == nil {
+		t.Fatal("a denied tenant delete must not have executed")
 	}
 }
 
