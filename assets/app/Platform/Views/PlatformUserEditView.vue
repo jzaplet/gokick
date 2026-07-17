@@ -29,8 +29,10 @@ const clearFieldError = (field: keyof PlatformUserFormErrors): void => {
 // The form emits the create superset (it carries a tenant_id for create mode).
 // An edit must never move a user between tenants, so PUT's contract has no
 // tenant_id at all — the field is dropped HERE, explicitly, rather than sent and
-// silently ignored by the backend. The named rest binding is what makes that a
-// compile-checked fact: PlatformUserFormData has exactly these four keys.
+// silently ignored by the backend. The PlatformUserFormData annotation is what
+// makes the drop compile-checked: the literal must name every key of that type and
+// may name no others, so tenant_id cannot creep back in and a new required field
+// cannot be forgotten.
 const handleSubmit = async (data: PlatformUserCreateData): Promise<void> => {
     isLoading.value = true;
     errors.value = {};

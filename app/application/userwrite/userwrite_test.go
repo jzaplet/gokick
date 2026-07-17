@@ -13,7 +13,9 @@ import (
 
 // spec builds a CreateSpec from raw strings, failing the test on invalid input —
 // the value-object parsing is the callers' job and is not what these tests are
-// about.
+// about. An empty role means "the spec does not name one", which is how
+// create_superadmin.go builds its spec; it is not routed through NewRole, since
+// that (correctly) rejects the empty string.
 func spec(t *testing.T, nickname, password, role string) CreateSpec {
 	t.Helper()
 
@@ -29,18 +31,22 @@ func spec(t *testing.T, nickname, password, role string) CreateSpec {
 	if err != nil {
 		t.Fatalf("email: %v", err)
 	}
-	r, err := user.NewRole(role)
-	if err != nil {
-		t.Fatalf("role: %v", err)
-	}
 
-	return CreateSpec{
+	s := CreateSpec{
 		Nickname: n,
 		Password: p,
 		Email:    e,
-		Role:     r,
 		TenantID: shared.DefaultTenantID,
 	}
+	if role != "" {
+		r, err := user.NewRole(role)
+		if err != nil {
+			t.Fatalf("role: %v", err)
+		}
+		s.Role = r
+	}
+
+	return s
 }
 
 // The floor under every create handler: the shared body refuses the superadmin
@@ -109,18 +115,17 @@ func TestCreate_RefusesSuperAdminBeforeTheUniquenessLookup(t *testing.T) {
 }
 
 // The other half of the rule: making Create default-deny must not break the one
-// sanctioned minter. CreateSuperAdmin stamps the role itself, so the caller cannot
-// ask for anything else — and the account it writes really is a superadmin.
+// sanctioned minter. CreateSuperAdmin stamps the role itself — the entry point
+// decides, not the call site — so a spec that never mentions a role still yields a
+// superadmin. This is how create_superadmin.go calls it.
 func TestCreateSuperAdmin_MintsDespiteCreatesRefusal(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_superadmin_minted.db"))
 
-	// Role deliberately "user": CreateSuperAdmin overrides it, which is what makes
-	// the entry point — not the call site — the thing that decides.
 	u, err := CreateSuperAdmin(
 		ctx,
 		Deps{Repo: fx.Users, Hasher: fx.Hasher},
-		spec(t, "root", "password123", "user"),
+		spec(t, "root", "password123", ""),
 		fx.Users.Save,
 	)
 	if err != nil {
@@ -139,5 +144,58 @@ func TestCreateSuperAdmin_MintsDespiteCreatesRefusal(t *testing.T) {
 	}
 	if got.Role != string(user.RoleSuperAdmin) {
 		t.Fatalf("the persisted row must be a superadmin, got %q", got.Role)
+	}
+}
+
+// Stamping the role must not mean SILENTLY overwriting a conflicting one.
+// CreateSuperAdmin shares Create's exact signature, so the two are
+// interchangeable wherever one is held in a variable — a spec meaning RoleUser
+// that reaches the wrong branch would otherwise come out a superadmin with
+// neither the compiler nor a guard objecting, defeating the refusal this whole
+// split exists to make unforgettable.
+func TestCreateSuperAdmin_RefusesASpecAskingForAnotherRole(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_superadmin_conflict.db"))
+
+	_, err := CreateSuperAdmin(
+		ctx,
+		Deps{Repo: fx.Users, Hasher: fx.Hasher},
+		spec(t, "confused", "password123", "user"),
+		fx.Users.Save,
+	)
+	if err == nil {
+		t.Fatal("a spec asking for a non-superadmin role must be refused, not overwritten")
+	}
+	var ve *shared.ValidationError
+	if !errors.As(err, &ve) || ve.Field != "role" {
+		t.Fatalf("expected *shared.ValidationError{Field:\"role\"}, got %T: %v", err, err)
+	}
+
+	got, err := fx.Users.FindByNickname(ctx, "confused")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got != nil {
+		t.Fatal("no user may be persisted by a refused create")
+	}
+}
+
+// An explicit superadmin role agrees with what the entry point does, so it is
+// accepted — the refusal above is about a CONFLICT, not about mentioning the role.
+func TestCreateSuperAdmin_AcceptsAnExplicitSuperAdminRole(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_superadmin_explicit.db"))
+
+	u, err := CreateSuperAdmin(
+		ctx,
+		Deps{Repo: fx.Users, Hasher: fx.Hasher},
+		spec(t, "root", "password123", "superadmin"),
+		fx.Users.Save,
+	)
+	if err != nil {
+		t.Fatalf("an explicit superadmin role must be accepted: %v", err)
+	}
+	if u.Role != string(user.RoleSuperAdmin) {
+		t.Fatalf("expected a superadmin, got %q", u.Role)
 	}
 }

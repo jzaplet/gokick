@@ -39,8 +39,8 @@ func NewBulkDeleteTenantsHandler(
 // Handle returns how many tenants were actually deleted — NOT how many were
 // selected. A selection of five where three still have users deletes two and
 // says two; the caller turns that into an honest toast. Skipping is the designed
-// outcome (the superadmin selects freely), so a non-empty tenant in the
-// selection is not an error.
+// outcome (the superadmin selects freely), so a tenant the rule spares is not an
+// error.
 func (h *BulkDeleteTenantsHandler) Handle(
 	ctx context.Context,
 	cmd BulkDeleteTenantsCommand,
@@ -54,7 +54,7 @@ func (h *BulkDeleteTenantsHandler) Handle(
 		return 0, &shared.ValidationError{Message: "nothing selected"}
 	}
 
-	affected, err := h.tenants.BulkDeleteEmptyAcrossTenants(ctx, sel)
+	deleted, err := h.tenants.BulkDeleteEmptyAcrossTenants(ctx, sel)
 	if err != nil {
 		return 0, err
 	}
@@ -62,22 +62,32 @@ func (h *BulkDeleteTenantsHandler) Handle(
 	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
 		Action:     "tenant.bulk_deleted",
 		TargetType: "tenant",
-		Metadata:   bulkTenantAuditMeta(affected, sel),
+		Metadata:   bulkTenantAuditMeta(deleted, sel),
 	})
 
-	return affected, nil
+	return int64(len(deleted)), nil
 }
 
-// bulkTenantAuditMeta mirrors platformBulkAuditMeta: record the filters in
-// all-filtered mode (the ids are not knowable from the request) and the explicit
-// ids otherwise. Note the ids recorded are the SELECTED ones — `affected` is what
-// says how many of them actually went.
-func bulkTenantAuditMeta(affected int64, sel tenant.BulkSelection) map[string]any {
-	m := map[string]any{"affected": affected, "all_filtered": sel.AllFiltered}
+// bulkTenantAuditMeta records the tenants that ACTUALLY went, which is the whole
+// job here: the delete is irreversible and cross-tenant, the rows are gone
+// afterwards, and in all-filtered mode nobody enumerated a selection — so an
+// "affected: 2" with no ids could never be resolved back into which two. The
+// single-row twin records TargetID + name for the same reason.
+//
+// The SELECTION is recorded alongside (the ids asked for, or the filters in
+// all-filtered mode) because the gap between what was asked and what happened is
+// itself the interesting part of the record — "selected 5, deleted these 2" says
+// three were spared, and by which rule.
+func bulkTenantAuditMeta(deleted []string, sel tenant.BulkSelection) map[string]any {
+	m := map[string]any{
+		"affected":     len(deleted),
+		"deleted_ids":  deleted,
+		"all_filtered": sel.AllFiltered,
+	}
 	if sel.AllFiltered {
 		m["filters"] = map[string]any{"name": sel.Filters.Name, "plan": sel.Filters.Plan}
 	} else {
-		m["ids"] = sel.IDs
+		m["selected_ids"] = sel.IDs
 	}
 
 	return m

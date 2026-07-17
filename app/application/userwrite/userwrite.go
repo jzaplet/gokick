@@ -182,17 +182,31 @@ func Create(
 }
 
 // CreateSuperAdmin mints a superadmin: the ONE sanctioned exception to Create's
-// refusal, and the reason that refusal can be a default instead of a habit. It
-// stamps the role itself, so no caller can arrive here meaning to create anything
-// else. Reachable only out-of-band — the CLI's create-superadmin over the
+// refusal, and the reason that refusal can be a default instead of a habit.
+// Reachable only out-of-band — the CLI's create-superadmin over the
 // SystemCommandBus. (The seeder's superadmin never comes through here: it writes
-// via the repository, so it is untouched by this refusal.)
+// via the repository, so it is untouched by Create's refusal.)
+//
+// It stamps the role itself so the ENTRY POINT decides, not the call site — but it
+// refuses a spec that asked for a different one rather than silently overwriting
+// it. Silence would matter because this shares Create's exact signature: the two
+// are interchangeable wherever one is held in a variable, so a spec that says
+// RoleUser flowing into the wrong branch would come out a superadmin with nothing
+// objecting. An unset Role is the ordinary case (the caller has nothing to say);
+// an explicit superadmin is fine; anything else is a caller that believes it is
+// creating something this function does not create.
 func CreateSuperAdmin(
 	ctx context.Context,
 	d Deps,
 	spec CreateSpec,
 	save func(context.Context, *user.User) error,
 ) (*user.User, error) {
+	if spec.Role != "" && !spec.Role.IsSuperAdmin() {
+		return nil, &shared.ValidationError{
+			Field:   "role",
+			Message: "CreateSuperAdmin mints a superadmin; it cannot create a " + string(spec.Role),
+		}
+	}
 	spec.Role = user.RoleSuperAdmin
 
 	return create(ctx, d, spec, save)
@@ -254,11 +268,18 @@ func create(
 		TenantID:  u.TenantID,
 		Timestamp: time.Now(),
 	})
+	// tenant_id rides in the metadata for the same reason UserCreated carries it:
+	// on the platform plane the actor's tenant and the target's tenant are
+	// different, and this is the one write that can plant a user in ANY tenant.
+	// The middleware enriches the record with the actor and their IP, and
+	// AuditRecord has no tenant column — so without this the trail says "superadmin
+	// S created user U with role=admin" and nothing, anywhere, says which tenant U
+	// was born in. Off the ROW, never off ctx (see the UserCreated doc).
 	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
 		Action:     "user.created",
 		TargetType: "user",
 		TargetID:   u.ID,
-		Metadata:   map[string]any{"role": u.Role},
+		Metadata:   map[string]any{"role": u.Role, "tenant_id": u.TenantID},
 	})
 
 	return u, nil

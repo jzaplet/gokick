@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -41,6 +42,66 @@ func TestDeleteTenant_RefusesTenantWithUsers(t *testing.T) {
 	}
 }
 
+// A tenant owns more than its users. runs.tenant_id carries NO foreign key, so
+// nothing under the gate would refuse a widowed run: the tenant would go, the run
+// would survive pointing at nothing, and the worker would later restore a dead
+// tenant id into the handler ctx — where scoped reads match zero rows WITHOUT
+// erroring, so a resumed run can "succeed" against an empty world.
+//
+// The users-first rule is what makes this reachable: a tenant with users is
+// refused, so emptying it is the required first step, and that is exactly the step
+// that strands its runs.
+func TestDeleteTenant_RefusesTenantWithUnfinishedRuns(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_delete_runs.db"))
+
+	busy := fx.SeedTenant(t, "Exporting")
+	fx.SeedRunInTenant(t, "e2e:noop", busy.ID)
+
+	h := NewDeleteTenantHandler(fx.PlatformTenants)
+	err := h.Handle(ctx, DeleteTenantCommand{ID: busy.ID})
+	if err == nil {
+		t.Fatal("a tenant that still has an unfinished run must not be deletable")
+	}
+	var ve *shared.ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("expected *shared.ValidationError (400), got %T: %v", err, err)
+	}
+
+	got, err := fx.Tenants.FindByID(ctx, busy.ID)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got == nil {
+		t.Fatal("the tenant must survive so its run keeps a live tenant to point at")
+	}
+}
+
+// The flip side, and the reason the gate tests NON-TERMINAL runs rather than any
+// run at all: a finished run is history. It is never claimed again, so it cannot
+// resume under a dead tenant and must not pin the tenant forever.
+func TestDeleteTenant_TerminalRunsDoNotPinTheTenant(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_delete_runs_done.db"))
+
+	done := fx.SeedTenant(t, "Finished")
+	r := fx.SeedRunInTenant(t, "e2e:noop", done.ID)
+	fx.MarkRunCompleted(t, r.ID)
+
+	h := NewDeleteTenantHandler(fx.PlatformTenants)
+	if err := h.Handle(ctx, DeleteTenantCommand{ID: done.ID}); err != nil {
+		t.Fatalf("a tenant whose only runs are finished must be deletable: %v", err)
+	}
+
+	got, err := fx.Tenants.FindByID(ctx, done.ID)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got != nil {
+		t.Fatal("the tenant must be gone")
+	}
+}
+
 func TestDeleteTenant_DeletesEmptyTenant(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_delete_empty.db"))
@@ -65,16 +126,32 @@ func TestDeleteTenant_DeletesEmptyTenant(t *testing.T) {
 // a superadmin. Single-tenant mode puts every user in it and runs.tenant_id
 // DEFAULTs to its id, so deleting it would strand rows — the guard must hold even
 // on the empty tenant this test constructs, where the user-count rule would not.
+//
+// It asserts the MESSAGE, not just survival, and that is the whole point. There are
+// now two floors under the default tenant — this handler's identity check and the
+// repository's `id != ?` — so "it survived" is proved by the repo alone and would
+// stay true with this guard deleted. What the guard uniquely owns is the honest
+// answer: without it the delete falls through to the generic branch and tells an
+// operator to remove users from a tenant that has none. Survival is the repo's
+// test (see TestDeleteIfEmptyAcrossTenants_RefusesTheDefaultTenantInSQL); the
+// reason is this one's.
 func TestDeleteTenant_RefusesDefaultTenantEvenWhenEmpty(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_delete_default.db"))
 
-	// No users seeded: the default tenant is empty here, so only the identity
-	// guard can save it.
+	// No users, no runs: the default tenant owns nothing here, so the emptiness
+	// rule would happily let it go — only identity refuses it.
 	h := NewDeleteTenantHandler(fx.PlatformTenants)
 	err := h.Handle(ctx, DeleteTenantCommand{ID: shared.DefaultTenantID})
 	if err == nil {
 		t.Fatal("the default tenant must never be deletable")
+	}
+	var ve *shared.ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("expected *shared.ValidationError, got %T: %v", err, err)
+	}
+	if !strings.Contains(ve.Message, "default tenant") {
+		t.Fatalf("the refusal must name the real reason (identity), got %q", ve.Message)
 	}
 
 	got, err := fx.Tenants.FindByID(ctx, shared.DefaultTenantID)
@@ -86,6 +163,11 @@ func TestDeleteTenant_RefusesDefaultTenantEvenWhenEmpty(t *testing.T) {
 	}
 }
 
+// An unknown tenant is reported FIELDLESSLY on purpose. The id is a path param and
+// the grid has no field to route an `id` key to, so Responder would send it to a
+// key nothing on the screen reads and the operator would see only a generic
+// "Failed to delete the tenant." — the message would exist and never be shown.
+// Fieldless goes to `general`, which the toast reads.
 func TestDeleteTenant_UnknownTenantIsNotFound(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_delete_404.db"))
@@ -96,8 +178,11 @@ func TestDeleteTenant_UnknownTenantIsNotFound(t *testing.T) {
 		t.Fatal("an unknown tenant must be reported, not silently succeed")
 	}
 	var ve *shared.ValidationError
-	if !errors.As(err, &ve) || ve.Field != "id" {
-		t.Fatalf("expected *shared.ValidationError{Field:\"id\"}, got %T: %v", err, err)
+	if !errors.As(err, &ve) {
+		t.Fatalf("expected *shared.ValidationError, got %T: %v", err, err)
+	}
+	if ve.Field != "" {
+		t.Fatalf("the refusal must be fieldless so it reaches the toast, got field %q", ve.Field)
 	}
 }
 
@@ -221,6 +306,39 @@ func TestBulkDeleteTenants_AllFilteredHonoursTheNameFilter(t *testing.T) {
 	}
 	if got, _ := fx.Tenants.FindByID(ctx, other.ID); got == nil {
 		t.Fatal("a tenant OUTSIDE the filter must never be touched")
+	}
+}
+
+// The Plan filter has to reach the statement for the same reason Name does, and it
+// gets its own test because it is the half a Name-only test cannot speak for: a
+// selection built from `ListFilters{Name: cmd.Name}` — one plausible slip — passes
+// every other test in this file while turning "delete the free-plan tenants" into
+// "delete every empty tenant in the install". The grid offers the plan filter, so
+// this is a path a superadmin can actually take.
+func TestBulkDeleteTenants_AllFilteredHonoursThePlanFilter(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_bulk_plan.db"))
+
+	free := fx.SeedTenant(t, "Free One")
+	paid := fx.SeedTenantWithPlan(t, "Paid One", "pro")
+
+	h := NewBulkDeleteTenantsHandler(fx.PlatformTenants)
+	affected, err := h.Handle(ctx, BulkDeleteTenantsCommand{
+		AllFiltered: true,
+		Plan:        "free",
+	})
+	if err != nil {
+		t.Fatalf("plan-filtered bulk delete: %v", err)
+	}
+	if affected != 1 {
+		t.Fatalf("only the free-plan tenant should go, got affected=%d", affected)
+	}
+
+	if got, _ := fx.Tenants.FindByID(ctx, free.ID); got != nil {
+		t.Fatal("the tenant matching the plan filter must be deleted")
+	}
+	if got, _ := fx.Tenants.FindByID(ctx, paid.ID); got == nil {
+		t.Fatal("a tenant OUTSIDE the plan filter must never be touched")
 	}
 }
 

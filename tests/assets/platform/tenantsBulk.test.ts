@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ref } from 'vue';
+import type { Ref } from 'vue';
+import { nextTick, ref } from 'vue';
 import type { GridState } from '@/app-ui/DataGrid/createGridState';
 
 // The toast is the only place the partial-delete semantics reach the user, and
@@ -38,6 +39,30 @@ const makeGrid = (opts: { ids: string[]; allFiltered?: boolean; count?: number }
     };
 
     return state as unknown as GridState<{ name: string; plan: string }>;
+};
+
+// The disarm tests have to DRIVE the selection, which GridState publishes as a
+// read-only ComputedRef — so they keep the writable ref that backs the stub rather
+// than writing through the grid's own surface.
+const makeDrivableGrid = (count: number): {
+    grid: GridState<{ name: string; plan: string }>;
+    selectedCount: Ref<number>;
+} => {
+    const selectedCount = ref(count);
+    const state = {
+        selectedCount,
+        isAllFilteredSelected: ref(false),
+        selectedIds: (): string[] => ['a'],
+        filters: { name: '', plan: '' },
+        clearSelection: vi.fn(),
+        deselect: vi.fn(),
+        reload: vi.fn(),
+    };
+
+    return {
+        grid: state as unknown as GridState<{ name: string; plan: string }>,
+        selectedCount,
+    };
 };
 
 const respondAffected = (affected: number): void => {
@@ -120,8 +145,8 @@ describe('usePlatformTenantsBulk — the affected count drives the toast', () =>
         });
     });
 
-    // The selection can vanish under an open modal (a debounced filter change
-    // clears it) between arming the action and confirming it.
+    // The selection can vanish under an open modal (a filter change clears it)
+    // between arming the action and confirming it.
     it('posts nothing when the selection vanished under the modal', async () => {
         const bulk = usePlatformTenantsBulk(makeGrid({ ids: [] }));
 
@@ -129,5 +154,76 @@ describe('usePlatformTenantsBulk — the affected count drives the toast', () =>
         await bulk.runPendingBulk();
 
         expect(authFetch).not.toHaveBeenCalled();
+    });
+
+    // Confirming has to be something the operator ARMED. Without this, a
+    // runPendingBulk that deletes unconditionally would let handleBulkAction stop
+    // arming altogether — every other test here would stay green while the grid's
+    // Delete button did nothing in the browser.
+    it('posts nothing when no action was armed', async () => {
+        respondAffected(2);
+        const bulk = usePlatformTenantsBulk(makeGrid({ ids: ['a', 'b'] }));
+
+        await bulk.runPendingBulk();
+
+        expect(authFetch).not.toHaveBeenCalled();
+    });
+
+    it('ignores a bulk action key it does not own', async () => {
+        respondAffected(2);
+        const bulk = usePlatformTenantsBulk(makeGrid({ ids: ['a', 'b'] }));
+
+        bulk.handleBulkAction('deactivate');
+        await bulk.runPendingBulk();
+
+        expect(authFetch).not.toHaveBeenCalled();
+    });
+});
+
+// ConfirmModal is purely prop-driven (`:show="bulkConfirm !== null"`), so a
+// selection cleared under it makes the modal VANISH without emitting @cancel —
+// cancelPendingBulk never runs. If that left the action armed, the modal would
+// re-open by itself the next time any row was ticked, over a selection the operator
+// never armed and one muscle-memory click from a real delete.
+describe('usePlatformTenantsBulk — a vanishing selection disarms', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('does not re-open the confirm when the selection comes back', async () => {
+        const { grid, selectedCount } = makeDrivableGrid(3);
+        const bulk = usePlatformTenantsBulk(grid);
+
+        bulk.handleBulkAction('delete');
+        await nextTick();
+        expect(bulk.bulkConfirm.value).not.toBeNull();
+
+        // A filter change clears the selection out from under the open modal.
+        selectedCount.value = 0;
+        await nextTick();
+        expect(bulk.bulkConfirm.value).toBeNull();
+
+        // The operator ticks one row again. Nothing was armed since, so nothing
+        // may pop up.
+        selectedCount.value = 1;
+        await nextTick();
+        expect(bulk.bulkConfirm.value).toBeNull();
+    });
+
+    it('still arms normally after the selection was cleared and re-made', async () => {
+        const { grid, selectedCount } = makeDrivableGrid(1);
+        const bulk = usePlatformTenantsBulk(grid);
+
+        bulk.handleBulkAction('delete');
+        await nextTick();
+
+        selectedCount.value = 0;
+        await nextTick();
+
+        selectedCount.value = 1;
+        bulk.handleBulkAction('delete');
+        await nextTick();
+
+        expect(bulk.bulkConfirm.value).not.toBeNull();
     });
 });

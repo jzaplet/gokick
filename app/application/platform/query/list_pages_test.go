@@ -15,15 +15,22 @@ func superCtx() context.Context {
 	})
 }
 
-// The platform users grid: tenant-name filter narrows page AND total, the
-// tenant sort falls back for hostile values, and the last_login sort (the
-// julianday case) executes without error even when nobody ever logged in.
+// The platform users grid: tenant-name filter narrows page AND total, an
+// unrecognised sort falls back to NICKNAME (what the grid header renders as its
+// default), and the last_login sort (the julianday case) executes without error
+// even when nobody ever logged in.
+//
+// The fixture is deliberately CROSSED — the tenant sorting first holds the user
+// sorting last — so nickname order and tenant order disagree. An aligned fixture
+// (alice@acme, bob@beta) makes both fallbacks produce the same rows, which is how
+// this test previously kept asserting a tenant-name fallback that no longer
+// existed: it passed either way and pinned nothing.
 func TestListAllUsers_GridCriteria(t *testing.T) {
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "platform_users_grid.db"))
 	tenantA := fx.SeedTenant(t, "acme")
 	tenantB := fx.SeedTenant(t, "beta")
-	fx.SeedUserInTenant(t, "alice", "admin", tenantA.ID)
-	fx.SeedUserInTenant(t, "bob", "user", tenantB.ID)
+	fx.SeedUserInTenant(t, "zoe", "admin", tenantA.ID)
+	fx.SeedUserInTenant(t, "alice", "user", tenantB.ID)
 
 	h := NewListAllUsersHandler(fx.PlatformUsers)
 
@@ -31,7 +38,7 @@ func TestListAllUsers_GridCriteria(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tenant filter: %v", err)
 	}
-	if page.Total != 1 || len(page.Items) != 1 || page.Items[0].Nickname != "alice" {
+	if page.Total != 1 || len(page.Items) != 1 || page.Items[0].Nickname != "zoe" {
 		t.Fatalf("tenant filter: got total %d, items %d", page.Total, len(page.Items))
 	}
 
@@ -43,12 +50,14 @@ func TestListAllUsers_GridCriteria(t *testing.T) {
 		t.Fatalf("last_login sort: got total %d want 2", page.Total)
 	}
 
+	// alice is in "beta" and zoe in "acme", so this distinguishes the two
+	// fallbacks: nickname ASC leads with alice, tenant-name ASC would lead with zoe.
 	page, err = h.Handle(superCtx(), ListAllUsersQuery{SortBy: "drop table users"})
 	if err != nil {
 		t.Fatalf("hostile sort: %v", err)
 	}
-	if len(page.Items) != 2 || page.Items[0].TenantName != "acme" {
-		t.Fatalf("hostile sort must fall back to tenant name order, got %+v", page.Items)
+	if len(page.Items) != 2 || page.Items[0].Nickname != "alice" {
+		t.Fatalf("hostile sort must fall back to nickname order, got %+v", page.Items)
 	}
 }
 

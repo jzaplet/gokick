@@ -70,9 +70,9 @@ commandu. Je thread-safe (mutex) a má příznak `forbidden`. Instance je
    (`shared.ContextWithEventCollector`).
 2. `TransactionMiddleware` otevře transakci.
 3. Handler volá `shared.EventCollectorFromContext(ctx).Collect(event)` — typicky
-   hned po úspěšném uložení (viz sdílené create tělo `userwrite.Create`, na které
-   `create_user.go` deleguje, aby CreateUser, CreateSuperAdmin i CreatePlatformUser
-   emitovaly stejně).
+   hned po úspěšném uložení (viz sdílené create tělo `userwrite.create`, do kterého
+   ústí obě vstupní brány `userwrite.Create` i `userwrite.CreateSuperAdmin`, aby
+   CreateUser, CreateSuperAdmin i CreatePlatformUser emitovaly stejně).
 4. Transakce se potvrdí (commit), nebo se při chybě vrátí zpět (rollback).
 5. Když `next` vrátí chybu, middleware ji jen propaguje a **flush přeskočí**
    (eventy zmizí). Když je commit OK, `collector.Flush()` vrátí eventy a každý se

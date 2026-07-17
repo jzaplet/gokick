@@ -1,5 +1,5 @@
 import type { ComputedRef, Ref } from 'vue';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type { GridState } from '@/app-ui/DataGrid/createGridState';
 import type { BulkAction } from '@/app-ui/BulkActions/BulkActionBar.vue';
 import type { BulkResult } from '@/app-ui/BulkActions/BulkResult';
@@ -52,9 +52,20 @@ export const usePlatformTenantsBulk = (grid: GridState<TenantGridFilters>): Tena
     const pendingBulk = ref<'delete' | null>(null);
     const tenantToDelete = ref<DeleteTarget | null>(null);
 
+    // A vanishing selection must DISARM, not merely hide. ConfirmModal's visibility
+    // is prop-driven (`:show="bulkConfirm !== null"`), so when a filter change
+    // clears the selection out from under the open modal it just disappears —
+    // emitting no @cancel, leaving pendingBulk set. The next row ticked would then
+    // pop the delete confirm back up unprompted, over a selection nobody armed, one
+    // muscle-memory click from a real delete. cancelPendingBulk only covers the
+    // explicit Cancel, so this is the path that has no other reset.
+    watch(grid.selectedCount, (count: number): void => {
+        if (count === 0) {
+            pendingBulk.value = null;
+        }
+    });
+
     const bulkConfirm = computed((): BulkConfirm | null => {
-        // Selection vanished under the open modal (a debounced filter change
-        // cleared it): close rather than confirm an empty operation.
         if (grid.selectedCount.value === 0 || pendingBulk.value === null) {
             return null;
         }
@@ -124,11 +135,22 @@ export const usePlatformTenantsBulk = (grid: GridState<TenantGridFilters>): Tena
     };
 
     const runPendingBulk = async (): Promise<void> => {
+        // Read the armed action rather than assuming it. Deleting unconditionally
+        // would work today (there is one bulk action) at the cost of making
+        // handleBulkAction decorative — it could stop arming entirely and every
+        // test here would still pass while the grid's Delete did nothing in the
+        // browser. It also means a second bulk action added later runs DELETE
+        // whichever one was clicked. Mirrors createUsersBulk's dispatch.
+        const action = pendingBulk.value;
+
         pendingBulk.value = null;
 
-        // The selection may have cleared under the modal (debounced filter
-        // change) between arming and confirming — do nothing rather than post an
-        // empty payload the backend rejects.
+        if (action !== 'delete') {
+            return;
+        }
+
+        // The selection can still have cleared between arming and confirming — do
+        // nothing rather than post an empty payload the backend rejects.
         if (grid.selectedCount.value === 0) {
             return;
         }
@@ -151,10 +173,11 @@ export const usePlatformTenantsBulk = (grid: GridState<TenantGridFilters>): Tena
         pendingBulk.value = null;
     };
 
-    // Per-row delete: same endpoint narrowed to one id, so the emptiness rule and
-    // the audit trail have exactly one implementation on the server. Expected is 1
-    // — a skip here means the grid's count was stale, which the toast should say
-    // out loud rather than silently report success.
+    // Per-row delete: its OWN endpoint (DELETE /platform/tenants/:id), not the bulk
+    // one narrowed to a single id. It answers 204 or a 400 naming the reason, so
+    // there is no affected count to interpret and no skip arithmetic here — a
+    // tenant the rule spares surfaces as the backend's message, which is more
+    // useful than "0 deleted" would be.
     const askDelete = (tenant: DeleteTarget): void => {
         tenantToDelete.value = tenant;
     };
@@ -178,7 +201,16 @@ export const usePlatformTenantsBulk = (grid: GridState<TenantGridFilters>): Tena
         );
 
         if (result.success === false) {
+            // Every reason this endpoint refuses — still has users, still has runs,
+            // already gone — arrives under `general`, because none of them maps to a
+            // field on a grid. So the backend's own message is the honest toast.
             error(result.data.general ?? 'Failed to delete the tenant.');
+
+            // Reload on failure too. Every reason this can fail means the grid is
+            // showing something stale — the tenant gained a user, or another
+            // superadmin already deleted it — so leaving the row on screen with its
+            // Delete button live invites the same click and the same error forever.
+            await grid.reload();
 
             return;
         }

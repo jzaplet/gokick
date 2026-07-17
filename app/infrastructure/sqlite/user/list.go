@@ -135,7 +135,14 @@ func (r *Repository) FindPageAcrossTenants(
 
 	col, ok := platformSortSQL[c.Sort]
 	if !ok {
-		col = "t.name"
+		// Unreachable via PlatformSortColumnFrom; belt against a future raw
+		// criteria. It buckles to the column the DOMAIN declares as its default,
+		// not to a second opinion — PlatformListCriteria.Normalize clamps
+		// Page/PerPage/SortDir but NOT Sort, so a caller who reasonably expects
+		// Normalize to make their criteria safe lands here, and a belt that picks
+		// a different column than the whitelist's default would quietly hand them
+		// tenant-ordered rows under a "Nickname" header.
+		col = "u.nickname"
 	}
 	orderBy := fmt.Sprintf(` ORDER BY %s %s, u.nickname ASC`, col, c.SortDir)
 	err := r.Conn(ctx).SelectContext(ctx, &page.Items,

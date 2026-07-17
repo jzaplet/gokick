@@ -34,16 +34,29 @@ onMounted(async (): Promise<void> => {
         { validate: isPlatformTenantListResponse },
     );
 
-    isFetching.value = false;
-
     if (result.success === false) {
+        // Stay on the loading state through the redirect. Flipping isFetching here
+        // would paint the form — with a required tenant picker holding zero options
+        // — for however long the navigation takes, and a submit landing in that gap
+        // earns a 400 on a field with nothing to pick.
         error('Failed to load tenants.');
         void router.push({ name: 'platform-users' });
 
         return;
     }
 
+    isFetching.value = false;
     tenantOptions.value = result.data.items.map((t) => ({ value: t.id, label: t.name }));
+
+    // The list is one page deep, so past the cap some tenants simply are not in it
+    // — and the form requires a tenant with no way to type one. Say so rather than
+    // presenting a truncated list as if it were the whole set: an operator who
+    // cannot find the tenant they just created would otherwise have no idea why.
+    if (result.data.total > result.data.items.length) {
+        error(`Showing the first ${String(result.data.items.length)} tenants of `
+            + `${String(result.data.total)}. To add a user to a tenant that is not `
+            + `listed, use: app create-user --tenant-id <id>`);
+    }
 
     // Preselect only when there is nothing to choose. A single-tenant install has
     // exactly one tenant, so a blank required picker there is a question with one

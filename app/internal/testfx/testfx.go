@@ -275,6 +275,21 @@ func (f *Fixture) SeedTenant(t *testing.T, name string) *tenant.Tenant {
 	return tn
 }
 
+// SeedTenantWithPlan persists a tenant on a non-default billing tier. NewTenant
+// always stamps PlanFree (gokick ships only that tier), so a test that needs the
+// plan column to actually vary — the tenants grid filters on it — sets it here
+// rather than reaching into the DB.
+func (f *Fixture) SeedTenantWithPlan(t *testing.T, name, plan string) *tenant.Tenant {
+	t.Helper()
+	tn := f.SeedTenant(t, name)
+	tn.Plan = plan
+	if _, err := f.DB.DB().ExecContext(context.Background(),
+		`UPDATE tenants SET plan=? WHERE id=?`, plan, tn.ID); err != nil {
+		t.Fatalf("set tenant plan: %v", err)
+	}
+	return tn
+}
+
 // SeedUserInTenant persists a user stamped with the given tenant id — used by
 // isolation tests to populate distinct tenants.
 func (f *Fixture) SeedUserInTenant(t *testing.T, nickname, role, tenantID string) *user.User {
@@ -300,6 +315,56 @@ func (f *Fixture) SeedUserInTenant(t *testing.T, nickname, role, tenantID string
 		t.Fatalf("save user: %v", err)
 	}
 	return u
+}
+
+// SeedRunInTenant enqueues a PENDING run stamped with the given tenant id — the
+// state a tenant-owned background task sits in between being enqueued and being
+// claimed. Used by tests that assert what a tenant still owns besides its users.
+//
+// It stamps TenantID onto the row directly rather than going through the
+// dispatcher: the dispatcher reads the tenant off ctx and refuses an unregistered
+// kind, and a test asserting the tenant-delete gate wants neither a bus nor a
+// handler registry — just a row that exists.
+func (f *Fixture) SeedRunInTenant(t *testing.T, kind, tenantID string) *run.Run {
+	t.Helper()
+	r, err := run.NewRun(kind, []byte(`{}`), 0)
+	if err != nil {
+		t.Fatalf("new run: %v", err)
+	}
+	r.TenantID = tenantID
+	if err := f.Runs.Enqueue(context.Background(), r); err != nil {
+		t.Fatalf("enqueue run: %v", err)
+	}
+	return r
+}
+
+// MarkRunCompleted drives a seeded run to the terminal completed state through the
+// real fenced path — claim it, then finalize as its owner. Faking completed_at with
+// raw SQL would let the fixture disagree with what the repository considers
+// terminal, which is the exact drift these tests exist to catch.
+func (f *Fixture) MarkRunCompleted(t *testing.T, id string) {
+	t.Helper()
+	ctx := context.Background()
+	const owner = "testfx-owner"
+
+	claimed, err := f.Runs.ClaimDue(ctx, owner, time.Minute)
+	if err != nil {
+		t.Fatalf("claim run: %v", err)
+	}
+	if claimed == nil {
+		t.Fatal("no run was due to claim — seed one first")
+	}
+	if claimed.ID != id {
+		t.Fatalf("claimed a different run (%s, want %s) — seed only the run you finalize",
+			claimed.ID, id)
+	}
+	ok, err := f.Runs.MarkComplete(ctx, id, owner)
+	if err != nil {
+		t.Fatalf("mark complete: %v", err)
+	}
+	if !ok {
+		t.Fatal("MarkComplete affected no rows — the lease was lost or the run was terminal")
+	}
 }
 
 // SeedRefreshToken persists a refresh token for the user and returns the raw (unhashed) value.

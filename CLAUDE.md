@@ -45,7 +45,7 @@ go test ./app/infrastructure/security/ -run TestHash  # Single Go test
 ./bin/app worker             # Run only the persistent durable-task worker (no HTTP server)
 ./bin/app seed               # Seed admin (+ superadmin if APP_SEED_SUPERADMIN_PASSWORD); multitenant → admin gets its own tenant
 ./bin/app create-user        # Create a user (-n -p [-e] [-r admin|user] [--tenant-id|--tenant-name]); multitenant → tenant required
-./bin/app create-superadmin  # Create a platform superadmin (-n -p [-e]) — the only path to one (admin API refuses the role)
+./bin/app create-superadmin  # Create a platform superadmin (-n -p [-e]) — one of the two out-of-band paths (the other is `seed` with APP_SEED_SUPERADMIN_PASSWORD); the API refuses the role on every plane
 ./bin/app create-tenant      # Create a tenant and print its id (-n)
 ```
 
@@ -163,7 +163,7 @@ Taking `*CommandBus`/`*QueryBus` makes the bus↔operation pairing compile-check
 | `config/` | `LoadConfig()` from `.env` via godotenv → `*Config` struct |
 | `database/` | `SqliteManager` (connection, WAL, `_txlock=immediate`, `busy_timeout`, `foreign_keys` via DSN), `MigrationManager` (Goose), transaction context (`BeginTx`/`Commit`/`Rollback`) |
 | `sqlite/` | `BaseRepository` (embed in repos for transparent tx support via `r.Conn(ctx)`) |
-| `sqlite/user/` | `user.Repository` impl (incl. `RecordFailedLogin` / `ResetFailedLogin` / `RecordLogin` raw-pool on purpose; tenant-scoped admin reads/writes + cross-tenant platform reads/writes — the `*AcrossTenants` set. The ones that touch EXISTING rows exclude superadmins in the statement itself; `SaveAcrossTenants` (the platform create) has no existing row to exclude, so the superadmin role is refused by `userwrite.Create` instead — the shared body is the floor, and `userwrite.CreateSuperAdmin` is the one sanctioned minter) |
+| `sqlite/user/` | `user.Repository` impl (incl. `RecordFailedLogin` / `ResetFailedLogin` / `RecordLogin` raw-pool on purpose; tenant-scoped admin reads/writes + cross-tenant platform reads/writes — the `*AcrossTenants` set. The ones that touch EXISTING rows exclude superadmins in the statement itself; `SaveAcrossTenants` (the platform create) has no existing row to exclude, so the superadmin role is refused by `userwrite.Create` instead — that floor is what makes `userwrite.CreateSuperAdmin` the only way through the application layer; the seeder mints its superadmin straight through the repository and never reaches either) |
 | `sqlite/token/` | `token.Repository` implementation |
 | `sqlite/run/` | `run.Repository` implementation (owner-fenced; julianday/ms time discipline shared via `sqlite/sqltime.go`) |
 | `sqlite/tenant/` | `tenant.Repository` implementation (row-level multitenancy boundary) |

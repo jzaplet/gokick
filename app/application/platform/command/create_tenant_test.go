@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/tenant"
 	"gokick/app/internal/testfx"
 )
 
@@ -44,6 +45,75 @@ func TestCreateTenantHandler_RejectsBlankName(t *testing.T) {
 		if !errors.As(err, &ve) || ve.Field != "name" {
 			t.Fatalf("expected name ValidationError, got %T: %v", err, err)
 		}
+	}
+}
+
+// A name is how an operator tells tenants apart — the grid lists by it, the
+// Add-user picker offers {id, name} — so two "Acme"s are two identical, unpickable
+// options, and a user filed into the wrong one cannot be moved out (an edit never
+// changes tenant_id). Both floors are asserted here: the handler answers with a
+// field error, and the row does not exist afterwards.
+func TestCreateTenantHandler_RejectsADuplicateName(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_tenant_dup.db"))
+
+	h := NewCreateTenantHandler(fx.Tenants)
+	if _, err := h.Handle(ctx, CreateTenantCommand{Name: "Acme"}); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+
+	_, err := h.Handle(ctx, CreateTenantCommand{Name: "Acme"})
+	if err == nil {
+		t.Fatal("a second tenant with the same name must be refused")
+	}
+	var ve *shared.ValidationError
+	if !errors.As(err, &ve) || ve.Field != "name" {
+		t.Fatalf("expected *shared.ValidationError{Field:\"name\"}, got %T: %v", err, err)
+	}
+}
+
+// NewName trims, so " Acme " and "Acme" are the same name — the check has to run
+// on the VALIDATED value, not the raw input, or whitespace slips a duplicate past
+// it and the UNIQUE index turns a 400 into a 500.
+func TestCreateTenantHandler_RejectsADuplicateNameAfterTrimming(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_tenant_dup_trim.db"))
+
+	h := NewCreateTenantHandler(fx.Tenants)
+	if _, err := h.Handle(ctx, CreateTenantCommand{Name: "Acme"}); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+
+	_, err := h.Handle(ctx, CreateTenantCommand{Name: "   Acme   "})
+	if err == nil {
+		t.Fatal("a whitespace variant of an existing name must be refused")
+	}
+	var ve *shared.ValidationError
+	if !errors.As(err, &ve) || ve.Field != "name" {
+		t.Fatalf("expected *shared.ValidationError{Field:\"name\"}, got %T: %v", err, err)
+	}
+}
+
+// The floor under the handler's check. The check is a check-then-act, so two
+// concurrent creates can both pass it — the index is what actually refuses the
+// loser, and it must be there even when no handler is involved.
+func TestTenants_UniqueNameIsEnforcedBySchema(t *testing.T) {
+	ctx := context.Background()
+	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_unique_schema.db"))
+
+	first := fx.SeedTenant(t, "Acme")
+
+	name, err := tenant.NewName("Acme")
+	if err != nil {
+		t.Fatalf("name: %v", err)
+	}
+	twin := tenant.NewTenant(name)
+	if err := fx.Tenants.Save(ctx, twin); err == nil {
+		t.Fatal("the schema must refuse a second tenant with the same name")
+	}
+
+	if got, _ := fx.Tenants.FindByID(ctx, first.ID); got == nil {
+		t.Fatal("the original tenant must survive")
 	}
 }
 

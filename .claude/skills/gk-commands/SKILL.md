@@ -38,11 +38,11 @@ Když command neimplementuje ani jedno, `AuthorizeMiddleware` vrátí runtime er
 
 **Validace uvnitř `Handle`** má dvě úrovně (viz `create_user.go`):
 1. **Formát** přes doménové value objects — `user.NewNickname`, `user.NewEmail`, `user.NewRole`, `user.NewPassword`. Vrátí `*shared.ValidationError` na nevalidní vstup. (Modelování value objects: `/gk-entities`.)
-2. **Business pravidla (I/O)** přes repo — unikátnost nicku (`repo.FindByNickname` ve sdíleném `userwrite.Create`, `app/application/userwrite/userwrite.go`), existence (`h.users.FindByID` v `update_user.go`).
+2. **Business pravidla (I/O)** přes repo — unikátnost nicku (`repo.FindByNickname` ve sdíleném create těle `userwrite.create`, `app/application/userwrite/userwrite.go`), existence (`h.users.FindByID` v `update_user.go`).
 
 **Vedlejší efekty** se nesbírají přímo, ale přes per-request collectory z ctx:
 - `shared.AuditCollectorFromContext(ctx).Record(...)` — pro security-relevant mutace (`user.created` a `user.role_changed` ve sdíleném `application/userwrite/userwrite.go`, `user.deleted` v `delete_user.go:55`).
-- `shared.EventCollectorFromContext(ctx).Collect(...)` — doménový event (`user.UserCreated` v `userwrite.Create` — sdílené tělo create, viz F-031), na který reaguje někdo jiný. Detail: `/gk-domain-events`.
+- `shared.EventCollectorFromContext(ctx).Collect(...)` — doménový event (`user.UserCreated` v `userwrite.create` — sdílené tělo create, do kterého ústí `Create` i `CreateSuperAdmin`, viz F-031), na který reaguje někdo jiný. Detail: `/gk-domain-events`.
 
 **Dispatch z HTTP handleru** (detail v `/gk-bus`):
 - bez návratové hodnoty → `bus.DispatchVoid(...)`.
