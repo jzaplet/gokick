@@ -1,0 +1,56 @@
+name: Release Please
+
+# Automated SemVer + CHANGELOG from Conventional Commits.
+#
+# On every push to main, release-please maintains a standing "release PR" that
+# accumulates the pending changes: it computes the next version from the commit
+# types since the last release (feat → minor, fix → patch, `!`/BREAKING CHANGE →
+# major), rewrites CHANGELOG.md, and bumps .release-please-manifest.json. Merging
+# that PR is the act of releasing — release-please then creates the git tag
+# (vX.Y.Z) and the GitHub Release.
+#
+# The tag is what ships the image, via the `image` job below. It cannot go through
+# release.yml's own `on: push: tags` trigger: release-please pushes the tag with
+# GITHUB_TOKEN, and GitHub deliberately does NOT run workflows for events raised by
+# GITHUB_TOKEN (anti-recursion). So this workflow calls release.yml directly, in the
+# same run, gated on release-please having actually cut a release. No PAT, no secret.
+#
+# See CONTRIBUTING.md and /gk-deploy.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    name: version + changelog
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  image:
+    # Only when the release PR was just merged (a tag now exists). Reuses the
+    # Release workflow so the build/publish logic lives in exactly one place;
+    # `secrets: inherit` passes GITHUB_TOKEN + SENTRY_AUTH_TOKEN through.
+    name: build release image
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name }}
+    secrets: inherit

@@ -302,6 +302,17 @@ wire.Bind(new(shared.Seeder), new(*sqliteseeder.Seeder))
 3. **Code style** — `make lint` + `make format`
 4. **Tests** — `make test`
 
+**Branches, commits & releases (trunk-based).** Branch off `main` with a typed
+prefix (`feature/`, `fix/`, `chore/`, …); every commit is a **Conventional Commit**
+(`feat` / `fix` / `refactor` / `style` / `docs` / `chore` / `test` / `ci` / `build`
+/ `perf` / `revert`) — the type drives versioning (`feat` → minor, `fix` → patch,
+`!`/`BREAKING CHANGE` → major). Both are enforced: the `lefthook` `commit-msg` +
+`pre-push` hooks locally (installed by `make install`), and the `commitlint.yml` CI
+job on every PR (so `--no-verify` only defers the failure). Releases are automatic —
+**release-please** keeps a release PR that computes the next SemVer + rewrites
+`CHANGELOG.md`; merging it tags `vX.Y.Z` and builds the image. Never hand-edit a
+version or changelog. Full guide: `CONTRIBUTING.md`; release mechanics: `/gk-deploy`.
+
 ## Adding a New Feature (Checklist)
 
 1. **`domain/<context>/`** — entity, value objects, repository interface

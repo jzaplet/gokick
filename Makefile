@@ -1,4 +1,4 @@
-.PHONY: install build serve dev di install-tools go-deps lint format format-check test arch-check \
+.PHONY: install build serve dev di install-tools go-deps hooks lint format format-check test arch-check \
         ts-gen ts-check boundary-check errfields-check docpaths-check \
         e2e e2e-crash-recovery e2e-at-least-once e2e-sigterm-drain e2e-terminal-failure \
         fe-deps fe-dev fe-build fe-clean \
@@ -39,6 +39,11 @@ GOLINES_VERSION := v0.13.0
 GOLANGCI_LINT_VERSION := v2.12.2
 GOOSE_VERSION := v3.27.1
 GO_ARCH_LINT_VERSION := v1.15.0
+# Git-hook runner (commit-msg → commitlint, pre-push → branch-name guard). A
+# single Go binary, so it installs alongside the other pinned tools rather than
+# pulling in a Node hook manager. `make install` runs `lefthook install` after
+# to wire .git/hooks. See lefthook.yml + CONTRIBUTING.md.
+LEFTHOOK_VERSION := v1.13.6
 
 # Release version stamped into the binary (-X main.release) and the SPA bundle
 # (VITE_SENTRY_RELEASE) — both feed the Sentry release so issues group by
@@ -46,8 +51,10 @@ GO_ARCH_LINT_VERSION := v1.15.0
 # build override it with the release tag. Falls back to the short commit SHA.
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null)
 
-# Install
-install: go-deps install-tools fe-deps
+# Install — Go deps + tools + frontend deps, then wire the git hooks. `hooks`
+# runs last because the commit-msg hook shells out to commitlint, which lives in
+# node_modules (installed by fe-deps).
+install: go-deps install-tools fe-deps hooks
 
 go-deps:
 	go mod download && go mod tidy
@@ -58,6 +65,13 @@ install-tools:
 	GOTOOLCHAIN=$(TOOL_GOTOOLCHAIN) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 	GOTOOLCHAIN=$(TOOL_GOTOOLCHAIN) go install github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION)
 	GOTOOLCHAIN=$(TOOL_GOTOOLCHAIN) go install github.com/fe3dback/go-arch-lint@$(GO_ARCH_LINT_VERSION)
+	GOTOOLCHAIN=$(TOOL_GOTOOLCHAIN) go install github.com/evilmartians/lefthook@$(LEFTHOOK_VERSION)
+
+# Wire .git/hooks to lefthook. Idempotent — safe to re-run; a fresh clone gets
+# its hooks from `make install`. Skips gracefully outside a git checkout (CI
+# archive / vendored source) so it can't break a build that has no .git.
+hooks:
+	@if [ -d .git ]; then lefthook install; else echo "hooks: no .git, skipping"; fi
 
 # Build — frontend first (Vite → public/), then Go (embeds public/)
 build: di fe-build

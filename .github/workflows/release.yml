@@ -16,11 +16,24 @@ name: Release
 #
 # Tags don't trigger validate.yml, so this re-validates compilation only (the
 # image build runs `go build` + `vite build`). Cut release tags from a green main.
+#
+# Two entry points, same build:
+#   - push of a v* tag — the manual/hand-cut release path (full control).
+#   - workflow_call from release-please.yml with the `tag` input — the automated
+#     path (a GITHUB_TOKEN-pushed tag can't trigger `on: push: tags`, so
+#     release-please calls this workflow instead). The build is identical either
+#     way; only where the tag string comes from differs.
 
 on:
   push:
     tags:
       - "v*"
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag to build (e.g. v1.2.3). Set by release-please; empty on a manual tag push."
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -31,7 +44,18 @@ jobs:
     name: build + push image
     runs-on: ubuntu-latest
     steps:
+      - name: Resolve the release tag
+        id: rel
+        # The workflow_call input when release-please called us; the pushed tag
+        # otherwise. Everything downstream reads steps.rel.outputs.tag so neither
+        # trigger has to special-case the version.
+        run: echo "tag=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v6
+        with:
+          # Build the tagged commit. On a tag push this is where HEAD already is;
+          # on workflow_call the tag was just created by release-please.
+          ref: ${{ steps.rel.outputs.tag }}
 
       - uses: docker/setup-buildx-action@v3
 
@@ -49,12 +73,15 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
-          # Image tag = the raw git tag (e.g. v1.2.3). type=ref guarantees a tag
-          # even for a non-semver v* tag; type=semver enables `latest=auto`,
-          # which moves :latest only for non-prerelease semver tags.
+          # Image tag = the raw git tag (e.g. v1.2.3). Both lines carry an explicit
+          # `value=` so this resolves the same whether the trigger was a tag push
+          # (github.ref is the tag) or a workflow_call (github.ref is main, so the
+          # ref alone can't supply the version). type=raw guarantees the literal
+          # tag even for a non-semver v*; type=semver enables `latest=auto`, which
+          # moves :latest only for non-prerelease semver tags.
           tags: |
-            type=ref,event=tag
-            type=semver,pattern={{raw}}
+            type=raw,value=${{ steps.rel.outputs.tag }}
+            type=semver,pattern={{raw}},value=${{ steps.rel.outputs.tag }}
           flavor: latest=auto
 
       - name: Build (push only when RELEASE_PUSH=true)
@@ -66,7 +93,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            VERSION=${{ github.ref_name }}
+            VERSION=${{ steps.rel.outputs.tag }}
             SENTRY_ORG=${{ vars.SENTRY_ORG }}
             SENTRY_PROJECT=${{ vars.SENTRY_PROJECT }}
           # Frontend source-map upload to Sentry. Optional: with the secret unset
