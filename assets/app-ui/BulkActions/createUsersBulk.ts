@@ -1,5 +1,5 @@
 import type { ComputedRef, Ref } from 'vue';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type { GridState } from '@/app-ui/DataGrid/createGridState';
 import type { BulkAction } from '@/app-ui/BulkActions/BulkActionBar.vue';
 import type { BulkResult } from '@/app-ui/BulkActions/BulkResult';
@@ -63,9 +63,19 @@ export const createUsersBulk = <F extends Record<string, string>, TDeleteBody, T
 
     const pendingBulk = ref<BulkActionKey | null>(null);
 
+    // A vanishing selection must DISARM, not merely hide. ConfirmModal's visibility
+    // is prop-driven, so when a filter change clears the selection out from under
+    // the open modal it just disappears — emitting no @cancel, leaving pendingBulk
+    // set. The next row ticked would then pop the confirm back up unprompted, over
+    // a selection nobody armed, one muscle-memory click from a real deactivate or
+    // delete. cancelPendingBulk only covers the explicit Cancel.
+    watch(grid.selectedCount, (count: number): void => {
+        if (count === 0) {
+            pendingBulk.value = null;
+        }
+    });
+
     const bulkConfirm = computed((): BulkConfirm | null => {
-        // Selection vanished under the open modal (a debounced filter change
-        // cleared it): close rather than confirm an empty operation.
         if (grid.selectedCount.value === 0) {
             return null;
         }

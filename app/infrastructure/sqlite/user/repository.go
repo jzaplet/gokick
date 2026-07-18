@@ -35,6 +35,39 @@ func (r *Repository) Save(ctx context.Context, u *user.User) error {
 	return err
 }
 
+// SaveAcrossTenants is Save without the scope guard — the superadmin plane's
+// create, where the chosen tenant is the POINT and the caller's own (a superadmin
+// lives in the default tenant) is irrelevant. The handler has already proven the
+// tenant exists, so the row cannot land on a dangling FK.
+//
+// Superadmin rows are not excluded the way Update/DeleteAcrossTenants exclude
+// them: those protect an EXISTING platform account from the API, whereas this
+// creates a new row and CreatePlatformUserCommand refuses the superadmin role
+// outright — minting one stays CLI/seeder-only.
+//
+// The INSERT is duplicated from Save rather than extracted into a shared helper,
+// and that is deliberate. The write-side conformance gate works per FUNCTION: it
+// pairs each tenant_id-stamping INSERT literal with a guard call in the same body.
+// Hoisting the statement into a helper would leave Save with no literal for the
+// gate to find, so nothing would check that Save still guards — the gate would go
+// quietly blind on the very method that needs it. Two lines of SQL is the cheaper
+// half of that trade.
+//
+// The marker below reads "exempt - reason", not the "exempt: reason" the gate's
+// message suggests. It has to: sqlx scans the whole query for named parameters,
+// comments included, so a `:` here becomes a bind — `: ` binds the empty name and
+// NamedExecContext fails at runtime with "could not find name". The gate matches
+// the marker substring alone, so the dash satisfies it. Do not "fix" the
+// punctuation.
+func (r *Repository) SaveAcrossTenants(ctx context.Context, u *user.User) error {
+	const q = `INSERT INTO users (id, nickname, password_hash, email, role, tenant_id, active, created_at, updated_at)
+		VALUES (:id, :nickname, :password_hash, :email, :role, :tenant_id, :active, :created_at, :updated_at)
+		/* tenant-write-exempt - platform superadmin creates into the CHOSEN tenant */`
+	_, err := r.Conn(ctx).NamedExecContext(ctx, q, u)
+
+	return err
+}
+
 // Update scopes the WHERE to the caller's tenant (r.Tenant, positional — the
 // guard is the CALLER's tenant, not the loaded row's) AND excludes superadmin
 // rows: a tenant admin must never modify (e.g. reset the password of) a platform

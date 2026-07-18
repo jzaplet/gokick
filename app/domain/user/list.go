@@ -110,13 +110,16 @@ const (
 )
 
 // PlatformSortColumnFrom whitelists the platform grid's sort; fallback is the
-// tenant column (the pre-grid ORDER BY t.name, u.nickname order).
+// nickname column, matching the grid's own default. It used to fall back to
+// tenant (the pre-grid ORDER BY t.name, u.nickname order) — but the grid leads
+// with nickname now, and a fallback that disagrees with it would make "the
+// default sort" mean two different things depending on who asked.
 func PlatformSortColumnFrom(v string) SortColumn {
 	switch SortColumn(v) {
 	case SortByNickname, SortByEmail, SortByRole, SortByTenant, SortByLastLogin:
 		return SortColumn(v)
 	default:
-		return SortByTenant
+		return SortByNickname
 	}
 }
 

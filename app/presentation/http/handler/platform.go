@@ -9,7 +9,6 @@ import (
 	"gokick/app/application/bus"
 	platformcmd "gokick/app/application/platform/command"
 	platformqry "gokick/app/application/platform/query"
-	"gokick/app/domain/tenant"
 	"gokick/app/domain/user"
 	"gokick/app/presentation/http/request"
 	"gokick/app/presentation/http/response"
@@ -19,17 +18,21 @@ import (
 // (gated platform:overview) plus cross-tenant user management (platform:users:*).
 // Superadmin only; an admin is denied at the bus.
 type PlatformHandler struct {
-	resp        *response.Responder
-	queryBus    *bus.QueryBus
-	commandBus  *bus.CommandBus
-	getStats    *platformqry.GetStatsHandler
-	listUsers   *platformqry.ListAllUsersHandler
-	getUser     *platformqry.GetUserHandler
-	listTenants *platformqry.ListTenantsHandler
-	updateUser  *platformcmd.UpdatePlatformUserHandler
-	deleteUser  *platformcmd.DeletePlatformUserHandler
-	bulkDelete  *platformcmd.BulkDeletePlatformUsersHandler
-	bulkActive  *platformcmd.BulkSetPlatformUsersActiveHandler
+	resp             *response.Responder
+	queryBus         *bus.QueryBus
+	commandBus       *bus.CommandBus
+	getStats         *platformqry.GetStatsHandler
+	listUsers        *platformqry.ListAllUsersHandler
+	getUser          *platformqry.GetUserHandler
+	listTenants      *platformqry.ListTenantsHandler
+	createUser       *platformcmd.CreatePlatformUserHandler
+	updateUser       *platformcmd.UpdatePlatformUserHandler
+	deleteUser       *platformcmd.DeletePlatformUserHandler
+	bulkDelete       *platformcmd.BulkDeletePlatformUsersHandler
+	bulkActive       *platformcmd.BulkSetPlatformUsersActiveHandler
+	createTenant     *platformcmd.CreateTenantHandler
+	deleteTenant     *platformcmd.DeleteTenantHandler
+	bulkDeleteTenant *platformcmd.BulkDeleteTenantsHandler
 }
 
 func NewPlatformHandler(
@@ -40,23 +43,31 @@ func NewPlatformHandler(
 	listUsers *platformqry.ListAllUsersHandler,
 	getUser *platformqry.GetUserHandler,
 	listTenants *platformqry.ListTenantsHandler,
+	createUser *platformcmd.CreatePlatformUserHandler,
 	updateUser *platformcmd.UpdatePlatformUserHandler,
 	deleteUser *platformcmd.DeletePlatformUserHandler,
 	bulkDelete *platformcmd.BulkDeletePlatformUsersHandler,
 	bulkActive *platformcmd.BulkSetPlatformUsersActiveHandler,
+	createTenant *platformcmd.CreateTenantHandler,
+	deleteTenant *platformcmd.DeleteTenantHandler,
+	bulkDeleteTenant *platformcmd.BulkDeleteTenantsHandler,
 ) *PlatformHandler {
 	return &PlatformHandler{
-		resp:        resp,
-		queryBus:    queryBus,
-		commandBus:  commandBus,
-		getStats:    getStats,
-		listUsers:   listUsers,
-		getUser:     getUser,
-		listTenants: listTenants,
-		updateUser:  updateUser,
-		deleteUser:  deleteUser,
-		bulkDelete:  bulkDelete,
-		bulkActive:  bulkActive,
+		resp:             resp,
+		queryBus:         queryBus,
+		commandBus:       commandBus,
+		getStats:         getStats,
+		listUsers:        listUsers,
+		getUser:          getUser,
+		listTenants:      listTenants,
+		createUser:       createUser,
+		updateUser:       updateUser,
+		deleteUser:       deleteUser,
+		bulkDelete:       bulkDelete,
+		bulkActive:       bulkActive,
+		createTenant:     createTenant,
+		deleteTenant:     deleteTenant,
+		bulkDeleteTenant: bulkDeleteTenant,
 	}
 }
 
@@ -78,24 +89,10 @@ type platformUserDTO struct {
 	LastLoginAt *string   `json:"last_login_at"`
 }
 
-//gkts:assets/app/Platform/types/PlatformTenant.ts PlatformTenant
-type platformTenantDTO struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Plan      string `json:"plan"`
-	UserCount int    `json:"user_count"`
-}
-
 //gkts:assets/app/Platform/types/PlatformUserListResponse.ts PlatformUserListResponse
 type platformUserListResponse struct {
 	Items []platformUserDTO `json:"items"`
 	Total int               `json:"total"`
-}
-
-//gkts:assets/app/Platform/types/PlatformTenantListResponse.ts PlatformTenantListResponse
-type platformTenantListResponse struct {
-	Items []platformTenantDTO `json:"items"`
-	Total int                 `json:"total"`
 }
 
 //gkts:assets/app/Platform/types/PlatformBulkDeleteUsersRequest.ts PlatformBulkDeleteUsersRequest noguard
@@ -127,6 +124,21 @@ type platformUserRequest struct {
 	Password string    `json:"password"`
 	Email    string    `json:"email"`
 	Role     user.Role `json:"role"`
+}
+
+// platformCreateUserRequest is deliberately NOT platformUserRequest + a field:
+// create picks the owning tenant, edit must never move a user between tenants
+// (UpdateAcrossTenants has no tenant_id in its SET clause). Sharing one struct
+// would make PUT accept a tenant_id and silently drop it — a lie the wire type
+// would tell the frontend. Two structs, two TS types, no lie.
+//
+//gkts:assets/app/Platform/types/PlatformUserCreateData.ts PlatformUserCreateData noguard
+type platformCreateUserRequest struct {
+	Nickname string    `json:"nickname"`
+	Password string    `json:"password"`
+	Email    string    `json:"email"`
+	Role     user.Role `json:"role"`
+	TenantID string    `json:"tenant_id"`
 }
 
 func (h *PlatformHandler) Stats(w http.ResponseWriter, r *http.Request) {
@@ -218,50 +230,6 @@ func (h *PlatformHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.resp.JSON(r.Context(), w, http.StatusOK, toPlatformUserDTO(*row))
-}
-
-func (h *PlatformHandler) Tenants(w http.ResponseWriter, r *http.Request) {
-	qs := r.URL.Query()
-	page, _ := strconv.Atoi(qs.Get("page"))
-	perPage, _ := strconv.Atoi(qs.Get("per_page"))
-	q := platformqry.ListTenantsQuery{
-		Page:    page,
-		PerPage: perPage,
-		SortBy:  qs.Get("sort_by"),
-		SortDir: qs.Get("sort_dir"),
-		Name:    qs.Get("name"),
-		Plan:    qs.Get("plan"),
-	}
-
-	result, err := bus.Query(
-		r.Context(),
-		h.queryBus,
-		"PlatformListTenants",
-		q,
-		func(ctx context.Context) (tenant.ListPage, error) {
-			return h.listTenants.Handle(ctx, q)
-		},
-	)
-	if err != nil {
-		h.resp.HandleError(r.Context(), w, err)
-
-		return
-	}
-
-	dtos := make([]platformTenantDTO, len(result.Items))
-	for i, t := range result.Items {
-		dtos[i] = platformTenantDTO{
-			ID:        t.ID,
-			Name:      t.Name,
-			Plan:      t.Plan,
-			UserCount: t.UserCount,
-		}
-	}
-
-	h.resp.JSON(r.Context(), w, http.StatusOK, platformTenantListResponse{
-		Items: dtos,
-		Total: result.Total,
-	})
 }
 
 func (h *PlatformHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -392,6 +360,42 @@ func (h *PlatformHandler) BulkActiveUsers(w http.ResponseWriter, r *http.Request
 	}
 
 	h.resp.JSON(r.Context(), w, http.StatusOK, bulkResultDTO{Affected: affected})
+}
+
+// CreateUser mints a user in the tenant the superadmin picked. 201 with no body,
+// matching the admin twin — the SPA redirects to the grid, which refetches.
+func (h *PlatformHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
+	var body platformCreateUserRequest
+	if err := request.DecodeJSON(w, r, &body); err != nil {
+		h.resp.HandleError(r.Context(), w, err)
+
+		return
+	}
+
+	cmd := platformcmd.CreatePlatformUserCommand{
+		Nickname: body.Nickname,
+		Password: body.Password,
+		Email:    body.Email,
+		Role:     string(body.Role),
+		TenantID: body.TenantID,
+	}
+
+	err := bus.DispatchVoid(
+		r.Context(),
+		h.commandBus,
+		"PlatformCreateUser",
+		cmd,
+		func(ctx context.Context) error {
+			return h.createUser.Handle(ctx, cmd)
+		},
+	)
+	if err != nil {
+		h.resp.HandleError(r.Context(), w, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
 }
 
 func toPlatformUserDTO(row user.PlatformRow) platformUserDTO {

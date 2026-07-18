@@ -63,3 +63,19 @@ type ListPage struct {
 	Items []Overview
 	Total int
 }
+
+// BulkSelection is what a bulk tenant operation acts on: either an explicit id
+// list, or "every tenant matching the current filters" (AllFiltered) — the same
+// two modes the user grids offer. There is no ExcludeID twin of
+// user.PlatformBulkSelection: a tenant has no "self" to protect, and the two
+// tenants that must survive (the default tenant, and any tenant still holding
+// users) are refused by the delete itself rather than filtered out here.
+type BulkSelection struct {
+	IDs         []string
+	AllFiltered bool
+	Filters     ListFilters
+}
+
+func (s BulkSelection) IsEmpty() bool {
+	return !s.AllFiltered && len(s.IDs) == 0
+}

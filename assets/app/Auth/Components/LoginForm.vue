@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import type { LoginErrors } from '@/app/Auth/types/LoginErrors';
 import type { LoginRequest } from '@/app-ui/Auth';
-import { Role } from '@/app/Auth/enums/roles';
 import { reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { homeForRole } from '@/router/homeForRole';
 import { useAuth } from '@/app-ui/Auth';
 import { useToast } from '@/app-ui/Toast/useToast';
 import Button from '@/app-ui/Buttons/Button.vue';
@@ -39,11 +39,7 @@ const handleSubmit = async (): Promise<void> => {
     success(`Welcome back, ${result.data.user.nickname}.`);
 
     const redirectQuery = route.query['redirect'];
-    const roleHome: Record<string, string> = {
-        [Role.SuperAdmin]: '/platform/dashboard',
-        [Role.Admin]: '/admin/dashboard',
-    };
-    const defaultByRole = roleHome[result.data.user.role] ?? '/user/dashboard';
+    const defaultByRole = homeForRole(result.data.user.role);
 
     // Only accept a same-origin absolute path: reject protocol-relative
     // (`//evil.com`) and any non-string so a crafted ?redirect= can't bounce the

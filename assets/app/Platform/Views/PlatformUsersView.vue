@@ -14,6 +14,8 @@ import FilterPanel from '@/app-ui/FilterPanel/FilterPanel.vue';
 import Pagination from '@/app-ui/Pagination/Pagination.vue';
 import Input from '@/app-ui/Inputs/Input.vue';
 import Select from '@/app-ui/Inputs/Select.vue';
+import Button from '@/app-ui/Buttons/Button.vue';
+import PlusIcon from '@/app-ui/Icons/PlusIcon.vue';
 import PlatformUserRow from '@/app/Platform/Components/PlatformUserRow.vue';
 import BulkActionBar from '@/app-ui/BulkActions/BulkActionBar.vue';
 import { usePlatformUsersBulk } from '@/app/Platform/Composables/usePlatformUsersBulk';
@@ -27,8 +29,8 @@ const users = ref<PlatformUser[]>([]);
 const userToDelete = ref<PlatformUser | null>(null);
 
 const columns: GridColumn[] = [
-    { key: 'tenant', label: 'Tenant', sortable: true },
     { key: 'nickname', label: 'Nickname', sortable: true },
+    { key: 'tenant', label: 'Tenant', sortable: true },
     { key: 'email', label: 'Email', sortable: true },
     { key: 'role', label: 'Role', sortable: true },
     { key: 'active', label: 'Active' },
@@ -51,7 +53,7 @@ const activeOptions = [
 ];
 
 const grid = createGridState({
-    defaultSort: { column: 'tenant', direction: 'ASC' },
+    defaultSort: { column: 'nickname', direction: 'ASC' },
     filters: { tenant: '', nickname: '', email: '', role: '', active: '' },
     syncUrl: true,
     load: async ({ page, perPage, sort, filters }) => {
@@ -88,6 +90,10 @@ const grid = createGridState({
 
 const goToEdit = (user: PlatformUser): void => {
     void router.push({ name: 'platform-users-edit', params: { id: user.id } });
+};
+
+const goToCreate = (): void => {
+    void router.push({ name: 'platform-users-new' });
 };
 
 const askDelete = (user: PlatformUser): void => {
@@ -156,9 +162,19 @@ onMounted(async (): Promise<void> => {
 <template>
     <div>
         <div class="space-y-6">
-            <h1 class="text-2xl font-bold text-gray-900">
-                Platform users
-            </h1>
+            <div class="flex items-center justify-between gap-4">
+                <h1 class="text-2xl font-bold text-gray-900">
+                    Platform users
+                </h1>
+
+                <Button
+                    variant="primary"
+                    @click="goToCreate"
+                >
+                    <PlusIcon class="w-4 h-4" />
+                    Add user
+                </Button>
+            </div>
 
             <FilterPanel
                 storage-key="platform-users"

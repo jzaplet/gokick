@@ -53,7 +53,7 @@ DB server. **Seed** je jednorázové naplnění DB výchozími daty (admin úče
   | `./bin/app serve` | HTTP server **+ in-process scheduler + durable-task worker** v jednom procesu (sdílí jeden `ctx`, SIGTERM nechá vše korektně dobíhat — `console/serve.go`) |
   | `./bin/app seed` | Vytvoří admin účet (pokud chybí), heslo z `APP_SEED_ADMIN_PASSWORD` (`console/seed.go`) |
   | `./bin/app create-user -n <nick> -p <pass> [-e <email>] [-r <role>]` | Vytvoří uživatele; role default `admin`, alternativa `user` (`console/create_user.go`) |
-  | `./bin/app create-superadmin -n <nick> -p <pass> [-e <email>]` | Vytvoří platform superadmina (cross-tenant) — jediná cesta k té roli (`console/create_superadmin.go`) |
+  | `./bin/app create-superadmin -n <nick> -p <pass> [-e <email>]` | Vytvoří platform superadmina (cross-tenant) — roli nelze založit přes API, jen out-of-band: tímto příkazem (`console/create_superadmin.go`) nebo `seed` s `APP_SEED_SUPERADMIN_PASSWORD` |
   | `./bin/app create-tenant -n <name>` | Vytvoří tenant a vypíše jeho id — pro multitenant režim (`console/create_tenant.go`) |
   | `./bin/app worker` | Jen persistentní durable-task worker, bez HTTP serveru — pro škálování workerů zvlášť (`console/worker.go`) |
 

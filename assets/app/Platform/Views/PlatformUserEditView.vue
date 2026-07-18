@@ -2,6 +2,7 @@
 import type { PlatformUser } from '@/app/Platform/types/PlatformUser';
 import { isPlatformUser } from '@/app/Platform/types/PlatformUser';
 import type { PlatformUserFormData } from '@/app/Platform/types/PlatformUserFormData';
+import type { PlatformUserCreateData } from '@/app/Platform/types/PlatformUserCreateData';
 import type { PlatformUserFormErrors } from '@/app/Platform/types/PlatformUserFormErrors';
 import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -25,14 +26,28 @@ const clearFieldError = (field: keyof PlatformUserFormErrors): void => {
     delete errors.value[field];
 };
 
-const handleSubmit = async (data: PlatformUserFormData): Promise<void> => {
+// The form emits the create superset (it carries a tenant_id for create mode).
+// An edit must never move a user between tenants, so PUT's contract has no
+// tenant_id at all — the field is dropped HERE, explicitly, rather than sent and
+// silently ignored by the backend. The PlatformUserFormData annotation is what
+// makes the drop compile-checked: the literal must name every key of that type and
+// may name no others, so tenant_id cannot creep back in and a new required field
+// cannot be forgotten.
+const handleSubmit = async (data: PlatformUserCreateData): Promise<void> => {
     isLoading.value = true;
     errors.value = {};
+
+    const body: PlatformUserFormData = {
+        nickname: data.nickname,
+        password: data.password,
+        email: data.email,
+        role: data.role,
+    };
 
     const result = await authFetch<null, PlatformUserFormErrors, PlatformUserFormData>(
         'PUT',
         `/api/v1/platform/users/${userId}`,
-        { body: data },
+        { body },
     );
 
     isLoading.value = false;

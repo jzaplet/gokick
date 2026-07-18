@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"gokick/app/application/bus"
-	tenantcmd "gokick/app/application/tenant/command"
-	tenantqry "gokick/app/application/tenant/query"
+	platformcmd "gokick/app/application/platform/command"
+	platformqry "gokick/app/application/platform/query"
 	usercmd "gokick/app/application/user/command"
 	"gokick/app/domain/shared"
 	"gokick/app/domain/user"
@@ -25,16 +25,16 @@ import (
 // tenant+user create), audit and panic→Sentry that a bare handler call would not.
 type CreateUserCommand struct {
 	createUser   *usercmd.CreateUserHandler
-	createTenant *tenantcmd.CreateTenantHandler
-	getTenant    *tenantqry.GetTenantHandler
+	createTenant *platformcmd.CreateTenantHandler
+	getTenant    *platformqry.GetTenantHandler
 	config       *config.Config
 	sysBus       *bus.SystemCommandBus
 }
 
 func NewCreateUserCommand(
 	createUser *usercmd.CreateUserHandler,
-	createTenant *tenantcmd.CreateTenantHandler,
-	getTenant *tenantqry.GetTenantHandler,
+	createTenant *platformcmd.CreateTenantHandler,
+	getTenant *platformqry.GetTenantHandler,
 	cfg *config.Config,
 	sysBus *bus.SystemCommandBus,
 ) *CreateUserCommand {
@@ -153,14 +153,21 @@ func (c *CreateUserCommand) checkTenantFlags(tenantID, tenantName string) error 
 }
 
 // resolveTenant returns the tenant id the user should land in (or "" for the
-// single-tenant default). --tenant-id is verified to exist; --tenant-name creates
-// a new tenant.
+// single-tenant default). --tenant-id is verified to exist; --tenant-name CREATES
+// a new tenant, and refuses a name that is already taken.
+//
+// That refusal is the point, not an inconvenience. The two flags read as
+// interchangeable ways of saying "put the user in Acme", but only one of them
+// means it — reaching for --tenant-name twice used to mint a second "Acme" and
+// file the user into it, leaving two identical, unpickable options in the
+// platform grid and a user who cannot be moved out. Now the second attempt says
+// so, and the operator reaches for --tenant-id.
 func (c *CreateUserCommand) resolveTenant(
 	ctx context.Context,
 	tenantID, tenantName string,
 ) (string, error) {
 	if tenantID != "" {
-		t, err := c.getTenant.Handle(ctx, tenantqry.GetTenantQuery{ID: tenantID})
+		t, err := c.getTenant.Handle(ctx, platformqry.GetTenantQuery{ID: tenantID})
 		if err != nil {
 			return "", err
 		}
@@ -170,8 +177,17 @@ func (c *CreateUserCommand) resolveTenant(
 		return t.ID, nil
 	}
 	if tenantName != "" {
-		t, err := c.createTenant.Handle(ctx, tenantcmd.CreateTenantCommand{Name: tenantName})
+		t, err := c.createTenant.Handle(ctx, platformcmd.CreateTenantCommand{Name: tenantName})
 		if err != nil {
+			// The handler's message is about a form field ("a tenant with this
+			// name already exists"), which leaves a CLI operator holding an error
+			// but not an answer. Name the flag that does what they meant.
+			var ve *shared.ValidationError
+			if errors.As(err, &ve) && ve.Field == "name" {
+				return "", fmt.Errorf(
+					"tenant %q already exists: --tenant-name CREATES a tenant; "+
+						"use --tenant-id to add a user to the existing one", tenantName)
+			}
 			return "", err
 		}
 		return t.ID, nil

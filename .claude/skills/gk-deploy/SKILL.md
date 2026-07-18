@@ -42,14 +42,16 @@ Proč to tak je: nic se nemůže rozejít. Frontend vždy odpovídá backendu (j
 
 ### CLI příkazy (`app/presentation/console/`)
 
-Change to „Root command `app` (`root.go`) registruje šest subcommandů:" and add two table rows: „| `create-superadmin` | Vytvoří platformního superadmina (`-n` nickname, `-p` heslo, `-e` email) — jediná cesta k roli superadmin (admin API ji odmítá); jede přes `SystemCommandBus` |" and „| `create-tenant` | Vytvoří tenant a vypíše jeho id (`-n` název) — pro multitenant provisioning |"
+Root command `app` (`root.go`) registruje šest subcommandů:
 
 | Příkaz | Co dělá |
 |---|---|
 | `serve` | HTTP server **+** in-process scheduler **+** durable-task worker v jednom procesu (`serve.go`: `scheduler.Run` a `worker.Run` jako goroutiny, sdílí jeden `ctx` ze signal handleru → SIGTERM nechá vše korektně dobíhat) |
 | `worker` | Jen perzistentní durable-task worker, bez HTTP a scheduleru (`worker.go`; engine v `app/infrastructure/worker/run_worker.go`) — pro škálování workeru zvlášť (1 serve replika + N worker replik) |
 | `seed` | Vytvoří admin účet (heslo z `APP_SEED_ADMIN_PASSWORD`), pokud ještě není; s `APP_SEED_SUPERADMIN_PASSWORD` seedne i superadmina, multitenant admin dostane vlastní tenant — vše přes `SystemCommandBus` v jedné transakci |
-| `create-user` | Vytvoří uživatele (`-n` nickname, `-p` heslo, `-e` email, `-r` role; multitenant navíc povinně `--tenant-id` NEBO `--tenant-name`); superadmin roli odmítá (na to je `create-superadmin`); jede přes `SystemCommandBus` (transakce + audit) |
+| `create-user` | Vytvoří uživatele (`-n` nickname, `-p` heslo, `-e` email, `-r` role; multitenant navíc povinně `--tenant-id` pro existující tenant NEBO `--tenant-name`, který založí nový); superadmin roli odmítá (na to je `create-superadmin`); jede přes `SystemCommandBus` (transakce + audit) |
+| `create-superadmin` | Vytvoří platformního superadmina (`-n` nickname, `-p` heslo, `-e` email); jede přes `SystemCommandBus`. Roli superadmin **nelze založit přes API** — admin i platform create ji odmítají. Out-of-band cesty jsou dvě: tento příkaz a `seed` s `APP_SEED_SUPERADMIN_PASSWORD` |
+| `create-tenant` | Vytvoří tenant a vypíše jeho id (`-n` název) — pro multitenant provisioning. Od té doby, co superadmin plane nabízí `POST /api/v1/platform/tenants`, je to druhá cesta k témuž commandu (`platformcmd.CreateTenantCommand`), ne jediná |
 
 ### Production Dockerfile (`docker/production/Dockerfile`)
 

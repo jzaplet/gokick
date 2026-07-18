@@ -116,12 +116,17 @@ func TestMigrationDown_RollsBackLastMigration(t *testing.T) {
 		t.Fatalf("expected version to decrease after down: before=%d after=%d", before, after)
 	}
 
-	// With the squashed single init migration, one down step IS the whole
-	// stack: the schema must be fully gone (Down is the exact inverse of Up).
-	// A project that adds migrations after init gets the incremental property
-	// back automatically — this assertion only pins that Down is not a no-op.
-	if tableExists(t, ctx, mgr, "users") {
-		t.Fatal("init migration Down must drop the schema; users table survived")
+	// One down step rolls back the LAST migration only, so a table created by an
+	// EARLIER one must survive it — that is the property `make migrate-down`
+	// promises an operator, and the reason a down step is safe to reach for.
+	//
+	// This assertion was inverted while the squashed init migration was the only
+	// one in the tree: one step was then the whole stack, and "the schema is gone"
+	// was the only observable. The doc above always described the incremental
+	// property, and it came back the moment a second migration landed — as that
+	// comment predicted it would.
+	if !tableExists(t, ctx, mgr, "users") {
+		t.Fatal("one down step must roll back only the last migration; users should have survived")
 	}
 
 	// The rolled-back migration must be reversible: re-applying it restores the

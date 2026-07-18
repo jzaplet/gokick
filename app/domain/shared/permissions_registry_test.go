@@ -22,7 +22,7 @@ func (f fakeCLIOnly) CLIOnly()                   {}
 func TestPermissionsRegistry_ExcludesCLIOnly(t *testing.T) {
 	reg := NewPermissionsRegistry([]Permissioned{
 		fakePermissioned("profile:read"),
-		fakeCLIOnly("platform:tenants:create"),
+		fakeCLIOnly("platform:superadmins:create"),
 		fakePermissioned("admin:users:read"),
 	})
 

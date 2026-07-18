@@ -149,16 +149,93 @@ func Update(
 	return nil
 }
 
-// Create is the shared body of the two user-creation paths (admin CreateUser and
-// the CLI CreateSuperAdmin). Each caller validates the raw inputs into value
-// objects in ITS OWN order (so per-handler ValidationError precedence is
-// preserved) and decides the role + tenant, then hands them here. Create enforces
-// nickname uniqueness, hashes the password (AFTER the uniqueness check, so a taken
-// nickname skips the bcrypt cost), persists the user, and announces it ONCE — a
-// user.UserCreated event + a user.created audit record. Single-sourcing the
-// announcement is the point (F-031): superadmin creation previously skipped the
-// event, and a copy-paste body is exactly what let that drift.
-func Create(ctx context.Context, d Deps, spec CreateSpec) (*user.User, error) {
+// Create is the shared body of the API-facing user-creation paths (admin
+// CreateUser and platform CreatePlatformUser). Each caller validates the raw
+// inputs into value objects in ITS OWN order (so per-handler ValidationError
+// precedence is preserved) and decides the role + tenant, then hands them here.
+//
+// Create REFUSES the superadmin role, and that refusal is a floor, not a
+// courtesy. Both handlers also refuse it up front — deliberately, because their
+// order fixes which ValidationError wins (a superadmin role beats a bad password)
+// and only they know that order. But a per-handler habit is not an invariant: a
+// fourth create path (invite-accept, self-signup, an import) would ship with no
+// refusal and nothing would fail. Update already refuses in this body for the same
+// reason; Create now matches it. The one sanctioned minter names itself —
+// CreateSuperAdmin below. This is the same defence-in-depth the repo layer applies
+// to the update/delete twins, which re-refuse superadmin rows in the statement.
+func Create(
+	ctx context.Context,
+	d Deps,
+	spec CreateSpec,
+	save func(context.Context, *user.User) error,
+) (*user.User, error) {
+	// Before the uniqueness lookup, so the error precedence matches the handlers
+	// that already refused up front: role beats a taken nickname, either way in.
+	if spec.Role.IsSuperAdmin() {
+		return nil, &shared.ValidationError{
+			Field:   "role",
+			Message: "cannot assign the superadmin role",
+		}
+	}
+
+	return create(ctx, d, spec, save)
+}
+
+// CreateSuperAdmin mints a superadmin: the ONE sanctioned exception to Create's
+// refusal, and the reason that refusal can be a default instead of a habit.
+// Reachable only out-of-band — the CLI's create-superadmin over the
+// SystemCommandBus. (The seeder's superadmin never comes through here: it writes
+// via the repository, so it is untouched by Create's refusal.)
+//
+// It stamps the role itself so the ENTRY POINT decides, not the call site — but it
+// refuses a spec that asked for a different one rather than silently overwriting
+// it. Silence would matter because this shares Create's exact signature: the two
+// are interchangeable wherever one is held in a variable, so a spec that says
+// RoleUser flowing into the wrong branch would come out a superadmin with nothing
+// objecting. An unset Role is the ordinary case (the caller has nothing to say);
+// an explicit superadmin is fine; anything else is a caller that believes it is
+// creating something this function does not create.
+func CreateSuperAdmin(
+	ctx context.Context,
+	d Deps,
+	spec CreateSpec,
+	save func(context.Context, *user.User) error,
+) (*user.User, error) {
+	if spec.Role != "" && !spec.Role.IsSuperAdmin() {
+		return nil, &shared.ValidationError{
+			Field:   "role",
+			Message: "CreateSuperAdmin mints a superadmin; it cannot create a " + string(spec.Role),
+		}
+	}
+	spec.Role = user.RoleSuperAdmin
+
+	return create(ctx, d, spec, save)
+}
+
+// create is the body both entry points share: it enforces nickname uniqueness,
+// hashes the password (AFTER the uniqueness check, so a taken nickname skips the
+// bcrypt cost), persists the user, and announces it ONCE — a user.UserCreated
+// event + a user.created audit record. Single-sourcing the announcement is the
+// point (F-031): superadmin creation previously skipped the event, and a
+// copy-paste body is exactly what let that drift.
+//
+// save is the same seam Update's Plane.Save is, and for the same reason: the
+// tenant-scoped Save and the cross-tenant SaveAcrossTenants differ in NAME, so no
+// interface can dispatch between them — a closure is the honest seam. The admin
+// and CLI paths pass Save (a row must be born in the active tenant); the platform
+// path passes SaveAcrossTenants, because a superadmin's own tenant is the default
+// one and the chosen tenant is the entire point.
+//
+// The uniqueness check deliberately stays on d.Repo: FindByNickname is a global
+// identity lookup (nickname is UNIQUE across the whole table), so it must reach
+// across tenants on every plane — a nickname taken in tenant A has to collide with
+// a platform create into tenant B.
+func create(
+	ctx context.Context,
+	d Deps,
+	spec CreateSpec,
+	save func(context.Context, *user.User) error,
+) (*user.User, error) {
 	existing, err := d.Repo.FindByNickname(ctx, string(spec.Nickname))
 	if err != nil {
 		return nil, err
@@ -176,22 +253,33 @@ func Create(ctx context.Context, d Deps, spec CreateSpec) (*user.User, error) {
 	}
 
 	u := user.NewUser(spec.Nickname, hash, spec.Email, spec.Role, spec.TenantID)
-	if err := d.Repo.Save(ctx, u); err != nil {
+	if err := save(ctx, u); err != nil {
 		return nil, err
 	}
 
+	// TenantID comes off the ROW, never off ctx: the platform create runs as a
+	// superadmin whose active tenant is the default one, not the tenant the new
+	// user lands in. See the UserCreated doc.
 	shared.EventCollectorFromContext(ctx).Collect(user.UserCreated{
 		UserID:    u.ID,
 		Nickname:  u.Nickname,
 		Email:     u.Email,
 		Role:      u.Role,
+		TenantID:  u.TenantID,
 		Timestamp: time.Now(),
 	})
+	// tenant_id rides in the metadata for the same reason UserCreated carries it:
+	// on the platform plane the actor's tenant and the target's tenant are
+	// different, and this is the one write that can plant a user in ANY tenant.
+	// The middleware enriches the record with the actor and their IP, and
+	// AuditRecord has no tenant column — so without this the trail says "superadmin
+	// S created user U with role=admin" and nothing, anywhere, says which tenant U
+	// was born in. Off the ROW, never off ctx (see the UserCreated doc).
 	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
 		Action:     "user.created",
 		TargetType: "user",
 		TargetID:   u.ID,
-		Metadata:   map[string]any{"role": u.Role},
+		Metadata:   map[string]any{"role": u.Role, "tenant_id": u.TenantID},
 	})
 
 	return u, nil

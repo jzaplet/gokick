@@ -75,6 +75,8 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
 
 	// Uniqueness + hash + persist + announce (user.created audit & UserCreated event)
 	// are the shared create body — same as CreateSuperAdmin, so the event can't drift.
+	// Save (not SaveAcrossTenants): an admin's users are born in the admin's own
+	// tenant, and the guard inside Save is what enforces that.
 	_, err = userwrite.Create(
 		ctx,
 		userwrite.Deps{Repo: h.users, Hasher: h.password},
@@ -85,6 +87,7 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
 			Role:     role,
 			TenantID: tenantID,
 		},
+		h.users.Save,
 	)
 	return err
 }

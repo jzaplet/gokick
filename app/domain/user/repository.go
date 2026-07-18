@@ -135,4 +135,14 @@ type PlatformRepository interface {
 	// rows are excluded so a platform account can never be edited/deleted via API.
 	UpdateAcrossTenants(ctx context.Context, user *User) error
 	DeleteAcrossTenants(ctx context.Context, id string) error
+
+	// SaveAcrossTenants inserts a user into the tenant the row itself names,
+	// rather than the caller's active one. Save refuses that (AssertTenantScope:
+	// in multitenant mode a row must not be born outside the active scope) — and
+	// it is right to, because a superadmin's OWN tenant is the default one, so a
+	// superadmin creating a user in tenant X is exactly the cross-tenant write
+	// that guard exists to stop by default. This is the conscious exception, and
+	// the *AcrossTenants name is what confines it: the isolation gate refuses any
+	// caller outside application/platform.
+	SaveAcrossTenants(ctx context.Context, user *User) error
 }

@@ -202,9 +202,19 @@ export const createGridState = <F extends Record<string, string>>(
             return;
         }
 
+        // Clearing is SYNCHRONOUS; only the reload is debounced. A selection
+        // describes "the rows the CURRENT filters match" — the instant the filters
+        // change it describes nothing, so holding it for the debounce window
+        // leaves selectedCount speaking for a filter set that is already gone.
+        // That gap is not cosmetic: an 'all filtered' bulk action confirms the old
+        // filter's COUNT and then posts the new filter's SET, so a modal reading
+        // "delete 3" can hand the server an empty filter and mean "delete every
+        // match". Debouncing exists to spare the NETWORK a request per keystroke;
+        // it was never a reason to keep a stale selection answering questions.
+        clearSelection();
+
         debounce.run((): void => {
             page.value = 1;
-            clearSelection();
             void reload();
         });
     });

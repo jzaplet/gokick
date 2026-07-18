@@ -31,4 +31,33 @@ type PlatformRepository interface {
 
 	// CountAcrossTenants returns the total number of tenants (platform dashboard).
 	CountAcrossTenants(ctx context.Context) (int, error)
+
+	// DeleteIfEmptyAcrossTenants deletes the tenant only when it still owns
+	// nothing live, reporting whether it did. "If empty" is in the name because
+	// it is the contract, not an implementation detail: the test and the delete
+	// are ONE statement, so a user created between a caller's check and its
+	// delete cannot slip through (the grid's count is always stale by the time
+	// the click arrives).
+	//
+	// "Empty" means MORE THAN "no users", and a caller that assumes otherwise
+	// will report the wrong reason. A false return means the tenant survived —
+	// because it still has users, because it still has unfinished runs, or
+	// because it is the default tenant, which is refused by identity and would be
+	// refused even when empty. The caller has already established that it exists,
+	// so those are the only outcomes; which one it was is NOT knowable from the
+	// bool, so do not infer "it still has users" from a false (see
+	// DeleteTenantHandler, which names the possibilities instead of choosing).
+	DeleteIfEmptyAcrossTenants(ctx context.Context, id string) (bool, error)
+
+	// BulkDeleteEmptyAcrossTenants deletes every SELECTED tenant that owns
+	// nothing live (same rule as the single delete, default tenant included) and
+	// returns the ids that actually went. Tenants the rule spares are skipped, not
+	// an error: the grid lets a superadmin select freely, and partial application
+	// is what the returned set is for.
+	//
+	// It returns ids rather than a count because a count is not recoverable into
+	// them: the rows are gone, and in all-filtered mode there is no enumerated
+	// selection to diff against. The caller needs the ids for the audit trail of
+	// an irreversible cross-tenant delete; len() is the count.
+	BulkDeleteEmptyAcrossTenants(ctx context.Context, sel BulkSelection) ([]string, error)
 }

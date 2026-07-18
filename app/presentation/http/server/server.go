@@ -256,11 +256,21 @@ func (s *Server) registerRoutes() *http.ServeMux {
 		"POST /api/v1/platform/users/bulk-active",
 		authed(http.HandlerFunc(s.platform.BulkActiveUsers)),
 	)
+	mux.Handle("POST /api/v1/platform/users", authed(http.HandlerFunc(s.platform.CreateUser)))
 	mux.Handle("GET /api/v1/platform/tenants", authed(http.HandlerFunc(s.platform.Tenants)))
+	mux.Handle("POST /api/v1/platform/tenants", authed(http.HandlerFunc(s.platform.CreateTenant)))
+	mux.Handle(
+		"POST /api/v1/platform/tenants/bulk-delete",
+		authed(http.HandlerFunc(s.platform.BulkDeleteTenants)),
+	)
 	mux.Handle("PUT /api/v1/platform/users/{id}", authed(http.HandlerFunc(s.platform.UpdateUser)))
 	mux.Handle(
 		"DELETE /api/v1/platform/users/{id}",
 		authed(http.HandlerFunc(s.platform.DeleteUser)),
+	)
+	mux.Handle(
+		"DELETE /api/v1/platform/tenants/{id}",
+		authed(http.HandlerFunc(s.platform.DeleteTenant)),
 	)
 
 	// SPA catch-all — must be last so explicit routes win.
