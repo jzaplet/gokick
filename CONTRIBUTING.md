@@ -28,7 +28,7 @@ Example: `git switch -c feature/tenant-usage-ledger`.
 The `pre-push` hook rejects anything else before it leaves your machine; `main` is
 exempt (you may push it after a local merge, though the ruleset blocks a *direct*
 push server-side). `main` is the only long-lived branch — this is trunk-based
-development, not Gitflow: short-lived branches, PR into `main`, **squash-merge**,
+development, not Gitflow: short-lived branches, PR into `main`, **rebase-merge**,
 and the branch auto-deletes.
 
 ## Commits
@@ -59,22 +59,21 @@ The `commit-msg` hook lints your message as you commit; the **Commitlint** CI jo
 re-lints every commit in a PR, so `git commit --no-verify` only defers the failure
 to CI. The ruleset lives in [`commitlint.config.js`](commitlint.config.js).
 
-**PRs are squash-merged, so the PR *title* is what ships.** On merge the whole PR
-collapses into one commit whose subject is the **PR title** — that single
-Conventional Commit is what lands on `main` and what release-please reads for the
-next version. So the table above applies to your **PR title** first (`feat:` title →
-minor bump, and so on). Commitlint lints both the commits *and* the title, but the
-title is the release-critical one; your individual commits are linted for hygiene,
-then squashed away. (Merge commits are disabled precisely so nothing gets
-double-counted in the changelog.)
+**PRs are rebase-merged, so every commit lands on `main` individually** — no squash,
+no merge commit. Each commit's type feeds release-please (the table above), so keep
+every commit in a PR a clean Conventional Commit, not a `wip`/`fixup` trail — they
+all surface in the changelog. Squash your own noise locally before you open the PR.
+(Merge commits are disabled on purpose: a merge commit carries the PR title in its
+body, which release-please would then count a second time — the changelog would
+double up.)
 
 ## Releases
 
 Releases are automated by [release-please](https://github.com/googleapis/release-please)
 — you never hand-edit a version or a changelog.
 
-1. Squash-merge `feat:` / `fix:` PRs into `main` (the PR title is the Conventional
-   Commit that lands, so title it accordingly).
+1. Rebase-merge `feat:` / `fix:` PRs into `main` (each commit lands as-is, so its
+   type feeds the version).
 2. release-please keeps a standing **“chore(main): release X.Y.Z” PR** open,
    recomputing the next version and rewriting `CHANGELOG.md` from the commits since
    the last release. Leave it open until you want to ship.

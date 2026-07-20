@@ -85,20 +85,19 @@ gh api --method PUT "repos/$repo/actions/permissions/workflow" \
     -F can_approve_pull_request_reviews=true >/dev/null
 echo "  ✓ done"
 
-echo "→ Setting merge strategy (squash-only, PR title = commit)…"
-# Squash-only keeps release-please's changelog clean: each PR lands as exactly
-# ONE conventional commit (its title), so nothing is double-counted the way a
-# merge commit that carries the PR title in its body is. title=PR_TITLE makes
-# that commit deterministic; message=COMMIT_MESSAGES preserves the bodies +
-# Co-authored-by trailers. delete_branch_on_merge tidies merged branches.
-# The PR title is now the release-critical Conventional Commit — commitlint.yml
-# lints it (in addition to the commits).
+echo "→ Setting merge strategy (rebase-only)…"
+# Rebase-only keeps release-please's changelog clean AND preserves every commit:
+# a PR's commits replay onto main individually (no squash — full history for
+# bisect/blame), and there is no merge commit to carry the PR title into its body
+# and get double-counted. So each commit's type drives the release — keep them
+# Conventional. delete_branch_on_merge tidies merged branches.
+# (Why not merge commits: GitHub forbids merge_commit_title=MERGE_MESSAGE with
+# message=BLANK, and every allowed combo leaves a Conventional commit in the merge
+# commit that release-please counts a second time. Rebase sidesteps that entirely.)
 gh api --method PATCH "repos/$repo" \
-    -F allow_squash_merge=true \
+    -F allow_rebase_merge=true \
     -F allow_merge_commit=false \
-    -F allow_rebase_merge=false \
-    -f squash_merge_commit_title=PR_TITLE \
-    -f squash_merge_commit_message=COMMIT_MESSAGES \
+    -F allow_squash_merge=false \
     -F delete_branch_on_merge=true >/dev/null
 echo "  ✓ done"
 
@@ -140,9 +139,9 @@ fi
 echo
 echo "Done. Remaining, if you haven't:"
 echo "  • Hooks    — run 'make install' to wire the commit-msg + pre-push hooks locally."
-echo "  • Merges   — PRs are squash-only now; the PR TITLE becomes the commit on main,"
-echo "               so write it as a Conventional Commit (feat: … / fix: …) — its type"
-echo "               drives the release. See CONTRIBUTING.md."
+echo "  • Merges   — PRs are rebase-only now; every commit lands on main as-is, so keep"
+echo "               each one a Conventional Commit (feat: … / fix: …) — its type drives"
+echo "               the release. See CONTRIBUTING.md."
 if [ -n "$reset_version" ]; then
     echo "  • Version  — manifest set to $reset_version; commit it via a PR."
 else
