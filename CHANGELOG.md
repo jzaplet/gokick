@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.1](https://github.com/jzaplet/gokick/compare/v1.2.0...v1.2.1) (2026-07-20)
+
+
+### Bug Fixes
+
+* **config:** default the seeded admin into the Default tenant ([6121508](https://github.com/jzaplet/gokick/commit/61215088358e1f2ef1ebefa7fe38cf4aa2e3e917))
+* **config:** default the seeded admin into the Default tenant + list showcase accounts ([98e2e2f](https://github.com/jzaplet/gokick/commit/98e2e2f2a87b1bdaa263464d75094047fccb391f))
+
 ## [1.2.0](https://github.com/jzaplet/gokick/compare/v1.1.0...v1.2.0) (2026-07-20)
 
 
