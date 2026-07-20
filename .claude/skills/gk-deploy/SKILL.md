@@ -79,7 +79,7 @@ Jedno číslo verze teče do binárky i do SPA, aby Sentry grupoval chyby podle 
 - **`validate.yml`** (push na `main` + každý PR): job `validate` = `make install` → `make lint` → `make test` → `make build`; paralelní job `e2e` = `make e2e` (durable-run process-lifecycle testy, viz `/gk-runs`). `SKIP_DOCUMAN: "1"` (doc lint má vlastní `documan.yml`).
 - **`commitlint.yml`** (na PR): prožene každý commit v PR přes `commitlint` — server-side půlka vynucení Conventional Commits (lokální `commit-msg` hook jde obejít `--no-verify`, tohle ne). Konvence commitů/větví: `CONTRIBUTING.md`.
 - **`release-please.yml`** (push na `main`): drží otevřený „release PR", počítá další SemVer z commitů a přepisuje `CHANGELOG.md`; jeho merge vytvoří tag `vX.Y.Z` a GitHub Release. Verzování je automatické — verze ani changelog se needitují ručně.
-- **`release.yml`** (na tagu `v*` **nebo** `workflow_call` z release-please): postaví produkční image přes multi-stage Dockerfile, stampuje tag jako verzi. Volá se dvěma cestami se stejným buildem, protože tag od release-please (push přes `GITHUB_TOKEN`) `on: push: tags` **nespustí** (GitHub blokuje rekurzi), takže ho release-please zavolá přímo. **Push do GHCR je defaultně VYPNUTÝ** (gokick je template — fork nesmí auto-publikovat); zapneš repo variable `RELEASE_PUSH=true`. Bez ní se image jen postaví (ověří, že release kompiluje), nepushne. Source-map upload do Sentry je optional (`SENTRY_AUTH_TOKEN` jako build secret).
+- **`release.yml`** (na tagu `v*` **nebo** `workflow_call` z release-please): postaví produkční image přes multi-stage Dockerfile, stampuje tag jako verzi. Volá se dvěma cestami se stejným buildem, protože tag od release-please (push přes `GITHUB_TOKEN`) `on: push: tags` **nespustí** (GitHub blokuje rekurzi), takže ho release-please zavolá přímo. **Push do GHCR je defaultně VYPNUTÝ** (gokick je template — fork nesmí auto-publikovat); zapneš repo variable `RELEASE_PUSH=true`. Bez ní se image jen postaví (ověří, že release kompiluje), nepushne. Source-map upload do Sentry je optional (`SENTRY_AUTH_TOKEN` build secret + `SENTRY_ORG`/`SENTRY_PROJECT` vars) — celý recept je v `/gk-sentry`.
 
 ## Recipe: postavit produkční image lokálně
 
@@ -99,6 +99,17 @@ Konvence commitů (typ = bump) a větví: `CONTRIBUTING.md`.
 ## Recipe: ruční release (escape hatch)
 
 Když potřebuješ vydat mimo release-please flow: cut tag z **zelené `main`** — `git tag v1.2.3 && git push origin v1.2.3`. `release.yml` se spustí i `on: push: tags` a postaví image stejně. Používej jen výjimečně; běžná cesta je release PR výše.
+
+## Recipe: pull image na deploy target (private vs public GHCR)
+
+Build+push a **pull** jsou dva oddělené světy — credentials řešíš jen v tom druhém:
+
+- **Push (CI)** — `release.yml` se loguje do GHCR vestavěným `GITHUB_TOKEN` (`packages: write`). Ten umí vždy pushnout do package **vlastního** repa — v private repu identicky jako v public. **Na push žádný secret nenastavuješ**; jen zapni `RELEASE_PUSH=true` (default vypnuto, viz výše).
+- **Pull (deploy target, např. Dokploy)** — tady je rozdíl. **První push vytvoří GHCR package jako PRIVATE** (bez ohledu na to, že jsi push zapnul — viz hlavička `release.yml`). U public gokicku je package ručně přepnutý na public, proto ho Dokploy táhne anonymně bez creds. U **private** repa package zůstane neanonymní → deploy target se musí čím autentizovat. Dvě cesty:
+  - **A) Package public** — Package → Package settings → Change visibility → Public. Repo zůstane private, veřejně jde stáhnout jen zkompilovaný image. Pull pak bez creds. Kompromis: artefakt (ne zdroják) je světu k dispozici.
+  - **B) Package private + token** (doporučeno pro produkt) — GitHub PAT se scope `read:packages`. V Dokploy u aplikace → Docker Provider vyplň `registryUrl=ghcr.io`, `username=<gh-user>`, `password=<PAT>` (ta tři pole, co u public pullu zůstávají prázdná). Nic veřejného, jednorázové nastavení.
+
+`make setup-github` na to upozorní: u ne-public repa na konci vypíše, že package není anonymně stažitelný, a odkáže sem.
 
 ## Invariants & pitfalls
 

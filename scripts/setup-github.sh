@@ -54,6 +54,9 @@ gh auth status >/dev/null 2>&1 || { echo "✖ not logged in — run: gh auth log
 repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
 is_template="$(gh repo view --json isTemplate --jq .isTemplate)"
 default_branch="$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)"
+# UPPERCASE: PUBLIC | PRIVATE | INTERNAL. Drives the deploy-pull hint at the end:
+# a non-public repo publishes a GHCR package that isn't anonymously pullable.
+visibility="$(gh repo view --json visibility --jq .visibility)"
 
 echo "Repo:           $repo"
 echo "Default branch: $default_branch"
@@ -131,4 +134,12 @@ else
     echo "               Re-run with ARGS=\"--reset-version 0.1.0\", or edit the file + commit via a PR."
 fi
 echo "  • Publish  — to push release images to GHCR: gh variable set RELEASE_PUSH --body true"
-echo "               (optional Sentry: SENTRY_ORG / SENTRY_PROJECT vars + SENTRY_AUTH_TOKEN secret)."
+echo "               (optional Sentry source maps: SENTRY_ORG / SENTRY_PROJECT vars +"
+echo "               SENTRY_AUTH_TOKEN secret — full recipe in the /gk-sentry skill)."
+if [ "$visibility" != "PUBLIC" ]; then
+    # Push side needs no secret (GITHUB_TOKEN has packages:write); the pull side does.
+    echo "  • Deploy   — ⚠  this repo is $visibility → the GHCR image package it publishes is NOT"
+    echo "               anonymously pullable. Your deploy target (e.g. Dokploy) needs registry auth:"
+    echo "               either flip the package public (Package → Package settings → visibility), or"
+    echo "               give the target a GitHub PAT with read:packages. Full recipe: /gk-deploy."
+fi
