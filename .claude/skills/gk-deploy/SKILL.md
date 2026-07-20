@@ -89,9 +89,9 @@ Jedno číslo verze teče do binárky i do SPA, aby Sentry grupoval chyby podle 
 
 ## Recipe: vydat release (release-please, doporučeno)
 
-1. Merguj `feat:` / `fix:` PR do `main` jako normálně — nic dalšího neděláš.
+1. **Rebase-merguj** `feat:` / `fix:` PR do `main` (merge i squash jsou na repu vypnuté — každý commit přistane jednotlivě, tak je drž čisté). Nic dalšího neděláš.
 2. release-please drží otevřený PR „chore(main): release X.Y.Z" a průběžně v něm dopočítává verzi + `CHANGELOG.md` z commitů. Nech ho otevřený, dokud nechceš vydat.
-3. **Merge toho release PR = vydání.** release-please tagne `vX.Y.Z` + založí GitHub Release; tag pak přes `workflow_call` postaví image (`release.yml`). Verze teče do binárky (`main.release`) i SPA (`VITE_SENTRY_RELEASE`) → Sentry release, stejně jako dřív.
+3. **Rebase-merge toho release PR = vydání.** release-please tagne `vX.Y.Z` + založí GitHub Release; tag pak přes `workflow_call` postaví image (`release.yml`). Verze teče do binárky (`main.release`) i SPA (`VITE_SENTRY_RELEASE`) → Sentry release, stejně jako dřív.
 4. Pro skutečný push do GHCR měj nastavenou repo variable `RELEASE_PUSH=true` (jinak se image jen postaví).
 
 Konvence commitů (typ = bump) a větví: `CONTRIBUTING.md`.

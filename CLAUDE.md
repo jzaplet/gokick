@@ -315,7 +315,11 @@ prefix (`feature/`, `fix/`, `chore/`, …); every commit is a **Conventional Com
 / `perf` / `revert`) — the type drives versioning (`feat` → minor, `fix` → patch,
 `!`/`BREAKING CHANGE` → major). Both are enforced: the `lefthook` `commit-msg` +
 `pre-push` hooks locally (installed by `make install`), and the `commitlint.yml` CI
-job on every PR (so `--no-verify` only defers the failure). Releases are automatic —
+job on every PR (so `--no-verify` only defers the failure). **PRs are rebase-merged**
+(merge and squash are disabled on the repo), so every commit lands on `main` as-is
+and flows into the changelog — keep each commit a clean Conventional Commit and
+squash local WIP/`fixup` noise before opening the PR; merge with `gh pr merge
+--rebase` (or the *Rebase and merge* button). Releases are automatic —
 **release-please** keeps a release PR that computes the next SemVer + rewrites
 `CHANGELOG.md`; merging it tags `vX.Y.Z` and builds the image. Never hand-edit a
 version or changelog. Full guide: `CONTRIBUTING.md`; release mechanics: `/gk-deploy`.
