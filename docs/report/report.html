@@ -166,14 +166,17 @@
       i&nbsp;bezpečnostní stránce jde o&nbsp;nadprůměrné dílo, které v&nbsp;řadě disciplín převyšuje výchozí nastavení
       mainstreamových frameworků (Rails, Laravel, NestJS). Jediným zásadním stropem je vědomě zvolená
       <strong>single-node SQLite</strong> — optimální pro latenci a&nbsp;provozní jednoduchost, bez horizontálního škálování.
+      <br><br>Toto je <strong>aktualizované vydání</strong>: od&nbsp;původního auditu (6/2026) přibyl zapínatelný
+      multitenancy s&nbsp;platformní rovinou, konvergovaný durable engine, velký cleanup se&nbsp;staticky vynucenými
+      limity složitosti a&nbsp;rozšířené testy — vážené skóre se&nbsp;posunulo z&nbsp;8,5 na&nbsp;8,9.
     </div>
-    <div class="scorechip"><b>8,5</b><span>/ 10 &nbsp;celkové vážené skóre</span></div>
+    <div class="scorechip"><b>8,9</b><span>/ 10 &nbsp;celkové vážené skóre</span></div>
 
     <div class="cover-meta">
       <div><div class="l">Předmět</div><div class="v">Go DDD/CQRS&nbsp;+&nbsp;Vue&nbsp;3 SPA</div></div>
-      <div><div class="l">Rozsah kódu</div><div class="v">20&nbsp;476 řádků (302 souborů)</div></div>
-      <div><div class="l">Metoda</div><div class="v">3× hloubkový audit reálného kódu</div></div>
-      <div><div class="l">Datum</div><div class="v">17.&nbsp;6.&nbsp;2026</div></div>
+      <div><div class="l">Rozsah kódu</div><div class="v">36&nbsp;582 řádků (456 souborů)</div></div>
+      <div><div class="l">Metoda</div><div class="v">Re-audit reálného kódu (baseline 3× audit)</div></div>
+      <div><div class="l">Datum</div><div class="v">20.&nbsp;7.&nbsp;2026</div></div>
     </div>
   </div>
 </section>
@@ -184,55 +187,55 @@
 
   <div class="sec-head"><div class="sec-num">01</div><h2>Shrnutí &amp; skóre</h2></div>
 
-  <p class="lead" style="margin-bottom:10px;">Hodnocení vzniklo ze tří nezávislých auditů, které procházely <strong>skutečný kód</strong> — bezpečnostní vrstvu,
-  architekturu a&nbsp;CQRS sběrnici, výkonové stropy SQLite, job frontu, tooling i&nbsp;frontend. Skóre a&nbsp;váhy po&nbsp;dimenzích níže.</p>
+  <p class="lead" style="margin-bottom:10px;">Původní hodnocení (6/2026) vzniklo ze&nbsp;tří nezávislých auditů, které procházely <strong>skutečný kód</strong>. Toto vydání je jeho <strong>re-audit</strong> vůči&nbsp;současnému kódu — po&nbsp;přírůstku multitenancy, konvergovaného durable enginu, velkého cleanupu a&nbsp;rozšíření testů. Skóre a&nbsp;váhy po&nbsp;dimenzích níže.</p>
 
   <div class="callout" style="margin:0 0 12px;">
     <h3>Jak se počítá celkové skóre</h3>
-    <p class="small" style="margin:0;color:var(--ink);"><strong>Vážený průměr</strong> = Σ(skóre × váha) / Σ(vah) = <strong>64,0 / 7,5 = 8,5</strong>. Všechny dimenze mají váhu&nbsp;<strong>×1,0</strong>; jediná výjimka je <strong>škálovatelnost ×0,5</strong> — vědomě úzký strop, který by s&nbsp;plnou vahou zkresloval celkový obraz. Prostý nevážený průměr by byl 8,25.</p>
+    <p class="small" style="margin:0 0 5px;color:var(--ink);"><strong>Vážený průměr</strong> = Σ(skóre × váha) / Σ(vah) = <strong>66,5 / 7,5 = 8,9</strong> (dříve 8,5). Všechny dimenze mají váhu&nbsp;<strong>×1,0</strong>; jediná výjimka je <strong>škálovatelnost ×0,5</strong> — vědomě úzký strop, který by s&nbsp;plnou vahou zkresloval celkový obraz. Prostý nevážený průměr by byl 8,6.</p>
+    <p class="small" style="margin:0;color:var(--muted);">Pravidlo: skóre měří <strong>kvalitu × šíři toho, co reálně existuje</strong>; „cesta k&nbsp;10" (kap.&nbsp;11) je pak výčet toho, co ještě chybí. Nová dobře postavená schopnost proto zvedne skóre, i&nbsp;když otevřené položky zůstávají.</p>
   </div>
 
   <table class="scoretable">
     <tr>
-      <td class="lbl">Bezpečnost <small>auth, tokeny, lockout, hlavičky, audit</small></td>
-      <td class="barcell"><div class="meter"><i style="width:90%"></i></div></td>
-      <td class="num">9,0<small>/10</small></td>
-      <td class="wt">×1,0</td>
-    </tr>
-    <tr>
-      <td class="lbl">Architektura &amp; čistota kódu <small>DDD, CQRS, fail-closed permissions</small></td>
-      <td class="barcell"><div class="meter"><i style="width:90%"></i></div></td>
-      <td class="num">9,0<small>/10</small></td>
-      <td class="wt">×1,0</td>
-    </tr>
-    <tr>
-      <td class="lbl">Tooling / DX / statická vynutitelnost <small>lint, arch-lint, compile-time DI</small></td>
+      <td class="lbl">Bezpečnost <small>auth, tokeny, lockout, hlavičky, audit, tenant izolace</small></td>
       <td class="barcell"><div class="meter"><i style="width:95%"></i></div></td>
       <td class="num">9,5<small>/10</small></td>
       <td class="wt">×1,0</td>
     </tr>
     <tr>
-      <td class="lbl">Výkon — latence, single-node <small>Go runtime + in-proc SQLite</small></td>
-      <td class="barcell"><div class="meter"><i style="width:85%"></i></div></td>
-      <td class="num">8,5<small>/10</small></td>
+      <td class="lbl">Architektura &amp; čistota kódu <small>DDD, CQRS, fail-closed, vynucené limity složitosti</small></td>
+      <td class="barcell"><div class="meter"><i style="width:95%"></i></div></td>
+      <td class="num">9,5<small>/10</small></td>
       <td class="wt">×1,0</td>
     </tr>
     <tr>
-      <td class="lbl">Frontend <small>Vue 3, striktní TS, bezpečný auth model</small></td>
-      <td class="barcell"><div class="meter"><i style="width:85%"></i></div></td>
-      <td class="num">8,5<small>/10</small></td>
+      <td class="lbl">Tooling / DX / statická vynutitelnost <small>lint, arch-lint, codegen, typová hranice BE↔FE</small></td>
+      <td class="barcell"><div class="meter"><i style="width:95%"></i></div></td>
+      <td class="num">9,5<small>/10</small></td>
       <td class="wt">×1,0</td>
     </tr>
     <tr>
-      <td class="lbl">Dokumentace &amp; AI skills <small>28 gk-* skillů + štíhlé Documan docs</small></td>
+      <td class="lbl">Výkon — latence, single-node <small>Go runtime + in-proc SQLite, stránkované listy</small></td>
+      <td class="barcell"><div class="meter"><i style="width:90%"></i></div></td>
+      <td class="num">9,0<small>/10</small></td>
+      <td class="wt">×1,0</td>
+    </tr>
+    <tr>
+      <td class="lbl">Frontend <small>Vue 3, striktní TS, DataGrid, runtime-validovaný fetch</small></td>
+      <td class="barcell"><div class="meter"><i style="width:90%"></i></div></td>
+      <td class="num">9,0<small>/10</small></td>
+      <td class="wt">×1,0</td>
+    </tr>
+    <tr>
+      <td class="lbl">Dokumentace &amp; AI skills <small>29 gk-* skillů + štíhlé Documan docs</small></td>
       <td class="barcell"><div class="meter"><i style="width:100%"></i></div></td>
       <td class="num">10<small>/10</small></td>
       <td class="wt">×1,0</td>
     </tr>
     <tr>
-      <td class="lbl">Testovací pokrytí <small>2:1 LOC, integračně těžké, chybí E2E/load</small></td>
-      <td class="barcell"><div class="meter"><i style="width:75%"></i></div></td>
-      <td class="num">7,5<small>/10</small></td>
+      <td class="lbl">Testovací pokrytí <small>≈1,9:1 LOC Go, proces-E2E hotové, chybí browser-E2E/load</small></td>
+      <td class="barcell"><div class="meter"><i style="width:80%"></i></div></td>
+      <td class="num">8,0<small>/10</small></td>
       <td class="wt">×1,0</td>
     </tr>
     <tr>
@@ -246,7 +249,7 @@
   <div class="grid2" style="margin-top:16px;">
     <div class="card accent" style="margin:0;">
       <h3 style="color:var(--go-dark)">Největší síla</h3>
-      <p class="small" style="color:var(--ink);font-size:10px;">Bezpečnostní vrstva na úrovni dedikovaného security týmu: rotace refresh tokenů s&nbsp;<strong>detekcí krádeže</strong>, atomický account lockout, timing-safe login, kompletní CSP/HSTS, audit mimo transakci. Přísnější než výchozí nastavení velkých frameworků.</p>
+      <p class="small" style="color:var(--ink);font-size:10px;">Bezpečnostní vrstva na úrovni dedikovaného security týmu: rotace refresh tokenů s&nbsp;<strong>detekcí krádeže</strong>, atomický account lockout, timing-safe login, kompletní CSP/HSTS, audit mimo transakci a&nbsp;<strong>fail-closed tenant izolace</strong> vynucená per-dotaz gate v&nbsp;CI. Přísnější než výchozí nastavení velkých frameworků.</p>
     </div>
     <div class="card accent-vue" style="margin:0;">
       <h3 style="color:#2C7A52">Největší limit</h3>
@@ -265,9 +268,9 @@
 <!-- ===================== SECURITY ===================== -->
 <section class="page">
   <div class="runhead"><span>gokick — technické hodnocení</span><span>Bezpečnost</span></div>
-  <div class="sec-head"><div class="sec-num">02</div><h2>Bezpečnost</h2><span class="tag pill p-strong">9,0 / 10 — to nejsilnější</span></div>
+  <div class="sec-head"><div class="sec-num">02</div><h2>Bezpečnost</h2><span class="tag pill p-strong">9,5 / 10 — to nejsilnější</span></div>
 
-  <p class="lead" style="margin-bottom:11px;">Bezpečnostní vrstva převyšuje výchozí nastavení Laravelu, Railsu i&nbsp;Expressu. Bez kritických zranitelností; patrné promyšlené threat modelování.</p>
+  <p class="lead" style="margin-bottom:11px;">Bezpečnostní vrstva převyšuje výchozí nastavení Laravelu, Railsu i&nbsp;Expressu. Bez známých kritických zranitelností; patrné promyšlené threat modelování.</p>
 
   <div class="grid2">
     <div class="card">
@@ -304,6 +307,11 @@
     </div>
   </div>
 
+  <div class="card accent" style="margin-top:11px;">
+    <h3>Multitenancy — fail-closed izolace <span class="pill p-strong" style="font-size:8px;font-weight:750;">nově</span></h3>
+    <p class="small" style="color:var(--ink);font-size:10px;margin:0;">Zapínatelný row-level multitenancy (<code>APP_MULTITENANCY</code>): každý dotaz na&nbsp;tenant-vlastněnou tabulku musí být scopovaný, jinak <strong>neprojde konformním testem v&nbsp;CI</strong> (i&nbsp;neklasifikovaná tabulka padá). Resolver chybějící tenant v&nbsp;multitenant režimu <strong>fail-closed</strong> odmítne. Platformní rovina (role <code>superadmin</code>) má cross-tenant přístup; roli <code>superadmin</code> API odmítá na&nbsp;každé úrovni — vzniká jen mimo aplikační vrstvu (CLI/seed).</p>
+  </div>
+
   <div class="callout">
     <h3>Nadstandardní opatření</h3>
     <p class="small" style="margin:0;color:var(--ink);">Detekce <strong>reuse rotovaného tokenu</strong> i&nbsp;<strong>concurrent-rotation race</strong> spustí <code>theft_detected</code> a&nbsp;tvrdé odhlášení ze&nbsp;všech zařízení. 100&nbsp;% parametrizované dotazy, JWT secret&nbsp;≥&nbsp;32&nbsp;znaků vynuceno, <code>alg</code>-confusion ošetřen. Audit log běží <strong>mimo transakci</strong>, takže bezpečnostní eventy (login_failed, account_locked) přežijí rollback.</p>
@@ -317,13 +325,13 @@
 <!-- ===================== ARCHITECTURE ===================== -->
 <section class="page">
   <div class="runhead"><span>gokick — technické hodnocení</span><span>Architektura &amp; kvalita kódu</span></div>
-  <div class="sec-head"><div class="sec-num">03</div><h2>Architektura &amp; kvalita kódu</h2><span class="tag pill p-excellent">9,0 / 10 — senior-level</span></div>
+  <div class="sec-head"><div class="sec-num">03</div><h2>Architektura &amp; kvalita kódu</h2><span class="tag pill p-excellent">9,5 / 10 — senior-level</span></div>
 
   <p class="lead" style="margin-bottom:11px;">DDD&nbsp;+&nbsp;CQRS jsou zde implementované <strong>reálně, nikoli jako deklarace na&nbsp;papíře</strong>. Vzory jsou funkční, pokryté testy a&nbsp;vynucené na&nbsp;více úrovních.</p>
 
   <div class="card accent">
     <h3>4 vrstvy vynucené <code>go-arch-lint</code></h3>
-    <p class="small" style="color:var(--ink);font-size:10px;margin:0;">Bounded kontexty (<code>user</code>/<code>token</code>/<code>job</code>) jsou izolované tak, že cross-context import <strong>neprojde lintem</strong>. Doménová vrstva importuje jen stdlib&nbsp;+&nbsp;uuid. Pravidlo závislostí <code>presentation → application → domain ← infrastructure</code> je vynucené staticky, ne jen domluvené.</p>
+    <p class="small" style="color:var(--ink);font-size:10px;margin:0;">Bounded kontexty (<code>user</code>/<code>token</code>/<code>run</code>/<code>tenant</code>) jsou izolované tak, že cross-context import <strong>neprojde lintem</strong> — každý kontext je vlastní arch-lint komponenta. Doménová vrstva importuje jen stdlib&nbsp;+&nbsp;uuid. Pravidlo závislostí <code>presentation → application → domain ← infrastructure</code> je vynucené staticky, ne jen domluvené.</p>
   </div>
 
   <div class="grid2">
@@ -346,13 +354,13 @@
   </div>
 
   <div class="card">
-    <h3>Staticky vynucené logování — jedna cesta</h3>
-    <p class="small" style="color:var(--ink);font-size:10px;margin:0;">depguard allow-list + forbidigo + sloglint (no-raw-keys) znamená, že fyzicky <strong>nelze</strong> propašovat <code>fmt.Println</code>, druhý logger ani raw-string klíč. Korelace přes <code>trace_id</code>/<code>user_id</code>. Takovou disciplínu nenajdeme téměř nikde — ani ve&nbsp;velkých enterprise codebase.</p>
+    <h3>Staticky vynucená disciplína — nejen konvence</h3>
+    <p class="small" style="color:var(--ink);font-size:10px;margin:0;">Jediná logovací cesta (depguard allow-list + forbidigo + sloglint) fyzicky <strong>nedovolí</strong> <code>fmt.Println</code>, druhý logger ani raw-string klíč; korelace přes <code>trace_id</code>/<code>user_id</code>. Po&nbsp;auditu k&nbsp;tomu přibyly <strong>vynucené limity složitosti</strong> (funlen/gocognit/nestif, délka souboru, max&nbsp;5 parametrů) a&nbsp;<strong>typová hranice BE↔FE</strong> — každý wire payload je anotovaný struct, žádné inline mapy ani <code>any</code>. Takovou disciplínu nenajdeme téměř nikde.</p>
   </div>
 
   <div class="callout" style="background:linear-gradient(135deg,#FBF3E2,#FDF8EE);border-color:#F0DCB0;">
     <h3 style="color:#9A6B1E;">Vyvážená výhrada</h3>
-    <p class="small" style="margin:0;color:var(--ink);">Vůči reálnému rozsahu funkcí (v&nbsp;zásadě autentizace&nbsp;+&nbsp;správa uživatelů, ~4,9&nbsp;k řádků produkčního Go) jde o&nbsp;<strong>značnou míru ceremonie</strong> — vysoký poměr abstrakce k&nbsp;funkcionalitě. To je legitimní za&nbsp;předpokladu, že cílem je pevný základ pro&nbsp;růst. Registry event/job handlerů jsou zatím prázdné — infrastruktura bez odběratelů.</p>
+    <p class="small" style="margin:0;color:var(--ink);">Produkční Go mezitím vyrostl na&nbsp;~9,5&nbsp;k řádků o&nbsp;reálné schopnosti (multitenancy, durable engine, platformní rovina), takže dřívější výhrada k&nbsp;„vysokému poměru ceremonie k&nbsp;funkcionalitě" <strong>slábne</strong>. Co ale platí dál: <strong>registry doménových event/run handlerů jsou stále prázdné</strong> — infrastruktura je připravená, ale bez produkčních odběratelů (proto zůstává v&nbsp;„cestě k&nbsp;10").</p>
   </div>
 
   <div class="pagenum">04</div>
@@ -361,7 +369,7 @@
 <!-- ===================== PERFORMANCE ===================== -->
 <section class="page">
   <div class="runhead"><span>gokick — technické hodnocení</span><span>Výkon</span></div>
-  <div class="sec-head"><div class="sec-num">04</div><h2>Výkon</h2><span class="tag pill p-strong">8,5 / 10 — výborný na jednom uzlu</span></div>
+  <div class="sec-head"><div class="sec-num">04</div><h2>Výkon</h2><span class="tag pill p-strong">9,0 / 10 — výborný na jednom uzlu</span></div>
 
   <p class="lead" style="margin-bottom:12px;">Na&nbsp;jednom uzlu je výkon výborný — Go runtime bez overheadu spravovaných běhových prostředí a&nbsp;SQLite přímo v&nbsp;procesu, bez síťového hopu.</p>
 
@@ -376,18 +384,18 @@
       </ul>
     </div>
     <div class="card">
-      <h3>Job fronta — nadprůměrně robustní</h3>
+      <h3>Durable engine — nadprůměrně robustní</h3>
       <ul class="clean">
-        <li>Atomický <code>claim</code> přes <code>UPDATE…RETURNING</code>, exponenciální backoff (5&nbsp;s → cap 1&nbsp;h)</li>
-        <li>At-least-once: job v&nbsp;tx, panika → rollback → znovu claimovatelné, panika do&nbsp;Sentry</li>
+        <li>Atomický <code>claim</code> (<code>UPDATE…RETURNING</code>), lease + heartbeat, owner-token fencing, exponenciální backoff</li>
+        <li>Běží <strong>mimo transakci</strong> (vynuceno) — dlouhá práce nedrží SQLite write-lock; at-least-once, checkpoint + resume po&nbsp;pádu</li>
         <li>Bez externího brokeru; korektnost na&nbsp;úrovni River/Asynq (jen ~1&nbsp;s polling)</li>
       </ul>
     </div>
   </div>
 
   <div class="callout">
-    <h3>Jediné výkonové omezení na&nbsp;jednom uzlu</h3>
-    <p class="small" style="margin:0;color:var(--ink);">Chybí stránkování — <code>FindAll</code> načítá celou tabulku. To je v&nbsp;pořádku do&nbsp;nižších desítek tisíc řádků, dál vyžaduje keyset stránkování. Jinak žádné N+1 ani horké dotazy bez indexu. Horizontální strop (víc uzlů, vyšší zápisový throughput) řeší samostatně následující kapitola.</p>
+    <h3>Co ještě zbývá na&nbsp;jednom uzlu</h3>
+    <p class="small" style="margin:0;color:var(--ink);">Dřívější strop „<code>FindAll</code> načítá celou tabulku" je <strong>vyřešen</strong> — všechny list/grid dotazy jdou přes stránkované <code>FindPage</code> (<code>LIMIT/OFFSET</code>) a&nbsp;<code>FindAll</code> už nemá produkčního volajícího. Zbývá <strong>keyset stránkování</strong> (offset u&nbsp;hlubokých stránek stále skenuje zahazované řádky) a&nbsp;cache pro&nbsp;hot reads. Jinak žádné N+1 ani horké dotazy bez indexu. Horizontální strop řeší následující kapitola.</p>
   </div>
 
   <div class="pagenum">05</div>
@@ -405,7 +413,7 @@
     <ul class="clean warn">
       <li>SQLite single-writer (~stovky–nízké tisíce zápisů/s)</li>
       <li>Scheduler <strong>bez leader election</strong> → na&nbsp;více instancích běží cron joby opakovaně</li>
-      <li>Job fronta = polling po&nbsp;1&nbsp;s (ne LISTEN/NOTIFY)</li>
+      <li>Durable engine = polling po&nbsp;1&nbsp;s (ne LISTEN/NOTIFY)</li>
       <li>Rate-limit stav je in-proc → instance nejsou plně stateless</li>
     </ul>
   </div>
@@ -428,9 +436,9 @@
     <div class="card">
       <h3>Statická disciplína</h3>
       <ul class="clean">
-        <li>golangci-lint: depguard <strong>allow-list</strong> (každý import schválen), forbidigo, sloglint</li>
-        <li>go-arch-lint: vrstvy i&nbsp;bounded kontexty</li>
-        <li>ESLint strictTypeChecked + vue-tsc, golines</li>
+        <li>golangci-lint: depguard <strong>allow-list</strong>, forbidigo, sloglint + limity složitosti (funlen/gocognit/nestif)</li>
+        <li>go-arch-lint (vrstvy i&nbsp;kontexty); vlastní gaty <code>boundary</code>/<code>errfields</code>/<code>docpaths</code></li>
+        <li>ESLint strictTypeChecked + vue-tsc + knip; <strong>no-as</strong> ráčna</li>
       </ul>
     </div>
     <div class="card">
@@ -438,12 +446,12 @@
       <ul class="clean">
         <li>Wire = <strong>compile-time DI</strong>, žádná runtime magie</li>
         <li>Goose migrace embedované, auto-aplikace při startu</li>
-        <li>Jediný <code>make</code> target provede celý build</li>
+        <li><code>gk tsgen</code> codegen: TS typy + guardy z&nbsp;Go DTO (jeden zdroj pravdy)</li>
       </ul>
     </div>
   </div>
 
-  <div class="sec-head" style="margin-top:18px;"><div class="sec-num">07</div><h2>Frontend</h2><span class="tag pill p-strong">8,5 / 10</span></div>
+  <div class="sec-head" style="margin-top:18px;"><div class="sec-num">07</div><h2>Frontend</h2><span class="tag pill p-strong">9,0 / 10</span></div>
 
   <div class="grid2">
     <div class="card accent-vue">
@@ -455,11 +463,11 @@
       </ul>
     </div>
     <div class="card accent-vue">
-      <h3>Čistota &amp; typy</h3>
+      <h3>Čistota, typy &amp; DataGrid</h3>
       <ul class="clean vue">
-        <li>Vue 3 <code>script setup</code>, maximálně striktní TS</li>
-        <li>Router guardy <strong>zrcadlí backend permissions</strong></li>
-        <li>Žádná FE validace — backend je autoritativní</li>
+        <li>Vue 3 <code>script setup</code>, striktní TS; <strong>runtime-validovaný fetch</strong> (2xx tělo ověřené proti kontraktu)</li>
+        <li>Server-side <strong>DataGrid</strong>: stránkování/filtry/řazení, výběr + bulk akce, URL sync</li>
+        <li>Router guardy zrcadlí backend permissions; žádná FE validace</li>
       </ul>
     </div>
   </div>
@@ -474,13 +482,13 @@
   <div class="runhead"><span>gokick — technické hodnocení</span><span>Dokumentace &amp; AI skills</span></div>
   <div class="sec-head"><div class="sec-num">08</div><h2>Dokumentace &amp; AI skills</h2><span class="tag pill p-excellent">10 / 10 — referenční</span></div>
 
-  <p class="lead" style="margin-bottom:11px;">Dokumentace je vědomě dvouvrstvá: <strong>štíhlé lidské docs</strong> (Documan) + <strong>28&nbsp;gk-* skillů</strong> jako strojově i&nbsp;lidsky čitelný how-to. Jde o&nbsp;AI-native přístup, který je v&nbsp;současné praxi vzácný — proto byl vyčleněn jako samostatná hodnocená dimenze.</p>
+  <p class="lead" style="margin-bottom:11px;">Dokumentace je vědomě dvouvrstvá: <strong>štíhlé lidské docs</strong> (Documan) + <strong>29&nbsp;gk-* skillů</strong> jako strojově i&nbsp;lidsky čitelný how-to. Jde o&nbsp;AI-native přístup, který je v&nbsp;současné praxi vzácný — proto byl vyčleněn jako samostatná hodnocená dimenze.</p>
 
   <div class="grid2">
     <div class="card accent">
-      <h3>28 gk-* skillů</h3>
+      <h3>29 gk-* skillů</h3>
       <ul class="clean">
-        <li>Jeden skill = jeden koncept (auth, repos, jobs, permissions, observability, deploy…)</li>
+        <li>Jeden skill = jeden koncept (auth, repos, runs, permissions, multitenancy, observability, deploy…)</li>
         <li>Každý: <strong>proč/kdy · vysvětlení · jak funguje · recept · časté chyby</strong></li>
         <li>Psané pro Claude Code <em>i</em> juniora / non-tech čtenáře</li>
       </ul>
@@ -496,9 +504,9 @@
     <div class="card accent-vue">
       <h3>Štíhlé lidské docs (Documan)</h3>
       <ul class="clean vue">
-        <li>architecture · installation · configuration · flow stránky · roadmap</li>
-        <li>Verbose per-layer docs <strong>vědomě odstraněny</strong> ve prospěch skillů</li>
-        <li>Méně driftu, jeden zdroj pravdy pro „jak se co dělá"</li>
+        <li>architecture · installation · configuration · sekce HTTP/CQRS/Background · roadmap</li>
+        <li>Verbose per-layer docs <strong>vědomě odstraněny</strong> ve&nbsp;prospěch skillů</li>
+        <li>Gate <code>docpaths</code>: každá citovaná cesta i&nbsp;<code>/gk-*</code> odkaz musí existovat, jinak padá CI</li>
       </ul>
     </div>
     <div class="card accent-vue">
@@ -522,7 +530,7 @@
 <!-- ===================== TESTING ===================== -->
 <section class="page">
   <div class="runhead"><span>gokick — technické hodnocení</span><span>Testovací pokrytí</span></div>
-  <div class="sec-head"><div class="sec-num">09</div><h2>Testovací pokrytí</h2><span class="tag pill p-good">7,5 / 10 — silná šířka, mezery v E2E</span></div>
+  <div class="sec-head"><div class="sec-num">09</div><h2>Testovací pokrytí</h2><span class="tag pill p-good">8,0 / 10 — proces-E2E hotové, chybí browser/load</span></div>
 
   <p class="lead" style="margin-bottom:11px;">Pokrytí je svým rozsahem nadprůměrné a&nbsp;integračně těžké; nejvíc chybí browserové E2E a&nbsp;zátěžové testy.</p>
 
@@ -530,26 +538,25 @@
     <div class="card accent">
       <h3>Co je solidní</h3>
       <ul class="clean">
-        <li>Poměr <strong>testy:produkce u&nbsp;Go ≈ 2,15:1</strong> (10&nbsp;559 vs 4&nbsp;906 řádků)</li>
+        <li>Poměr <strong>testy:produkce u&nbsp;Go ≈ 1,9:1</strong> (18&nbsp;093 vs 9&nbsp;487 řádků)</li>
         <li><strong>testfx harness</strong> nad reálnou SQLite — ne mocky</li>
-        <li>Arch-konformní testy (<code>zz_audit</code>/<code>zz_gap</code>) + běh s&nbsp;<code>-race</code></li>
-        <li>Regresní test ke&nbsp;každé fázi (event isolation, tx-rollback, claim race…)</li>
+        <li><strong>Proces-lifecycle E2E</strong>: crash-recovery, at-least-once, SIGTERM drain, terminální selhání</li>
+        <li>Arch-konformní testy (<code>zz_audit</code>/<code>zz_gap</code>, tenant gate) + běh s&nbsp;<code>-race</code></li>
       </ul>
     </div>
     <div class="card accent-vue" style="border-left-color:var(--amber);">
       <h3 style="color:#9A6B1E;">Co chybí do&nbsp;10</h3>
       <ul class="clean warn">
-        <li><strong>E2E</strong> (Playwright) — žádné browserové flow testy</li>
+        <li><strong>Browser-E2E</strong> (Playwright) — proces-E2E hotové, browserové flow ještě ne</li>
         <li><strong>Zátěžové / výkonové</strong> testy (k6, vegeta)</li>
-        <li>Frontend testy (vitest) jsou mělké — mount checks, ne chování</li>
-        <li>Bez <strong>coverage gate</strong> v&nbsp;CI a&nbsp;bez mutation/contract testů</li>
+        <li><strong>Coverage gate</strong> v&nbsp;CI + mutation/contract testy</li>
       </ul>
     </div>
   </div>
 
   <div class="callout">
     <h3>Hodnocení dimenze</h3>
-    <p class="small" style="margin:0;color:var(--ink);">CI (<code>validate.yml</code>) na&nbsp;každý PR spouští lint + test + build, takže regrese se chytají brzy. Slabší skóre nedělá kvalita existujících testů, ale <strong>chybějící vrstvy</strong> — browserová a&nbsp;zátěžová — které u&nbsp;boilerplate teprve dávají jistotu při růstu. Doplnění je přímočaré (kapitola&nbsp;11).</p>
+    <p class="small" style="margin:0;color:var(--ink);">CI (<code>validate.yml</code>) na&nbsp;každý PR spouští lint + test + build + <strong>paralelní proces-E2E job</strong>, takže regrese i&nbsp;pády procesu se chytají brzy. Skóre drží zpět <strong>chybějící vrstvy</strong> — browserová a&nbsp;zátěžová — a&nbsp;absence coverage gate. Doplnění je přímočaré (kapitola&nbsp;11).</p>
   </div>
 
   <div class="pagenum">09</div>
@@ -565,7 +572,7 @@
     <tbody>
       <tr>
         <td>Rails / Laravel / Django</td>
-        <td class="win">type-safety, startup, paměť, single-binary deploy, <strong>přísnější bezpečnostní defaulty</strong></td>
+        <td class="win">type-safety, startup, paměť, single-binary deploy, <strong>přísnější bezpečnostní defaulty</strong>, row-level multitenancy na&nbsp;přepínač</td>
         <td class="lose">ekosystém, šíře hotových funkcí, scale-out příběh, komunita</td>
       </tr>
       <tr>
@@ -592,7 +599,8 @@
     <div class="two">
       <p class="small" style="color:var(--ink);">Bezpečnostní vrstva nad&nbsp;rámec defaultů frameworků.</p>
       <p class="small" style="color:var(--ink);">Reálné, testované DDD/CQRS s&nbsp;lint-enforcementem.</p>
-      <p class="small" style="color:var(--ink);">Poměr testy:produkce ≈&nbsp;<strong>2,15:1</strong>.</p>
+      <p class="small" style="color:var(--ink);">Poměr testy:produkce u&nbsp;Go ≈&nbsp;<strong>1,9:1</strong>.</p>
+      <p class="small" style="color:var(--ink);">Zapínatelný row-level multitenancy + platformní rovina.</p>
       <p class="small" style="color:var(--ink);">Single-binary deploy, embedované migrace i&nbsp;SPA.</p>
     </div>
   </div>
@@ -622,7 +630,7 @@
         <div style="font-weight:720;font-size:10.5px;margin-bottom:4px;">B) Skutečný write-scale — Postgres</div>
         <ul class="clean vue" style="margin:0;">
           <li><strong>Výměna adapteru, ne rewrite</strong> — <code>infrastructure/postgres/*</code> + <code>wire.Bind</code></li>
-          <li>Job frontu → <strong>River</strong> (Postgres-native, battle-tested)</li>
+          <li>Durable frontu → <strong>River</strong> (Postgres-native, battle-tested)</li>
           <li>Scheduler → <strong>leader election</strong> (advisory locks); rate-limit stav → Redis</li>
         </ul>
       </div>
@@ -631,28 +639,28 @@
 
   <div class="grid2">
     <div class="card" style="padding:10px 13px;margin:0;">
-      <h3 style="font-size:11.5px;">Bezpečnost <span class="pill p-strong" style="font-size:8px;">9 → 10</span></h3>
+      <h3 style="font-size:11.5px;">Bezpečnost <span class="pill p-strong" style="font-size:8px;">9,5 → 10</span></h3>
       <ul class="clean" style="margin:3px 0 0;"><li>2FA (TOTP) + WebAuthn</li><li>refresh 256-bit + EdDSA JWT pro multi-service</li><li>CSP bez <code>unsafe-inline</code> (nonce); gosec/CodeQL/govulncheck v&nbsp;CI</li></ul>
     </div>
     <div class="card" style="padding:10px 13px;margin:0;">
-      <h3 style="font-size:11.5px;">Architektura <span class="pill p-strong" style="font-size:8px;">9 → 10</span></h3>
-      <ul class="clean" style="margin:3px 0 0;"><li>zapojit prázdné event/job registry reálnými handlery</li><li>druhý bounded context jako referenční vzor</li></ul>
+      <h3 style="font-size:11.5px;">Architektura <span class="pill p-strong" style="font-size:8px;">9,5 → 10</span></h3>
+      <ul class="clean" style="margin:3px 0 0;"><li>zapojit prázdné event/run registry reálnými handlery</li><li>netriviální bounded context mimo auth jako vzor</li></ul>
     </div>
     <div class="card" style="padding:10px 13px;margin:0;">
       <h3 style="font-size:11.5px;">Tooling / DX <span class="pill p-excellent" style="font-size:8px;">9,5 → 10</span></h3>
       <ul class="clean vue" style="margin:3px 0 0;"><li>coverage gate + mutation testing v&nbsp;CI</li><li>Dependabot/Renovate + govulncheck</li><li>SBOM + podepsané release (cosign)</li></ul>
     </div>
     <div class="card" style="padding:10px 13px;margin:0;">
-      <h3 style="font-size:11.5px;">Výkon <span class="pill p-strong" style="font-size:8px;">8,5 → 10</span></h3>
+      <h3 style="font-size:11.5px;">Výkon <span class="pill p-strong" style="font-size:8px;">9,0 → 10</span></h3>
       <ul class="clean" style="margin:3px 0 0;"><li>keyset stránkování list dotazů</li><li>cache vrstva pro&nbsp;hot reads</li><li>benchmarky + pprof profily</li></ul>
     </div>
     <div class="card" style="padding:10px 13px;margin:0;">
-      <h3 style="font-size:11.5px;">Frontend <span class="pill p-strong" style="font-size:8px;">8,5 → 10</span></h3>
+      <h3 style="font-size:11.5px;">Frontend <span class="pill p-strong" style="font-size:8px;">9,0 → 10</span></h3>
       <ul class="clean vue" style="margin:3px 0 0;"><li>E2E (Playwright)</li><li>a11y audit (axe)</li><li>i18n</li></ul>
     </div>
     <div class="card" style="padding:10px 13px;margin:0;">
-      <h3 style="font-size:11.5px;">Testovací pokrytí <span class="pill p-good" style="font-size:8px;">7,5 → 10</span></h3>
-      <ul class="clean warn" style="margin:3px 0 0;"><li>E2E + load (k6/vegeta)</li><li>coverage gate v&nbsp;CI</li><li>contract + mutation testy</li></ul>
+      <h3 style="font-size:11.5px;">Testovací pokrytí <span class="pill p-good" style="font-size:8px;">8,0 → 10</span></h3>
+      <ul class="clean warn" style="margin:3px 0 0;"><li>browser-E2E + load (k6/vegeta)</li><li>coverage gate v&nbsp;CI</li><li>contract + mutation testy</li></ul>
     </div>
     <div class="card" style="padding:10px 13px;margin:0;background:linear-gradient(135deg,var(--go-soft),#F2FBF6);border-color:#C9E9F0;">
       <h3 style="font-size:11.5px;color:var(--go-dark);">Výsledek</h3>
@@ -671,22 +679,22 @@
 
   <div class="grid2" style="margin-bottom:14px;">
     <div class="stat">
-      <div class="big">8&nbsp;240<span class="u">&nbsp;řádků</span></div>
+      <div class="big">15&nbsp;863<span class="u">&nbsp;řádků</span></div>
       <div class="cap">Produkční kód</div>
-      <div class="note">Go 4&nbsp;906 · frontend 3&nbsp;255 · SQL 66 · generovaný DI 216</div>
+      <div class="note">Go 9&nbsp;487 · frontend 5&nbsp;991 · SQL 80 · generovaný DI 304</div>
     </div>
     <div class="stat">
-      <div class="big">12&nbsp;030<span class="u">&nbsp;řádků</span></div>
+      <div class="big">20&nbsp;719<span class="u">&nbsp;řádků</span></div>
       <div class="cap">Testovací kód</div>
-      <div class="note">Go 10&nbsp;559 · TypeScript 1&nbsp;471 — poměr ≈ 2,15:1</div>
+      <div class="note">Go 18&nbsp;093 · TypeScript 2&nbsp;467 · shell 159 — poměr Go ≈ 1,9:1</div>
     </div>
   </div>
 
   <h3 style="font-size:11px;margin-bottom:5px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;">Složení produkčního kódu</h3>
   <div class="stackbar">
-    <span style="width:59.5%;background:linear-gradient(135deg,#00ADD8,#007D9C)">Go 4&nbsp;906</span>
-    <span style="width:28.9%;background:linear-gradient(135deg,#42B883,#359268)">Vue 2&nbsp;379</span>
-    <span style="width:10.6%;background:#7A9AAB;font-size:8px">TS 875 · SQL 66 · DI 216</span>
+    <span style="width:59.8%;background:linear-gradient(135deg,#00ADD8,#007D9C)">Go 9&nbsp;487</span>
+    <span style="width:24.7%;background:linear-gradient(135deg,#42B883,#359268)">Vue 3&nbsp;917</span>
+    <span style="width:15.5%;background:#7A9AAB;font-size:8px">TS 2&nbsp;074 · SQL 80 · DI 304</span>
   </div>
   <div class="legend" style="margin-bottom:16px;">
     <span><i style="background:#00ADD8"></i>Go (backend)</span>
@@ -697,21 +705,22 @@
   <table class="data">
     <thead><tr><th>Kategorie</th><th class="r">Soubory</th><th class="r">Kód</th><th class="r">Komentáře</th><th class="r">Prázdné</th></tr></thead>
     <tbody>
-      <tr><td><span class="swatch" style="background:#00ADD8"></span>Go — produkce <span class="small">(bez testů a wire_gen)</span></td><td class="r">97</td><td class="r"><strong>4&nbsp;906</strong></td><td class="r">1&nbsp;046</td><td class="r">899</td></tr>
-      <tr><td><span class="swatch" style="background:#9CC2D4"></span>Go — testy <span class="small">(*_test.go)</span></td><td class="r">86</td><td class="r"><strong>10&nbsp;559</strong></td><td class="r">1&nbsp;849</td><td class="r">1&nbsp;699</td></tr>
-      <tr><td><span class="swatch" style="background:#7A9AAB"></span>Go — generovaný <span class="small">(wire_gen.go)</span></td><td class="r">1</td><td class="r"><strong>216</strong></td><td class="r">38</td><td class="r">25</td></tr>
-      <tr><td><span class="swatch" style="background:#42B883"></span>Vue <span class="small">(komponenty + views)</span></td><td class="r">47</td><td class="r"><strong>2&nbsp;379</strong></td><td class="r">14</td><td class="r">271</td></tr>
-      <tr><td><span class="swatch" style="background:#69C79B"></span>TypeScript — produkce</td><td class="r">47</td><td class="r"><strong>875</strong></td><td class="r">208</td><td class="r">158</td></tr>
-      <tr><td><span class="swatch" style="background:#A9DCC4"></span>TypeScript — testy</td><td class="r">18</td><td class="r"><strong>1&nbsp;471</strong></td><td class="r">238</td><td class="r">464</td></tr>
-      <tr><td><span class="swatch" style="background:#C7A24B"></span>SQL <span class="small">(migrace)</span></td><td class="r">4</td><td class="r"><strong>66</strong></td><td class="r">18</td><td class="r">9</td></tr>
+      <tr><td><span class="swatch" style="background:#00ADD8"></span>Go — produkce <span class="small">(bez testů a wire_gen)</span></td><td class="r">141</td><td class="r"><strong>9&nbsp;487</strong></td><td class="r">3&nbsp;063</td><td class="r">1&nbsp;596</td></tr>
+      <tr><td><span class="swatch" style="background:#9CC2D4"></span>Go — testy <span class="small">(*_test.go)</span></td><td class="r">132</td><td class="r"><strong>18&nbsp;093</strong></td><td class="r">2&nbsp;956</td><td class="r">2&nbsp;606</td></tr>
+      <tr><td><span class="swatch" style="background:#7A9AAB"></span>Go — generovaný <span class="small">(wire_gen.go)</span></td><td class="r">1</td><td class="r"><strong>304</strong></td><td class="r">59</td><td class="r">33</td></tr>
+      <tr><td><span class="swatch" style="background:#42B883"></span>Vue <span class="small">(komponenty + views)</span></td><td class="r">60</td><td class="r"><strong>3&nbsp;917</strong></td><td class="r">190</td><td class="r">464</td></tr>
+      <tr><td><span class="swatch" style="background:#69C79B"></span>TypeScript — produkce</td><td class="r">82</td><td class="r"><strong>2&nbsp;074</strong></td><td class="r">570</td><td class="r">420</td></tr>
+      <tr><td><span class="swatch" style="background:#A9DCC4"></span>TypeScript — testy</td><td class="r">32</td><td class="r"><strong>2&nbsp;467</strong></td><td class="r">335</td><td class="r">803</td></tr>
+      <tr><td><span class="swatch" style="background:#C7A24B"></span>SQL <span class="small">(migrace)</span></td><td class="r">2</td><td class="r"><strong>80</strong></td><td class="r">76</td><td class="r">12</td></tr>
+      <tr><td><span class="swatch" style="background:#8FB0A0"></span>Shell <span class="small">(E2E harness)</span></td><td class="r">5</td><td class="r"><strong>159</strong></td><td class="r">53</td><td class="r">29</td></tr>
       <tr><td><span class="swatch" style="background:#C9D6DE"></span>CSS</td><td class="r">1</td><td class="r"><strong>1</strong></td><td class="r">0</td><td class="r">0</td></tr>
-      <tr class="sum"><td>Celkem</td><td class="r">302</td><td class="r">20&nbsp;476</td><td class="r">3&nbsp;412</td><td class="r">3&nbsp;527</td></tr>
+      <tr class="sum"><td>Celkem</td><td class="r">456</td><td class="r">36&nbsp;582</td><td class="r">7&nbsp;302</td><td class="r">5&nbsp;963</td></tr>
     </tbody>
   </table>
 
   <div class="callout" style="margin-top:14px;">
     <h3>Co z&nbsp;čísel plyne</h3>
-    <p class="small" style="margin:0;color:var(--ink);">Poměr <strong>testy:produkce u&nbsp;Go ≈ 2,15:1</strong> je silný signál kvality. Hustota komentářů v&nbsp;produkčním Go ≈&nbsp;18&nbsp;% — komentáře jsou „load-bearing" (vysvětlují <em>proč</em>), ne výplň. Reálná byznys logika je malá (~4,9&nbsp;k Go) vs.&nbsp;velký aparát kolem — potvrzuje to charakter <strong>foundation/boilerplate postaveného na&nbsp;růst</strong>.</p>
+    <p class="small" style="margin:0;color:var(--ink);">Poměr <strong>testy:produkce u&nbsp;Go ≈ 1,9:1</strong> zůstává silným signálem kvality — mírný pokles z&nbsp;2,15:1 vznikl tím, že <strong>produkční kód mezitím vyrostl rychleji</strong> (multitenancy, durable engine, platformní rovina) než testy, ne poklesem testovací kázně. Hustota komentářů v&nbsp;produkčním Go ≈&nbsp;24&nbsp;% — komentáře jsou „load-bearing" (vysvětlují <em>proč</em>), ne výplň. Nad&nbsp;rámec této tabulky žije ještě <strong>~2&nbsp;750 řádků vlastního Go toolingu</strong> (<code>tools/gk</code>: codegen + lint gaty).</p>
   </div>
 
   <div class="pagenum">12</div>
@@ -734,21 +743,21 @@
       a&nbsp;ani si to neklade za&nbsp;cíl.
     </p>
     <p style="font-size:12.5px;line-height:1.65;margin:10px 0 0;">
-      K&nbsp;tomu <strong>AI-native dokumentace</strong> (28 gk-* skillů) posouvá laťku tam, kde ji většina projektů
+      K&nbsp;tomu <strong>AI-native dokumentace</strong> (29 gk-* skillů) posouvá laťku tam, kde ji většina projektů
       nemá vůbec. Mimo škálovatelnost je <strong>cesta k&nbsp;10/10 otázkou týdnů cílené práce</strong> (kapitola&nbsp;11),
       nikoli přestavby — architektura tento růst již předpokládá.
     </p>
   </div>
 
   <div class="grid2" style="margin-top:14px;">
-    <div class="stat" style="text-align:center;"><div class="big">8,5<span class="u">&nbsp;/ 10</span></div><div class="cap">Celkové vážené skóre</div></div>
-    <div class="stat" style="text-align:center;"><div class="big" style="color:#2C7A52;">0</div><div class="cap">Kritických zranitelností</div></div>
+    <div class="stat" style="text-align:center;"><div class="big">8,9<span class="u">&nbsp;/ 10</span></div><div class="cap">Celkové vážené skóre</div></div>
+    <div class="stat" style="text-align:center;"><div class="big" style="color:#2C7A52;">0</div><div class="cap">Známých kritických zranitelností</div></div>
   </div>
 
   <div style="margin-top:auto;"></div>
   <div style="position:absolute; bottom:20mm; left:17mm; right:17mm; border-top:2px solid var(--line); padding-top:12px; display:flex; justify-content:space-between; align-items:center;">
     <div class="wordmark" style="color:var(--go-dark); font-size:13px;"><span class="dot" style="background:var(--go);box-shadow:0 0 0 4px var(--go-soft);"></span> gokick</div>
-    <div class="small">Technické hodnocení stacku · 17.&nbsp;6.&nbsp;2026 · audit reálného kódu</div>
+    <div class="small">Technické hodnocení stacku · 20.&nbsp;7.&nbsp;2026 · re-audit reálného kódu</div>
   </div>
 
   <div class="pagenum">13</div>
