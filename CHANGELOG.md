@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.0](https://github.com/jzaplet/gokick/compare/v1.2.1...v1.3.0) (2026-07-20)
+
+
+### Features
+
+* **setup-github:** guide private-repo GHCR pull-credential setup ([4253ac0](https://github.com/jzaplet/gokick/commit/4253ac02c2003035ed260e400cbcd88861a54023))
+* **setup-github:** guide private-repo GHCR pull-credential setup ([d1f2cc6](https://github.com/jzaplet/gokick/commit/d1f2cc6e36344600aa8474045b6af0bba894182a))
+
 ## [1.2.1](https://github.com/jzaplet/gokick/compare/v1.2.0...v1.2.1) (2026-07-20)
 
 
