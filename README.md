@@ -80,8 +80,8 @@ Na vše ostatní stačí **`/gk`** — rozcestník, který sám rozhodne, jaké 
 
 | Sekce | Popis                                                |
 |-------|------------------------------------------------------|
-| [Skills](/skills) | **gk-* skills** — přesné koncepty + how-to pro AI i vývojáře (napiš `/gk`) |
-| [Framework](/framework) | Architektura, instalace, konfigurace, request/command/run flow |
+| [AI skills](/skills) | **gk-* skills** — přesné koncepty + how-to pro AI i vývojáře (napiš `/gk`) |
+| [Framework](/framework) | Architektura, instalace, konfigurace + toky (HTTP, CQRS, Background) |
 | [ADRs](/adrs) | Architecture Decision Records — zafixovaná rozhodnutí **(template pro tvůj projekt)** |
 | [Roadmap](/roadmap) | Fázovaný plán **(template pro tvůj projekt)** |
 | [Issues](/issues) | Features / Bugs / Chores **(template pro tvůj projekt)** |
