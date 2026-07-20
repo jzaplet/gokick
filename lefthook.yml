@@ -1,0 +1,40 @@
+# Git hooks, wired by `make install` (→ `lefthook install`). Two local guards,
+# each a fast mirror of a CI gate so a `--no-verify` bypass is still caught
+# server-side, never silently:
+#
+#   commit-msg → commitlint   every message is a valid Conventional Commit, the
+#                             format release-please reads to version + changelog
+#                             (mirror of .github/workflows/commitlint.yml).
+#   pre-push   → branch-name  the branch matches the team's prefixes
+#                             (mirror of the GitHub ruleset on new branches).
+#
+# See CONTRIBUTING.md.
+
+commit-msg:
+  commands:
+    commitlint:
+      # {1} is the commit-message file git hands the hook. `yarn exec` is the
+      # Yarn 4 way to run a dependency binary (bare `yarn commitlint` looks for a
+      # script and fails); commitlint prints only on a violation.
+      run: yarn exec commitlint --edit {1}
+
+pre-push:
+  commands:
+    branch-name:
+      # Advisory: names the convention and exits non-zero before the push leaves
+      # the machine. `main` is exempt (a maintainer may push it after a local
+      # merge; the ruleset still blocks a direct push server-side), and
+      # `release-please--*` is exempt for the bot's own release branches.
+      run: |
+        branch="$(git rev-parse --abbrev-ref HEAD)"
+        case "$branch" in
+          main|release-please--*)
+            exit 0 ;;
+          feature/*|fix/*|hotfix/*|release/*|chore/*|docs/*|refactor/*|test/*|perf/*|ci/*)
+            exit 0 ;;
+          *)
+            echo "✖ branch '$branch' is not a recognised branch name."
+            echo "  Prefix it with one of: feature/ fix/ hotfix/ release/ chore/ docs/ refactor/ test/ perf/ ci/"
+            echo "  e.g.  git branch -m feature/$branch"
+            exit 1 ;;
+        esac

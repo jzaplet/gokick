@@ -77,7 +77,9 @@ Jedno číslo verze teče do binárky i do SPA, aby Sentry grupoval chyby podle 
 ### GitHub CI
 
 - **`validate.yml`** (push na `main` + každý PR): job `validate` = `make install` → `make lint` → `make test` → `make build`; paralelní job `e2e` = `make e2e` (durable-run process-lifecycle testy, viz `/gk-runs`). `SKIP_DOCUMAN: "1"` (doc lint má vlastní `documan.yml`).
-- **`release.yml`** (na tagu `v*`): postaví produkční image přes multi-stage Dockerfile, stampuje tag jako verzi. **Push do GHCR je defaultně VYPNUTÝ** (gokick je template — fork nesmí auto-publikovat); zapneš repo variable `RELEASE_PUSH=true`. Bez ní se image jen postaví (ověří, že release kompiluje), nepushne. Source-map upload do Sentry je optional (`SENTRY_AUTH_TOKEN` jako build secret).
+- **`commitlint.yml`** (na PR): prožene každý commit v PR přes `commitlint` — server-side půlka vynucení Conventional Commits (lokální `commit-msg` hook jde obejít `--no-verify`, tohle ne). Konvence commitů/větví: `CONTRIBUTING.md`.
+- **`release-please.yml`** (push na `main`): drží otevřený „release PR", počítá další SemVer z commitů a přepisuje `CHANGELOG.md`; jeho merge vytvoří tag `vX.Y.Z` a GitHub Release. Verzování je automatické — verze ani changelog se needitují ručně.
+- **`release.yml`** (na tagu `v*` **nebo** `workflow_call` z release-please): postaví produkční image přes multi-stage Dockerfile, stampuje tag jako verzi. Volá se dvěma cestami se stejným buildem, protože tag od release-please (push přes `GITHUB_TOKEN`) `on: push: tags` **nespustí** (GitHub blokuje rekurzi), takže ho release-please zavolá přímo. **Push do GHCR je defaultně VYPNUTÝ** (gokick je template — fork nesmí auto-publikovat); zapneš repo variable `RELEASE_PUSH=true`. Bez ní se image jen postaví (ověří, že release kompiluje), nepushne. Source-map upload do Sentry je optional (`SENTRY_AUTH_TOKEN` jako build secret).
 
 ## Recipe: postavit produkční image lokálně
 
@@ -85,11 +87,18 @@ Jedno číslo verze teče do binárky i do SPA, aby Sentry grupoval chyby podle 
 2. Spusť: `docker run -p 3000:3000 -v /host/data:/data -e APP_JWT_SECRET=… gokick:latest`.
 3. (První běh) seedni admina: `docker run … gokick:latest seed` (potřebuje `APP_SEED_ADMIN_PASSWORD`).
 
-## Recipe: vydat release přes CI
+## Recipe: vydat release (release-please, doporučeno)
 
-1. Cut tag z **zelené `main`** (validate prošel): `git tag v1.2.3 && git push origin v1.2.3`.
-2. `release.yml` postaví image a stampuje `v1.2.3` jako `main.release` + `VITE_SENTRY_RELEASE`.
-3. Pro skutečný push do GHCR měj nastavenou repo variable `RELEASE_PUSH=true` (jinak se image jen postaví).
+1. Merguj `feat:` / `fix:` PR do `main` jako normálně — nic dalšího neděláš.
+2. release-please drží otevřený PR „chore(main): release X.Y.Z" a průběžně v něm dopočítává verzi + `CHANGELOG.md` z commitů. Nech ho otevřený, dokud nechceš vydat.
+3. **Merge toho release PR = vydání.** release-please tagne `vX.Y.Z` + založí GitHub Release; tag pak přes `workflow_call` postaví image (`release.yml`). Verze teče do binárky (`main.release`) i SPA (`VITE_SENTRY_RELEASE`) → Sentry release, stejně jako dřív.
+4. Pro skutečný push do GHCR měj nastavenou repo variable `RELEASE_PUSH=true` (jinak se image jen postaví).
+
+Konvence commitů (typ = bump) a větví: `CONTRIBUTING.md`.
+
+## Recipe: ruční release (escape hatch)
+
+Když potřebuješ vydat mimo release-please flow: cut tag z **zelené `main`** — `git tag v1.2.3 && git push origin v1.2.3`. `release.yml` se spustí i `on: push: tags` a postaví image stejně. Používej jen výjimečně; běžná cesta je release PR výše.
 
 ## Invariants & pitfalls
 
@@ -102,4 +111,5 @@ Jedno číslo verze teče do binárky i do SPA, aby Sentry grupoval chyby podle 
 ## Related
 
 - Skills: `/gk-init` (lokální build & rozjetí), `/gk-migrations` (embedované + auto-apply migrace), `/gk-config` (`APP_HTTP_PORT`, `APP_DB_PATH`, `APP_COOKIE_SECURE`, `APP_JWT_SECRET`, `APP_SENTRY_*`), `/gk-runs` + `/gk-scheduler` (co `serve` / `worker` co-spouští), `/gk-sentry` (co se reportuje a jak verze grupuje chyby)
-- Kód: `docker/production/Dockerfile`, `.github/workflows/release.yml`, `.github/workflows/validate.yml`, `Makefile`, `cmd/version.go`, `app/presentation/console/`, `public/embed.go`, `migrations/embed.go`
+- Workflow & release: `CONTRIBUTING.md` (větve, commity, release flow), `commitlint.config.js`, `lefthook.yml`, `release-please-config.json`, `.release-please-manifest.json`, `scripts/setup-github.sh` (bootstrap nového repa z template — viz `/gk-init`)
+- Kód: `docker/production/Dockerfile`, `.github/workflows/release.yml`, `.github/workflows/release-please.yml`, `.github/workflows/commitlint.yml`, `.github/workflows/validate.yml`, `Makefile`, `cmd/version.go`, `app/presentation/console/`, `public/embed.go`, `migrations/embed.go`

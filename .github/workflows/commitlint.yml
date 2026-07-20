@@ -1,0 +1,53 @@
+name: Commitlint
+
+# The server-side half of commit-message enforcement. The lefthook commit-msg
+# hook checks messages locally, but `git commit --no-verify` skips it — so every
+# commit in a PR is re-linted here, where it can't be bypassed. Same ruleset
+# (commitlint.config.js), so local and CI agree.
+#
+# PR-only: on a push to main the commits already passed this gate on their PR.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  commitlint:
+    name: conventional commits
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # commitlint lints the range base..head, so it needs both endpoints —
+          # a shallow clone would not have the base commit.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+        # No `cache: "yarn"` — same reason as validate.yml: setup-node's yarn
+        # cache probe runs before corepack and trips on the pinned Yarn 4.
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Cache Yarn 4 (.yarn/cache)
+        uses: actions/cache@v4
+        with:
+          path: .yarn/cache
+          key: yarn-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          restore-keys: yarn-${{ runner.os }}-
+
+      - name: Install deps
+        run: yarn install --immutable
+
+      - name: Lint the PR's commits
+        # base.sha..head.sha is the PR's commit range. --verbose prints each
+        # linted message so a failure names the offending commit.
+        run: >
+          yarn exec commitlint
+          --from "${{ github.event.pull_request.base.sha }}"
+          --to "${{ github.event.pull_request.head.sha }}"
+          --verbose

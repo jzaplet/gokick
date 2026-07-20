@@ -26,7 +26,7 @@ Nebo prostě popiš problém a AI sáhne po správném skillu sama (řídí se p
 ### Start & orientace
 | Skill | Co řeší |
 |-------|---------|
-| `/gk-init` | Od `git clone` k běžícímu serveru — install, build, seed admina, dev loop |
+| `/gk-init` | Od `git clone` **nebo template** k běžícímu + nakonfigurovanému repu — install, build, seed, dev loop, `make setup-github` |
 | `/gk-config` | `.env` konfigurace: co se čte, kdy, defaulty, kde se validuje |
 | `/gk-architecture` | Mentální model: DDD 4 vrstvy, CQRS, dependency rules, bounded contexts |
 | `/gk-feature` | Přidat novou featuru **end-to-end** — checklist napříč všemi vrstvami |
@@ -85,7 +85,7 @@ Nebo prostě popiš problém a AI sáhne po správném skillu sama (řídí se p
 
 ## Typické scénáře (kudy začít)
 
-- **„Právě jsem to naklonoval"** → `/gk-init`, pak `/gk-architecture`.
+- **„Právě jsem to naklonoval" / „založil jsem repo z template"** → `/gk-init` (u template má krok navíc: `make setup-github`), pak `/gk-architecture`.
 - **„Chci přidat endpoint / CRUD"** → `/gk-feature` (provede tě a odkáže na detail).
 - **„Padá mi to / nevím proč"** → podle vrstvy: `/gk-errors`, `/gk-permissions`,
   `/gk-repositories`, `/gk-config`.

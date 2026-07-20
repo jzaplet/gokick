@@ -6,7 +6,7 @@ slug: 'skills-gk-init'
 parent: 'skills-start'
 navTitle: 'gk-init'
 title: 'GK — Rozjetí projektu (init)'
-description: 'Rozjetí projektu po `git clone` — install, build, seed admina a dev loop, aby server běžel a šel se přihlásit. Use when máš čerstvý clone (nebo nový stroj / kolega) a potřebuješ se dostat od nuly k běžícímu serveru s funkčním adminem a frontendem.'
+description: 'Rozjetí projektu po `git clone` NEBO z GitHub template („Use this template") — install, build, seed admina, dev loop a jednorázový GitHub bootstrap `make setup-github` (Actions permissions + branch ruleset + reset verze), který se z template nepřenese. Use when máš čerstvý clone nebo nový repo z template/boilerplate a potřebuješ se dostat od nuly k běžícímu serveru A správně nakonfigurovanému repu (git hooky, releasy, branch protection, verzování).'
 name: 'gk-init'
 ---
 
@@ -77,6 +77,31 @@ DB server. **Seed** je jednorázové naplnění DB výchozími daty (admin úče
 6. `make serve` — server běží na `http://localhost:3000` (port z `APP_HTTP_PORT`).
    Přihlas se nickem `admin` a heslem z `APP_SEED_ADMIN_PASSWORD`.
 
+### Recipe: nový projekt z template (gokick jako boilerplate)
+
+gokick je GitHub **template**. „Use this template" → nový repo dostane všechny
+**soubory** (workflowy, `lefthook.yml`, `commitlint.config.js`, release-please
+config, …) a CI se rozběhne samo (Actions jsou u template-repa zapnuté, na rozdíl
+od forků). Ale **nastavení repa** a **lokální git hooky** se nepřenášejí — musíš je
+jednou dorovnat:
+
+1. Naklonuj nový repo a projeď „první rozjetí po clone" výše (`make install` mimo
+   jiné nadrátuje git hooky — `.git/hooks` není v repu, takže bez tohoto kroku
+   commit-msg + pre-push hook neběží; do té doby commity chytá CI `commitlint.yml`).
+2. `make setup-github ARGS="--reset-version 0.1.0"` — jednorázový bootstrap
+   (potřebuje `gh` login s adminem na repu). Zapne **Actions write + create-PR
+   permissions** (bez nich release-please neotevře release PR ani nepushne tag) a
+   založí **branch ruleset** na `main` (vyžadovat PR, zákaz force-push/mazání).
+   `--reset-version` přepíše `.release-please-manifest.json` z gokickovy verze na
+   tvoji výchozí (jinak by tvůj první release navázal na gokickovu verzi) — commitni
+   ho pak přes PR. Detail: `scripts/setup-github.sh --help`.
+3. (Volitelně) Publikace image do GHCR: `gh variable set RELEASE_PUSH --body true`
+   (bez ní se image jen postaví, nepushne). Sentry: `SENTRY_*` vars + `SENTRY_AUTH_TOKEN`.
+
+Od té chvíle běží plný workflow: Conventional Commits (lokálně hook + CI), branch
+naming, a release-please řídí verze + `CHANGELOG.md`. Konvence: `CONTRIBUTING.md`;
+release mechanika: `/gk-deploy`.
+
 ### Recipe: dev loop (rychlá iterace)
 
 - **Práce na Go:** `make dev` (backend-only build) → `make serve`. Opakuj po každé změně.
@@ -102,11 +127,17 @@ DB server. **Seed** je jednorázové naplnění DB výchozími daty (admin úče
 - **Nepotřebuješ ruční migraci na první boot** — `RunUp()` ji udělá za tebe před každým
   subcommandem.
 - **Go 1.26+ a Node 24+** jsou prerekvizity.
+- **Z template se nepřenášejí nastavení ani hooky, jen soubory.** Branch ruleset a
+  Actions permissions jsou nastavení repa (řeší `make setup-github`); git hooky jsou
+  lokální (řeší `make install`); `.release-please-manifest.json` nese gokickovu verzi
+  (řeší `--reset-version`). Repo variables (`RELEASE_PUSH`, `SENTRY_*`) taky ne — ale
+  `release.yml` je defaultně safe-off, takže bez nich se image jen postaví, nepushne.
 
 ## Related
 
 - Sousední skills: `/gk-config` (env + konfigurace), `/gk-feature` (přidání featury
   end-to-end), `/gk-architecture` (vrstvy a pravidla závislostí), `/gk-bus` (CQRS busy).
 - Docs: [Installation](/framework/installation).
+- Workflow: `CONTRIBUTING.md` (větve, commity, release), `/gk-deploy` (release mechanika).
 - Kód: `app/presentation/console/` (`root.go`, `serve.go`, `seed.go`, `create_user.go`,
-  `create_superadmin.go`, `create_tenant.go`, `worker.go`), `app/application.go` (auto-migrace), `Makefile`, `.env.example`.
+  `create_superadmin.go`, `create_tenant.go`, `worker.go`), `app/application.go` (auto-migrace), `Makefile`, `scripts/setup-github.sh`, `.env.example`.

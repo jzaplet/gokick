@@ -15,6 +15,8 @@ Od čistého klonu k běžícímu serveru s admin účtem. Nejrychlejší cesta 
 
 > Po rozběhnutí se podívej na `/gk-init` (a `/gk` pro přehled všech skillů).
 
+> **Založil sis repo z template („Use this template")?** Lokální instalace níže tě dostane k běžícímu serveru, ale **releasy a branch protection zůstanou nenakonfigurované**, dokud neproběhne [bootstrap z template](#nový-projekt-z-template-bootstrap) — je to krok navíc, který se z template nepřenese.
+
 ## Prerekvizity
 
 | Nástroj | Minimální verze | Ověření |
@@ -23,16 +25,29 @@ Od čistého klonu k běžícímu serveru s admin účtem. Nejrychlejší cesta 
 | Node.js | 24+ | `node --version` |
 | Corepack | (součást Node) | `corepack --version` |
 | Make | jakákoliv | `make --version` |
+| GitHub CLI `gh` | jen pro bootstrap z template | `gh auth status` (přihlášený, admin na repu) |
 
 ## Instalace
 
 ```bash
 corepack enable
-cp .env.example .env    # upravit APP_JWT_SECRET
-make install
+cp .env.example .env    # upravit APP_JWT_SECRET (≥32 znaků) A nastavit APP_SEED_ADMIN_PASSWORD (jinak `seed` selže)
+make install            # + nadrátuje git hooky (commit-msg / pre-push)
 make build && make serve
 ./bin/app seed           # admin účet, heslo z APP_SEED_ADMIN_PASSWORD (povinné)
 ```
+
+## Nový projekt z template (bootstrap)
+
+Když je repo založené z gokick template, přenesou se **soubory** (workflowy, hooky config, release-please config) a CI běží hned — ale **nastavení repa** a baseline verze se nepřenášejí. Po `make install` výše (které nadrátuje lokální git hooky) proto ještě jednou spusť:
+
+```bash
+make setup-github ARGS="--reset-version 0.1.0"
+```
+
+Zapne **Actions write + create-PR permissions** (bez nich release-please neotevře release PR ani nepushne tag), založí **branch ruleset** na `main` (vyžadovat PR, zákaz force-push/mazání) a `--reset-version` přepíše `.release-please-manifest.json` z gokickovy verze na tvoji výchozí — ten commitni přes PR. Bez `--reset-version` příkaz proběhne, ale verze zůstane na gokickově (`1.1.0`). Detail: `scripts/setup-github.sh --help`, kompletní recept `/gk-init`.
+
+> Ruleset je „lehčí" profil: vyžaduje PR + blokuje force-push/mazání, ale **nevynucuje zelené CI ani review** (aby release PR od release-please neuvízl na checku, který přes `GITHUB_TOKEN` neběží). Přísnější gate si přidej sám.
 
 ## Make příkazy
 
