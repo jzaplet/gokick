@@ -1,17 +1,17 @@
 ---
 layout: 'page'
-uri: '/framework/query-flow'
-position: 60
-slug: 'framework-query-flow'
-parent: 'framework'
-navTitle: 'Query flow'
-title: 'Query flow'
+uri: '/framework/query'
+position: 20
+slug: 'framework-query'
+parent: 'framework-cqrs'
+navTitle: 'Query'
+title: 'Query'
 description: 'Čtecí cesta CQRS — krátký řetězec Recovery → Logging → Authorize → Tenant, typovaný návrat, žádná transakce ani eventy.'
 ---
 
-# Query flow
+# Query
 
-Čtecí operace tečou přes `QueryBus`. Oproti [Command flow](/framework/command-flow) je řetězec krátký — jen **Recovery → Logging → Authorize → Tenant**. Žádná transakce, audit ani eventy: čtení nemění stav, takže nemá co commitovat ani ohlašovat. Tenant resoluce tu je (čtení se scopuje stejně jako zápisy — viz `/gk-multitenancy`). Návratová hodnota je typovaná díky generikám v `bus.Query[R]`.
+Čtecí operace tečou přes `QueryBus`. Oproti [Command](/framework/command) je řetězec krátký — jen **Recovery → Logging → Authorize → Tenant**. Žádná transakce, audit ani eventy: čtení nemění stav, takže nemá co commitovat ani ohlašovat. Tenant resoluce tu je (čtení se scopuje stejně jako zápisy — viz `/gk-multitenancy`). Návratová hodnota je typovaná díky generikám v `bus.Query[R]`.
 
 > Přehled toku. Návod „jak napsat query handler" je ve skillu `/gk-queries`, mechaniku busů rozebírá `/gk-bus`.
 
@@ -68,7 +68,7 @@ Query handler drží jen doménový repository interface a **musí** deklarovat 
 
 ## Související
 
-- [Command flow](/framework/command-flow) — zápisová cesta s transakcí, auditem a eventy.
-- [Request flow](/framework/request-flow) — HTTP middleware chain před vstupem do busu.
+- [Command](/framework/command) — zápisová cesta s transakcí, auditem a eventy.
+- [Request](/framework/request) — HTTP middleware chain před vstupem do busu.
 - [Architecture](/framework/architecture) — vrstvy a CQRS jako celek.
 - Skilly: `/gk-queries`, `/gk-bus`, `/gk-permissions`, `/gk-repositories`.

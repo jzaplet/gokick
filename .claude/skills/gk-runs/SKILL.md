@@ -156,7 +156,7 @@ Přidání nového kindu (vyber tvar podle „potřebuje checkpoint/resume?"):
   handler sám ohraničí (worker mu `Transactor` do ctx injektuje; drž ji krátkou, žádné
   pomalé/externí I/O uvnitř — přesně jako v command handleru). Vnořený `WithTx` i syrový
   `BeginTx` uvnitř fail-closed selžou. Kdy durable run vs fire-and-forget run vs
-  scheduler vs event → `docs/framework/background-work.md`.
+  scheduler vs event → `docs/framework/background/overview.md`.
 - **At-least-once → idempotence VŠEHO.** Mimo tx zaniká atomicita „handler-writes +
   complete" — `MarkComplete` je **samostatný zápis až po návratu handleru**, takže crash
   v okně mezi nimi handler na reclaimu **zopakuje**. Idempotentní musí být nejen externí
@@ -190,8 +190,8 @@ Přidání nového kindu (vyber tvar podle „potřebuje checkpoint/resume?"):
   `/gk-scheduler` (periodicky na čase), `/gk-repositories` (owner-fence, julianday,
   ms-precision), `/gk-bus` (middleware chain — kam padá enqueue), `/gk-feature`,
   `/gk-config` (DI registrace).
-- Docs: [Run flow](/framework/run-flow), [Fire-and-forget run](/framework/job-flow) (fire-and-forget
-  tvar), [Background work](/framework/background-work) (co kdy + proč vše mimo tx).
+- Docs: [Durable run](/framework/durable-run), [Fire-and-forget](/framework/fire-and-forget) (fire-and-forget
+  tvar), [Background work](/framework/overview) (co kdy + proč vše mimo tx).
 - Kód: `app/domain/run/`, `app/application/run/` (`registry.go` = `FireAndForget`/`Durable`,
   `dispatcher.go`), `app/infrastructure/sqlite/run/repository.go`,
   `app/infrastructure/worker/run_worker.go`, `app/domain/shared/run_dispatcher.go`,

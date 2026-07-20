@@ -1,21 +1,21 @@
 ---
 layout: 'page'
-uri: '/framework/background-work'
-position: 45
-slug: 'framework-background-work'
-parent: 'framework'
-navTitle: 'Background work'
-title: 'Background work — co kdy použít'
+uri: '/framework/overview'
+position: 10
+slug: 'framework-overview'
+parent: 'framework-background'
+navTitle: 'Overview'
+title: 'When to use what'
 description: 'Jak vybrat mezi command, doménovým eventem, fire-and-forget runem, durable runem a schedulerem — a proč background práce běží mimo transakci (jinak by dlouhá práce zamkla celou SQLite).'
 ---
 
-# Background work — co kdy použít
+# When to use what
 
 gokick má pět způsobů, jak něco „udělat". Vyber podle dvou otázek: **běží to hned v requestu, nebo zvlášť na pozadí?** a (pro práci na pozadí) **potřebuje to po pádu pokračovat od posledního kroku?** Špatná volba buď ztratí práci (něco, co mělo přežít restart, běželo jen tak), nebo **zamkne celou databázi** (dlouhá práce nebo volání ven v transakci drží zámek na zápis).
 
-![Co kdy použít na práci na pozadí](files/background-work.svg)
+![Co kdy použít na práci na pozadí](../files/background-work.svg)
 
-> **Fire-and-forget a durable run jsou jeden engine** (tabulka `runs`, jeden worker) ve dvou tvarech: **fire-and-forget run** = bez checkpointu (`FireAndForget`), **durable run** = s checkpointem a resume (`Durable`). Oba běží **mimo transakci**. Detailní toky: [Command flow](/framework/command-flow) · [Event flow](/framework/event-flow) · [Fire-and-forget run](/framework/job-flow) · [Run flow](/framework/run-flow) · [Scheduler flow](/framework/scheduler-flow). Návody: `/gk-commands`, `/gk-domain-events`, `/gk-runs`, `/gk-scheduler`.
+> **Fire-and-forget a durable run jsou jeden engine** (tabulka `runs`, jeden worker) ve dvou tvarech: **fire-and-forget run** = bez checkpointu (`FireAndForget`), **durable run** = s checkpointem a resume (`Durable`). Oba běží **mimo transakci**. Detailní toky: [Command](/framework/command) · [Events](/framework/events) · [Fire-and-forget](/framework/fire-and-forget) · [Durable run](/framework/durable-run) · [Scheduler](/framework/scheduler). Návody: `/gk-commands`, `/gk-domain-events`, `/gk-runs`, `/gk-scheduler`.
 
 
 ## Rychlá volba
@@ -63,5 +63,5 @@ Postup tedy run ukládá přes `Checkpointer`; když opravdu potřebuješ zapsat
 
 ## Související
 
-- Toky: [Command flow](/framework/command-flow), [Event flow](/framework/event-flow), [Fire-and-forget run](/framework/job-flow), [Run flow](/framework/run-flow), [Scheduler flow](/framework/scheduler-flow).
+- Toky: [Command](/framework/command), [Events](/framework/events), [Fire-and-forget](/framework/fire-and-forget), [Durable run](/framework/durable-run), [Scheduler](/framework/scheduler).
 - Skilly: `/gk-commands`, `/gk-domain-events`, `/gk-runs`, `/gk-scheduler`, `/gk-bus`.
