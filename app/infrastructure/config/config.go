@@ -102,7 +102,7 @@ func LoadConfig() (*Config, error) {
 		CORSOrigin:             getEnv("APP_CORS_ORIGIN", "http://localhost:5173"),
 		SeedAdminPassword:      getEnv("APP_SEED_ADMIN_PASSWORD", ""),
 		SeedSuperAdminPassword: getEnv("APP_SEED_SUPERADMIN_PASSWORD", ""),
-		SeedAdminTenant:        getEnv("APP_SEED_ADMIN_TENANT", "Tenant 1"),
+		SeedAdminTenant:        getEnv("APP_SEED_ADMIN_TENANT", "Default"),
 		RateLimitLogin:         getEnv("APP_RATE_LIMIT_LOGIN", "10/min"),
 		RateLimitRefresh:       getEnv("APP_RATE_LIMIT_REFRESH", "60/min"),
 		FrontendSentryDSN:      getEnv("APP_SENTRY_DSN_FRONTEND", ""),

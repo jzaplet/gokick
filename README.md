@@ -28,7 +28,10 @@ Běží bez Redisu, brokeru či jiné externí infrastruktury a nasazuje se jako
 
 ## Vyzkoušej a prozkoumej
 
-- Aplikace: <https://gokick-app.strategio.dev> (user: `admin`, heslo: `admin`)
+- Aplikace: <https://gokick-app.strategio.dev> — běží v multitenant režimu, tři showcase účty (všechny v tenantu `Default`):
+    - **superadmin** / `Superadmin` — platformní rovina: cross-tenant přehled + správa tenantů a uživatelů
+    - **admin** / `Admin1234` — správa uživatelů ve svém tenantu
+    - **User** / `User1234` — běžný uživatel
 - Dokumentace: <https://gokick.strategio.dev/>
 - GitHub: <https://github.com/jzaplet/gokick>
 
