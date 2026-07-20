@@ -12,7 +12,7 @@ description: 'Go Kick je produkční základ, na kterém postavíš vlastní apl
 ![GO Kick](./docs/go-vue-cqrs-ddd.png "GO Kick")
 
 
-## 📊 Hodnocení stacku — 8,5 / 10, prakticky best-in-class
+## 📊 Hodnocení stacku — 8,9 / 10, prakticky best-in-class
 
 > **[⬇ Stáhnout PDF report](./docs/gokick-hodnoceni.pdf)** — nezávislý audit reálného kódu (ne dokumentace) napříč **8 dimenzemi** (bezpečnost, architektura, výkon, škálovatelnost, frontend, tooling, dokumentace & AI skills, testy), se srovnáním s Rails / Laravel / Spring / NestJS a konkrétní cestou k 10/10.
 
