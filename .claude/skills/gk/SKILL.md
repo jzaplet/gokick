@@ -107,7 +107,7 @@ Nebo prostě popiš problém a AI sáhne po správném skillu sama (řídí se p
 **uvnitř transakce nikdy nevolej ven** (SMTP/cizí API drží zámek po dobu volání → zamkne SQLite).
 Tvary rozlišuje jediná otázka: **potřebuje to po pádu pokračovat od posledního kroku?**
 (ano → run s checkpointem, ne → fire-and-forget run). Detail + diagram →
-`docs/framework/background-work.md` (+ per-flow `*-flow.md`).
+`docs/framework/background/overview.md` (+ jednotlivé toky v sekcích HTTP / CQRS / Background).
 
 ## Přidání nového gk skillu
 Drž se vzoru v `_TEMPLATE.md` (vedle tohohle souboru) — definuje

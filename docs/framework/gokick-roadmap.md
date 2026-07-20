@@ -1,7 +1,7 @@
 ---
 layout: 'page'
 uri: '/framework/gokick-roadmap'
-position: 5
+position: 90
 slug: 'framework-gokick-roadmap'
 parent: 'framework'
 navTitle: 'Roadmap (GoKick)'

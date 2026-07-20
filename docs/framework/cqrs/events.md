@@ -1,15 +1,15 @@
 ---
 layout: 'page'
-uri: '/framework/event-flow'
-position: 65
-slug: 'framework-event-flow'
-parent: 'framework'
-navTitle: 'Event flow'
-title: 'Event flow'
+uri: '/framework/events'
+position: 30
+slug: 'framework-events'
+parent: 'framework-cqrs'
+navTitle: 'Events'
+title: 'Domain events'
 description: 'Doménové eventy se sbírají per-request a rozešlou až po commitu transakce; při rollbacku se zahodí.'
 ---
 
-# Event flow
+# Domain events
 
 Doménový event je primitivní fakt „stalo se X" (`user.created`), na který může reagovat kdokoli další, aniž by ho command handler znal. Handler event jen **posbírá** do per-request kolektoru v `ctx`. Teprve po úspěšném **commitu** business transakce `DispatchEventsMiddleware` kolektor vyprázdní a synchronně rozešle handlerům přes `EventBus`. Při rollbacku se eventy zahodí.
 
@@ -52,6 +52,6 @@ Handlery se registrují na jednom místě — `provideEventHandlers()` v DI vrac
 
 ## Související
 
-- [Command flow](/framework/command-flow) — kde se eventy sbírají a kdy se rozešlou.
+- [Command](/framework/command) — kde se eventy sbírají a kdy se rozešlou.
 - [Architecture](/framework/architecture) — kam event flow zapadá ve vrstvách.
 - Skilly: `/gk-domain-events`, `/gk-bus`, `/gk-runs` (navazující asynchronní práce).

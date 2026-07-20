@@ -60,7 +60,7 @@ func provideSchedulerJobs(tokens token.Repository) []scheduler.Job {
 
 ## Invariants & pitfalls
 
-- **Fn běží inline, v žádné transakci.** Nikdo Fn do transakce neobaluje — případnou si musíš otevřít sám. Lehký cleanup v krátké transakci je OK; **těžkou periodickou práci zařaď jako durable run** ([[gk-runs]] — fire-and-forget i durable run), ne ji dělej inline — dlouhá transakce by zamkla SQLite. Kdy co → `docs/framework/background-work.md`.
+- **Fn běží inline, v žádné transakci.** Nikdo Fn do transakce neobaluje — případnou si musíš otevřít sám. Lehký cleanup v krátké transakci je OK; **těžkou periodickou práci zařaď jako durable run** ([[gk-runs]] — fire-and-forget i durable run), ne ji dělej inline — dlouhá transakce by zamkla SQLite. Kdy co → `docs/framework/background/overview.md`.
 - **Fn běží bez tenanta v ctx.** Scheduler žádný tenant neresolvuje — pod `APP_MULTITENANCY=true` job, který sáhne na tenant-owned tabulku (`r.Tenant(ctx)`), zpanikaří při **každém ticku**, a panika se jen zaloguje (do Sentry nejde) — tichý nekonečný fail. Tenant-scoped práce patří do runu (tenant se razítkuje při enqueue a worker ho do ctx vrátí — [[gk-runs]]), nebo si Fn musí tenanty vyřešit explicitně.
 - **Jméno unikátní, interval kladný, Fn nenilové.** Jinak `NewScheduler` vrátí error a proces nenastartuje (fail-fast) — chyba se chytí při startu, ne za běhu.
 - **Fn musí být idempotentní.** Kvůli run-once-then-tick se job spustí hned a může proběhnout vícekrát; nepředpokládej „přesně jednou".

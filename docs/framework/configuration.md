@@ -1,7 +1,7 @@
 ---
 layout: 'page'
 uri: '/framework/configuration'
-position: 100
+position: 30
 slug: 'framework-configuration'
 parent: 'framework'
 navTitle: 'Configuration'

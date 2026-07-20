@@ -115,7 +115,7 @@ Cíl: po `CreateUser` spustit nový vedlejší efekt na event `user.created`.
   handler tedy v žádné transakci neběží a jeho případné zápisy jsou samostatné (každý sám za sebe).
   Běží synchronně v request goroutině, takže pro těžkou návaznou práci **zařaď durable run**
   ([[gk-runs]] — fire-and-forget run nebo dlouhý run), ať neblokuješ response. Kdy co →
-  `docs/framework/background-work.md`.
+  `docs/framework/background/overview.md`.
 - **Eventy = jen primitivy.** Nikdy nedávej do eventu entity ani value objects —
   musí jít serializovat a číst z cizího kontextu bez importu.
 - **`Collect` až po úspěšném zápisu**, ne před. Když handler vrátí chybu / commit

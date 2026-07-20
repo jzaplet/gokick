@@ -1,7 +1,7 @@
 ---
 layout: 'page'
 uri: '/framework/installation'
-position: 10
+position: 20
 slug: 'framework-installation'
 parent: 'framework'
 navTitle: 'Installation'

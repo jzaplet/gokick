@@ -1,26 +1,26 @@
 ---
 layout: 'page'
-uri: '/framework/run-flow'
-position: 75
-slug: 'framework-run-flow'
-parent: 'framework'
-navTitle: 'Run flow'
-title: 'Run flow'
+uri: '/framework/durable-run'
+position: 30
+slug: 'framework-durable-run'
+parent: 'framework-background'
+navTitle: 'Durable run'
+title: 'Durable run'
 description: 'Cesta durable runu — dlouho běžící práce (velký import, generování velkého reportu, dávkové zpracování), která běží MIMO transakci, průběžně ukládá postup a po pádu workeru pokračuje od posledního uloženého kroku.'
 ---
 
-# Run flow
+# Durable run
 
 Engine pro práci, která běží **mimo transakci** — protože buď **trvá dlouho**, nebo **volá ven** (a obojí by v transakci zamklo databázi). Hodí se na velký import/export dat, generování velkého reportu/PDF, dávkové zpracování mnoha položek — a stejně tak na **volání pomalých nebo nespolehlivých cizích služeb** (e-mail/SMTP, webhook, cizí API). Taková práce po každém kroku **uloží, kde skončila** (checkpoint), a když proces mezitím spadne, jiný worker ji převezme a **pokračuje od posledního uloženého kroku**.
 
-![Run flow — dlouhá práce, co po pádu pokračuje od posledně](files/run-flow.svg)
+![Run flow — dlouhá práce, co po pádu pokračuje od posledně](../files/run-flow.svg)
 
-> Přehled toku. Návod (jak napsat run, cancel) → `/gk-runs`; kdy durable run vs fire-and-forget run vs scheduler → [Background work](/framework/background-work).
+> Přehled toku. Návod (jak napsat run, cancel) → `/gk-runs`; kdy durable run vs fire-and-forget run vs scheduler → [Background work](/framework/overview).
 
 
 ## K čemu to je
 
-Když práce **trvá dlouho a nesmí začít od nuly**, kdyby proces spadl. Obyčejný [fire-and-forget run](/framework/job-flow) běží sice taky mimo transakci, ale **nepamatuje si postup** — když spadne, příště začne od začátku. Run si po každém kroku ukládá, kde je (checkpoint), takže ho jiný worker **převezme a pokračuje od posledního uloženého kroku**. To je jediný rozdíl mezi fire-and-forget a durable runem: **run má checkpoint, fire-and-forget run ne** — jinak je to ten samý engine.
+Když práce **trvá dlouho a nesmí začít od nuly**, kdyby proces spadl. Obyčejný [fire-and-forget run](/framework/fire-and-forget) běží sice taky mimo transakci, ale **nepamatuje si postup** — když spadne, příště začne od začátku. Run si po každém kroku ukládá, kde je (checkpoint), takže ho jiný worker **převezme a pokračuje od posledního uloženého kroku**. To je jediný rozdíl mezi fire-and-forget a durable runem: **run má checkpoint, fire-and-forget run ne** — jinak je to ten samý engine.
 
 > Proč obojí běží **mimo transakci**: dlouhá práce — nebo **jakékoli volání ven** (e-mail/SMTP, cizí API) — by v transakci držela SQLite write-lock celou tu dobu (SMTP může viset, API request 5 minut) → **zamkla by celou databázi** pro všechny ostatní. Proto je outside-tx vynucené pro oba tvary.
 
@@ -63,7 +63,7 @@ shared.RunDispatcherFromContext(ctx).Enqueue(ctx, "import:velky", 3, payload)
 
 ## Související
 
-- [Fire-and-forget run](/framework/job-flow) — fire-and-forget tvar téhož enginu (bez checkpointu).
-- [Background work](/framework/background-work) — co kdy použít + proč background práce běží mimo transakci.
-- [Command flow](/framework/command-flow) — transakce, ke které se zařazení připojí.
+- [Fire-and-forget](/framework/fire-and-forget) — fire-and-forget tvar téhož enginu (bez checkpointu).
+- [Background work](/framework/overview) — co kdy použít + proč background práce běží mimo transakci.
+- [Command](/framework/command) — transakce, ke které se zařazení připojí.
 - Skilly: `/gk-runs`, `/gk-repositories`.

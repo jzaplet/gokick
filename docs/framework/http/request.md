@@ -1,17 +1,17 @@
 ---
 layout: 'page'
-uri: '/framework/request-flow'
-position: 40
-slug: 'framework-request-flow'
-parent: 'framework'
-navTitle: 'Request flow'
-title: 'Request flow'
+uri: '/framework/request'
+position: 10
+slug: 'framework-request'
+parent: 'framework-http'
+navTitle: 'Request'
+title: 'Request lifecycle'
 description: 'Cesta HTTP requestu od socketu k handleru — globální middleware chain (trace, IP, recovery, security, CORS, CSRF, log) a per-route rate limit / JWT.'
 ---
 
-# Request flow
+# Request lifecycle
 
-Než se request dostane k HTTP handleru, projde **globálním middleware chainem**. Ten se sestaví jednou při startu v `Server.buildMiddlewareChain` a vyřídí vše, co je potřeba zpracovat **dřív, než se dostane k aplikační logice** — korelaci, klientskou IP, recovery, bezpečnostní hlavičky, CORS, CSRF a access log. Vlastní autorizace, transakce a audit běží až **uvnitř busu** ([Command flow](/framework/command-flow) / [Query flow](/framework/query-flow)).
+Než se request dostane k HTTP handleru, projde **globálním middleware chainem**. Ten se sestaví jednou při startu v `Server.buildMiddlewareChain` a vyřídí vše, co je potřeba zpracovat **dřív, než se dostane k aplikační logice** — korelaci, klientskou IP, recovery, bezpečnostní hlavičky, CORS, CSRF a access log. Vlastní autorizace, transakce a audit běží až **uvnitř busu** ([Command](/framework/command) / [Query](/framework/query)).
 
 > Přehled toku. Detaily k jednotlivým tématům: `/gk-hardening` (CSRF, bezpečnostní hlavičky), `/gk-auth` (login/session), `/gk-rate-limiting`, `/gk-feature` (endpoint napříč vrstvami).
 
@@ -59,6 +59,6 @@ if err != nil {
 
 ## Související
 
-- [Command flow](/framework/command-flow) / [Query flow](/framework/query-flow) — bus chain za handlerem.
+- [Command](/framework/command) / [Query](/framework/query) — bus chain za handlerem.
 - [Configuration](/framework/configuration) — `APP_CORS_ORIGIN`, `APP_COOKIE_SECURE`, `APP_TRUST_PROXY_HEADERS`, rate limit, Sentry.
 - Skilly: `/gk-hardening`, `/gk-auth`, `/gk-rate-limiting`, `/gk-feature`.

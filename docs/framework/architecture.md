@@ -1,7 +1,7 @@
 ---
 layout: 'page'
 uri: '/framework/architecture'
-position: 30
+position: 10
 slug: 'framework-architecture'
 parent: 'framework'
 navTitle: 'Architecture'
@@ -55,10 +55,10 @@ cmd/main.go
 
 Tahle stránka je mentální model. Konkrétní cesta requestu napříč vrstvami — middleware chain, transakce, autorizace, mapování chyb — žije na samostatných stránkách:
 
-- [Request flow](/framework/request-flow) — společný HTTP middleware chain a kudy request vstupuje do busu.
-- [Command flow](/framework/command-flow) — write operace: Recovery → Logging → Authorize → Tenant → Audit → RunDispatcher → DispatchEvents → Transaction, commit a rozeslání eventů.
-- [Query flow](/framework/query-flow) — read operace: Recovery → Logging → Authorize → Tenant, typovaný návrat přes `bus.Query`.
-- [Event flow](/framework/event-flow) — domain eventy po commitu: per-request collector, synchronní dispatch přes EventBus.
+- [Request](/framework/request) — společný HTTP middleware chain a kudy request vstupuje do busu.
+- [Command](/framework/command) — write operace: Recovery → Logging → Authorize → Tenant → Audit → RunDispatcher → DispatchEvents → Transaction, commit a rozeslání eventů.
+- [Query](/framework/query) — read operace: Recovery → Logging → Authorize → Tenant, typovaný návrat přes `bus.Query`.
+- [Events](/framework/events) — domain eventy po commitu: per-request collector, synchronní dispatch přes EventBus.
 
 
 ## Pravidla a rozšiřování

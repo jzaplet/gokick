@@ -1,15 +1,15 @@
 ---
 layout: 'page'
-uri: '/framework/command-flow'
-position: 50
-slug: 'framework-command-flow'
-parent: 'framework'
-navTitle: 'Command flow'
-title: 'Command flow'
+uri: '/framework/command'
+position: 10
+slug: 'framework-command'
+parent: 'framework-cqrs'
+navTitle: 'Command'
+title: 'Command'
 description: 'Zápisová cesta CQRS — middleware chain CommandBusu od HTTP handleru po commit a rozeslání eventů.'
 ---
 
-# Command flow
+# Command
 
 Zápisové operace tečou přes `CommandBus`. HTTP handler nevolá command handler přímo — pošle ho přes bus, který kolem handleru obalí pevný řetězec middleware: recovery, logging, autorizaci, resoluci tenanta, audit, vložení run dispatcheru, sběr eventů a transakci. Handler se tak stará jen o aplikační logiku.
 
@@ -58,7 +58,7 @@ if err != nil {
 
 ## Související
 
-- [Query flow](/framework/query-flow) — čtecí cesta (jen Recovery → Logging → Authorize → Tenant).
-- [Event flow](/framework/event-flow) — co se děje po commitu v `EventBus`.
-- [Request flow](/framework/request-flow) — HTTP chain před busem.
+- [Query](/framework/query) — čtecí cesta (jen Recovery → Logging → Authorize → Tenant).
+- [Events](/framework/events) — co se děje po commitu v `EventBus`.
+- [Request](/framework/request) — HTTP chain před busem.
 - Skilly: `/gk-bus`, `/gk-commands`, `/gk-audit`, `/gk-domain-events`.

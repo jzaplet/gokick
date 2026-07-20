@@ -1,15 +1,15 @@
 ---
 layout: 'page'
-uri: '/framework/scheduler-flow'
-position: 80
-slug: 'framework-scheduler-flow'
-parent: 'framework'
-navTitle: 'Scheduler flow'
-title: 'Scheduler flow'
+uri: '/framework/scheduler'
+position: 40
+slug: 'framework-scheduler'
+parent: 'framework-background'
+navTitle: 'Scheduler'
+title: 'Scheduler'
 description: 'In-process scheduler — periodické joby, každý ve své goroutině, run-once-then-tick, per-tick recovery a drain při SIGTERM.'
 ---
 
-# Scheduler flow
+# Scheduler
 
 In-process scheduler pro periodickou (cron-like) práci uvnitř běžícího serveru — žádný externí OS cron, žádný samostatný proces. Každý job běží ve vlastní goroutině, poprvé hned po startu a pak každý `Interval`. Implementace je v `app/infrastructure/scheduler/scheduler.go`.
 
@@ -18,7 +18,7 @@ In-process scheduler pro periodickou (cron-like) práci uvnitř běžícího ser
 
 ## K čemu to je
 
-Na údržbové úlohy uvnitř procesu — úklid, synchronizace, sběr statistik. **Není** to perzistentní fronta: stav je jen v paměti (in-memory), bez retry, restart úlohy jen znovu rozběhne. Práci, která **musí** proběhnout i po pádu procesu, posílej do [Fire-and-forget run](/framework/job-flow) (`/gk-runs`). Joby navíc běží **bez tenanta v ctx** — pod `APP_MULTITENANCY=true` job, který sáhne na tenant-owned tabulku (`r.Tenant(ctx)`), zpanikaří při každém ticku (panika se jen loguje, do Sentry nejde); tenant-scoped práce patří do runu (tenant se razítkuje při enqueue), nebo si musí tenant vyřešit explicitně.
+Na údržbové úlohy uvnitř procesu — úklid, synchronizace, sběr statistik. **Není** to perzistentní fronta: stav je jen v paměti (in-memory), bez retry, restart úlohy jen znovu rozběhne. Práci, která **musí** proběhnout i po pádu procesu, posílej do [Fire-and-forget](/framework/fire-and-forget) (`/gk-runs`). Joby navíc běží **bez tenanta v ctx** — pod `APP_MULTITENANCY=true` job, který sáhne na tenant-owned tabulku (`r.Tenant(ctx)`), zpanikaří při každém ticku (panika se jen loguje, do Sentry nejde); tenant-scoped práce patří do runu (tenant se razítkuje při enqueue), nebo si musí tenant vyřešit explicitně.
 
 
 ## Jak to teče
@@ -47,6 +47,6 @@ Aktuálně jediný job maže prošlé refresh tokeny (`WHERE julianday(expires_a
 
 ## Související
 
-- [Fire-and-forget run](/framework/job-flow) — fire-and-forget tvar durable enginu pro práci, která musí přežít restart.
+- [Fire-and-forget](/framework/fire-and-forget) — fire-and-forget tvar durable enginu pro práci, která musí přežít restart.
 - [Architecture](/framework/architecture) — vrstvy a startup sekvence.
 - Skilly: `/gk-scheduler`, `/gk-runs`, `/gk-logging`.
