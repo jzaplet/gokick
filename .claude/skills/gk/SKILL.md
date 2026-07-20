@@ -69,6 +69,7 @@ Nebo prostě popiš problém a AI sáhne po správném skillu sama (řídí se p
 | `/gk-frontend-fetch` | `apiFetch`/`authFetch`, single-flight refresh + self-heal, access token |
 | `/gk-frontend-forms` | Formuláře bez FE validace — chyby z backendu na konkrétní pole |
 | `/gk-frontend-ui` | `app-ui` komponenty + composables, router/guards, přísný TS/ESLint/Tailwind |
+| `/gk-frontend-grid` | Server-side DataGrid — stránkování/filtry/řazení, výběr + bulk akce; FE stav + BE whitelist/clamp |
 
 ### Observabilita
 | Skill | Co řeší |
