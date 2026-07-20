@@ -1,4 +1,4 @@
-.PHONY: install build serve dev di install-tools go-deps hooks lint format format-check test arch-check \
+.PHONY: install build serve dev di install-tools go-deps hooks setup-github lint format format-check test arch-check \
         ts-gen ts-check boundary-check errfields-check docpaths-check \
         e2e e2e-crash-recovery e2e-at-least-once e2e-sigterm-drain e2e-terminal-failure \
         fe-deps fe-dev fe-build fe-clean \
@@ -72,6 +72,14 @@ install-tools:
 # archive / vendored source) so it can't break a build that has no .git.
 hooks:
 	@if [ -d .git ]; then lefthook install; else echo "hooks: no .git, skipping"; fi
+
+# One-time GitHub bootstrap for a repo created FROM the gokick template: applies
+# the two repo settings the template can't carry (Actions write + create-PR
+# permissions, and the branch ruleset) so release-please and branch protection
+# work. Idempotent; needs `gh` logged in. See scripts/setup-github.sh + /gk-init.
+# Pass args through: `make setup-github ARGS="--yes --reset-version 0.1.0"`.
+setup-github:
+	./scripts/setup-github.sh $(ARGS)
 
 # Build — frontend first (Vite → public/), then Go (embeds public/)
 build: di fe-build

@@ -111,5 +111,5 @@ Když potřebuješ vydat mimo release-please flow: cut tag z **zelené `main`** 
 ## Related
 
 - Skills: `/gk-init` (lokální build & rozjetí), `/gk-migrations` (embedované + auto-apply migrace), `/gk-config` (`APP_HTTP_PORT`, `APP_DB_PATH`, `APP_COOKIE_SECURE`, `APP_JWT_SECRET`, `APP_SENTRY_*`), `/gk-runs` + `/gk-scheduler` (co `serve` / `worker` co-spouští), `/gk-sentry` (co se reportuje a jak verze grupuje chyby)
-- Workflow & release: `CONTRIBUTING.md` (větve, commity, release flow), `commitlint.config.js`, `lefthook.yml`, `release-please-config.json`, `.release-please-manifest.json`
+- Workflow & release: `CONTRIBUTING.md` (větve, commity, release flow), `commitlint.config.js`, `lefthook.yml`, `release-please-config.json`, `.release-please-manifest.json`, `scripts/setup-github.sh` (bootstrap nového repa z template — viz `/gk-init`)
 - Kód: `docker/production/Dockerfile`, `.github/workflows/release.yml`, `.github/workflows/release-please.yml`, `.github/workflows/commitlint.yml`, `.github/workflows/validate.yml`, `Makefile`, `cmd/version.go`, `app/presentation/console/`, `public/embed.go`, `migrations/embed.go`

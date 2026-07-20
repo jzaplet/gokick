@@ -81,3 +81,22 @@ need a release outside the release-please flow.
 
 The deep mechanics (single-binary build, the multi-stage Dockerfile, GHCR publish
 gating, Sentry stamping) live in the `/gk-deploy` skill.
+
+## Starting from the template
+
+gokick is a GitHub template. Creating a repo from it copies every **file** (these
+workflows, the hook config, the release-please config) and CI runs immediately — but
+two repo **settings** and the local git hooks don't carry over, so a new project runs
+one bootstrap after cloning:
+
+```bash
+make install                                  # wires the git hooks (.git/hooks isn't in the repo)
+make setup-github ARGS="--reset-version 0.1.0" # applies the two settings the template can't carry
+```
+
+`make setup-github` (see `scripts/setup-github.sh`) enables the Actions permissions
+release-please needs (write + create-PR) and creates the branch ruleset (require PR,
+block force-push/deletion). `--reset-version` rewrites `.release-please-manifest.json`
+from gokick's version to your own starting point — commit it in your first PR. Until
+`make install` runs, the local hooks are inactive, but the **Commitlint** CI job still
+guards every PR. Full walkthrough: the `/gk-init` skill.
