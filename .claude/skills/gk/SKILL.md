@@ -109,11 +109,12 @@ Tvary rozlišuje jediná otázka: **potřebuje to po pádu pokračovat od posled
 (ano → run s checkpointem, ne → fire-and-forget run). Detail + diagram →
 `docs/framework/background/overview.md` (+ jednotlivé toky v sekcích HTTP / CQRS / Background).
 
-## Přidání nového gk skillu
-Drž se vzoru v `_TEMPLATE.md` (vedle tohohle souboru) — definuje
-strukturu (frontmatter + 6 sekcí), jazyk (CZ tělo, EN nadpisy/kód) a pravidla
-obsahu (pravdivost > marketing, odkazuj neduplikuj).
+## Práce s dokumentací & psaní skillů
+**Při jakékoli práci s dokumentací** (`docs/` — zakládání/úprava stránek, sekce `.list.md`, frontmatter, přesun či přejmenování stránky, nav) sáhni po skillu **`/documan`**. Zná Documan formát i workflow: pravidla frontmatteru (`uri`/`slug`/`parent`, `title` == `# H1`, `layout: 'list'` u sekcí), postup přesunu/přejmenování (uprav uri/slug/parent, přeparentuj potomky, přepiš odkazy) i `make documan-import` / `documan-fix`. Platí to **i pro `gk-*` skilly** — jsou to taky Documan stránky.
+
+Nový `gk-*` skill navíc drž podle vzoru v `_TEMPLATE.md` (vedle tohohle souboru) — struktura (frontmatter + 6 sekcí), jazyk (CZ tělo, EN nadpisy/kód) a pravidla obsahu (pravdivost > marketing, odkazuj neduplikuj).
 
 ## Související
+- **`/documan`** — pomocník pro práci s dokumentací v `docs/` (Documan formát, sekce, nav, frontmatter, import/fix). **Použij ho vždycky, když saháš na docs.**
 - Dokumentace (lidská, web): <https://gokick.strategio.dev/>
 - `CLAUDE.md` v rootu — tvrdé invarianty projektu, na které skills odkazují
