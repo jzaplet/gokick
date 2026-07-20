@@ -6,7 +6,7 @@ slug: 'skills-gk-init'
 parent: 'skills-start'
 navTitle: 'gk-init'
 title: 'GK — Rozjetí projektu (init)'
-description: 'Rozjetí projektu po `git clone` — install, build, seed admina a dev loop, aby server běžel a šel se přihlásit. Use when máš čerstvý clone (nebo nový stroj / kolega) a potřebuješ se dostat od nuly k běžícímu serveru s funkčním adminem a frontendem.'
+description: 'Rozjetí projektu po `git clone` NEBO z GitHub template („Use this template") — install, build, seed admina, dev loop a jednorázový GitHub bootstrap `make setup-github` (Actions permissions + branch ruleset + reset verze), který se z template nepřenese. Use when máš čerstvý clone nebo nový repo z template/boilerplate a potřebuješ se dostat od nuly k běžícímu serveru A správně nakonfigurovanému repu (git hooky, releasy, branch protection, verzování).'
 name: 'gk-init'
 ---
 

@@ -11,12 +11,19 @@ Slim human docs (Documan): [Architecture](docs/framework/architecture.md) · [In
 ## Build & Development Commands
 
 ```bash
-make install          # Download Go deps + install tools (wire, golines, golangci-lint, goose, go-arch-lint)
+make install          # Download Go deps + install tools (wire, golines, golangci-lint, goose, lefthook, go-arch-lint) + wire git hooks
+make setup-github     # One-time bootstrap for a repo made from the template (Actions perms + branch ruleset); needs gh — see /gk-init
 make dev              # Regenerate Wire DI + build debug binary → bin/app
 make build            # Regenerate Wire DI + build release binary (stripped) → bin/app
 make serve            # Run bin/app serve (HTTP server on configured port)
 make di               # Regenerate Wire DI only (cd app/infrastructure/di && wire)
 ```
+
+**New repo from this template?** Files carry over but two repo settings and the
+local git hooks don't. After `make install` (wires hooks), run `make setup-github`
+(applies the Actions permissions release-please needs + the `main` branch ruleset);
+pass `ARGS="--reset-version 0.1.0"` to reset the version baseline off gokick's. Full
+recipe: `/gk-init`; conventions: `CONTRIBUTING.md`.
 
 ### Database
 

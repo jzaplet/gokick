@@ -117,11 +117,18 @@ if [ -n "$reset_version" ]; then
     echo "  ✓ file updated locally — commit it via a PR (main is now protected)."
 fi
 
-cat <<EOF
-
-Done. Remaining, if you haven't:
-  • Hooks    — run 'make install' to wire the commit-msg + pre-push hooks locally.
-  • Version  — ${reset_version:+manifest set to $reset_version; commit it. }${reset_version:-edit .release-please-manifest.json to your starting version and commit it (it ships gokick's).}
-  • Publish  — to push release images to GHCR: gh variable set RELEASE_PUSH --body true
-               (optional Sentry: SENTRY_ORG / SENTRY_PROJECT vars + SENTRY_AUTH_TOKEN secret).
-EOF
+echo
+echo "Done. Remaining, if you haven't:"
+echo "  • Hooks    — run 'make install' to wire the commit-msg + pre-push hooks locally."
+if [ -n "$reset_version" ]; then
+    echo "  • Version  — manifest set to $reset_version; commit it via a PR."
+else
+    # Loud on purpose: the silent failure mode is running this without
+    # --reset-version and shipping your first release on gokick's version line.
+    current_version="$(sed -n 's/.*"\.": *"\([^"]*\)".*/\1/p' .release-please-manifest.json 2>/dev/null || true)"
+    echo "  • Version  — ⚠  NOT reset: .release-please-manifest.json still reads \"${current_version:-?}\""
+    echo "               (gokick's version). Your first release would continue that line."
+    echo "               Re-run with ARGS=\"--reset-version 0.1.0\", or edit the file + commit via a PR."
+fi
+echo "  • Publish  — to push release images to GHCR: gh variable set RELEASE_PUSH --body true"
+echo "               (optional Sentry: SENTRY_ORG / SENTRY_PROJECT vars + SENTRY_AUTH_TOKEN secret)."
