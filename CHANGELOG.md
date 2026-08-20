@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.4.0](https://github.com/jzaplet/gokick/compare/v1.3.0...v1.4.0) (2026-08-20)
+
+
+### Features
+
+* **i18n:** ship translation keys over the API and render on the frontend ([5cf82de](https://github.com/jzaplet/gokick/commit/5cf82dee9ef6b26d35f699cf4f1ed229eca264a5))
+
+
+### Refactoring
+
+* **arch:** declare ../migrations as a component instead of excluding it ([3df37ae](https://github.com/jzaplet/gokick/commit/3df37aef42a995852623e6cec8d1b782505b71bf))
+
 ## [1.3.0](https://github.com/jzaplet/gokick/compare/v1.2.1...v1.3.0) (2026-07-20)
 
 
