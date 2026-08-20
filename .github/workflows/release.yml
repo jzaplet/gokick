@@ -87,17 +87,28 @@ jobs:
   # behind them. That is the lesser evil — a visibly incomplete release beats a
   # silently unvalidated one.
   #
-  # RECOVERY, and read this before reaching for "Re-run jobs" — neither re-run button
-  # does what you want. "Re-run failed jobs" replays the SAME commit, so a fix on main
-  # changes nothing and it fails again. "Re-run all jobs" is worse on the automated
-  # path: release-please sees the release already cut (the merged PR carries the
-  # `autorelease: tagged` label), reports release_created=false, and skips this whole
-  # workflow — the run goes green having built nothing. What works: land the fix on
-  # main, let release-please cut the NEXT version, and treat the broken tag as a dud.
-  # If you must ship that exact version, delete the tag and its GitHub Release, flip
-  # the merged release PR's label back to `autorelease: pending`, and re-run
-  # release-please. For a manual build of an existing, known-good tag, use
-  # workflow_dispatch: `gh workflow run release.yml -f tag=vX.Y.Z`.
+  # RECOVERY — which move is right depends on WHY the gate failed, and the two cases
+  # pull in opposite directions.
+  #
+  #   Transient failure (flaky module download, an API timeout, a runner dying): the
+  #   commit is fine, so replaying it is exactly right. Use "Re-run failed jobs". It
+  #   re-runs the gate and then `image` at the same SHA. Verified on webis-v5 release
+  #   v1.0.0, where a proxy.golang.org read error failed the gate and attempt 2 went
+  #   green and pushed the image — the successful release-please job's
+  #   `release_created` output survives the partial re-run, so `image` is not skipped.
+  #
+  #   Real failure in the released code: re-running is useless — both buttons replay
+  #   the SAME commit, so a fix landed on main changes nothing. Worse, "Re-run all
+  #   jobs" on the automated path makes release-please see the release already cut
+  #   (the merged PR carries the `autorelease: tagged` label), report
+  #   release_created=false, and skip this workflow — green, having built nothing.
+  #   What works: land the fix on main, let release-please cut the NEXT version, and
+  #   treat the broken tag as a dud. To ship that exact version anyway, delete the tag
+  #   and its GitHub Release, flip the merged release PR's label back to
+  #   `autorelease: pending`, and re-run release-please.
+  #
+  # To rebuild an existing, known-good tag at any time, use workflow_dispatch:
+  # `gh workflow run release.yml -f tag=vX.Y.Z`.
   validate:
     name: validate the release commit
     uses: ./.github/workflows/validate.yml
