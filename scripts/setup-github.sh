@@ -12,10 +12,11 @@
 #      deletion, and allow only rebase merges. Two profiles:
 #        - default ("lighter"): NO required status checks. What a GITHUB_TOKEN-created
 #          PR does is currently unpredictable — GitHub is rolling out "bot-created PRs
-#          can run workflows if approved", and gokick has measured BOTH outcomes with
-#          the same token (release PRs #39/#41 got runs in the approval-required state;
-#          #43/#55 got none). A required context therefore either blocks the release PR
-#          forever or costs a click on every release, with no way to tell in advance.
+#          can run workflows if approved", and BOTH outcomes have been observed on the
+#          same repo with the same token — runs arriving in the approval-required state
+#          (which a maintainer must click through), and no runs at all. A required
+#          context therefore either blocks the release PR forever or costs a click on
+#          every release, with no way to tell in advance which you will get.
 #        - --release-token PROFILE: stores the token as the RELEASE_PLEASE_TOKEN repo
 #          secret so release-please's PR reliably gets checks, and THEN adds required
 #          status checks + the strict (branch-up-to-date) policy. Use this on a real

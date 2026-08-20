@@ -107,13 +107,40 @@ jednou dorovnat:
 
    U **privátního** repa jsou první dvě položky povinné, jinak nemáš co deploynout.
    Třetí je komfort, ne podmínka buildu — viz bod 4.
-4. (Volitelně, doporučeno na ostrém projektu) `make setup-github ARGS="--release-token"`
-   — vyžádá si token (skrytý vstup / `$RELEASE_PLEASE_TOKEN`), uloží ho jako repo secret
+4. **Přísnější režim — VOLITELNÝ, rozmysli si ho.** Bez něj projekt normálně funguje;
+   default z kroku 2 stačí pro sólo práci i pro experimenty.
+
+   ```bash
+   make setup-github ARGS="--release-token"
+   ```
+
+   Vyžádá si token (skrytý vstup / `$RELEASE_PLEASE_TOKEN`), uloží ho jako repo secret
    `RELEASE_PLEASE_TOKEN` a **teprve pak** přidá do rulesetu **required status checks +
-   strict** policy. Až s tím platí „bez rebase a zeleného CI to nemergneš" pro všechny
-   otevřené PR. Token potřebuje repo práva **Contents / Pull requests / Issues:
-   read+write** (classic PAT: scope `repo`). **Není to ten samý token jako pull token
-   pro GHCR** — ten patří na deploy target a stačí mu `read:packages`.
+   strict** policy.
+
+   **Co tím získáš:** otevřený PR nepůjde mergnout, dokud není rebasnutý na aktuální
+   `main` a znovu zelený. To je jediná věc, která ochrání před „dva PR si navzájem
+   rozbily main, každý zvlášť byl zelený".
+
+   **Kdy to zapnout:** pracuje vás na projektu víc, nebo běžně máte otevřených několik
+   PR naráz.
+
+   **Kdy to NEzapínat:** děláš sólo a mergueš po jednom (přínos je pak skoro nulový),
+   nebo **nemáš ten token** — a to je důležité: bez tokenu otevírá release PR
+   `GITHUB_TOKEN` a co pak ten PR dostane za checky, je dnes **nepředvídatelné**.
+   GitHub rozjíždí „bot-created PRs can run workflows if approved" a gokick naměřil
+   obojí: běhy ve stavu `action_required` (musíš je odkliknout) i vůbec žádné. Required
+   check přijímá jen `success`/`skipped`/`neutral`, takže bez tokenu si buď zasekneš
+   release PR napořád, nebo si přidáš klik ke každému vydání — a dopředu nepoznáš který.
+   **Proto skript required checks bez tokenu nezapne**, i kdybys chtěl.
+
+   **Co NEztrácíš, když to nezapneš:** release se pořád nedá vydat nevalidovaný.
+   `release.yml` si sám prožene celou sadu nad tím commitem, který se vydává, a teprve
+   pak staví image — a to platí v obou režimech.
+
+   Token potřebuje repo práva **Contents / Pull requests / Issues: read+write**
+   (classic PAT: scope `repo`). **Není to ten samý token jako pull token pro GHCR** —
+   ten patří na deploy target a stačí mu `read:packages`.
 5. (Volitelně) Sentry: `SENTRY_*` vars + `SENTRY_AUTH_TOKEN`.
 
 Od té chvíle běží plný workflow: Conventional Commits (lokálně hook + CI), branch
