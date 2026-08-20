@@ -13,6 +13,12 @@ name: Commitlint
 on:
   pull_request:
 
+# Supersede this PR's own in-flight run when it is pushed again; the older run is
+# linting a commit range nobody will merge. Never crosses PRs (grouped per ref).
+concurrency:
+  group: commitlint-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

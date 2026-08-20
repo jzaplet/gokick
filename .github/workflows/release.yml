@@ -14,8 +14,11 @@ name: Release
 # If you want anonymous `docker pull` of :latest, flip it to public once in the
 # package settings (Package → Package settings → Change visibility).
 #
-# Tags don't trigger validate.yml, so this re-validates compilation only (the
-# image build runs `go build` + `vite build`). Cut release tags from a green main.
+# Nothing else validates a release commit. validate.yml is PR-only, and
+# release-please opens its release PR with GITHUB_TOKEN — a GITHUB_TOKEN-created PR
+# triggers no workflow at all, so that PR carries zero checks. This workflow
+# therefore runs the full suite itself, against the exact commit being released,
+# BEFORE any image is built — see the `validate` job below.
 #
 # Two entry points, same build:
 #   - push of a v* tag — the manual/hand-cut release path (full control).
@@ -35,13 +38,36 @@ on:
         required: false
         type: string
 
+# Serialised per tag so a manual tag push and release-please's workflow_call for the
+# same version cannot build and push the same image concurrently. cancel-in-progress is
+# FALSE and must stay that way: a cancelled release build leaves a tag and a GitHub
+# Release with no image behind them, which is worse than two minutes of duplicate work.
+concurrency:
+  group: release-${{ inputs.tag || github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   packages: write
 
 jobs:
+  # The gate. Runs lint + test + build + E2E against the commit this release is cut
+  # from, using the same workflow the PR checks use — one definition, no second copy
+  # to drift. `actions/checkout` inside it takes `github.sha`, which on both entry
+  # points is the commit the tag points at.
+  #
+  # Consequence, accepted deliberately: release-please TAGS before it calls this
+  # workflow, so a failure here leaves a tag and a GitHub Release with no image
+  # behind them. That is the lesser evil — a visibly incomplete release beats a
+  # silently unvalidated one. Recover by fixing main and re-running this workflow,
+  # or by deleting the tag and its release.
+  validate:
+    name: validate the release commit
+    uses: ./.github/workflows/validate.yml
+
   image:
     name: build + push image
+    needs: validate
     runs-on: ubuntu-latest
     steps:
       - name: Resolve the release tag
