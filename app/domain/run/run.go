@@ -56,6 +56,7 @@ type Run struct {
 	// the handler ctx from the claimed row (it bypasses the bus). ClaimDue is a
 	// global drain (no tenant filter) — this only propagates.
 	TenantID    string     `db:"tenant_id"`
+	Lang        string     `db:"lang"`         // UI language of the enqueuing request; worker restores it into ctx
 	Payload     []byte     `db:"payload"`      // immutable initial input
 	State       []byte     `db:"state"`        // latest checkpoint; empty (len 0) until the first Checkpoint
 	RunAt       time.Time  `db:"run_at"`       // when eligible to claim

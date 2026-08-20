@@ -52,28 +52,38 @@ na názvu typu, jen na metodě). Klíčové je, kdo koho zná:
 - Domain ty metody jen **implementuje** a `response` **nikdy neimportuje** → drží se
   pravidlo vrstev (domain nezávisí na ničem nad sebou).
 
-`HandleError(ctx, w, err)` — metoda na injektovaném `*response.Responder` (`response.go:90`) — udělá `errors.As(err, &httpErr)`:
-- sedne na `HTTPError` → vrátí `httpErr.HTTPStatus()` a originální hlášku;
-- nesedne → vrátí `500` a generickou `errInternal` ("internal server error"). Skutečná
+`HandleError(ctx, w, err)` — metoda na injektovaném `*response.Responder` (`response.go`) — udělá `errors.As(err, &httpErr)`:
+- sedne na `HTTPError` → vrátí `httpErr.HTTPStatus()` a tělo odvozené z chyby;
+- nesedne → vrátí `500` a generickou `errInternal` (klíč `common.internal_error`). Skutečná
   chyba se **nezveřejní** (neúniknou repo/panika interní detaily); dohledá se v logu přes
   `trace_id`.
 
-Routování hlášky do pole (`Error(ctx, w, status, err)`, `response.go:49`): jen
+**Tělo nese klíč, ne větu:** hodnota je `response.ApiMessage` —
+`{"key": "<katalog.klíč>", "params": {...}?}`. Chyby s `MessageParams()`
+(`KeyedError`: ValidationError, AuthError, PermissionError, MessageError) přispějí
+klíč + parametry; cokoli jiného pošle svůj `Error()` text jako klíč bez parametrů
+(fallback pro debug endpointy). Render dělá frontend přes `tm()` (`/gk-i18n`).
+
+Routování hlášky do pole (`Error(ctx, w, status, err)`, `response.go`): jen
 `ValidationError` má `ErrorField()`. Když je `Field` neprázdné → JSON klíč = jméno pole
-(`{"nickname": "..."}`). Prázdné pole nebo `AuthError`/`PermissionError` → `{"general": "..."}`.
+(`{"nickname": {"key": "...", "params": {...}}}`). Prázdné pole nebo
+`AuthError`/`PermissionError` → `{"general": {"key": "..."}}`.
 
 ## Recipe
 ### Recipe: vrátit chybu z handleru se správným statusem
 1. **Doménová / bus chyba** (z value objectu, command/query handleru přes bus) →
    `h.resp.HandleError(r.Context(), w, err)` (metoda na injektovaném `*response.Responder`). Status se odvodí z typu chyby automaticky.
-2. **Selhání dekódování requestu** (rozbitý JSON v těle) → `request.DecodeJSON` vrací typovaný `*DecodeError`, který sám implementuje `HTTPStatus()` (`413` pro nadměrné tělo, `400` pro ostatní selhání), takže i tady stačí `h.resp.HandleError(r.Context(), w, err)` (viz `admin_users.go:126`). Status ručně neurčuj.
-3. Konstruuj chybu vždy **pointerem**: `&shared.AuthError{Message: "missing refresh token"}`
+2. **Selhání dekódování requestu** (rozbitý JSON v těle) → `request.DecodeJSON` vrací typovaný `*shared.MessageError` s vlastním statusem (`413` pro nadměrné tělo, `400` pro ostatní selhání), takže i tady stačí `h.resp.HandleError(r.Context(), w, err)` (viz `admin_users.go:126`). Status ručně neurčuj.
+3. Konstruuj chybu vždy **pointerem**: `&shared.AuthError{Key: msgkey.AuthRefreshTokenMissing}`
    (viz `auth.go:117`), nikdy hodnotou — viz pitfall níže.
 
 ### Recipe: validační chyba navázaná na konkrétní pole
-1. Ve value objectu vrať `&shared.ValidationError{Field: "nickname", Message: "nickname is required"}`.
-2. Handler ji propustí přes `response.HandleError(w, err)` → klient dostane `400` a
-   `{"nickname": "nickname is required"}`. Frontend ji rovnou ukáže u inputu.
+1. Ve value objectu vrať `&shared.ValidationError{Field: "nickname", Key: msgkey.UserNicknameRequired}`
+   (hláška je překladový klíč z katalogů, ne věta — viz `/gk-i18n`).
+2. Handler ji propustí přes `h.resp.HandleError(r.Context(), w, err)` → klient dostane
+   `400` a `{"nickname": {"key": "user.nickname_required"}}`. Frontend hodnotu
+   vyrenderuje přes `tm()` v aktivním jazyce UI a ukáže u inputu — server žádnou
+   větu neskládá.
 
 ## Invariants & pitfalls
 - **Vždy pointer (`&`).** Metody jsou na `*T` (`func (e *ValidationError) HTTPStatus()`).

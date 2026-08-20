@@ -58,7 +58,7 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	}
 	responder := response.NewResponder(logger)
 	ipExtractor := provideIPExtractor(configConfig)
-	rateLimiters, err := provideRateLimiters(configConfig, ipExtractor, logger)
+	rateLimiters, err := provideRateLimiters(configConfig, ipExtractor, logger, responder)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,8 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	queryBus := provideQueryBus(logger, permissionChecker, reporter, tenantResolver)
 	getProfileHandler := query.NewGetProfileHandler(userRepository)
 	changePasswordHandler := command2.NewChangePasswordHandler(userRepository, passwordHasher)
-	profileHandler := handler.NewProfileHandler(responder, commandBus, queryBus, getProfileHandler, changePasswordHandler, permissionsRegistry)
+	changeLangHandler := command2.NewChangeLangHandler(userRepository)
+	profileHandler := handler.NewProfileHandler(responder, commandBus, queryBus, getProfileHandler, changePasswordHandler, changeLangHandler, permissionsRegistry)
 	listUsersHandler := query2.NewListUsersHandler(userRepository)
 	getUserHandler := query2.NewGetUserHandler(userRepository)
 	multitenancy := provideMultitenancy(configConfig)
@@ -268,6 +269,7 @@ func provideRateLimiters(
 	cfg *config.Config,
 	extract middleware2.IPExtractor,
 	logger *slog.Logger,
+	resp *response.Responder,
 ) (*server.RateLimiters, error) {
 	loginRule, err := middleware2.ParseRateRule(cfg.RateLimitLogin)
 	if err != nil {
@@ -278,8 +280,8 @@ func provideRateLimiters(
 		return nil, fmt.Errorf("APP_RATE_LIMIT_REFRESH: %w", err)
 	}
 	return &server.RateLimiters{
-		Login:   middleware2.NewRateLimiter(loginRule, extract, logger),
-		Refresh: middleware2.NewRateLimiter(refreshRule, extract, logger),
+		Login:   middleware2.NewRateLimiter(loginRule, extract, logger, resp),
+		Refresh: middleware2.NewRateLimiter(refreshRule, extract, logger, resp),
 	}, nil
 }
 
@@ -392,5 +394,5 @@ func provideRunWorker(
 }
 
 func providePermissionsRegistry() *shared.PermissionsRegistry {
-	return shared.NewPermissionsRegistry([]shared.Permissioned{command.LogoutCommand{}, command2.ChangePasswordCommand{}, query.GetProfileQuery{}, command3.CreateUserCommand{}, command3.UpdateUserCommand{}, command3.DeleteUserCommand{}, query2.ListUsersQuery{}, query2.GetUserQuery{}, query3.GetUserDashboardQuery{}, query3.GetAdminDashboardQuery{}, query4.ListAllUsersQuery{}, query4.GetUserQuery{}, query4.ListTenantsQuery{}, query4.GetStatsQuery{}, command3.BulkDeleteUsersCommand{}, command3.BulkSetUsersActiveCommand{}, command4.CreatePlatformUserCommand{}, command4.UpdatePlatformUserCommand{}, command4.BulkDeletePlatformUsersCommand{}, command4.BulkSetPlatformUsersActiveCommand{}, command4.DeletePlatformUserCommand{}, command4.DeleteTenantCommand{}, command4.BulkDeleteTenantsCommand{}, command4.CreateTenantCommand{}, command4.CreateSuperAdminCommand{}, query4.GetTenantQuery{}})
+	return shared.NewPermissionsRegistry([]shared.Permissioned{command.LogoutCommand{}, command2.ChangePasswordCommand{}, command2.ChangeLangCommand{}, query.GetProfileQuery{}, command3.CreateUserCommand{}, command3.UpdateUserCommand{}, command3.DeleteUserCommand{}, query2.ListUsersQuery{}, query2.GetUserQuery{}, query3.GetUserDashboardQuery{}, query3.GetAdminDashboardQuery{}, query4.ListAllUsersQuery{}, query4.GetUserQuery{}, query4.ListTenantsQuery{}, query4.GetStatsQuery{}, command3.BulkDeleteUsersCommand{}, command3.BulkSetUsersActiveCommand{}, command4.CreatePlatformUserCommand{}, command4.UpdatePlatformUserCommand{}, command4.BulkDeletePlatformUsersCommand{}, command4.BulkSetPlatformUsersActiveCommand{}, command4.DeletePlatformUserCommand{}, command4.DeleteTenantCommand{}, command4.BulkDeleteTenantsCommand{}, command4.CreateTenantCommand{}, command4.CreateSuperAdminCommand{}, query4.GetTenantQuery{}})
 }

@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import ChevronDownIcon from '@/app-ui/Icons/ChevronDownIcon.vue';
 import { useClickOutside } from '@/app-ui/ClickOutside/useClickOutside';
+import { useI18n } from '@/app-ui/I18n';
 
 export type BulkAction = {
     key: string;
@@ -25,6 +26,8 @@ const emit = defineEmits<{
     selectAllFiltered: [];
     clear: [];
 }>();
+
+const { t } = useI18n();
 
 const dropdownRef = ref<HTMLElement | null>(null);
 const isOpen = ref(false);
@@ -118,7 +121,7 @@ useClickOutside(dropdownRef, close);
                         ]"
                         @click="clearSelection"
                     >
-                        Clear selection
+                        {{ t('bulk.clear_selection') }}
                     </button>
                 </div>
             </Transition>
@@ -126,8 +129,8 @@ useClickOutside(dropdownRef, close);
 
         <span class="text-sm text-gray-600">
             {{ isAllFiltered === true
-                ? `Selected: all (${total})`
-                : `Selected: ${count} / ${total}` }}
+                ? t('bulk.selected_all', { total })
+                : t('bulk.selected', { count, total }) }}
         </span>
 
         <button
@@ -136,7 +139,7 @@ useClickOutside(dropdownRef, close);
             class="text-sm text-orange-600 underline hover:text-orange-800 cursor-pointer"
             @click="emit('selectAllFiltered')"
         >
-            Select all ({{ total }})
+            {{ t('bulk.select_all', { total }) }}
         </button>
 
         <button
@@ -144,7 +147,7 @@ useClickOutside(dropdownRef, close);
             class="text-sm text-gray-500 underline hover:text-gray-700 cursor-pointer"
             @click="emit('clear')"
         >
-            Clear selection
+            {{ t('bulk.clear_selection') }}
         </button>
     </div>
 </template>

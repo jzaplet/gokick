@@ -43,6 +43,7 @@ gokick je **production-ready end-to-end** boilerplate — DDD/CQRS backend, Vue 
 - Vue 3 SPA (Vite, TypeScript, Tailwind) embedovaná do binárky.
 - DataGrid — stránkované/filtrované/řazené admin i platform gridy s bulk akcemi.
 - Typovaný fetch — body i response vynuceny generovaným kontraktem (nezkompiluje se bez typu).
+- i18n (en + cs) — API posílá `{key, params}`, render jen na FE (`t()`/`tm()`); jediný katalog `locale/*.json` + `make i18n-gen`/`i18n-check`. Detail: `/gk-i18n`.
 
 **Observabilita**
 
@@ -91,7 +92,7 @@ Největší (a jediný zásadní) strop: single-node SQLite (single-writer) + sc
 
 ### 🟢 Frontend
 
-- E2E (Playwright), a11y audit (axe), i18n.
+- E2E (Playwright), a11y audit (axe).
 
 ### 🟢 Tooling / DX
 

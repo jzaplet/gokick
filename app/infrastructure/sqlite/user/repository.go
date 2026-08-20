@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/domain/user"
 	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/sqlite"
@@ -29,8 +30,8 @@ func (r *Repository) Save(ctx context.Context, u *user.User) error {
 	if err := shared.AssertTenantScope(ctx, u.TenantID, r.Multitenancy()); err != nil {
 		return err
 	}
-	const q = `INSERT INTO users (id, nickname, password_hash, email, role, tenant_id, active, created_at, updated_at)
-		VALUES (:id, :nickname, :password_hash, :email, :role, :tenant_id, :active, :created_at, :updated_at)`
+	const q = `INSERT INTO users (id, nickname, password_hash, email, role, tenant_id, active, created_at, updated_at, lang)
+		VALUES (:id, :nickname, :password_hash, :email, :role, :tenant_id, :active, :created_at, :updated_at, :lang)`
 	_, err := r.Conn(ctx).NamedExecContext(ctx, q, u)
 	return err
 }
@@ -60,8 +61,8 @@ func (r *Repository) Save(ctx context.Context, u *user.User) error {
 // the marker substring alone, so the dash satisfies it. Do not "fix" the
 // punctuation.
 func (r *Repository) SaveAcrossTenants(ctx context.Context, u *user.User) error {
-	const q = `INSERT INTO users (id, nickname, password_hash, email, role, tenant_id, active, created_at, updated_at)
-		VALUES (:id, :nickname, :password_hash, :email, :role, :tenant_id, :active, :created_at, :updated_at)
+	const q = `INSERT INTO users (id, nickname, password_hash, email, role, tenant_id, active, created_at, updated_at, lang)
+		VALUES (:id, :nickname, :password_hash, :email, :role, :tenant_id, :active, :created_at, :updated_at, :lang)
 		/* tenant-write-exempt - platform superadmin creates into the CHOSEN tenant */`
 	_, err := r.Conn(ctx).NamedExecContext(ctx, q, u)
 
@@ -105,6 +106,21 @@ func (r *Repository) UpdatePassword(
 		`UPDATE users SET password_hash=?, updated_at=? WHERE id=?
 		 /* tenant-scope-exempt: self password change by id (subject == claims.UserID) */`,
 		passwordHash, updatedAt, userID)
+	return requireOneRow(res, err)
+}
+
+// UpdateLang sets the user's own UI-language preference — same self-service
+// scoping as UpdatePassword (subject == claims.UserID, superadmin included).
+func (r *Repository) UpdateLang(
+	ctx context.Context,
+	userID string,
+	lang shared.Lang,
+	updatedAt time.Time,
+) error {
+	res, err := r.Conn(ctx).ExecContext(ctx,
+		`UPDATE users SET lang=?, updated_at=? WHERE id=?
+		 /* tenant-scope-exempt: self language change by id (subject == claims.UserID) */`,
+		string(lang), updatedAt, userID)
 	return requireOneRow(res, err)
 }
 
@@ -354,7 +370,7 @@ func requireOneRow(res sql.Result, err error) error {
 	}
 	if n == 0 {
 		//gkerrf:exempt requireOneRow guard - by-id mutations surface via redirect/toast, no form field maps id
-		return &shared.ValidationError{Field: "id", Message: "user not found"}
+		return &shared.ValidationError{Field: "id", Key: msgkey.UserNotFound}
 	}
 	return nil
 }

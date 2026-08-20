@@ -37,6 +37,7 @@ Nebo prostě popiš problém a AI sáhne po správném skillu sama (řídí se p
 | `/gk-entities` | Entity (db tagy) + value objects s validací + factory funkce |
 | `/gk-domain-events` | „Stalo se X" → reakce po commitu, aniž to command handler zná |
 | `/gk-errors` | Doménové chyby (Validation/Auth/Permission) → automaticky HTTP status |
+| `/gk-i18n` | Překladové klíče přes API ({key, params}), render na FE (t()/tm()), jediný katalog locale/, jak přidat text |
 
 ### Application (CQRS)
 | Skill | Co řeší |

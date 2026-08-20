@@ -28,7 +28,8 @@ describe('parseResponse', () => {
     });
 
     // The runtime half of the parity loop: a 2xx body that fails its generated
-    // guard is a contract violation — a mergeable { general } failure, never data.
+    // guard is a contract violation — a mergeable { general } failure carrying
+    // a wire-shaped ApiMessage (rendered later via tm()), never data.
     it('a 2xx body failing its guard is a general failure, not data', async () => {
         const out = await parseResponse<IdBody, { message: string }>(
             new Response(JSON.stringify({ id: 42 }), { status: 200 }),
@@ -37,7 +38,7 @@ describe('parseResponse', () => {
 
         expect(out.success).toBe(false);
         if (out.success === false) {
-            expect(out.data).toEqual({ general: 'Invalid response shape' });
+            expect(out.data).toEqual({ general: { key: 'fetch.invalid_shape' } });
         }
     });
 
@@ -51,7 +52,9 @@ describe('parseResponse', () => {
 
         expect(out.success).toBe(false);
         if (out.success === false) {
-            expect('general' in out.data ? out.data.general : '').toContain('Malformed');
+            expect(out.data).toEqual({
+                general: { key: 'fetch.malformed_body', params: { status: 200 } },
+            });
         }
     });
 
@@ -73,13 +76,17 @@ describe('parseResponse', () => {
 
         expect(out.success).toBe(false);
         if (out.success === false) {
-            expect(out.data).toEqual({ general: 'Error 502' });
+            expect(out.data).toEqual({
+                general: { key: 'fetch.error_status', params: { status: 502 } },
+            });
         }
     });
 
     // A proxy/middlebox can answer with a valid-JSON SCALAR body ("rate
     // limited"). Cast as TError it would land in errors.value as a primitive
-    // and render nowhere — it must merge as { general } instead.
+    // and render nowhere — it must merge as { general }. The raw string is NOT
+    // kept as the message: the general slot carries catalog keys rendered by
+    // tm(), and a proxy string can't be one — the status param names it.
     it('a non-2xx scalar JSON body becomes a { general } failure, not a fake TError', async () => {
         const out = await parseResponse<unknown, { nickname?: string }>(
             new Response(JSON.stringify('rate limited'), { status: 429 }),
@@ -87,7 +94,9 @@ describe('parseResponse', () => {
 
         expect(out.success).toBe(false);
         if (out.success === false) {
-            expect(out.data).toEqual({ general: 'rate limited' });
+            expect(out.data).toEqual({
+                general: { key: 'fetch.error_status', params: { status: 429 } },
+            });
         }
     });
 
@@ -98,7 +107,9 @@ describe('parseResponse', () => {
 
         expect(out.success).toBe(false);
         if (out.success === false) {
-            expect(out.data).toEqual({ general: 'Error 400' });
+            expect(out.data).toEqual({
+                general: { key: 'fetch.error_status', params: { status: 400 } },
+            });
         }
     });
 });

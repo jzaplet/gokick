@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/domain/user"
 )
 
@@ -28,7 +29,7 @@ func (h *DeleteUserHandler) Handle(ctx context.Context, cmd DeleteUserCommand) e
 	}
 
 	if claims.UserID == cmd.ID {
-		return &shared.ValidationError{Message: "cannot delete your own account"}
+		return &shared.ValidationError{Key: msgkey.UserOwnAccountUndeletable}
 	}
 
 	target, err := h.users.FindByID(ctx, cmd.ID)
@@ -37,7 +38,7 @@ func (h *DeleteUserHandler) Handle(ctx context.Context, cmd DeleteUserCommand) e
 	}
 	if target == nil {
 		//gkerrf:exempt path-param lookup - the list view toasts on failure, no form field maps id
-		return &shared.ValidationError{Field: "id", Message: "user not found"}
+		return &shared.ValidationError{Field: "id", Key: msgkey.UserNotFound}
 	}
 
 	// A superadmin (platform) account is managed out-of-band — mirror the platform
@@ -45,7 +46,7 @@ func (h *DeleteUserHandler) Handle(ctx context.Context, cmd DeleteUserCommand) e
 	// Delete into a 0-row no-op that (pre-F-039) reported success and emitted a
 	// phantom user.deleted audit for a row that was never removed.
 	if user.Role(target.Role).IsSuperAdmin() {
-		return &shared.PermissionError{Message: "cannot delete a superadmin account"}
+		return &shared.PermissionError{Key: msgkey.PermissionSuperadminUndeletable}
 	}
 
 	if err := h.users.Delete(ctx, cmd.ID); err != nil {

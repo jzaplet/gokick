@@ -11,7 +11,7 @@ import { getAccessToken, setAccessToken } from '@/app-ui/Fetch/accessToken';
 const loginBody = {
     access_token: 'fresh-access-token',
     access_expiration: 900,
-    user: { id: 'u-1', nickname: 'alice', email: 'alice@example.com', role: 'user', permissions: [] },
+    user: { id: 'u-1', nickname: 'alice', email: 'alice@example.com', role: 'user', permissions: [], lang: '' },
 };
 
 const setHint = (): void => {

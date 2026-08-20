@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import type { PlatformUser } from '@/app/Platform/types/PlatformUser';
 import { Role } from '@/app/Auth/enums/roles';
+import { roleLabel } from '@/app/Auth/enums/roleLabels';
 import { roleBadge } from '@/app-ui/Users/roleBadge';
+import { useI18n } from '@/app-ui/I18n';
 import Button from '@/app-ui/Buttons/Button.vue';
 import CheckBox from '@/app-ui/Inputs/CheckBox.vue';
 import EditIcon from '@/app-ui/Icons/EditIcon.vue';
@@ -23,12 +25,14 @@ defineEmits<{
     toggleSelect: [user: PlatformUser];
 }>();
 
+const { t, locale } = useI18n();
+
 const formatLastLogin = (value: string | null): string => {
     if (value === null) {
-        return 'Never';
+        return t('common.never');
     }
 
-    return new Date(value).toLocaleString();
+    return new Date(value).toLocaleString(locale.value);
 };
 
 // A superadmin row is managed out-of-band — the backend rejects edit/delete on
@@ -52,7 +56,7 @@ const isManageable = (): boolean => {
             <CheckBox
                 :model-value="selected"
                 :disabled="isManageable() === false"
-                :sr-label="`Select ${user.nickname}`"
+                :sr-label="t('users.select_user', { nickname: user.nickname })"
                 @update:model-value="$emit('toggleSelect', user)"
             />
         </td>
@@ -77,7 +81,7 @@ const isManageable = (): boolean => {
                     roleBadge(user.role),
                 ]"
             >
-                {{ user.role }}
+                {{ roleLabel(user.role) }}
             </span>
         </td>
         <td class="px-4 py-3 whitespace-nowrap text-sm">
@@ -90,7 +94,7 @@ const isManageable = (): boolean => {
                         : 'bg-gray-100 text-gray-600',
                 ]"
             >
-                {{ user.active === true ? 'Active' : 'Inactive' }}
+                {{ user.active === true ? t('common.active') : t('common.inactive') }}
             </span>
         </td>
         <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
@@ -100,12 +104,12 @@ const isManageable = (): boolean => {
             <div class="flex items-center justify-end gap-1">
                 <Tooltip
                     v-if="user.active === false"
-                    text="Activate user"
+                    :text="t('users.activate_title')"
                 >
                     <Button
                         variant="secondary"
                         size="xs"
-                        aria-label="Activate user"
+                        :aria-label="t('users.activate_title')"
                         :disabled="isManageable() === false"
                         @click="$emit('activate', user)"
                     >

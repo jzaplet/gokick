@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/domain/user"
 )
 
@@ -35,7 +36,7 @@ func (h *GetProfileHandler) Handle(ctx context.Context, _ GetProfileQuery) (*use
 		// {"id":"user not found"} to a valid JWT; a vanished session subject is an
 		// auth failure → 401, so the client clears its session and re-logs in
 		// instead of being shown a phantom form-field error.
-		return nil, &shared.AuthError{Message: "user no longer exists"}
+		return nil, &shared.AuthError{Key: msgkey.AuthUserNoLongerExists}
 	}
 	return u, nil
 }

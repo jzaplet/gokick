@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/domain/user"
 )
 
@@ -46,20 +47,22 @@ func (h *ChangePasswordHandler) Handle(ctx context.Context, cmd ChangePasswordCo
 		// mid-session-deletion edge as get_profile. Preserve the pre-F-011 400
 		// here (this is a form submit, not a session read) rather than 401.
 		//gkerrf:exempt session-user lookup - a vanished user surfaces via the general slot, no form field maps id
-		return &shared.ValidationError{Field: "id", Message: "user not found"}
+		return &shared.ValidationError{Field: "id", Key: msgkey.UserNotFound}
 	}
 
 	if err := h.password.Verify(cmd.OldPassword, u.PasswordHash); err != nil {
-		return &shared.AuthError{Message: "current password is incorrect"}
+		return &shared.AuthError{Key: msgkey.AuthCurrentPasswordIncorrect}
 	}
 
 	newHash, err := user.HashNewPassword(cmd.NewPassword, h.password)
 	if err != nil {
 		// `user.NewPassword` reports a generic `password` field; remap so the
 		// error lands on the form's New Password input rather than `general`.
+		// Forward the key AND params — re-rendering a message here would pin
+		// the language before the Responder gets to translate it.
 		var ve *shared.ValidationError
 		if errors.As(err, &ve) {
-			return &shared.ValidationError{Field: "new_password", Message: ve.Message}
+			return &shared.ValidationError{Field: "new_password", Key: ve.Key, Params: ve.Params}
 		}
 		return err
 	}

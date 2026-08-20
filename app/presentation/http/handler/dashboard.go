@@ -32,7 +32,7 @@ func NewDashboardHandler(
 
 //gkts:assets/app/Dashboard/types/DashboardResponse.ts DashboardResponse
 type dashboardDTO struct {
-	Message string `json:"message"`
+	Nickname string `json:"nickname"`
 }
 
 //gkts:assets/app/Dashboard/types/AdminDashboardResponse.ts AdminDashboardResponse
@@ -59,7 +59,7 @@ func (h *DashboardHandler) User(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.resp.JSON(r.Context(), w, http.StatusOK, dashboardDTO{Message: result.Message})
+	h.resp.JSON(r.Context(), w, http.StatusOK, dashboardDTO{Nickname: result.Nickname})
 }
 
 func (h *DashboardHandler) Admin(w http.ResponseWriter, r *http.Request) {

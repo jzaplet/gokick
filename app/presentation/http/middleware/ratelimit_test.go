@@ -16,7 +16,9 @@ func silentLogger() *slog.Logger {
 }
 
 // testResponder is a Responder over a discard logger for middleware tests.
-func testResponder() *response.Responder { return response.NewResponder(silentLogger()) }
+func testResponder() *response.Responder {
+	return response.NewResponder(silentLogger())
+}
 
 func TestParseRateRule_AcceptedShapes(t *testing.T) {
 	t.Parallel()
@@ -58,7 +60,12 @@ func TestParseRateRule_RejectsBadInput(t *testing.T) {
 
 func TestRateLimiter_AllowsBurstThenBlocks(t *testing.T) {
 	t.Parallel()
-	l := NewRateLimiter(RateRule{Tokens: 3, Per: time.Second}, remoteIP, silentLogger())
+	l := NewRateLimiter(
+		RateRule{Tokens: 3, Per: time.Second},
+		remoteIP,
+		silentLogger(),
+		testResponder(),
+	)
 	now := time.Now()
 	for i := 0; i < 3; i++ {
 		if !l.allow("1.2.3.4", now) {
@@ -72,7 +79,12 @@ func TestRateLimiter_AllowsBurstThenBlocks(t *testing.T) {
 
 func TestRateLimiter_RefillRestoresCapacity(t *testing.T) {
 	t.Parallel()
-	l := NewRateLimiter(RateRule{Tokens: 2, Per: time.Second}, remoteIP, silentLogger())
+	l := NewRateLimiter(
+		RateRule{Tokens: 2, Per: time.Second},
+		remoteIP,
+		silentLogger(),
+		testResponder(),
+	)
 	now := time.Now()
 	for i := 0; i < 2; i++ {
 		if !l.allow("ip", now) {
@@ -94,7 +106,12 @@ func TestRateLimiter_RefillRestoresCapacity(t *testing.T) {
 
 func TestRateLimiter_PerIPBucketsAreIndependent(t *testing.T) {
 	t.Parallel()
-	l := NewRateLimiter(RateRule{Tokens: 1, Per: time.Minute}, remoteIP, silentLogger())
+	l := NewRateLimiter(
+		RateRule{Tokens: 1, Per: time.Minute},
+		remoteIP,
+		silentLogger(),
+		testResponder(),
+	)
 	now := time.Now()
 	if !l.allow("ip-a", now) {
 		t.Fatal("ip-a must be allowed first")
@@ -109,7 +126,12 @@ func TestRateLimiter_PerIPBucketsAreIndependent(t *testing.T) {
 
 func TestRateLimiter_SweepDropsIdleBuckets(t *testing.T) {
 	t.Parallel()
-	l := NewRateLimiter(RateRule{Tokens: 1, Per: time.Minute}, remoteIP, silentLogger())
+	l := NewRateLimiter(
+		RateRule{Tokens: 1, Per: time.Minute},
+		remoteIP,
+		silentLogger(),
+		testResponder(),
+	)
 	t0 := time.Now()
 	l.allow("ip", t0)
 	if len(l.buckets) != 1 {
@@ -123,7 +145,12 @@ func TestRateLimiter_SweepDropsIdleBuckets(t *testing.T) {
 
 func TestRateLimiter_MiddlewareReturns429AndRetryAfter(t *testing.T) {
 	t.Parallel()
-	l := NewRateLimiter(RateRule{Tokens: 1, Per: 30 * time.Second}, remoteIP, silentLogger())
+	l := NewRateLimiter(
+		RateRule{Tokens: 1, Per: 30 * time.Second},
+		remoteIP,
+		silentLogger(),
+		testResponder(),
+	)
 	mw := l.Middleware()
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -151,7 +178,12 @@ func TestRateLimiter_MiddlewareReturns429AndRetryAfter(t *testing.T) {
 
 func TestRateLimiter_DisabledRuleIsPassThrough(t *testing.T) {
 	t.Parallel()
-	l := NewRateLimiter(RateRule{}, remoteIP, silentLogger()) // zero rule = disabled
+	l := NewRateLimiter(
+		RateRule{},
+		remoteIP,
+		silentLogger(),
+		testResponder(),
+	) // zero rule = disabled
 	handler := l.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))

@@ -12,6 +12,7 @@ export type { ApiResponse } from '@/app-ui/Fetch/types/ApiResponse';
 export type { ApiSuccess } from '@/app-ui/Fetch/types/ApiSuccess';
 export type { ApiError } from '@/app-ui/Fetch/types/ApiError';
 export type { ApiGeneralError } from '@/app-ui/Fetch/types/ApiGeneralError';
+export type { ApiMessage } from '@/app-ui/Fetch/types/ApiMessage';
 export type { Guard } from '@/app-ui/Fetch/guards';
 export type { FetchOptions } from '@/app-ui/Fetch/types/FetchOptions';
 export type { UploadProgress } from '@/app-ui/Fetch/types/UploadProgress';

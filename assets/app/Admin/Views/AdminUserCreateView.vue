@@ -4,11 +4,13 @@ import type { UserFormErrors } from '@/app/Admin/types/UserFormErrors';
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { authFetch } from '@/app-ui/Auth';
+import { useI18n } from '@/app-ui/I18n';
 import { useToast } from '@/app-ui/Toast/useToast';
 import UserForm from '@/app/Admin/Components/UserForm.vue';
 
 const router = useRouter();
 const { success } = useToast();
+const { t } = useI18n();
 
 const errors = ref<UserFormErrors>({});
 const isLoading = ref(false);
@@ -36,7 +38,7 @@ const handleSubmit = async (data: UserFormData): Promise<void> => {
         return;
     }
 
-    success(`User ${data.nickname} created.`);
+    success(t('users.created', { nickname: data.nickname }));
     void router.push({ name: 'admin-users' });
 };
 
@@ -49,12 +51,12 @@ const handleCancel = (): void => {
     <div>
         <div class="max-w-xl mx-auto space-y-6">
             <h1 class="text-2xl font-bold text-gray-900">
-                New user
+                {{ t('users.new_title') }}
             </h1>
 
             <UserForm
                 mode="create"
-                submit-label="Create"
+                :submit-label="t('common.create')"
                 :is-loading="isLoading"
                 :errors="errors"
                 @submit="handleSubmit"

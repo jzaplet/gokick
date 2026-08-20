@@ -5,6 +5,7 @@ import (
 
 	"gokick/app/application/userwrite"
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/domain/user"
 )
 
@@ -47,8 +48,8 @@ func (h *CreateUserHandler) Handle(ctx context.Context, cmd CreateUserCommand) e
 	}
 	if role.IsSuperAdmin() {
 		return &shared.ValidationError{
-			Field:   "role",
-			Message: "cannot assign the superadmin role",
+			Field: "role",
+			Key:   msgkey.UserSuperadminRoleUnassignable,
 		}
 	}
 

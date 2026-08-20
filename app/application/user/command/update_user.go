@@ -5,6 +5,7 @@ import (
 
 	"gokick/app/application/userwrite"
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/domain/user"
 )
 
@@ -42,7 +43,7 @@ func (h *UpdateUserHandler) Handle(ctx context.Context, cmd UpdateUserCommand) e
 	}
 	if target == nil {
 		//gkerrf:exempt path-param lookup - the edit view redirects on failure, no form field maps id
-		return &shared.ValidationError{Field: "id", Message: "user not found"}
+		return &shared.ValidationError{Field: "id", Key: msgkey.UserNotFound}
 	}
 
 	// Admin-only guard: don't let an admin demote themselves out of admin and lock
@@ -52,8 +53,8 @@ func (h *UpdateUserHandler) Handle(ctx context.Context, cmd UpdateUserCommand) e
 	selfDemoteGuard := func(role user.Role) error {
 		if claims.UserID == target.ID && string(role) != string(user.RoleAdmin) {
 			return &shared.ValidationError{
-				Field:   "role",
-				Message: "cannot change your own role",
+				Field: "role",
+				Key:   msgkey.UserOwnRoleUnchangeable,
 			}
 		}
 		return nil

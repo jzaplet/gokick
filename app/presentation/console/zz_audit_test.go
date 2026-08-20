@@ -24,7 +24,9 @@ func silentLogger() *slog.Logger {
 }
 
 // testResponder is a Responder over a discard logger for console server-wiring tests.
-func testResponder() *response.Responder { return response.NewResponder(silentLogger()) }
+func testResponder() *response.Responder {
+	return response.NewResponder(silentLogger())
+}
 
 // ---------------------------------------------------------------------------
 // create-user command wiring

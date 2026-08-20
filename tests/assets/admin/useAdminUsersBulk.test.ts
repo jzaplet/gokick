@@ -42,7 +42,7 @@ describe('useAdminUsersBulk', () => {
     it('offers only deactivate and delete as bulk actions', () => {
         const bulk = useAdminUsersBulk(makeGrid());
 
-        expect(bulk.bulkActions.map((a: { key: string }) => a.key)).toEqual(['deactivate', 'delete']);
+        expect(bulk.bulkActions.value.map((a: { key: string }) => a.key)).toEqual(['deactivate', 'delete']);
 
         // Activation is a per-row action — the bulk path must ignore it.
         bulk.handleBulkAction('activate');
@@ -80,7 +80,7 @@ describe('useAdminUsersBulk', () => {
         bulk.handleBulkAction('deactivate');
 
         expect(bulk.bulkConfirm.value?.title).toBe('Deactivate selected users');
-        expect(bulk.bulkConfirm.value?.message).toContain('2 selected user(s)');
+        expect(bulk.bulkConfirm.value?.message).toContain('2 selected users');
         expect(bulk.bulkConfirm.value?.confirmText).toBe('Deactivate');
     });
 

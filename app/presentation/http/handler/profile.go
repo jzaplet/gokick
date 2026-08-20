@@ -19,6 +19,7 @@ type ProfileHandler struct {
 	queryBus       *bus.QueryBus
 	getProfile     *profileqry.GetProfileHandler
 	changePassword *profilecmd.ChangePasswordHandler
+	changeLang     *profilecmd.ChangeLangHandler
 	registry       *shared.PermissionsRegistry
 }
 
@@ -28,6 +29,7 @@ func NewProfileHandler(
 	queryBus *bus.QueryBus,
 	getProfile *profileqry.GetProfileHandler,
 	changePassword *profilecmd.ChangePasswordHandler,
+	changeLang *profilecmd.ChangeLangHandler,
 	registry *shared.PermissionsRegistry,
 ) *ProfileHandler {
 	return &ProfileHandler{
@@ -36,6 +38,7 @@ func NewProfileHandler(
 		queryBus:       queryBus,
 		getProfile:     getProfile,
 		changePassword: changePassword,
+		changeLang:     changeLang,
 		registry:       registry,
 	}
 }
@@ -44,6 +47,11 @@ func NewProfileHandler(
 type changePasswordRequest struct {
 	OldPassword string `json:"old_password"`
 	NewPassword string `json:"new_password"`
+}
+
+//gkts:assets/app-ui/I18n/types/ChangeLangFormData.ts ChangeLangFormData noguard
+type changeLangRequest struct {
+	Lang string `json:"lang"`
 }
 
 func (h *ProfileHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -70,6 +78,7 @@ func (h *ProfileHandler) Get(w http.ResponseWriter, r *http.Request) {
 		Email:       u.Email,
 		Role:        user.Role(u.Role),
 		Permissions: h.registry.ForRole(u.Role),
+		Lang:        u.PreferredLang(),
 	})
 }
 
@@ -93,6 +102,34 @@ func (h *ProfileHandler) ChangePassword(w http.ResponseWriter, r *http.Request) 
 		cmd,
 		func(ctx context.Context) error {
 			return h.changePassword.Handle(ctx, cmd)
+		},
+	)
+	if err != nil {
+		h.resp.HandleError(r.Context(), w, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *ProfileHandler) ChangeLang(w http.ResponseWriter, r *http.Request) {
+	var body changeLangRequest
+	if err := request.DecodeJSON(w, r, &body); err != nil {
+		h.resp.HandleError(r.Context(), w, err)
+
+		return
+	}
+
+	cmd := profilecmd.ChangeLangCommand{Lang: body.Lang}
+
+	err := bus.DispatchVoid(
+		r.Context(),
+		h.commandBus,
+		"ChangeLang",
+		cmd,
+		func(ctx context.Context) error {
+			return h.changeLang.Handle(ctx, cmd)
 		},
 	)
 	if err != nil {

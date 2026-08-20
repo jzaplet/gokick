@@ -9,6 +9,7 @@ import (
 	authcmd "gokick/app/application/auth/command"
 	"gokick/app/application/bus"
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/domain/user"
 	"gokick/app/presentation/http/request"
 	"gokick/app/presentation/http/response"
@@ -75,6 +76,10 @@ type userDTO struct {
 	Email       string    `json:"email"`
 	Role        user.Role `json:"role"`
 	Permissions []string  `json:"permissions"`
+	// Lang is the persisted UI-language preference ("" = never expressed —
+	// the browser decides). The SPA adopts a non-empty value into its locale
+	// state after login/refresh unless this device chose explicitly.
+	Lang string `json:"lang"`
 }
 
 //gkts:assets/app-ui/Auth/types/LoginResponse.ts LoginResponse
@@ -120,7 +125,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(refreshCookieName)
 	if err != nil {
-		h.resp.HandleError(r.Context(), w, &shared.AuthError{Message: "missing refresh token"})
+		h.resp.HandleError(r.Context(), w, &shared.AuthError{Key: msgkey.AuthRefreshTokenMissing})
 
 		return
 	}
@@ -220,6 +225,7 @@ func (h *AuthHandler) writeAuthResponse(
 			Email:       result.User.Email,
 			Role:        user.Role(result.User.Role),
 			Permissions: h.registry.ForRole(result.User.Role),
+			Lang:        result.User.PreferredLang(),
 		},
 	})
 }

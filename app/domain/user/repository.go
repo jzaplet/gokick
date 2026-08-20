@@ -3,11 +3,19 @@ package user
 import (
 	"context"
 	"time"
+
+	"gokick/app/domain/shared"
 )
 
 type Repository interface {
 	Save(ctx context.Context, user *User) error
 	Update(ctx context.Context, user *User) error
+	// UpdateLang sets a user's OWN UI-language preference (self-service, by
+	// claims id — the admin/platform update paths leave lang alone, like
+	// tenant_id). Mirrors UpdatePassword's scoping so it works for a
+	// superadmin too.
+	UpdateLang(ctx context.Context, userID string, lang shared.Lang, updatedAt time.Time) error
+
 	// UpdatePassword sets a user's OWN password hash (self-service change-password).
 	// Scoped to WHERE id=? with no role != 'superadmin' filter, so a superadmin can
 	// change their own password (Update excludes superadmin rows to block a tenant

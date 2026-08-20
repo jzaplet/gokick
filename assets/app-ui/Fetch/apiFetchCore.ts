@@ -37,7 +37,7 @@ export const apiFetchCore = async <TData, TError, TBody>(
         // (field merge, toast, clear isLoading) instead of an unhandled promise
         // rejection. status:0 marks "never reached the server"; refresh()
         // treats it as a transient failure that keeps the session.
-        return generalFailure<TError>(0, 'Network error');
+        return generalFailure<TError>(0, 'fetch.network_error');
     }
 
     return parseResponse<TData, TError>(response, options.validate);

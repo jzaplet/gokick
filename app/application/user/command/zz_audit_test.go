@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/internal/testfx"
 )
 
@@ -231,7 +232,7 @@ func TestCreateUserHandler_DuplicateNicknameMessage(t *testing.T) {
 	if ve.Field != "nickname" {
 		t.Fatalf("field: got %q want nickname", ve.Field)
 	}
-	if ve.Message != "user with this nickname already exists" {
-		t.Fatalf("message: got %q want %q", ve.Message, "user with this nickname already exists")
+	if ve.Key != msgkey.UserNicknameTaken {
+		t.Fatalf("key: got %q want %q", ve.Key, msgkey.UserNicknameTaken)
 	}
 }

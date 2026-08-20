@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/domain/user"
 )
 
@@ -34,7 +35,7 @@ func (h *GetUserHandler) Handle(ctx context.Context, q GetUserQuery) (*user.Plat
 		// Not-found as a 400 with Field "id" — mirrors the admin read-one and the
 		// platform Update/Delete paths, so the HTTP handler needs no nil-check.
 		//gkerrf:exempt path-param lookup - the edit view redirects on failure, no form field maps id
-		return nil, &shared.ValidationError{Field: "id", Message: "user not found"}
+		return nil, &shared.ValidationError{Field: "id", Key: msgkey.UserNotFound}
 	}
 	return row, nil
 }

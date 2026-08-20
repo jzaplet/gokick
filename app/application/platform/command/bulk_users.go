@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/domain/user"
 )
 
@@ -43,7 +44,7 @@ func platformBulkSelection(
 ) (user.PlatformBulkSelection, error) {
 	if !user.ValidActiveFilter(filters.Active) {
 		return user.PlatformBulkSelection{}, &shared.ValidationError{
-			Message: "invalid active filter value",
+			Key: msgkey.UserBulkActiveFilterInvalid,
 		}
 	}
 	sel := user.PlatformBulkSelection{
@@ -53,7 +54,9 @@ func platformBulkSelection(
 		ExcludeID:   excludeID,
 	}
 	if sel.IsEmpty() {
-		return user.PlatformBulkSelection{}, &shared.ValidationError{Message: "nothing selected"}
+		return user.PlatformBulkSelection{}, &shared.ValidationError{
+			Key: msgkey.CommonNothingSelected,
+		}
 	}
 	return sel, nil
 }

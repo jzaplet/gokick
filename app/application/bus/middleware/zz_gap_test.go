@@ -10,6 +10,7 @@ import (
 
 	"gokick/app/application/bus"
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 
 	"github.com/google/uuid"
 )
@@ -33,7 +34,7 @@ import (
 func TestQueryBus_AuthorizeDeniesUnpermittedQuery(t *testing.T) {
 	t.Parallel()
 
-	denied := &shared.PermissionError{Message: "insufficient permissions"}
+	denied := &shared.PermissionError{Key: msgkey.PermissionDenied}
 	checker := &stubChecker{err: denied}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 

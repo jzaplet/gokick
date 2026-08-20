@@ -12,7 +12,7 @@ import { getAccessToken, setAccessToken } from '@/app-ui/Fetch/accessToken';
 // silently restore the session on the next load.
 const seedSession = (): void => {
     setAccessToken('live-access-token');
-    user.value = { id: 'u-1', nickname: 'alice', email: '', role: 'user', permissions: [] };
+    user.value = { id: 'u-1', nickname: 'alice', email: '', role: 'user', permissions: [], lang: '' };
     isAuthenticated.value = true;
     document.cookie = 'gk_session=1; Path=/';
 };

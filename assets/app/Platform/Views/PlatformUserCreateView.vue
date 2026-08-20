@@ -6,12 +6,14 @@ import { isPlatformTenantListResponse } from '@/app/Platform/types/PlatformTenan
 import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { authFetch } from '@/app-ui/Auth';
+import { useI18n } from '@/app-ui/I18n';
 import { useToast } from '@/app-ui/Toast/useToast';
 import PlatformUserForm from '@/app/Platform/Components/PlatformUserForm.vue';
 import Spinner from '@/app-ui/Loading/Spinner.vue';
 
 const router = useRouter();
 const { success, error } = useToast();
+const { t } = useI18n();
 
 const errors = ref<PlatformUserFormErrors>({});
 const isLoading = ref(false);
@@ -39,7 +41,7 @@ onMounted(async (): Promise<void> => {
         // would paint the form — with a required tenant picker holding zero options
         // — for however long the navigation takes, and a submit landing in that gap
         // earns a 400 on a field with nothing to pick.
-        error('Failed to load tenants.');
+        error(t('tenants.load_failed'));
         void router.push({ name: 'platform-users' });
 
         return;
@@ -53,9 +55,10 @@ onMounted(async (): Promise<void> => {
     // presenting a truncated list as if it were the whole set: an operator who
     // cannot find the tenant they just created would otherwise have no idea why.
     if (result.data.total > result.data.items.length) {
-        error(`Showing the first ${String(result.data.items.length)} tenants of `
-            + `${String(result.data.total)}. To add a user to a tenant that is not `
-            + `listed, use: app create-user --tenant-id <id>`);
+        error(t('platform.first_tenants_note', {
+            count: result.data.items.length,
+            total: result.data.total,
+        }));
     }
 
     // Preselect only when there is nothing to choose. A single-tenant install has
@@ -91,7 +94,7 @@ const handleSubmit = async (data: PlatformUserCreateData): Promise<void> => {
         return;
     }
 
-    success(`User ${data.nickname} created.`);
+    success(t('users.created', { nickname: data.nickname }));
     void router.push({ name: 'platform-users' });
 };
 
@@ -104,7 +107,7 @@ const handleCancel = (): void => {
     <div>
         <div class="max-w-xl mx-auto space-y-6">
             <h1 class="text-2xl font-bold text-gray-900">
-                New user
+                {{ t('users.new_title') }}
             </h1>
 
             <div
@@ -117,7 +120,7 @@ const handleCancel = (): void => {
             <PlatformUserForm
                 v-else
                 mode="create"
-                submit-label="Create"
+                :submit-label="t('common.create')"
                 :initial="initial"
                 :is-loading="isLoading"
                 :errors="errors"

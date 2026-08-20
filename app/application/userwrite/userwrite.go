@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/domain/user"
 )
 
@@ -80,7 +81,7 @@ func Update(
 	// The repo write also excludes superadmin rows; this refuses up front with a
 	// clean 403 instead of a 0-row no-op + phantom audit (F-023).
 	if user.Role(target.Role).IsSuperAdmin() {
-		return &shared.PermissionError{Message: "cannot modify a superadmin account"}
+		return &shared.PermissionError{Key: msgkey.PermissionSuperadminImmutable}
 	}
 
 	nickname, err := user.NewNickname(f.Nickname)
@@ -96,8 +97,8 @@ func Update(
 	// platform plane). Existing superadmins are already refused above.
 	if role.IsSuperAdmin() {
 		return &shared.ValidationError{
-			Field:   "role",
-			Message: "cannot assign the superadmin role",
+			Field: "role",
+			Key:   msgkey.UserSuperadminRoleUnassignable,
 		}
 	}
 
@@ -173,8 +174,8 @@ func Create(
 	// that already refused up front: role beats a taken nickname, either way in.
 	if spec.Role.IsSuperAdmin() {
 		return nil, &shared.ValidationError{
-			Field:   "role",
-			Message: "cannot assign the superadmin role",
+			Field: "role",
+			Key:   msgkey.UserSuperadminRoleUnassignable,
 		}
 	}
 
@@ -203,8 +204,9 @@ func CreateSuperAdmin(
 ) (*user.User, error) {
 	if spec.Role != "" && !spec.Role.IsSuperAdmin() {
 		return nil, &shared.ValidationError{
-			Field:   "role",
-			Message: "CreateSuperAdmin mints a superadmin; it cannot create a " + string(spec.Role),
+			Field:  "role",
+			Key:    msgkey.UserSuperadminCreateWrongRole,
+			Params: map[string]any{"role": string(spec.Role)},
 		}
 	}
 	spec.Role = user.RoleSuperAdmin
@@ -242,8 +244,8 @@ func create(
 	}
 	if existing != nil {
 		return nil, &shared.ValidationError{
-			Field:   "nickname",
-			Message: "user with this nickname already exists",
+			Field: "nickname",
+			Key:   msgkey.UserNicknameTaken,
 		}
 	}
 
@@ -302,8 +304,8 @@ func ensureNicknameFree(
 	}
 	if conflict != nil && conflict.ID != target.ID {
 		return &shared.ValidationError{
-			Field:   "nickname",
-			Message: "user with this nickname already exists",
+			Field: "nickname",
+			Key:   msgkey.UserNicknameTaken,
 		}
 	}
 	return nil

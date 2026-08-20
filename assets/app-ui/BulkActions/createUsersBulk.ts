@@ -2,9 +2,11 @@ import type { ComputedRef, Ref } from 'vue';
 import { computed, ref, watch } from 'vue';
 import type { GridState } from '@/app-ui/DataGrid/createGridState';
 import type { BulkAction } from '@/app-ui/BulkActions/BulkActionBar.vue';
+import type { ApiMessage } from '@/app-ui/Fetch/types/ApiMessage';
 import type { BulkResult } from '@/app-ui/BulkActions/BulkResult';
 import { isBulkResult } from '@/app-ui/BulkActions/BulkResult';
 import { authFetch } from '@/app-ui/Auth';
+import { tm, useI18n } from '@/app-ui/I18n';
 import { useToast } from '@/app-ui/Toast/useToast';
 
 // The bulk half of a users grid, shared by the admin and platform grids (they
@@ -28,7 +30,7 @@ type ActivateTarget = {
 };
 
 export type UsersBulk = {
-    bulkActions: BulkAction[];
+    bulkActions: ComputedRef<BulkAction[]>;
     bulkConfirm: ComputedRef<BulkConfirm | null>;
     handleBulkAction: (key: string) => void;
     runPendingBulk: () => Promise<void>;
@@ -55,11 +57,15 @@ export const createUsersBulk = <F extends Record<string, string>, TDeleteBody, T
     config: UsersBulkConfig<TDeleteBody, TActiveBody>,
 ): UsersBulk => {
     const { success, info, error } = useToast();
+    const { t } = useI18n();
 
-    const bulkActions: BulkAction[] = [
-        { key: 'deactivate', label: 'Deactivate' },
-        { key: 'delete', label: 'Delete' },
-    ];
+    // computed, not a one-shot array: the labels must re-render in place on a
+    // language switch (the grid views never remount for one), mirroring the
+    // views' own computed column/option lists.
+    const bulkActions = computed((): BulkAction[] => [
+        { key: 'deactivate', label: t('common.deactivate') },
+        { key: 'delete', label: t('common.delete') },
+    ]);
 
     const pendingBulk = ref<BulkActionKey | null>(null);
 
@@ -80,20 +86,20 @@ export const createUsersBulk = <F extends Record<string, string>, TDeleteBody, T
             return null;
         }
 
-        const count = String(grid.selectedCount.value);
+        const count = grid.selectedCount.value;
 
         if (pendingBulk.value === 'deactivate') {
             return {
-                title: 'Deactivate selected users',
-                message: `Deactivate ${count} selected user(s)?`,
-                confirmText: 'Deactivate',
+                title: t('users.bulk.deactivate_title'),
+                message: t('users.bulk.deactivate_confirm', { count }),
+                confirmText: t('common.deactivate'),
             };
         }
         if (pendingBulk.value === 'delete') {
             return {
-                title: 'Delete selected users',
-                message: `Really delete ${count} selected user(s)? This action is irreversible.`,
-                confirmText: 'Delete',
+                title: t('users.bulk.delete_title'),
+                message: t('users.bulk.delete_confirm', { count }),
+                confirmText: t('common.delete'),
             };
         }
 
@@ -102,51 +108,53 @@ export const createUsersBulk = <F extends Record<string, string>, TDeleteBody, T
 
     // The server reports the actual affected count — 0 means the selection
     // collapsed to rows it spared (the actor, superadmins) or ids that no
-    // longer exist, so a success toast would lie.
-    const reportBulk = (affected: number, verb: string): void => {
+    // longer exist, so a success toast would lie. Each caller passes its own
+    // full-sentence plural key — sentences are never assembled from fragments,
+    // so every language can phrase them naturally.
+    const reportBulk = (affected: number, doneKey: 'users.bulk.deactivated' | 'users.bulk.deleted'): void => {
         if (affected === 0) {
-            info('No users were changed.');
+            info(t('users.bulk.none_changed'));
 
             return;
         }
 
-        success(`${String(affected)} user(s) ${verb}.`);
+        success(t(doneKey, { count: affected }));
     };
 
     const runBulkDeactivate = async (): Promise<void> => {
         const body = config.buildActive(false);
-        const result = await authFetch<BulkResult, { general?: string }, TActiveBody>(
+        const result = await authFetch<BulkResult, { general?: ApiMessage }, TActiveBody>(
             'POST',
             config.activeUrl,
             { body, validate: isBulkResult },
         );
 
         if (result.success === false) {
-            error(result.data.general ?? 'Bulk update failed.');
+            error(tm(result.data.general) ?? t('bulk.update_failed'));
 
             return;
         }
 
-        reportBulk(result.data.affected, 'deactivated');
+        reportBulk(result.data.affected, 'users.bulk.deactivated');
         grid.clearSelection();
         await grid.reload();
     };
 
     const runBulkDelete = async (): Promise<void> => {
         const body = config.buildDelete();
-        const result = await authFetch<BulkResult, { general?: string }, TDeleteBody>(
+        const result = await authFetch<BulkResult, { general?: ApiMessage }, TDeleteBody>(
             'POST',
             config.deleteUrl,
             { body, validate: isBulkResult },
         );
 
         if (result.success === false) {
-            error(result.data.general ?? 'Bulk delete failed.');
+            error(tm(result.data.general) ?? t('bulk.delete_failed'));
 
             return;
         }
 
-        reportBulk(result.data.affected, 'deleted');
+        reportBulk(result.data.affected, 'users.bulk.deleted');
         grid.clearSelection();
         await grid.reload();
     };
@@ -202,22 +210,22 @@ export const createUsersBulk = <F extends Record<string, string>, TDeleteBody, T
         userToActivate.value = null;
 
         const body = config.buildActivate(target.id);
-        const result = await authFetch<BulkResult, { general?: string }, TActiveBody>(
+        const result = await authFetch<BulkResult, { general?: ApiMessage }, TActiveBody>(
             'POST',
             config.activeUrl,
             { body, validate: isBulkResult },
         );
 
         if (result.success === false) {
-            error(result.data.general ?? 'Activation failed.');
+            error(tm(result.data.general) ?? t('users.activation_failed'));
 
             return;
         }
 
         if (result.data.affected === 0) {
-            info('No change — the user may no longer exist.');
+            info(t('users.no_change_gone'));
         } else {
-            success(`User ${target.nickname} activated.`);
+            success(t('users.activated', { nickname: target.nickname }));
         }
         await grid.reload();
     };

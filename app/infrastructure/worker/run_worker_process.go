@@ -191,6 +191,13 @@ func (w *RunWorker) initialReLease(
 // domain events do not (their post-commit EventBus dispatch is a bus-only concern).
 func (w *RunWorker) buildRunContext(workerCtx context.Context, r *run.Run) context.Context {
 	runCtx := shared.ContextForbidTx(shared.ContextWithTenantID(workerCtx, r.TenantID))
+	// Restore the enqueuing request's language (stamped by the dispatcher) so
+	// user-facing output produced by the run — mails, generated messages —
+	// speaks the user's language. Defensive parse: anything unexpected falls
+	// back to the product default rather than failing the run.
+	if lang, ok := shared.ParseLang(r.Lang); ok {
+		runCtx = shared.WithLang(runCtx, lang)
+	}
 	if w.runDispatcher != nil {
 		runCtx = shared.ContextWithRunDispatcher(runCtx, w.runDispatcher)
 	}

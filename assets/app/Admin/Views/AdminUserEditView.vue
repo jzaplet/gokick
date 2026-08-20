@@ -6,6 +6,7 @@ import type { UserFormErrors } from '@/app/Admin/types/UserFormErrors';
 import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { authFetch, useAuth } from '@/app-ui/Auth';
+import { getLocale, localizePath, useI18n } from '@/app-ui/I18n';
 import { useToast } from '@/app-ui/Toast/useToast';
 import Spinner from '@/app-ui/Loading/Spinner.vue';
 import UserForm from '@/app/Admin/Components/UserForm.vue';
@@ -14,6 +15,7 @@ const router = useRouter();
 const route = useRoute();
 const { success, error } = useToast();
 const { user: currentUser } = useAuth();
+const { t } = useI18n();
 
 const userId = String(route.params['id']);
 const initial = ref<UserFormData | null>(null);
@@ -50,13 +52,15 @@ const handleSubmit = async (data: UserFormData): Promise<void> => {
     if (isSelf === true && roleChanged === true) {
         // Force a full page reload so bootstrap re-runs `refresh()` and the
         // SPA picks up the new role/permissions from a fresh access token.
-        // A simple router.push would keep the stale JWT in memory.
-        window.location.assign('/admin/users');
+        // A simple router.push would keep the stale JWT in memory. The target
+        // is rebased onto the current locale — a bare '/admin/users' would
+        // drop a /cs prefix and flip the language across the reload.
+        window.location.assign(localizePath('/admin/users', getLocale()));
 
         return;
     }
 
-    success(`User ${data.nickname} saved.`);
+    success(t('users.saved', { nickname: data.nickname }));
     void router.push({ name: 'admin-users' });
 };
 
@@ -74,7 +78,7 @@ onMounted(async (): Promise<void> => {
     if (result.success === false) {
         // A missing / cross-tenant / superadmin id comes back as a 400 from the
         // read-one endpoint — the same redirect as any load failure.
-        error('Failed to load user.');
+        error(t('users.load_one_failed'));
         void router.push({ name: 'admin-users' });
 
         return;
@@ -93,7 +97,7 @@ onMounted(async (): Promise<void> => {
     <div>
         <div class="max-w-xl mx-auto space-y-6">
             <h1 class="text-2xl font-bold text-gray-900">
-                Edit user
+                {{ t('users.edit_title') }}
             </h1>
 
             <div
@@ -106,7 +110,7 @@ onMounted(async (): Promise<void> => {
             <UserForm
                 v-else-if="initial !== null"
                 mode="edit"
-                submit-label="Save"
+                :submit-label="t('common.save')"
                 :initial="initial"
                 :is-loading="isLoading"
                 :errors="errors"

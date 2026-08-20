@@ -1,6 +1,10 @@
 package shared
 
-import "context"
+import (
+	"context"
+
+	"gokick/app/domain/shared/msgkey"
+)
 
 type AuthClaims struct {
 	UserID   string
@@ -11,6 +15,11 @@ type AuthClaims struct {
 	// default single-tenant resolver falls back to shared.DefaultTenantID when it
 	// is empty, so a single-tenant deployment (JWT carries no tenant) is unchanged.
 	TenantID string
+	// Lang carries the user's persisted UI-language preference (users.lang)
+	// minted at login/refresh. Tolerant like nickname/email: an absent claim
+	// (an older token) simply means no preference override — the header /
+	// Accept-Language resolution stands.
+	Lang string
 }
 
 type authClaimsKey struct{}
@@ -28,7 +37,7 @@ func ClaimsFromContext(ctx context.Context) *AuthClaims {
 func RequireClaims(ctx context.Context) (*AuthClaims, error) {
 	claims := ClaimsFromContext(ctx)
 	if claims == nil {
-		return nil, &AuthError{Message: "authentication required"}
+		return nil, &AuthError{Key: msgkey.AuthRequired}
 	}
 	return claims, nil
 }

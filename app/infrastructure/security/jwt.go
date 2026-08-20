@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/infrastructure/config"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -48,6 +49,7 @@ func (s *JwtService) GenerateAccessToken(claims *shared.AuthClaims) (string, tim
 		"nickname": claims.Nickname,
 		"email":    claims.Email,
 		"tenant":   claims.TenantID,
+		"lang":     claims.Lang,
 		"iat":      now.Unix(),
 		"exp":      now.Add(s.accessExpiration).Unix(),
 	})
@@ -67,12 +69,12 @@ func (s *JwtService) ValidateAccessToken(tokenString string) (*shared.AuthClaims
 		return s.secret, nil
 	})
 	if err != nil {
-		return nil, &shared.AuthError{Message: "invalid or expired token"}
+		return nil, &shared.AuthError{Key: msgkey.AuthTokenInvalid}
 	}
 
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok || !token.Valid {
-		return nil, &shared.AuthError{Message: "invalid token claims"}
+		return nil, &shared.AuthError{Key: msgkey.AuthTokenClaimsInvalid}
 	}
 
 	userID := claimString(claims, "sub")
@@ -82,7 +84,7 @@ func (s *JwtService) ValidateAccessToken(tokenString string) (*shared.AuthClaims
 		// absent/empty must be rejected, not silently downgraded to baseline
 		// (empty-role) permissions. GenerateAccessToken always sets both, so no
 		// legitimate token is affected. Nickname/email/tenant stay tolerant.
-		return nil, &shared.AuthError{Message: "invalid token claims"}
+		return nil, &shared.AuthError{Key: msgkey.AuthTokenClaimsInvalid}
 	}
 
 	return &shared.AuthClaims{
@@ -91,6 +93,7 @@ func (s *JwtService) ValidateAccessToken(tokenString string) (*shared.AuthClaims
 		Nickname: claimString(claims, "nickname"),
 		Email:    claimString(claims, "email"),
 		TenantID: claimString(claims, "tenant"),
+		Lang:     claimString(claims, "lang"),
 	}, nil
 }
 

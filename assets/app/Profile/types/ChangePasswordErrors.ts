@@ -1,4 +1,6 @@
+import type { ApiMessage } from '@/app-ui/Fetch/types/ApiMessage';
+
 export type ChangePasswordErrors = {
-    general?: string;
-    new_password?: string;
+    general?: ApiMessage;
+    new_password?: ApiMessage;
 };

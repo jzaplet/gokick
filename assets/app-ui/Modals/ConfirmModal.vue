@@ -1,25 +1,31 @@
 <script setup lang="ts">
 import Button from '@/app-ui/Buttons/Button.vue';
 import WarningIcon from '@/app-ui/Icons/WarningIcon.vue';
+import { useI18n } from '@/app-ui/I18n';
 
+// confirmText/cancelText default to null, never to English text — the
+// translated fallbacks resolve in the template (?? t(...)) so they stay
+// reactive to locale changes.
 const {
     show,
     title,
     message,
-    confirmText = 'Confirm',
-    cancelText = 'Cancel',
+    confirmText = null,
+    cancelText = null,
 } = defineProps<{
     show: boolean;
     title: string;
     message: string;
-    confirmText?: string;
-    cancelText?: string;
+    confirmText?: string | null;
+    cancelText?: string | null;
 }>();
 
 const emit = defineEmits<{
     confirm: [];
     cancel: [];
 }>();
+
+const { t } = useI18n();
 
 // Visibility is fully controlled by the `show` prop — the parent flips it. No
 // local isVisible mirror (it only risked drifting from the prop).
@@ -103,13 +109,13 @@ const handleCancel = (): void => {
                                     variant="secondary"
                                     @click="handleCancel"
                                 >
-                                    {{ cancelText }}
+                                    {{ cancelText ?? t('common.cancel') }}
                                 </Button>
                                 <Button
                                     variant="danger"
                                     @click="handleConfirm"
                                 >
-                                    {{ confirmText }}
+                                    {{ confirmText ?? t('common.confirm') }}
                                 </Button>
                             </div>
                         </div>

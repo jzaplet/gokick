@@ -4,9 +4,11 @@ import type { PlatformUserListResponse } from '@/app/Platform/types/PlatformUser
 import { isPlatformUserListResponse } from '@/app/Platform/types/PlatformUserListResponse';
 import type { GridColumn } from '@/app-ui/DataGrid/createGridState';
 import { createGridState } from '@/app-ui/DataGrid/createGridState';
+import type { ApiMessage } from '@/app-ui/Fetch/types/ApiMessage';
 import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { authFetch } from '@/app-ui/Auth';
+import { tm, useI18n } from '@/app-ui/I18n';
 import { useToast } from '@/app-ui/Toast/useToast';
 import ConfirmModal from '@/app-ui/Modals/ConfirmModal.vue';
 import DataGrid from '@/app-ui/DataGrid/DataGrid.vue';
@@ -20,37 +22,39 @@ import PlatformUserRow from '@/app/Platform/Components/PlatformUserRow.vue';
 import BulkActionBar from '@/app-ui/BulkActions/BulkActionBar.vue';
 import { usePlatformUsersBulk } from '@/app/Platform/Composables/usePlatformUsersBulk';
 import { Role } from '@/app/Auth/enums/roles';
+import { roleLabel } from '@/app/Auth/enums/roleLabels';
 import { computed } from 'vue';
 
 const router = useRouter();
 const { success, error } = useToast();
+const { t } = useI18n();
 
 const users = ref<PlatformUser[]>([]);
 const userToDelete = ref<PlatformUser | null>(null);
 
-const columns: GridColumn[] = [
-    { key: 'nickname', label: 'Nickname', sortable: true },
-    { key: 'tenant', label: 'Tenant', sortable: true },
-    { key: 'email', label: 'Email', sortable: true },
-    { key: 'role', label: 'Role', sortable: true },
-    { key: 'active', label: 'Active' },
-    { key: 'last_login', label: 'Last login', sortable: true },
+const columns = computed<GridColumn[]>(() => [
+    { key: 'nickname', label: t('auth.nickname'), sortable: true },
+    { key: 'tenant', label: t('common.tenant'), sortable: true },
+    { key: 'email', label: t('common.email'), sortable: true },
+    { key: 'role', label: t('common.role'), sortable: true },
+    { key: 'active', label: t('common.active') },
+    { key: 'last_login', label: t('users.last_login'), sortable: true },
     // The actions column carries no heading (aibobr parity).
     { key: 'actions', label: '', align: 'right' },
-];
+]);
 
-const roleOptions = [
-    { value: '', label: 'All roles' },
-    { value: 'superadmin', label: 'superadmin' },
-    { value: 'admin', label: 'admin' },
-    { value: 'user', label: 'user' },
-];
+const roleOptions = computed<{ value: string; label: string }[]>(() => [
+    { value: '', label: t('users.all_roles') },
+    { value: Role.SuperAdmin, label: roleLabel(Role.SuperAdmin) },
+    { value: Role.Admin, label: roleLabel(Role.Admin) },
+    { value: Role.User, label: roleLabel(Role.User) },
+]);
 
-const activeOptions = [
-    { value: '', label: 'All statuses' },
-    { value: '1', label: 'Active' },
-    { value: '0', label: 'Inactive' },
-];
+const activeOptions = computed<{ value: string; label: string }[]>(() => [
+    { value: '', label: t('users.all_statuses') },
+    { value: '1', label: t('common.active') },
+    { value: '0', label: t('common.inactive') },
+]);
 
 const grid = createGridState({
     defaultSort: { column: 'nickname', direction: 'ASC' },
@@ -77,7 +81,7 @@ const grid = createGridState({
         );
 
         if (result.success === false) {
-            error('Failed to load user list.');
+            error(t('users.load_failed'));
 
             return { ok: false };
         }
@@ -113,18 +117,18 @@ const confirmDelete = async (): Promise<void> => {
 
     userToDelete.value = null;
 
-    const result = await authFetch<null, { general?: string }>(
+    const result = await authFetch<null, { general?: ApiMessage }>(
         'DELETE',
         `/api/v1/platform/users/${target.id}`,
     );
 
     if (result.success === false) {
-        error(result.data.general ?? 'Delete failed.');
+        error(tm(result.data.general) ?? t('users.delete_failed'));
 
         return;
     }
 
-    success(`User ${target.nickname} deleted.`);
+    success(t('users.deleted', { nickname: target.nickname }));
     // Drop the now-gone row from any active selection so it can't inflate the
     // bulk count or ride the next bulk payload as a ghost id.
     grid.deselect(target.id);
@@ -164,7 +168,7 @@ onMounted(async (): Promise<void> => {
         <div class="space-y-6">
             <div class="flex items-center justify-between gap-4">
                 <h1 class="text-2xl font-bold text-gray-900">
-                    Platform users
+                    {{ t('platform.users_title') }}
                 </h1>
 
                 <Button
@@ -172,7 +176,7 @@ onMounted(async (): Promise<void> => {
                     @click="goToCreate"
                 >
                     <PlusIcon class="w-4 h-4" />
-                    Add user
+                    {{ t('users.add') }}
                 </Button>
             </div>
 
@@ -184,31 +188,31 @@ onMounted(async (): Promise<void> => {
                 <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                     <Input
                         v-model="grid.filters.tenant"
-                        label="Tenant"
-                        placeholder="Search tenant"
+                        :label="t('common.tenant')"
+                        :placeholder="t('tenants.search')"
                         flat
                         size="sm"
                         :active="grid.filters.tenant !== ''"
                     />
                     <Input
                         v-model="grid.filters.nickname"
-                        label="Nickname"
-                        placeholder="Search nickname"
+                        :label="t('auth.nickname')"
+                        :placeholder="t('users.search_nickname')"
                         flat
                         size="sm"
                         :active="grid.filters.nickname !== ''"
                     />
                     <Input
                         v-model="grid.filters.email"
-                        label="Email"
-                        placeholder="Search email"
+                        :label="t('common.email')"
+                        :placeholder="t('users.search_email')"
                         flat
                         size="sm"
                         :active="grid.filters.email !== ''"
                     />
                     <Select
                         :model-value="grid.filters.role"
-                        label="Role"
+                        :label="t('common.role')"
                         :options="roleOptions"
                         flat
                         size="sm"
@@ -217,7 +221,7 @@ onMounted(async (): Promise<void> => {
                     />
                     <Select
                         :model-value="grid.filters.active"
-                        label="Status"
+                        :label="t('users.status')"
                         :options="activeOptions"
                         flat
                         size="sm"
@@ -264,7 +268,7 @@ onMounted(async (): Promise<void> => {
                                 :colspan="columns.length + 1"
                                 class="px-4 py-8 text-center text-gray-400"
                             >
-                                No users
+                                {{ t('users.none') }}
                             </td>
                         </tr>
                     </template>
@@ -280,12 +284,11 @@ onMounted(async (): Promise<void> => {
 
             <ConfirmModal
                 :show="userToDelete !== null"
-                title="Delete user"
+                :title="t('users.delete_title')"
                 :message="userToDelete === null
                     ? ''
-                    : `Really delete user ${userToDelete.nickname}? This action is irreversible.`"
-                confirm-text="Delete"
-                cancel-text="Cancel"
+                    : t('users.delete_confirm', { nickname: userToDelete.nickname })"
+                :confirm-text="t('common.delete')"
                 @confirm="confirmDelete"
                 @cancel="cancelDelete"
             />
@@ -294,20 +297,18 @@ onMounted(async (): Promise<void> => {
                 :show="bulkConfirm !== null"
                 :title="bulkConfirm?.title ?? ''"
                 :message="bulkConfirm?.message ?? ''"
-                :confirm-text="bulkConfirm?.confirmText ?? 'Confirm'"
-                cancel-text="Cancel"
+                :confirm-text="bulkConfirm?.confirmText ?? null"
                 @confirm="runPendingBulk"
                 @cancel="cancelPendingBulk"
             />
 
             <ConfirmModal
                 :show="userToActivate !== null"
-                title="Activate user"
+                :title="t('users.activate_title')"
                 :message="userToActivate === null
                     ? ''
-                    : `Activate user ${userToActivate.nickname}?`"
-                confirm-text="Activate"
-                cancel-text="Cancel"
+                    : t('users.activate_confirm', { nickname: userToActivate.nickname })"
+                :confirm-text="t('common.activate')"
                 @confirm="runActivate"
                 @cancel="cancelActivate"
             />

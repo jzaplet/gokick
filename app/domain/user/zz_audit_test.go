@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 )
 
 // TestNewUser_SetsDefaults closes domain-02: NewUser must mint a fresh UUID
@@ -73,8 +74,8 @@ func TestNewNickname_EmptyRequired(t *testing.T) {
 	if ve.Field != "nickname" {
 		t.Fatalf("Field: got %q want %q", ve.Field, "nickname")
 	}
-	if ve.Message != "nickname is required" {
-		t.Fatalf("Message: got %q want %q", ve.Message, "nickname is required")
+	if ve.Key != msgkey.UserNicknameRequired {
+		t.Fatalf("Key: got %q want %q", ve.Key, msgkey.UserNicknameRequired)
 	}
 }
 
@@ -91,8 +92,8 @@ func TestNewNickname_TooLong(t *testing.T) {
 	if ve.Field != "nickname" {
 		t.Fatalf("Field: got %q want %q", ve.Field, "nickname")
 	}
-	if ve.Message != "nickname must be at most 50 characters" {
-		t.Fatalf("Message: got %q want %q", ve.Message, "nickname must be at most 50 characters")
+	if ve.Key != msgkey.UserNicknameTooLong {
+		t.Fatalf("Key: got %q, want the msgkey constant", ve.Key)
 	}
 }
 
@@ -136,8 +137,8 @@ func TestNewRole_Invalid(t *testing.T) {
 	if ve.Field != "role" {
 		t.Fatalf("Field: got %q want %q", ve.Field, "role")
 	}
-	if ve.Message != "invalid role" {
-		t.Fatalf("Message: got %q want %q", ve.Message, "invalid role")
+	if ve.Key != msgkey.UserRoleInvalid {
+		t.Fatalf("Key: got %q, want the msgkey constant", ve.Key)
 	}
 }
 
@@ -168,8 +169,8 @@ func TestNewPassword_TooLong(t *testing.T) {
 	if ve.Field != "password" {
 		t.Fatalf("Field: got %q want %q", ve.Field, "password")
 	}
-	if ve.Message != "password must be at most 128 bytes" {
-		t.Fatalf("Message: got %q want %q", ve.Message, "password must be at most 128 bytes")
+	if ve.Key != msgkey.UserPasswordTooLong {
+		t.Fatalf("Key: got %q, want the msgkey constant", ve.Key)
 	}
 }
 
@@ -212,8 +213,8 @@ func TestNewEmail_TooLong(t *testing.T) {
 	if ve.Field != "email" {
 		t.Fatalf("Field: got %q want %q", ve.Field, "email")
 	}
-	if ve.Message != "email must be at most 254 characters" {
-		t.Fatalf("Message: got %q want %q", ve.Message, "email must be at most 254 characters")
+	if ve.Key != msgkey.UserEmailTooLong {
+		t.Fatalf("Key: got %q, want the msgkey constant", ve.Key)
 	}
 }
 

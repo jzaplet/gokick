@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import ChevronDownIcon from '@/app-ui/Icons/ChevronDownIcon.vue';
+import { useI18n } from '@/app-ui/I18n';
 
 // Collapsible filter panel above a grid (aibobr parity): a MINIMAL toggle —
 // plain text with a chevron, turning into a filled orange pill when filters
@@ -9,15 +10,21 @@ import ChevronDownIcon from '@/app-ui/Icons/ChevronDownIcon.vue';
 // are active on mount (a deep link with filters must show WHY the list is
 // narrowed). The inputs are the consumer's slot; the mini clear-all link
 // lives inside the panel under them.
-const { storageKey, label = 'Filters', hasActiveFilters } = defineProps<{
+const { storageKey, label = null, hasActiveFilters } = defineProps<{
     storageKey: string;
-    label?: string;
+    label?: string | null;
     hasActiveFilters: boolean;
 }>();
 
 const emit = defineEmits<{
     clear: [];
 }>();
+
+const { t } = useI18n();
+
+// No prop default — the translated fallback resolves here so it stays
+// reactive to locale changes.
+const resolvedLabel = computed((): string => label ?? t('filters.title'));
 
 const isOpen = ref(false);
 
@@ -38,7 +45,7 @@ const toggle = (): void => {
         <button
             type="button"
             :aria-expanded="isOpen"
-            :aria-label="hasActiveFilters === true ? `${label} (active filters applied)` : undefined"
+            :aria-label="hasActiveFilters === true ? t('filters.active_label', { label: resolvedLabel }) : undefined"
             :class="[
                 'inline-flex items-center gap-1.5 cursor-pointer',
                 'px-3 py-1.5 rounded-lg',
@@ -49,7 +56,7 @@ const toggle = (): void => {
             ]"
             @click="toggle"
         >
-            {{ label }}
+            {{ resolvedLabel }}
             <ChevronDownIcon
                 :class="[
                     'w-3.5 h-3.5 transition-transform duration-200',
@@ -76,7 +83,7 @@ const toggle = (): void => {
                     ]"
                     @click="emit('clear')"
                 >
-                    Clear filters
+                    {{ t('filters.clear') }}
                 </button>
             </div>
         </div>

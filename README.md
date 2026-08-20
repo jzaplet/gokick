@@ -42,6 +42,7 @@ Běží bez Redisu, brokeru či jiné externí infrastruktury a nasazuje se jako
 - **Dependency inversion** – doména definuje interfaces (porty), infrastruktura dodává implementace (adaptery). Př: SQLite lze zaměnit za Postgres bez zásahu do domény
 - **Multitenancy na přepínač** – zapínatelný row-level multitenancy (`APP_MULTITENANCY`, default vypnuto = single-tenant) s izolací vynucenou per-dotaz conformance testem; platformní rovina (role `superadmin`, cross-tenant přehled + správa) a CLI pro správu tenantů
 - **Vue 3** SPA (Vite, TypeScript, Tailwind) embedovaná do Go binárky
+- **i18n (en + cs)** – žádná věta natvrdo v kódu: API posílá překladové klíče (`{key, params}`), text renderuje výhradně frontend v aktivním jazyce; jediný katalog `locale/messages.<lang>.json`, ze kterého se generují Go konstanty i TS katalogy, a parity/freshness brána v `make lint`
 - **SQLite** s migracemi (Goose), pure-Go bez CGO
 - **JWT** access + refresh token autentizace
 - **Wire** compile-time dependency injection
@@ -72,7 +73,7 @@ Na vše ostatní stačí **`/gk`** — rozcestník, který sám rozhodne, jaké 
 | `make build` | Sestaví frontend + backend → `bin/app` |
 | `make serve` | Spustí server |
 | `make test` | Vitest + go test |
-| `make lint` | ESLint + vue-tsc + knip + golangci-lint + go-arch-lint + golines format-check + ts-check + documan-lint |
+| `make lint` | ESLint + vue-tsc + knip + golangci-lint + go-arch-lint + golines format-check + ts-check + boundary-check + errfields-check + i18n-check + docpaths-check + documan-lint |
 | `make format` | ESLint Stylistic + golines + documan-fix |
 
 

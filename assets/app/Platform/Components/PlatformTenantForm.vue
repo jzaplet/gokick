@@ -2,6 +2,7 @@
 import type { PlatformTenantFormData } from '@/app/Platform/types/PlatformTenantFormData';
 import type { PlatformTenantFormErrors } from '@/app/Platform/types/PlatformTenantFormErrors';
 import { reactive } from 'vue';
+import { tm, useI18n } from '@/app-ui/I18n';
 import Button from '@/app-ui/Buttons/Button.vue';
 import Input from '@/app-ui/Inputs/Input.vue';
 import ErrorAlert from '@/app-ui/Alerts/ErrorAlert.vue';
@@ -27,6 +28,8 @@ const emit = defineEmits<{
     clearError: [field: keyof PlatformTenantFormErrors];
 }>();
 
+const { t } = useI18n();
+
 const form: PlatformTenantFormData = reactive({
     name: '',
 });
@@ -45,15 +48,15 @@ const handleSubmit = (): void => {
             v-model="form.name"
             name="name"
             type="text"
-            label="Name"
+            :label="t('tenants.name')"
             placeholder="Acme Corp"
-            :error="errors.name"
+            :error="tm(errors.name)"
             required
             :disabled="isLoading"
             @update:model-value="() => emit('clearError', 'name')"
         />
 
-        <ErrorAlert :message="errors.general" />
+        <ErrorAlert :message="tm(errors.general)" />
 
         <div class="flex items-center justify-end gap-3 pt-2">
             <Button
@@ -62,7 +65,7 @@ const handleSubmit = (): void => {
                 :disabled="isLoading"
                 @click="emit('cancel')"
             >
-                Cancel
+                {{ t('common.cancel') }}
             </Button>
             <Button
                 type="submit"

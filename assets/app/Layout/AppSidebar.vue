@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuth } from '@/app-ui/Auth';
+import { useI18n } from '@/app-ui/I18n';
 import { Permission } from '@/app/Auth/enums/resources';
 import CloseIcon from '@/app-ui/Icons/CloseIcon.vue';
 import { useSidebar } from '@/app/Layout/useSidebar';
@@ -9,6 +10,7 @@ import { useSidebar } from '@/app/Layout/useSidebar';
 const router = useRouter();
 const { isSuperAdmin, hasPermission } = useAuth();
 const { isSidebarOpen, closeSidebar, closeOnMobileNav } = useSidebar();
+const { t } = useI18n();
 
 // Nav is role-aware, not permission-aware: a superadmin holds every permission,
 // so gating admin links on hasPermission would still show them. A superadmin
@@ -16,25 +18,25 @@ const { isSidebarOpen, closeSidebar, closeOnMobileNav } = useSidebar();
 const navLinks = computed<{ name: string; label: string }[]>(() => {
     if (isSuperAdmin() === true) {
         return [
-            { name: 'platform-dashboard', label: 'Dashboard' },
-            { name: 'platform-tenants', label: 'Tenants' },
-            { name: 'platform-users', label: 'Users' },
+            { name: 'platform-dashboard', label: t('common.dashboard') },
+            { name: 'platform-tenants', label: t('common.tenants') },
+            { name: 'platform-users', label: t('common.users') },
         ];
     }
 
     const dashboard = hasPermission(Permission.AdminDashboardRead) === true
         ? 'admin-dashboard'
         : 'user-dashboard';
-    const links = [{ name: dashboard, label: 'Dashboard' }];
+    const links = [{ name: dashboard, label: t('common.dashboard') }];
 
     if (hasPermission(Permission.AdminUsersRead) === true) {
-        links.push({ name: 'admin-users', label: 'Users' });
+        links.push({ name: 'admin-users', label: t('common.users') });
     }
 
     return links;
 });
 
-const sectionLabel = computed<string>(() => isSuperAdmin() === true ? 'Platform' : 'Application');
+const sectionLabel = computed<string>(() => isSuperAdmin() === true ? t('nav.platform') : t('nav.application'));
 
 const goHome = (): void => {
     void router.push({ name: 'home' });
@@ -76,7 +78,7 @@ const goHome = (): void => {
             <button
                 type="button"
                 class="md:hidden text-gray-500 hover:text-gray-700 cursor-pointer"
-                aria-label="Close menu"
+                :aria-label="t('nav.close_menu')"
                 @click="closeSidebar"
             >
                 <CloseIcon class="w-4 h-4" />

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from '@/app-ui/I18n';
+
 // One dashboard stat (aibobr parity): small gray label, the headline number
 // big, and an optional "Total: N" subline when the headline is a subset
 // (e.g. active users of all users).
@@ -7,6 +9,8 @@ const { label, value, total = null } = defineProps<{
     value: number;
     total?: number | null;
 }>();
+
+const { t } = useI18n();
 </script>
 
 <template>
@@ -21,7 +25,7 @@ const { label, value, total = null } = defineProps<{
             v-if="total !== null"
             class="mt-1 text-sm text-gray-500"
         >
-            Total: {{ total }}
+            {{ t('stats.total', { total }) }}
         </p>
     </div>
 </template>

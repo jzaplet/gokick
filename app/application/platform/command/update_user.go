@@ -5,6 +5,7 @@ import (
 
 	"gokick/app/application/userwrite"
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/domain/user"
 )
 
@@ -44,7 +45,7 @@ func (h *UpdatePlatformUserHandler) Handle(
 	}
 	if target == nil {
 		//gkerrf:exempt path-param lookup - the edit view redirects on failure, no form field maps id
-		return &shared.ValidationError{Field: "id", Message: "user not found"}
+		return &shared.ValidationError{Field: "id", Key: msgkey.UserNotFound}
 	}
 
 	// No self-demote guard on the platform plane (a superadmin editing tenant

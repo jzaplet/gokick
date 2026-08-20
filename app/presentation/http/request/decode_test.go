@@ -7,6 +7,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 )
 
 type payload struct {
@@ -53,20 +56,32 @@ func TestDecodeJSON_RejectsOversizedBody(t *testing.T) {
 	if err == nil {
 		t.Fatal("body over MaxBodyBytes must be rejected")
 	}
-	if !strings.Contains(err.Error(), "exceeds") {
-		t.Fatalf("error should mention size limit, got %q", err)
+	var de *shared.MessageError
+	if !errors.As(err, &de) {
+		t.Fatalf("expected *shared.MessageError, got %T", err)
+	}
+	if de.MessageKey() != msgkey.RequestBodyTooLarge {
+		t.Fatalf("key: got %q want %q", de.MessageKey(), msgkey.RequestBodyTooLarge)
+	}
+	// Error() is the OPERATOR rendering, so it carries the params the wire key
+	// deliberately leaves out — the byte cap is the whole point of the message.
+	if want := "request.body_too_large {count:1048576}"; de.Error() != want {
+		t.Fatalf("Error(): got %q want %q", de.Error(), want)
+	}
+	if de.MessageParams()["count"] != MaxBodyBytes {
+		t.Fatalf("params: got %v, want Count=%d", de.MessageParams(), MaxBodyBytes)
 	}
 }
 
-// F-066: decode failures are typed *DecodeError (HTTPError) so a handler maps them
-// via response.HandleError without hardcoding a status — oversize → 413, every
-// other decode failure → 400.
+// F-066: decode failures are typed *shared.MessageError (an HTTPError) so a
+// handler maps them via response.HandleError without hardcoding a status —
+// oversize → 413, every other decode failure → 400.
 func TestDecodeJSON_ErrorsCarryHTTPStatus(t *testing.T) {
 	assertStatus := func(t *testing.T, err error, want int) {
 		t.Helper()
-		var de *DecodeError
+		var de *shared.MessageError
 		if !errors.As(err, &de) {
-			t.Fatalf("expected *DecodeError, got %T: %v", err, err)
+			t.Fatalf("expected *shared.MessageError, got %T: %v", err, err)
 		}
 		if de.HTTPStatus() != want {
 			t.Fatalf("HTTPStatus: got %d want %d", de.HTTPStatus(), want)

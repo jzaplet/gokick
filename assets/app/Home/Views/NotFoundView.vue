@@ -1,6 +1,9 @@
 <script setup lang="ts">
 // Terminal catch-all view for the router's `/:pathMatch(.*)*` route, so an
 // unmatched client path renders a real 404 page instead of a blank RouterView.
+import { useI18n } from '@/app-ui/I18n';
+
+const { t } = useI18n();
 </script>
 
 <template>
@@ -14,7 +17,7 @@
             404
         </p>
         <p class="text-gray-600">
-            This page could not be found.
+            {{ t('not_found.message') }}
         </p>
         <RouterLink
             :to="{ name: 'home' }"
@@ -24,7 +27,7 @@
                 'bg-orange-600 hover:bg-orange-700 transition-colors',
             ]"
         >
-            Back to home
+            {{ t('common.back_to_home') }}
         </RouterLink>
     </main>
 </template>

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { AdminUser } from '@/app/Admin/types/AdminUser';
+import { roleLabel } from '@/app/Auth/enums/roleLabels';
 import { useAuth } from '@/app-ui/Auth';
+import { useI18n } from '@/app-ui/I18n';
 import { roleBadge } from '@/app-ui/Users/roleBadge';
 import Button from '@/app-ui/Buttons/Button.vue';
 import CheckBox from '@/app-ui/Inputs/CheckBox.vue';
@@ -26,6 +28,7 @@ defineEmits<{
 }>();
 
 const { user: currentUser } = useAuth();
+const { t } = useI18n();
 
 const isSelf = (): boolean => {
     return currentUser.value !== null && currentUser.value.id === user.id;
@@ -46,7 +49,7 @@ const isSelf = (): boolean => {
             <CheckBox
                 :model-value="selected"
                 :disabled="isSelf()"
-                :sr-label="`Select ${user.nickname}`"
+                :sr-label="t('users.select_user', { nickname: user.nickname })"
                 @update:model-value="$emit('toggleSelect', user)"
             />
         </td>
@@ -55,7 +58,7 @@ const isSelf = (): boolean => {
             <span
                 v-if="isSelf() === true"
                 class="ml-2 text-xs text-gray-400"
-            >(you)</span>
+            >{{ t('users.you_marker') }}</span>
         </td>
         <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
             <span v-if="user.email !== ''">{{ user.email }}</span>
@@ -72,7 +75,7 @@ const isSelf = (): boolean => {
                     roleBadge(user.role),
                 ]"
             >
-                {{ user.role }}
+                {{ roleLabel(user.role) }}
             </span>
         </td>
         <td class="px-4 py-3 whitespace-nowrap text-sm">
@@ -85,19 +88,19 @@ const isSelf = (): boolean => {
                         : 'bg-gray-100 text-gray-600',
                 ]"
             >
-                {{ user.active === true ? 'Active' : 'Inactive' }}
+                {{ user.active === true ? t('common.active') : t('common.inactive') }}
             </span>
         </td>
         <td class="px-4 py-3 whitespace-nowrap text-right text-sm">
             <div class="flex items-center justify-end gap-1">
                 <Tooltip
                     v-if="user.active === false"
-                    text="Activate user"
+                    :text="t('users.activate_title')"
                 >
                     <Button
                         variant="secondary"
                         size="xs"
-                        aria-label="Activate user"
+                        :aria-label="t('users.activate_title')"
                         @click="$emit('activate', user)"
                     >
                         <TapIcon />

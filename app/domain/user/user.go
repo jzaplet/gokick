@@ -24,6 +24,15 @@ type User struct {
 	CreatedAt time.Time `db:"created_at"`
 	UpdatedAt time.Time `db:"updated_at"`
 
+	// Lang is the persisted UI-language preference. nil = no preference
+	// expressed — the browser's Accept-Language decides until the user picks
+	// one (profile switcher; the future registration funnel will stamp the
+	// sign-up language). Changed only by the user themselves via the profile
+	// language endpoint — the admin/platform update paths leave it alone,
+	// like tenant_id. Login/refresh return it so the SPA can adopt the saved
+	// language on a fresh browser.
+	Lang *string `db:"lang"`
+
 	// Brute-force tracking. Mutated only via Repository's
 	// RecordFailedLogin / ResetFailedLogin (which run outside the bus
 	// transaction so the counter persists even when login returns
@@ -42,6 +51,16 @@ type User struct {
 	// the user has logged in at least once. Powers the superadmin platform
 	// overview.
 	LastLoginAt *time.Time `db:"last_login_at"`
+}
+
+// PreferredLang returns the persisted UI-language preference, or "" when the
+// user never expressed one (NULL column) — callers treat "" as "let the
+// browser decide".
+func (u *User) PreferredLang() string {
+	if u.Lang == nil {
+		return ""
+	}
+	return *u.Lang
 }
 
 func NewUser(

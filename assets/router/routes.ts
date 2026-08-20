@@ -1,5 +1,6 @@
 import type { AppRoute } from '@/router/meta';
 import { Permission } from '@/app/Auth/enums/resources';
+import { SUPPORTED_LANGS } from '@/app-ui/I18n';
 import HomeView from '@/app/Home/Views/HomeView.vue';
 import NotFoundView from '@/app/Home/Views/NotFoundView.vue';
 import LoginView from '@/app/Auth/Views/LoginView.vue';
@@ -16,30 +17,37 @@ import PlatformUsersView from '@/app/Platform/Views/PlatformUsersView.vue';
 import PlatformUserCreateView from '@/app/Platform/Views/PlatformUserCreateView.vue';
 import PlatformUserEditView from '@/app/Platform/Views/PlatformUserEditView.vue';
 
+// Every route carries an optional language prefix: English is
+// canonical at the bare path, other languages live under /cs/… etc. The
+// authGuard keeps URLs canonical (strips /en, adds the prefix for a non-en
+// locale) and syncs the locale from the prefix. An unsupported prefix
+// (/de/…) simply fails the regex and lands in the not-found catch-all.
+const langPrefix = `/:lang(${SUPPORTED_LANGS.join('|')})?`;
+
 // Each route declares its auth posture explicitly (mirrors the backend
 // Permissioned / SkipPermission rule). TypeScript rejects any entry without
 // meta.requiresAuth — there is no implicit "public".
 export const routes: AppRoute[] = [
     {
-        path: '/',
+        path: langPrefix,
         name: 'home',
         component: HomeView,
         meta: { requiresAuth: false },
     },
     {
-        path: '/login',
+        path: `${langPrefix}/login`,
         name: 'login',
         component: LoginView,
         meta: { requiresAuth: false },
     },
     {
-        path: '/profile',
+        path: `${langPrefix}/profile`,
         name: 'profile',
         component: ProfileView,
         meta: { requiresAuth: true },
     },
     {
-        path: '/user/dashboard',
+        path: `${langPrefix}/user/dashboard`,
         name: 'user-dashboard',
         component: UserDashboardView,
         meta: {
@@ -48,7 +56,7 @@ export const routes: AppRoute[] = [
         },
     },
     {
-        path: '/admin/dashboard',
+        path: `${langPrefix}/admin/dashboard`,
         name: 'admin-dashboard',
         component: AdminDashboardView,
         meta: {
@@ -57,7 +65,7 @@ export const routes: AppRoute[] = [
         },
     },
     {
-        path: '/admin/users',
+        path: `${langPrefix}/admin/users`,
         name: 'admin-users',
         component: AdminUsersView,
         meta: {
@@ -66,7 +74,7 @@ export const routes: AppRoute[] = [
         },
     },
     {
-        path: '/admin/users/new',
+        path: `${langPrefix}/admin/users/new`,
         name: 'admin-users-new',
         component: AdminUserCreateView,
         meta: {
@@ -75,7 +83,7 @@ export const routes: AppRoute[] = [
         },
     },
     {
-        path: '/admin/users/:id/edit',
+        path: `${langPrefix}/admin/users/:id/edit`,
         name: 'admin-users-edit',
         component: AdminUserEditView,
         meta: {
@@ -84,7 +92,7 @@ export const routes: AppRoute[] = [
         },
     },
     {
-        path: '/platform/dashboard',
+        path: `${langPrefix}/platform/dashboard`,
         name: 'platform-dashboard',
         component: PlatformDashboardView,
         meta: {
@@ -93,7 +101,7 @@ export const routes: AppRoute[] = [
         },
     },
     {
-        path: '/platform/tenants',
+        path: `${langPrefix}/platform/tenants`,
         name: 'platform-tenants',
         component: PlatformTenantsView,
         meta: {
@@ -102,7 +110,7 @@ export const routes: AppRoute[] = [
         },
     },
     {
-        path: '/platform/tenants/new',
+        path: `${langPrefix}/platform/tenants/new`,
         name: 'platform-tenants-new',
         component: PlatformTenantCreateView,
         meta: {
@@ -111,7 +119,7 @@ export const routes: AppRoute[] = [
         },
     },
     {
-        path: '/platform/users',
+        path: `${langPrefix}/platform/users`,
         name: 'platform-users',
         component: PlatformUsersView,
         meta: {
@@ -120,7 +128,7 @@ export const routes: AppRoute[] = [
         },
     },
     {
-        path: '/platform/users/new',
+        path: `${langPrefix}/platform/users/new`,
         name: 'platform-users-new',
         component: PlatformUserCreateView,
         meta: {
@@ -129,7 +137,7 @@ export const routes: AppRoute[] = [
         },
     },
     {
-        path: '/platform/users/:id/edit',
+        path: `${langPrefix}/platform/users/:id/edit`,
         name: 'platform-users-edit',
         component: PlatformUserEditView,
         meta: {
@@ -139,9 +147,11 @@ export const routes: AppRoute[] = [
     },
     {
         // Trailing catch-all: an unmatched path renders the 404 view instead of a
-        // blank RouterView. requiresAuth:false so both signed-in and signed-out
-        // users see it (authGuard passes requiresAuth:false straight through).
-        path: '/:pathMatch(.*)*',
+        // blank RouterView. Carries the language prefix too, so /cs/nonsense is a
+        // Czech 404 and the guard's prefix logic applies uniformly (no redirect
+        // loop on prefix-less records). requiresAuth:false so both signed-in and
+        // signed-out users see it.
+        path: `${langPrefix}/:pathMatch(.*)*`,
         name: 'not-found',
         component: NotFoundView,
         meta: { requiresAuth: false },

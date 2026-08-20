@@ -60,6 +60,11 @@ func (d *Dispatcher) Enqueue(
 	// is resolved fail-closed by the repo (RequireTenant): default in single-tenant,
 	// error in multitenant — so a run is never silently born in the default tenant.
 	r.TenantID = shared.TenantIDFromContext(ctx)
+	// Stamp the language the same way — this is the ENQUEUING request's (the
+	// actor's) language, so the run keeps speaking it long after the request
+	// died; a run addressed to a DIFFERENT user loads that user's preference
+	// itself.
+	r.Lang = string(shared.LangFromContext(ctx))
 	if options.Delay > 0 {
 		r.RunAt = time.Now().Add(options.Delay)
 	}

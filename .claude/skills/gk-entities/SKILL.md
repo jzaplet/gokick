@@ -69,7 +69,7 @@ importovat** (`user/` nesmí znát `token/`); sdílené typy žijí v `domain/sh
 **Value objects** (`domain/user/nickname.go`, `role.go`, `email.go`, `password.go`):
 - Typ je `type Nickname string` + konstruktor `func NewNickname(s string)
   (Nickname, error)`.
-- Při nevalidním vstupu vrací `*shared.ValidationError{Field, Message}` —
+- Při nevalidním vstupu vrací `*shared.ValidationError{Field, Key, Params}` —
   `Field` se na FE mapuje na konkrétní políčko (viz `/gk-frontend-forms`).
 - Konkrétně:
   - `Nickname`: povinný, max 50 znaků.
@@ -89,7 +89,7 @@ importovat** (`user/` nesmí znát `token/`); sdílené typy žijí v `domain/sh
 1. Nový soubor v `app/domain/<context>/<name>.go`, `type X string` (nebo jiný
    primitiv).
 2. `func NewX(s string) (X, error)` — validuj formát/délku/povinnost; při chybě
-   vrať `&shared.ValidationError{Field: "x", Message: "…"}`.
+   vrať `&shared.ValidationError{Field: "x", Key: msgkey.…}` (klíč z katalogů, `/gk-i18n`).
 3. Použij ho v factory a v command handleru (`NewX` se volá tam, kde přijde raw
    vstup od uživatele).
 

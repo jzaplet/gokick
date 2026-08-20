@@ -7,6 +7,7 @@ import type { PlatformUserFormErrors } from '@/app/Platform/types/PlatformUserFo
 import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { authFetch } from '@/app-ui/Auth';
+import { useI18n } from '@/app-ui/I18n';
 import { useToast } from '@/app-ui/Toast/useToast';
 import Spinner from '@/app-ui/Loading/Spinner.vue';
 import PlatformUserForm from '@/app/Platform/Components/PlatformUserForm.vue';
@@ -14,6 +15,7 @@ import PlatformUserForm from '@/app/Platform/Components/PlatformUserForm.vue';
 const router = useRouter();
 const route = useRoute();
 const { success, error } = useToast();
+const { t } = useI18n();
 
 const userId = String(route.params['id']);
 const initial = ref<PlatformUserFormData | null>(null);
@@ -58,7 +60,7 @@ const handleSubmit = async (data: PlatformUserCreateData): Promise<void> => {
         return;
     }
 
-    success(`User ${data.nickname} saved.`);
+    success(t('users.saved', { nickname: data.nickname }));
     void router.push({ name: 'platform-users' });
 };
 
@@ -76,7 +78,7 @@ onMounted(async (): Promise<void> => {
     if (result.success === false) {
         // A missing id comes back as a 400 from the read-one endpoint — the same
         // redirect as any load failure.
-        error('Failed to load user.');
+        error(t('users.load_one_failed'));
         void router.push({ name: 'platform-users' });
 
         return;
@@ -95,7 +97,7 @@ onMounted(async (): Promise<void> => {
     <div>
         <div class="max-w-xl mx-auto space-y-6">
             <h1 class="text-2xl font-bold text-gray-900">
-                Edit user
+                {{ t('users.edit_title') }}
             </h1>
 
             <div
@@ -108,7 +110,7 @@ onMounted(async (): Promise<void> => {
             <PlatformUserForm
                 v-else-if="initial !== null"
                 mode="edit"
-                submit-label="Save"
+                :submit-label="t('common.save')"
                 :initial="initial"
                 :is-loading="isLoading"
                 :errors="errors"

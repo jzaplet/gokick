@@ -56,7 +56,7 @@ export const apiUpload = async <TData, TError = ApiGeneralError>(
         };
 
         xhr.onerror = (): void => {
-            resolve(generalFailure<TError>(xhr.status, 'Network error'));
+            resolve(generalFailure<TError>(xhr.status, 'fetch.network_error'));
         };
 
         xhr.open('POST', url);

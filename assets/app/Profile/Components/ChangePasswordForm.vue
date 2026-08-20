@@ -3,12 +3,14 @@ import type { ChangePasswordErrors } from '@/app/Profile/types/ChangePasswordErr
 import type { ChangePasswordFormData } from '@/app/Profile/types/ChangePasswordFormData';
 import { reactive, ref } from 'vue';
 import { authFetch } from '@/app-ui/Auth';
+import { tm, useI18n } from '@/app-ui/I18n';
 import { useToast } from '@/app-ui/Toast/useToast';
 import Button from '@/app-ui/Buttons/Button.vue';
 import Input from '@/app-ui/Inputs/Input.vue';
 import ErrorAlert from '@/app-ui/Alerts/ErrorAlert.vue';
 
 const { success } = useToast();
+const { t } = useI18n();
 
 const form: ChangePasswordFormData = reactive({
     old_password: '',
@@ -46,7 +48,7 @@ const handleSubmit = async (): Promise<void> => {
         return;
     }
 
-    success('Password changed.');
+    success(t('profile.password_changed'));
     resetForm();
 };
 </script>
@@ -54,7 +56,7 @@ const handleSubmit = async (): Promise<void> => {
 <template>
     <div class="bg-white rounded-lg shadow-md p-6 space-y-4">
         <h2 class="text-lg font-semibold text-gray-900">
-            Change password
+            {{ t('profile.change_password_title') }}
         </h2>
 
         <form
@@ -65,7 +67,7 @@ const handleSubmit = async (): Promise<void> => {
                 v-model="form.old_password"
                 name="old_password"
                 type="password"
-                label="Current password"
+                :label="t('profile.current_password')"
                 required
                 :disabled="isLoading"
             />
@@ -74,14 +76,14 @@ const handleSubmit = async (): Promise<void> => {
                 v-model="form.new_password"
                 name="new_password"
                 type="password"
-                label="New password"
-                :error="errors.new_password"
+                :label="t('profile.new_password')"
+                :error="tm(errors.new_password)"
                 required
                 :disabled="isLoading"
                 @update:model-value="() => clearFieldError('new_password')"
             />
 
-            <ErrorAlert :message="errors.general" />
+            <ErrorAlert :message="tm(errors.general)" />
 
             <Button
                 type="submit"
@@ -90,8 +92,8 @@ const handleSubmit = async (): Promise<void> => {
                 :loading="isLoading"
                 :disabled="isLoading"
             >
-                <span v-if="isLoading === false">Change password</span>
-                <span v-else>Saving...</span>
+                <span v-if="isLoading === false">{{ t('profile.change_password_submit') }}</span>
+                <span v-else>{{ t('profile.saving') }}</span>
             </Button>
         </form>
     </div>

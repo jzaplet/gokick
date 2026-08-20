@@ -3,9 +3,9 @@
 import { isRecord, isString } from '@/app-ui/Fetch/guards';
 
 export type DashboardResponse = {
-    message: string;
+    nickname: string;
 };
 
 export const isDashboardResponse = (v: unknown): v is DashboardResponse =>
     isRecord(v)
-    && isString(v['message']);
+    && isString(v['nickname']);

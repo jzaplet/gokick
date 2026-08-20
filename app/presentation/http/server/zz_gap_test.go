@@ -225,8 +225,8 @@ func boundServer(t *testing.T) (*Server, *testfx.Fixture) {
 		resp:      testResponder(),
 		ipExtract: extract,
 		limiters: &RateLimiters{
-			Login:   middleware.NewRateLimiter(rule, extract, logger),
-			Refresh: middleware.NewRateLimiter(rule, extract, logger),
+			Login:   middleware.NewRateLimiter(rule, extract, logger, testResponder()),
+			Refresh: middleware.NewRateLimiter(rule, extract, logger, testResponder()),
 		},
 		adminUsers: adminUsers,
 		dashboard:  dashboard,
@@ -384,9 +384,9 @@ func TestRegisterRoutes_BindsAdminAndDashboardRoutesToHandlers(t *testing.T) {
 				rec.Body.String(),
 			)
 		}
-		if !strings.Contains(rec.Body.String(), "user dashboard") {
+		if !strings.Contains(rec.Body.String(), `"nickname"`) {
 			t.Fatalf(
-				"dashboard/user body %q missing 'user dashboard' — route bound to the wrong query",
+				"dashboard/user body %q missing the nickname field — route bound to the wrong query",
 				rec.Body.String(),
 			)
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/domain/user"
 )
 
@@ -45,7 +46,9 @@ func bulkSelection(
 	excludeID string,
 ) (user.BulkSelection, error) {
 	if !user.ValidActiveFilter(filters.Active) {
-		return user.BulkSelection{}, &shared.ValidationError{Message: "invalid active filter value"}
+		return user.BulkSelection{}, &shared.ValidationError{
+			Key: msgkey.UserBulkActiveFilterInvalid,
+		}
 	}
 	sel := user.BulkSelection{
 		IDs:         ids,
@@ -54,7 +57,7 @@ func bulkSelection(
 		ExcludeID:   excludeID,
 	}
 	if sel.IsEmpty() {
-		return user.BulkSelection{}, &shared.ValidationError{Message: "nothing selected"}
+		return user.BulkSelection{}, &shared.ValidationError{Key: msgkey.CommonNothingSelected}
 	}
 	return sel, nil
 }

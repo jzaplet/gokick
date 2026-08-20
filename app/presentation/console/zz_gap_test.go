@@ -96,8 +96,8 @@ func serveTestServer(logger *slog.Logger) *server.Server {
 	extract := middleware.NewIPExtractor(false)
 	rule := middleware.RateRule{Tokens: 1000, Per: time.Minute}
 	limiters := &server.RateLimiters{
-		Login:   middleware.NewRateLimiter(rule, extract, logger),
-		Refresh: middleware.NewRateLimiter(rule, extract, logger),
+		Login:   middleware.NewRateLimiter(rule, extract, logger, testResponder()),
+		Refresh: middleware.NewRateLimiter(rule, extract, logger, testResponder()),
 	}
 	return server.NewServer(
 		&config.Config{HTTPPort: "0", CookieSecure: false, CORSOrigin: "https://app.example.com"},

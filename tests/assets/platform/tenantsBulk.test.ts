@@ -82,7 +82,7 @@ describe('usePlatformTenantsBulk — the affected count drives the toast', () =>
         await bulk.runPendingBulk();
 
         expect(toasts.success).toHaveBeenCalledWith(
-            '3 tenant(s) deleted, 2 skipped (they still have users).',
+            '3 tenants deleted, 2 skipped (they still have users).',
         );
     });
 
@@ -93,7 +93,7 @@ describe('usePlatformTenantsBulk — the affected count drives the toast', () =>
         bulk.handleBulkAction('delete');
         await bulk.runPendingBulk();
 
-        expect(toasts.success).toHaveBeenCalledWith('2 tenant(s) deleted.');
+        expect(toasts.success).toHaveBeenCalledWith('2 tenants deleted.');
     });
 
     // affected=0 is not a success — every selected tenant survived.
@@ -122,7 +122,7 @@ describe('usePlatformTenantsBulk — the affected count drives the toast', () =>
         bulk.handleBulkAction('delete');
         await bulk.runPendingBulk();
 
-        expect(toasts.success).toHaveBeenCalledWith('3 tenant(s) deleted.');
+        expect(toasts.success).toHaveBeenCalledWith('3 tenants deleted.');
     });
 
     it('posts the grid filters so all-filtered deletes exactly what was shown', async () => {

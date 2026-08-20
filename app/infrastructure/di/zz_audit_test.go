@@ -22,6 +22,7 @@ import (
 	sqliteaudit "gokick/app/infrastructure/sqlite/audit"
 	"gokick/app/internal/testfx"
 	httpmw "gokick/app/presentation/http/middleware"
+	"gokick/app/presentation/http/response"
 )
 
 // deniedAdminCmd is a Permissioned command requiring an admin permission. With
@@ -344,7 +345,12 @@ func TestProvideIPExtractor_SharedByRateLimitAndAudit(t *testing.T) {
 	if gotActorTrust != "9.9.9.9" {
 		t.Fatalf("trustProxy=true: ActorIP got %q want 9.9.9.9 (X-Real-IP)", gotActorTrust)
 	}
-	limTrust := httpmw.NewRateLimiter(oneToken, extractTrust, logger)
+	limTrust := httpmw.NewRateLimiter(
+		oneToken,
+		extractTrust,
+		logger,
+		response.NewResponder(logger),
+	)
 	// Same X-Real-IP, different RemoteAddr → keyed on X-Real-IP → 2nd is 429.
 	if code := rateCode(limTrust, "9.9.9.9", "1.1.1.1:1111"); code != http.StatusOK {
 		t.Fatalf("trustProxy=true: first request got %d want 200", code)
@@ -366,7 +372,12 @@ func TestProvideIPExtractor_SharedByRateLimitAndAudit(t *testing.T) {
 			gotActorNoTrust,
 		)
 	}
-	limNoTrust := httpmw.NewRateLimiter(oneToken, extractNoTrust, logger)
+	limNoTrust := httpmw.NewRateLimiter(
+		oneToken,
+		extractNoTrust,
+		logger,
+		response.NewResponder(logger),
+	)
 	// Same RemoteAddr, different X-Real-IP → keyed on RemoteAddr → 2nd is 429.
 	if code := rateCode(limNoTrust, "7.7.7.7", "203.0.113.7:5555"); code != http.StatusOK {
 		t.Fatalf("trustProxy=false: first request got %d want 200", code)

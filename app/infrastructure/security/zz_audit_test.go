@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 )
 
 // TestHash_PrehashDiscriminatesBeyond72Bytes closes domain-26 and infra-db-security-29.
@@ -65,8 +66,8 @@ func TestCheck_RoleDichotomy(t *testing.T) {
 	if !ok {
 		t.Fatalf("role mismatch: expected *shared.PermissionError, got %T (%v)", err, err)
 	}
-	if permErr.Message != "insufficient permissions" {
-		t.Fatalf("expected message \"insufficient permissions\", got %q", permErr.Message)
+	if permErr.Key != msgkey.PermissionDenied {
+		t.Fatalf("expected key %q, got %q", msgkey.PermissionDenied, permErr.Key)
 	}
 	if permErr.HTTPStatus() != 403 {
 		t.Fatalf("expected PermissionError HTTPStatus 403, got %d", permErr.HTTPStatus())

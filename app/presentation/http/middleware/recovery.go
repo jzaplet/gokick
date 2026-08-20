@@ -8,6 +8,7 @@ import (
 	"runtime/debug"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 )
 
 // startedRecorder flags whether the response has begun (WriteHeader, Write, or
@@ -86,35 +87,7 @@ func RecoveryMiddleware(
 					Value:   rec,
 					Message: fmt.Sprintf("http: panic in %s %s: %v", r.Method, r.URL.Path, rec),
 				}
-				// Method, request PATH (query string dropped) and User-Agent
-				// always; the credential headers (Authorization, Cookie) when
-				// present but MASKED here at the edge — so an operator can see the
-				// header arrived without the secret ever reaching the error tracker.
-				// Never the raw header set. The path is sent without its query
-				// because a query parameter can carry a credential (?token=…) and
-				// dropping it outright is the only leak-proof option — masking by
-				// key name is best-effort and misses odd encodings. The Sentry
-				// adapter turns these into event.Request; the resolved client IP
-				// rides on ctx (SetUser).
-				attrs := []slog.Attr{
-					slog.String(shared.LogKeyMethod, r.Method),
-					slog.String(shared.LogKeyURL, r.URL.EscapedPath()),
-					slog.String(shared.LogKeyUserAgent, r.UserAgent()),
-				}
-				if v := r.Header.Get("Authorization"); v != "" {
-					attrs = append(
-						attrs,
-						slog.String(
-							shared.LogKeyAuthorization,
-							shared.MaskHeaderValue("Authorization", v),
-						),
-					)
-				}
-				if v := r.Header.Get("Cookie"); v != "" {
-					attrs = append(attrs,
-						slog.String(shared.LogKeyCookie, shared.MaskHeaderValue("Cookie", v)))
-				}
-				reporter.Capture(ctx, err, attrs...)
+				reporter.Capture(ctx, err, panicReportAttrs(r)...)
 
 				// Only write a clean 500 if nothing has gone out yet — otherwise a
 				// re-write corrupts the in-flight response (see the doc comment).
@@ -123,9 +96,50 @@ func RecoveryMiddleware(
 				}
 				rw.Header().Set("Content-Type", "application/json")
 				rw.WriteHeader(http.StatusInternalServerError)
-				_, _ = rw.Write([]byte(`{"general":"internal server error"}`))
+				_, _ = rw.Write(panicBody)
 			}()
 			next.ServeHTTP(rw, r)
 		})
 	}
 }
+
+// panicReportAttrs is the fixed whitelist the reporter gets: method, request
+// PATH (query string dropped) and User-Agent always; the credential headers
+// (Authorization, Cookie) when present but MASKED here at the edge — so an
+// operator can see the header arrived without the secret ever reaching the
+// error tracker. Never the raw header set. The path is sent without its query
+// because a query parameter can carry a credential (?token=…) and dropping it
+// outright is the only leak-proof option — masking by key name is best-effort
+// and misses odd encodings. The Sentry adapter turns these into
+// event.Request; the resolved client IP rides on ctx (SetUser).
+func panicReportAttrs(r *http.Request) []slog.Attr {
+	attrs := []slog.Attr{
+		slog.String(shared.LogKeyMethod, r.Method),
+		slog.String(shared.LogKeyURL, r.URL.EscapedPath()),
+		slog.String(shared.LogKeyUserAgent, r.UserAgent()),
+	}
+	if v := r.Header.Get("Authorization"); v != "" {
+		attrs = append(
+			attrs,
+			slog.String(
+				shared.LogKeyAuthorization,
+				shared.MaskHeaderValue("Authorization", v),
+			),
+		)
+	}
+	if v := r.Header.Get("Cookie"); v != "" {
+		attrs = append(attrs,
+			slog.String(shared.LogKeyCookie, shared.MaskHeaderValue("Cookie", v)))
+	}
+
+	return attrs
+}
+
+// panicBody is the static {key} 500 body served on a recovered panic. The
+// panic path must stay bulletproof — never run an encoder while already
+// recovering — and since the API ships keys, not prose (the FRONTEND renders
+// the text), one precomputed language-free literal covers every request. It
+// mirrors the Responder's {"general": {key}} error contract. The key comes
+// from the generated constant, not a literal, so renaming it cannot leave this
+// path shipping a key the catalog no longer has.
+var panicBody = []byte(`{"general":{"key":"` + msgkey.CommonInternalError + `"}}`)

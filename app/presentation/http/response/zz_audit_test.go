@@ -8,13 +8,15 @@ import (
 	"testing"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 )
 
-// decodeBody unmarshals the recorder body into a string-keyed map so tests can
-// assert exact keys/values and the absence of unexpected keys.
-func decodeBody(t *testing.T, rec *httptest.ResponseRecorder) map[string]string {
+// decodeBody unmarshals the recorder body into the {field|general: {key,
+// params}} wire map so tests can assert exact keys/values and the absence of
+// unexpected keys.
+func decodeBody(t *testing.T, rec *httptest.ResponseRecorder) map[string]ApiMessage {
 	t.Helper()
-	var body map[string]string
+	var body map[string]ApiMessage
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("body is not valid JSON object: %v (raw=%q)", err, rec.Body.String())
 	}
@@ -37,24 +39,24 @@ func TestHandleError_RealDomainErrorMapping(t *testing.T) {
 	}{
 		{
 			name:     "ValidationError routes to its field key with 400",
-			err:      &shared.ValidationError{Field: "nickname", Message: "nickname is required"},
+			err:      &shared.ValidationError{Field: "nickname", Key: msgkey.UserNicknameRequired},
 			wantCode: http.StatusBadRequest,
 			wantKey:  "nickname",
-			wantMsg:  "nickname is required",
+			wantMsg:  "user.nickname_required",
 		},
 		{
 			name:     "AuthError routes to general with 401",
-			err:      &shared.AuthError{Message: "invalid credentials"},
+			err:      &shared.AuthError{Key: msgkey.AuthInvalidCredentials},
 			wantCode: http.StatusUnauthorized,
 			wantKey:  "general",
-			wantMsg:  "invalid credentials",
+			wantMsg:  "auth.invalid_credentials",
 		},
 		{
 			name:     "PermissionError routes to general with 403",
-			err:      &shared.PermissionError{Message: "forbidden"},
+			err:      &shared.PermissionError{Key: msgkey.PermissionDenied},
 			wantCode: http.StatusForbidden,
 			wantKey:  "general",
-			wantMsg:  "forbidden",
+			wantMsg:  "permission.denied",
 		},
 	}
 
@@ -78,8 +80,8 @@ func TestHandleError_RealDomainErrorMapping(t *testing.T) {
 			if !ok {
 				t.Fatalf("missing key %q in body %v", tc.wantKey, body)
 			}
-			if got != tc.wantMsg {
-				t.Fatalf("body[%q]: got %q want %q", tc.wantKey, got, tc.wantMsg)
+			if got.Key != tc.wantMsg {
+				t.Fatalf("body[%q].key: got %q want %q", tc.wantKey, got.Key, tc.wantMsg)
 			}
 			// A field error must NOT also populate "general", and vice versa.
 			if tc.wantKey != "general" {
@@ -98,9 +100,9 @@ func TestHandleError_RealDomainErrorMapping(t *testing.T) {
 // the real types are recognized as HTTPErrors at all.
 func TestHandleError_RealDomainErrorsAreNotCollapsedTo500(t *testing.T) {
 	cases := []error{
-		&shared.ValidationError{Field: "x", Message: "m"},
-		&shared.AuthError{Message: "m"},
-		&shared.PermissionError{Message: "m"},
+		&shared.ValidationError{Field: "x", Key: "m"},
+		&shared.AuthError{Key: "m"},
+		&shared.PermissionError{Key: "m"},
 	}
 	for _, err := range cases {
 		rec := httptest.NewRecorder()
@@ -117,7 +119,7 @@ func TestHandleError_RealDomainErrorsAreNotCollapsedTo500(t *testing.T) {
 // the claims that name Error() explicitly.
 func TestError_FieldErrorKeyedByFieldName(t *testing.T) {
 	rec := httptest.NewRecorder()
-	verr := &shared.ValidationError{Field: "nickname", Message: "nickname is required"}
+	verr := &shared.ValidationError{Field: "nickname", Key: msgkey.UserNicknameRequired}
 
 	discardResponder().Error(context.Background(), rec, verr.HTTPStatus(), verr)
 
@@ -132,8 +134,12 @@ func TestError_FieldErrorKeyedByFieldName(t *testing.T) {
 	if len(body) != 1 {
 		t.Fatalf("expected single-key body, got %v", body)
 	}
-	if body["nickname"] != "nickname is required" {
-		t.Fatalf("body[nickname]: got %q want %q", body["nickname"], "nickname is required")
+	if body["nickname"].Key != "user.nickname_required" {
+		t.Fatalf(
+			"body[nickname].key: got %q want %q",
+			body["nickname"].Key,
+			"user.nickname_required",
+		)
 	}
 	if _, ok := body["general"]; ok {
 		t.Fatalf("field error must not populate \"general\": %v", body)
@@ -145,7 +151,7 @@ func TestError_FieldErrorKeyedByFieldName(t *testing.T) {
 // branch of Error() directly via the real AuthError type.
 func TestError_NonFieldErrorKeyedAsGeneral(t *testing.T) {
 	rec := httptest.NewRecorder()
-	aerr := &shared.AuthError{Message: "invalid credentials"}
+	aerr := &shared.AuthError{Key: msgkey.AuthInvalidCredentials}
 
 	discardResponder().Error(context.Background(), rec, aerr.HTTPStatus(), aerr)
 
@@ -157,8 +163,34 @@ func TestError_NonFieldErrorKeyedAsGeneral(t *testing.T) {
 	if len(body) != 1 {
 		t.Fatalf("expected single-key body, got %v", body)
 	}
-	if body["general"] != "invalid credentials" {
-		t.Fatalf("body[general]: got %q want %q", body["general"], "invalid credentials")
+	if body["general"].Key != "auth.invalid_credentials" {
+		t.Fatalf(
+			"body[general].key: got %q want %q",
+			body["general"].Key,
+			"auth.invalid_credentials",
+		)
+	}
+}
+
+// Keys over the wire: a KeyedError's params ride along in the body so the
+// FRONTEND can fill the message's {placeholders} — the API never renders
+// text, in any language.
+func TestError_ParamsRideAlongUntranslated(t *testing.T) {
+	rec := httptest.NewRecorder()
+	verr := &shared.ValidationError{
+		Field:  "nickname",
+		Key:    msgkey.UserNicknameTooLong,
+		Params: map[string]any{"count": 30},
+	}
+
+	discardResponder().Error(context.Background(), rec, verr.HTTPStatus(), verr)
+
+	body := decodeBody(t, rec)
+	if body["nickname"].Key != "user.nickname_too_long" {
+		t.Fatalf("body[nickname].key: got %q", body["nickname"].Key)
+	}
+	if got := body["nickname"].Params["count"]; got != float64(30) {
+		t.Fatalf("body[nickname].params[count]: got %v want 30", got)
 	}
 }
 
@@ -168,7 +200,7 @@ func TestError_NonFieldErrorKeyedAsGeneral(t *testing.T) {
 func TestError_FieldErrorWithEmptyFieldFallsToGeneral(t *testing.T) {
 	rec := httptest.NewRecorder()
 	// Field is empty on purpose.
-	verr := &shared.ValidationError{Message: "something is wrong"}
+	verr := &shared.ValidationError{Key: "something.wrong"}
 
 	discardResponder().Error(context.Background(), rec, http.StatusBadRequest, verr)
 
@@ -176,7 +208,7 @@ func TestError_FieldErrorWithEmptyFieldFallsToGeneral(t *testing.T) {
 	if len(body) != 1 {
 		t.Fatalf("expected single-key body, got %v", body)
 	}
-	if body["general"] != "something is wrong" {
+	if body["general"].Key != "something.wrong" {
 		t.Fatalf("empty-field ValidationError should land under general, got %v", body)
 	}
 }

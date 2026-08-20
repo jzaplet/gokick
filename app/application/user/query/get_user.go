@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/domain/user"
 )
 
@@ -34,7 +35,7 @@ func (h *GetUserHandler) Handle(ctx context.Context, q GetUserQuery) (*user.User
 		// paths return via requireOneRow, so every "no such user" response is
 		// consistent and the HTTP handler needs no nil-check before building the DTO.
 		//gkerrf:exempt path-param lookup - the edit view redirects on failure, no form field maps id
-		return nil, &shared.ValidationError{Field: "id", Message: "user not found"}
+		return nil, &shared.ValidationError{Field: "id", Key: msgkey.UserNotFound}
 	}
 	return u, nil
 }

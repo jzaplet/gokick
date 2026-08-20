@@ -4,9 +4,11 @@ import type { GridState } from '@/app-ui/DataGrid/createGridState';
 import type { BulkAction } from '@/app-ui/BulkActions/BulkActionBar.vue';
 import type { BulkResult } from '@/app-ui/BulkActions/BulkResult';
 import { isBulkResult } from '@/app-ui/BulkActions/BulkResult';
+import type { ApiMessage } from '@/app-ui/Fetch/types/ApiMessage';
 import type { PlatformBulkDeleteTenantsRequest }
     from '@/app/Platform/types/PlatformBulkDeleteTenantsRequest';
 import { authFetch } from '@/app-ui/Auth';
+import { tm, useI18n } from '@/app-ui/I18n';
 import { useToast } from '@/app-ui/Toast/useToast';
 
 // The bulk half of the tenants grid. Deliberately NOT createUsersBulk: that core
@@ -33,7 +35,7 @@ type DeleteTarget = {
 };
 
 export type TenantsBulk = {
-    bulkActions: BulkAction[];
+    bulkActions: ComputedRef<BulkAction[]>;
     bulkConfirm: ComputedRef<BulkConfirm | null>;
     handleBulkAction: (key: string) => void;
     runPendingBulk: () => Promise<void>;
@@ -46,8 +48,11 @@ export type TenantsBulk = {
 
 export const usePlatformTenantsBulk = (grid: GridState<TenantGridFilters>): TenantsBulk => {
     const { success, info, error } = useToast();
+    const { t } = useI18n();
 
-    const bulkActions: BulkAction[] = [{ key: 'delete', label: 'Delete' }];
+    // computed, not a one-shot array: the label must re-render in place on a
+    // language switch (the grid view never remounts for one).
+    const bulkActions = computed((): BulkAction[] => [{ key: 'delete', label: t('common.delete') }]);
 
     const pendingBulk = ref<'delete' | null>(null);
     const tenantToDelete = ref<DeleteTarget | null>(null);
@@ -70,13 +75,12 @@ export const usePlatformTenantsBulk = (grid: GridState<TenantGridFilters>): Tena
             return null;
         }
 
-        const count = String(grid.selectedCount.value);
+        const count = grid.selectedCount.value;
 
         return {
-            title: 'Delete selected tenants',
-            message: `Really delete ${count} selected tenant(s)? Tenants that still have `
-                + 'users are skipped. This action is irreversible.',
-            confirmText: 'Delete',
+            title: t('tenants.bulk.delete_title'),
+            message: t('tenants.bulk.delete_confirm', { count }),
+            confirmText: t('common.delete'),
         };
     });
 
@@ -89,7 +93,7 @@ export const usePlatformTenantsBulk = (grid: GridState<TenantGridFilters>): Tena
     // the skipped count is not knowable and is not guessed at.
     const reportDeleted = (affected: number, expected: number | null): void => {
         if (affected === 0) {
-            info('No tenants were deleted — the selected tenants still have users.');
+            info(t('tenants.bulk.none_deleted'));
 
             return;
         }
@@ -97,20 +101,19 @@ export const usePlatformTenantsBulk = (grid: GridState<TenantGridFilters>): Tena
         const skipped = expected === null ? 0 : expected - affected;
 
         if (skipped > 0) {
-            success(`${String(affected)} tenant(s) deleted, `
-                + `${String(skipped)} skipped (they still have users).`);
+            success(t('tenants.bulk.deleted_skipped', { count: affected, skipped }));
 
             return;
         }
 
-        success(`${String(affected)} tenant(s) deleted.`);
+        success(t('tenants.bulk.deleted', { count: affected }));
     };
 
     const postDelete = async (
         body: PlatformBulkDeleteTenantsRequest,
         expected: number | null,
     ): Promise<void> => {
-        const result = await authFetch<BulkResult, { general?: string },
+        const result = await authFetch<BulkResult, { general?: ApiMessage },
             PlatformBulkDeleteTenantsRequest>(
             'POST',
             '/api/v1/platform/tenants/bulk-delete',
@@ -118,7 +121,7 @@ export const usePlatformTenantsBulk = (grid: GridState<TenantGridFilters>): Tena
         );
 
         if (result.success === false) {
-            error(result.data.general ?? 'Bulk delete failed.');
+            error(tm(result.data.general) ?? t('bulk.delete_failed'));
 
             return;
         }
@@ -195,7 +198,7 @@ export const usePlatformTenantsBulk = (grid: GridState<TenantGridFilters>): Tena
             return;
         }
 
-        const result = await authFetch<null, { general?: string }>(
+        const result = await authFetch<null, { general?: ApiMessage }>(
             'DELETE',
             `/api/v1/platform/tenants/${target.id}`,
         );
@@ -204,7 +207,7 @@ export const usePlatformTenantsBulk = (grid: GridState<TenantGridFilters>): Tena
             // Every reason this endpoint refuses — still has users, still has runs,
             // already gone — arrives under `general`, because none of them maps to a
             // field on a grid. So the backend's own message is the honest toast.
-            error(result.data.general ?? 'Failed to delete the tenant.');
+            error(tm(result.data.general) ?? t('tenants.delete_failed'));
 
             // Reload on failure too. Every reason this can fail means the grid is
             // showing something stale — the tenant gained a user, or another
@@ -215,7 +218,7 @@ export const usePlatformTenantsBulk = (grid: GridState<TenantGridFilters>): Tena
             return;
         }
 
-        success(`Tenant ${target.name} deleted.`);
+        success(t('tenants.deleted', { name: target.name }));
         // Drop the id BEFORE reloading: a deleted row must not ride the next bulk
         // payload as a ghost id.
         grid.deselect(target.id);

@@ -17,6 +17,7 @@ const setLoggedIn = (role: Role, permissions: string[]): void => {
         email: '',
         role,
         permissions,
+        lang: '',
     };
 };
 

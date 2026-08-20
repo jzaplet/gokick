@@ -12,7 +12,7 @@ name: 'gk-frontend-forms'
 
 # GK — Frontend formuláře (backend-authoritative)
 
-Formulář na frontendu nic nevaliduje. Pošle data přes `authFetch`, a když backend vrátí chybu jako `{ "<pole>": "<hláška>" }`, vloží ji 1:1 do stejně pojmenovaného pole. Žádné `if` nad kódy chyb, žádné duplicitní pravidlo.
+Formulář na frontendu nic nevaliduje. Pošle data přes `authFetch`, a když backend vrátí chybu jako `{ "<pole>": { "key": "...", "params": {...} } }` (hodnota je `ApiMessage` — překladový klíč, ne věta), vloží ji 1:1 do stejně pojmenovaného pole a při zobrazení ji vyrenderuje `tm()` v aktivním jazyce. Žádné `if` nad kódy chyb, žádné duplicitní pravidlo.
 
 ## What & when
 - Sáhni sem, když **píšeš nebo upravuješ formulář** (login, change-password, create/edit usera) a potřebuješ vzor pro state, odeslání a zobrazení chyb.
@@ -22,7 +22,7 @@ Formulář na frontendu nic nevaliduje. Pošle data přes `authFetch`, a když b
 ## For non-tech / juniors
 Formulář si představ jako **podací okénko**: vyplníš lístek, pošleš ho a čekáš na razítko. Razítkuje **backend** — ten jediný rozhoduje, co je správně. Kdyby si pravidla hlídalo i okénko (frontend), dřív nebo později se obě verze rozejdou a navíc útočník okénko prostě obejde. Proto frontend nevaliduje vůbec — jen ukáže, co backend vrátil.
 
-Trik je v tom, že backend pošle chybu **pojmenovanou stejně jako pole** ve formuláři (`{ "nickname": "..." }`). Frontend pak nemusí nic překládat: vezme celou odpověď a „vysype" ji do formuláře — co má klíč `nickname`, se ukáže u políčka nickname. Když uživatel políčko opraví, chyba u něj zmizí.
+Trik je v tom, že backend pošle chybu **pojmenovanou stejně jako pole** ve formuláři (`{ "nickname": … }`). Frontend vezme celou odpověď a „vysype" ji do formuláře — co má klíč `nickname`, se ukáže u políčka nickname. Hodnota přitom není hotová věta, ale **překladový klíč** — na větu ji převede až prohlížeč v jazyce, který má uživatel zapnutý (proto se chyby přepnou hned s přepínačem jazyka). Když uživatel políčko opraví, chyba u něj zmizí.
 
 ## How it works
 Validace je **server-side**; frontend jen propisuje. Klíčový je vzor **kdo vlastní state** — jsou dva:
@@ -32,19 +32,19 @@ Validace je **server-side**; frontend jen propisuje. Klíčový je vzor **kdo vl
 **2. Split (View vlastní state, formulář jen emituje)** — View drží `errors`/`isLoading` a volá `authFetch`; formulářová komponenta je čistě prezentační a vysílá `emit('submit' | 'cancel' | 'clearError', …)`. Vzor: `assets/app/Admin/Components/UserForm.vue` + Views `AdminUserCreateView.vue` / `AdminUserEditView.vue`. Použij, když jeden formulář sdílí víc obrazovek (create i edit) — logika je v každém View jiná, layout stejný.
 
 **Datový tok (oba vzory stejný):**
-- `errors` je `ref<TErrors>({})` — prázdný objekt = bez chyb, klíč existuje = pole má chybu.
-- Odpověď `authFetch` je rozlišená podle `result.success` (`ApiSuccess` / `ApiError` v `assets/app-ui/Fetch/types/`); na chybě z backendu je v `result.data` přesně objekt `{ <pole>: <hláška> }` (transportní selhání, rozbité 2xx tělo i porušený guard chodí unionem taky jako chyba, syntetizované jako `{ general: … }` — stejný klíč, kterým BE posílá ne-field chyby; viz `/gk-frontend-fetch`).
+- `errors` je `ref<TErrors>({})` — prázdný objekt = bez chyb, klíč existuje = pole má chybu. Hodnoty jsou `ApiMessage` (`{key, params}` z `assets/app-ui/Fetch/types/ApiMessage.ts`), ne věty.
+- Odpověď `authFetch` je rozlišená podle `result.success` (`ApiSuccess` / `ApiError` v `assets/app-ui/Fetch/types/`); na chybě z backendu je v `result.data` přesně objekt `{ <pole>: ApiMessage }` (transportní selhání, rozbité 2xx tělo i porušený guard chodí unionem taky jako chyba, syntetizované jako `{ general: ApiMessage }` s `fetch.*` klíčem — stejný klíč `general`, kterým BE posílá ne-field chyby; viz `/gk-frontend-fetch`).
 - `errors.value = result.data` — jedna řádka, žádné mapování. Klíče z backendu sedí 1:1 na typ `TErrors`.
-- Render: per-field chyba → `<Input :error="errors.<pole>" />` (`assets/app-ui/Inputs/Input.vue`, příp. `Select.vue`); obecná → `<ErrorAlert :message="errors.general" />` (`assets/app-ui/Alerts/ErrorAlert.vue`).
+- Render: hodnotu převádí na text `tm()` z `useI18n` (`/gk-i18n`) až při zobrazení — per-field chyba → `<Input :error="tm(errors.<pole>)" />` (`assets/app-ui/Inputs/Input.vue`, příp. `Select.vue`); obecná → `<ErrorAlert :message="tm(errors.general)" />` (`assets/app-ui/Alerts/ErrorAlert.vue`). Díky tomu chyby sledují přepnutí jazyka.
 
 **Pozor na `required`:** prop `required` na `<Input>` je **čistě vizuální** — vykreslí hvězdičku `*` u labelu, ale nepropíše HTML atribut `required` na `<input>`. Jediné, co se reálně dostane do DOM, je `type` — takže `type="email"` dá nativní kontrolu formátu, nic víc. Pravda přichází z backendu.
 
 ## Recipe
 Přidáváš/upravuješ formulář (vzor self-contained):
 
-1. **Typ chyb** v `types/XxxErrors.ts` — všechny klíče optional, vždy `general`, názvy 1:1 jako pole backendu — jen ta, ke kterým backend field-chybu opravdu vrací (špatné staré heslo chodí jako AuthError do `general`):
+1. **Typ chyb** v `types/XxxErrors.ts` — všechny klíče optional, vždy `general`, hodnoty `ApiMessage`, názvy 1:1 jako pole backendu — jen ta, ke kterým backend field-chybu opravdu vrací (špatné staré heslo chodí jako AuthError do `general`):
    ```typescript
-   export type ChangePasswordErrors = { general?: string; new_password?: string };
+   export type ChangePasswordErrors = { general?: ApiMessage; new_password?: ApiMessage };
    ```
 2. **State** — `reactive` pro data, `ref` pro chyby a loading:
    ```typescript
@@ -63,7 +63,7 @@ Přidáváš/upravuješ formulář (vzor self-contained):
            errors.value = result.data; // backend klíče = klíče typu
            return;
        }
-       success('Password changed.');
+       success(t('profile.password_changed'));
    };
    ```
 4. **Čištění při editaci** — chyba u pole zmizí, jakmile do něj uživatel sáhne:
@@ -74,7 +74,7 @@ Přidáváš/upravuješ formulář (vzor self-contained):
    };
    ```
    Na inputu: `@update:model-value="() => clearFieldError('new_password')"`.
-5. **Render** — `<Input :error="errors.new_password" … />` + `<ErrorAlert :message="errors.general" />` (klíč musí existovat v `TErrors` — `old_password` tam není, špatné staré heslo chodí jako AuthError do `general`).
+5. **Render** — `<Input :error="tm(errors.new_password)" … />` + `<ErrorAlert :message="tm(errors.general)" />` — `tm()` z `useI18n` převede ApiMessage na text v aktivním jazyce (klíč musí existovat v `TErrors` — `old_password` tam není, špatné staré heslo chodí jako AuthError do `general`).
 
 **Varianta split (formulář na víc obrazovkách):** state a `authFetch` přesuň do View, formulářová komponenta dostane `errors`/`isLoading` přes props a místo `authFetch` vysílá `emit('submit', { ...form })`, `emit('cancel')`, `emit('clearError', field)`. View pak řeší, kam po úspěchu přesměrovat. Viz `UserForm.vue` + `AdminUserCreateView.vue`.
 
@@ -86,5 +86,5 @@ Přidáváš/upravuješ formulář (vzor self-contained):
 - **Jedna chyba, jeden klíč.** Backend vrací první chybu, na kterou narazí — víc klíčů najednou nechodí. Nepiš frontend tak, že čeká kolekci chyb.
 
 ## Related
-- `/gk-commands` (value objects = zdroj validačních hlášek), `/gk-errors` (mapování chyb na 400/401/403), `/gk-entities` (kde validace v doméně žije)
+- `/gk-commands` (value objects = zdroj validačních hlášek), `/gk-errors` (mapování chyb na 400/401/403 + wire tvar ApiMessage), `/gk-entities` (kde validace v doméně žije), `/gk-i18n` (`tm()` a překladové katalogy)
 - Kód: `assets/app/Profile/Components/ChangePasswordForm.vue`, `assets/app/Admin/Components/UserForm.vue`, `assets/app/Admin/Views/AdminUserCreateView.vue` + `AdminUserEditView.vue`, `assets/app-ui/Inputs/Input.vue` + `Select.vue`, `assets/app-ui/Alerts/ErrorAlert.vue`, `assets/app-ui/Auth/authFetch.ts`, `app/presentation/http/response/response.go`
