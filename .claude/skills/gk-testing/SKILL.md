@@ -87,7 +87,7 @@ svůj produkční balíček (vypadá to jako cyklus), jsou v `.go-arch-lint.yml`
 `excludeFiles`.
 
 ### Quality gate
-`make test` = `yarn test` (vitest) + `go test ./app/... ./cmd/...` + `cd tools/gk && go test ./...` (dev nástroje tsgen/boundary/errfields/docpaths jsou vlastní modul, takže je `./app/...` nepokrývá).
+`make test` = `yarn test` (vitest, v CI job `lint + test + build`) + `go test ./app/... ./cmd/...` + `cd tools/gk && go test ./...` (dev nástroje tsgen/boundary/errfields/docpaths jsou vlastní modul, takže je `./app/...` nepokrývá).
 `make lint` = ESLint + `vue-tsc` (type-check) + `knip` (dead code) + `golangci-lint` + `make arch-check` (go-arch-lint) + `format-check` (golines) + `ts-check` (Go→TS parita typů) + `boundary-check` (wire DTO hranice) + `errfields-check` (parita chybových polí) + `i18n-check` (parita překladových katalogů a freshness generovaných artefaktů) + `docpaths-check` (každá cesta a `/gk-*` odkaz v docs/skills musí existovat) + `documan-lint`.
 CI (`.github/workflows/validate.yml`): job `validate` = `make install` → `make lint` → `make test` → `make build`, se `SKIP_DOCUMAN=1` (dokumentaci v CI validuje samostatný `.github/workflows/documan.yml` přes `docker/documan/Dockerfile`); paralelní job `e2e` spouští `make e2e` (durable-run process-lifecycle testy, viz `tests/e2e/README.md`).
 
