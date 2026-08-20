@@ -19,7 +19,6 @@ exclude:
   - internal/testfx/**
 
 excludeFiles:
-  - infrastructure/database/migration_manager.go
   # External `_test` package self-imports the production package for
   # NewSeeder / SeedAdminPassword — arch-lint flags this as a cycle.
   - infrastructure/sqlite/seeder/seeder_test.go
@@ -94,6 +93,11 @@ components:
     in: infrastructure/config/**
   database:
     in: infrastructure/database
+  # Root-level embedded data set — lives outside the app/ workdir, addressed
+  # via ../ so its consumer declares the dependency instead of being excluded
+  # from the linter.
+  migrations:
+    in: ../migrations
   security:
     in: infrastructure/security/**
   sqlite_base:
@@ -194,6 +198,7 @@ deps:
   database:
     mayDependOn:
       - config
+      - migrations
   security:
     mayDependOn:
       - config

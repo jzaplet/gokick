@@ -76,7 +76,8 @@ Hlavní body konfigurace:
 - `commonComponents: [domain_shared]` — všem je dostupné pouze `domain/shared/` (sdílené typy a porty); bounded kontexty (`domain_user`, `domain_token`, …) common **nejsou**
 - `deepScan: true` — analýza call-grafů zachytí i cross-layer wiring mimo importy
 - `exclude: [infrastructure/di/**, internal/testfx/**]` — DI balíček a test fixture (deepScan nemá per-komponentní vypnutí) bez omezení
-- `excludeFiles` — lifecycle soubor `infrastructure/database/migration_manager.go` + sada test souborů (black-box self-importy, `zz_*` konformní testy) mimo kontrolu
+- `excludeFiles` — sada test souborů (black-box self-importy, `zz_*` konformní testy) mimo kontrolu
+- Kořenové balíčky mimo `workdir` (`../migrations`) jsou vlastní komponentou, ne výjimkou — závislost se deklaruje, nezametá
 - Každá komponenta má `mayDependOn` seznam povolených závislostí
 
 ### Cross-domain izolace
