@@ -7,9 +7,11 @@ package request
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
+
+	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 )
 
 // MaxBodyBytes caps the request body at 1 MiB. JSON payloads in this app
@@ -18,18 +20,6 @@ import (
 // and burn memory.
 const MaxBodyBytes int64 = 1 << 20
 
-// DecodeError is a request-body decode failure carrying the HTTP status it maps
-// to. It satisfies response.HTTPError (HTTPStatus), so a handler hands it straight
-// to response.HandleError — no hardcoded status, and no risk of the untyped-error
-// → 500 funnel trap. 413 for an oversize body, 400 for every other decode failure.
-type DecodeError struct {
-	status int
-	msg    string
-}
-
-func (e *DecodeError) Error() string   { return e.msg }
-func (e *DecodeError) HTTPStatus() int { return e.status }
-
 // DecodeJSON enforces three guarantees that plain json.Decoder doesn't:
 //
 //  1. body size capped at MaxBodyBytes (http.MaxBytesReader)
@@ -37,8 +27,10 @@ func (e *DecodeError) HTTPStatus() int { return e.status }
 //     would otherwise silently no-op, plus reduces accidental over-posting)
 //  3. exactly one JSON value present (rejects payloads like `{}{}`)
 //
-// Every failure is a typed *DecodeError (an HTTPError) with the right status, so a
-// handler just calls response.HandleError without branching on encoding/json.
+// Every failure is a typed *shared.MessageError carrying its own HTTP status
+// (413 for an oversize body, 400 for every other decode failure) and a
+// translation key, so a handler just calls response.HandleError without
+// branching on encoding/json and the message renders in the request language.
 func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, MaxBodyBytes)
 
@@ -48,14 +40,20 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 	if err := dec.Decode(dst); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			return &DecodeError{
-				status: http.StatusRequestEntityTooLarge,
-				msg:    fmt.Sprintf("request body exceeds %d bytes", MaxBodyBytes),
+			return &shared.MessageError{
+				Key:    msgkey.RequestBodyTooLarge,
+				Params: map[string]any{"count": MaxBodyBytes},
+				Status: http.StatusRequestEntityTooLarge,
 			}
 		}
-		return &DecodeError{
-			status: http.StatusBadRequest,
-			msg:    fmt.Sprintf("invalid request body: %v", err),
+		// The decoder's prose (unknown field, type mismatch) rides along as the
+		// technical {detail} param — untranslated on purpose, it names Go types
+		// and JSON fields and exists for the developer reading the response,
+		// not for end users.
+		return &shared.MessageError{
+			Key:    msgkey.RequestBodyInvalid,
+			Params: map[string]any{"detail": err.Error()},
+			Status: http.StatusBadRequest,
 		}
 	}
 
@@ -69,9 +67,9 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 	return nil
 }
 
-func singleObjectError() *DecodeError {
-	return &DecodeError{
-		status: http.StatusBadRequest,
-		msg:    "request body must contain a single JSON object",
+func singleObjectError() *shared.MessageError {
+	return &shared.MessageError{
+		Key:    msgkey.RequestSingleJSONObjectRequired,
+		Status: http.StatusBadRequest,
 	}
 }

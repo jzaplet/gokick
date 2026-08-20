@@ -32,6 +32,7 @@ func issueSession(
 		Nickname: u.Nickname,
 		Email:    u.Email,
 		TenantID: u.TenantID,
+		Lang:     u.PreferredLang(),
 	})
 	if err != nil {
 		return IssuedSession{}, err

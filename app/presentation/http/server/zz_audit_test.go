@@ -24,11 +24,13 @@ func silentLogger() *slog.Logger {
 }
 
 // testResponder is a Responder over a discard logger for server route tests.
-func testResponder() *response.Responder { return response.NewResponder(silentLogger()) }
+func testResponder() *response.Responder {
+	return response.NewResponder(silentLogger())
+}
 
 // chainOnlyServer builds a Server populated with just the fields
-// buildMiddlewareChain touches (config, logger, ipExtract). The route/handler
-// fields stay nil — buildMiddlewareChain never dereferences them.
+// buildMiddlewareChain touches (config, logger, reporter, ipExtract). The
+// route/handler fields stay nil — buildMiddlewareChain never dereferences them.
 func chainOnlyServer(cookieSecure bool) *Server {
 	return &Server{
 		config: &config.Config{
@@ -159,8 +161,8 @@ func routingServer(t *testing.T) *Server {
 		resp:      testResponder(),
 		ipExtract: extract,
 		limiters: &RateLimiters{
-			Login:   middleware.NewRateLimiter(rule, extract, logger),
-			Refresh: middleware.NewRateLimiter(rule, extract, logger),
+			Login:   middleware.NewRateLimiter(rule, extract, logger, testResponder()),
+			Refresh: middleware.NewRateLimiter(rule, extract, logger, testResponder()),
 		},
 		health: handler.NewHealthHandler(testResponder()),
 		// fstest.MapFS has no index.html; NewSPAHandler falls back to a

@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { PlatformTenant } from '@/app/Platform/types/PlatformTenant';
+import { useI18n } from '@/app-ui/I18n';
+import type { TranslationKey } from '@/app-ui/I18n';
 import CheckBox from '@/app-ui/Inputs/CheckBox.vue';
 import Button from '@/app-ui/Buttons/Button.vue';
 import Tooltip from '@/app-ui/Tooltip/Tooltip.vue';
@@ -17,6 +19,8 @@ defineEmits<{
     delete: [tenant: PlatformTenant];
 }>();
 
+const { t } = useI18n();
+
 // Why this row cannot be deleted, or '' when it can. Doubles as the tooltip text
 // and the disabled test, so the button and its explanation can never disagree.
 //
@@ -25,14 +29,25 @@ defineEmits<{
 // exists to explain, not to protect.
 const blockedReason = (): string => {
     if (tenant.is_default === true) {
-        return 'The default tenant is part of the installation and cannot be deleted.';
+        return t('tenants.default_undeletable');
     }
     if (tenant.user_count > 0) {
-        return `This tenant still has ${String(tenant.user_count)} `
-            + `user${tenant.user_count === 1 ? '' : 's'}. Remove them first.`;
+        return t('tenants.has_users', { count: tenant.user_count });
     }
 
     return '';
+};
+
+// Display names for the wire plan values; an unknown plan (a tier newer than
+// this build) falls back to the raw value rather than rendering nothing.
+const planKeys: Record<string, TranslationKey> = {
+    free: 'plan.free',
+};
+
+const planLabel = (plan: string): string => {
+    const key = planKeys[plan];
+
+    return key === undefined ? plan : t(key);
 };
 </script>
 
@@ -49,7 +64,7 @@ const blockedReason = (): string => {
         >
             <CheckBox
                 :model-value="selected"
-                :sr-label="`Select ${tenant.name}`"
+                :sr-label="t('tenants.select', { name: tenant.name })"
                 @update:model-value="$emit('toggleSelect', tenant)"
             />
         </td>
@@ -66,7 +81,7 @@ const blockedReason = (): string => {
                         : 'bg-green-100 text-green-800',
                 ]"
             >
-                {{ tenant.plan }}
+                {{ planLabel(tenant.plan) }}
             </span>
         </td>
         <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-500">
@@ -84,7 +99,7 @@ const blockedReason = (): string => {
                     <Button
                         variant="danger"
                         size="xs"
-                        aria-label="Delete tenant"
+                        :aria-label="t('tenants.delete_title')"
                         :disabled="blockedReason() !== ''"
                         @click="$emit('delete', tenant)"
                     >

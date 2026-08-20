@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -12,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/presentation/http/response"
 )
 
@@ -116,12 +117,17 @@ type bucket struct {
 	updatedAt time.Time
 }
 
-func NewRateLimiter(rule RateRule, extract IPExtractor, logger *slog.Logger) *RateLimiter {
+func NewRateLimiter(
+	rule RateRule,
+	extract IPExtractor,
+	logger *slog.Logger,
+	resp *response.Responder,
+) *RateLimiter {
 	return &RateLimiter{
 		rule:         rule,
 		extract:      extract,
 		logger:       logger,
-		resp:         response.NewResponder(logger),
+		resp:         resp,
 		refillPerSec: float64(rule.Tokens) / rule.Per.Seconds(),
 		buckets:      map[string]*bucket{},
 	}
@@ -138,12 +144,10 @@ func (l *RateLimiter) Middleware() func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !l.allow(l.extract(r), time.Now()) {
 				w.Header().Set("Retry-After", strconv.Itoa(int(l.rule.Per.Seconds())))
-				l.resp.Error(
-					r.Context(),
-					w,
-					http.StatusTooManyRequests,
-					errors.New("too many requests"),
-				)
+				l.resp.HandleError(r.Context(), w, &shared.MessageError{
+					Key:    msgkey.CommonTooManyRequests,
+					Status: http.StatusTooManyRequests,
+				})
 				return
 			}
 			next.ServeHTTP(w, r)

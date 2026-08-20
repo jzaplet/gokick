@@ -5,6 +5,7 @@ import (
 
 	"gokick/app/application/userwrite"
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/domain/tenant"
 	"gokick/app/domain/user"
 )
@@ -71,8 +72,8 @@ func (h *CreatePlatformUserHandler) Handle(
 	// design. Mirrors the admin create and userwrite.Update's twin refusal.
 	if role.IsSuperAdmin() {
 		return &shared.ValidationError{
-			Field:   "role",
-			Message: "cannot assign the superadmin role",
+			Field: "role",
+			Key:   msgkey.UserSuperadminRoleUnassignable,
 		}
 	}
 
@@ -141,8 +142,8 @@ func (h *CreatePlatformUserHandler) resolveTenant(
 ) (string, error) {
 	if tenantID == "" {
 		return "", &shared.ValidationError{
-			Field:   "tenant_id",
-			Message: "tenant is required",
+			Field: "tenant_id",
+			Key:   msgkey.TenantRequired,
 		}
 	}
 
@@ -151,7 +152,7 @@ func (h *CreatePlatformUserHandler) resolveTenant(
 		return "", err
 	}
 	if t == nil {
-		return "", &shared.ValidationError{Field: "tenant_id", Message: "tenant not found"}
+		return "", &shared.ValidationError{Field: "tenant_id", Key: msgkey.TenantNotFound}
 	}
 
 	return tenantID, nil

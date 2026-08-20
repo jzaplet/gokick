@@ -33,9 +33,12 @@ func NewRepository(db *database.SqliteManager) *Repository {
 // so the durable-queue time discipline and fence contract cannot drift per-repo.
 
 func (r *Repository) Enqueue(ctx context.Context, rn *run.Run) error {
-	const q = `INSERT INTO runs (id, kind, tenant_id, payload, state, run_at, attempts, reclaims, parks, max_retries, locked_by, locked_until, last_error, failed_at, completed_at, cancel_requested, cancelled_at, created_at, updated_at)
-		VALUES (:id, :kind, :tenant_id, :payload, :state, :run_at, :attempts, :reclaims, :parks, :max_retries, :locked_by, :locked_until, :last_error, :failed_at, :completed_at, :cancel_requested, :cancelled_at, :created_at, :updated_at)`
+	const q = `INSERT INTO runs (id, kind, tenant_id, lang, payload, state, run_at, attempts, reclaims, parks, max_retries, locked_by, locked_until, last_error, failed_at, completed_at, cancel_requested, cancelled_at, created_at, updated_at)
+		VALUES (:id, :kind, :tenant_id, :lang, :payload, :state, :run_at, :attempts, :reclaims, :parks, :max_retries, :locked_by, :locked_until, :last_error, :failed_at, :completed_at, :cancel_requested, :cancelled_at, :created_at, :updated_at)`
 	row := *rn
+	// row.Lang is written as-is (possibly "" from a direct debug/fixture
+	// enqueue) — the worker's defensive ParseLang on read is the one guarantee
+	// that an unusable value falls back to the product default.
 	// Resolve the tenant fail-closed (RequireTenant): the dispatcher stamps it from
 	// ctx; an empty tenant (a non-bus direct Enqueue) becomes the default in
 	// single-tenant mode but an ERROR in multitenant mode — a run is never silently

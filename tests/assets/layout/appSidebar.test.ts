@@ -31,7 +31,7 @@ const makeRouter = (): Router => createRouter({
 });
 
 const seedUser = (role: Role, permissions: string[]): void => {
-    user.value = { id: 'u-1', nickname: 'alice', email: '', role, permissions };
+    user.value = { id: 'u-1', nickname: 'alice', email: '', role, permissions, lang: '' };
 };
 
 type SidebarWrapper = ReturnType<typeof mount<typeof AppSidebar>>;

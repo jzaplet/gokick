@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 )
 
 type HTTPError interface {
@@ -24,13 +25,43 @@ type FieldError interface {
 	ErrorField() string
 }
 
+// KeyedError is satisfied by errors that carry a translation key + params
+// instead of prose (ValidationError, AuthError, PermissionError,
+// MessageError). MessageKey() is deliberately separate from Error(): the wire
+// needs the BARE key the frontend looks up, while Error() is free to add the
+// params for operators. Anything that does not implement this interface never
+// reaches the wire as itself — Error() substitutes the generic internal-error
+// key rather than shipping prose in the key slot.
+type KeyedError interface {
+	error
+	MessageKey() msgkey.Key
+	MessageParams() map[string]any
+}
+
+// ApiMessage is the wire shape of one error message: a translation key into
+// the locale/ catalogs plus the params that fill its {placeholders} (a
+// "count" param additionally selects the CLDR plural form). The API never
+// ships prose — the FRONTEND renders the text in the user's language.
+//
+//gkts:assets/app-ui/Fetch/types/ApiMessage.ts ApiMessage noguard
+type ApiMessage struct {
+	Key    string         `json:"key"`
+	Params map[string]any `json:"params,omitempty"`
+}
+
 // Responder writes JSON HTTP responses through the injected logger, so a failed
 // response encode leaves a server-side signal instead of vanishing (F-067). It
 // holds no per-request state — one instance is shared by every handler and
-// middleware (injected via DI), the ctx is passed per call for trace correlation.
+// middleware (injected via DI); ctx carries the per-request bits (trace
+// correlation).
 type Responder struct {
 	logger *slog.Logger
 }
+
+// msgUnkeyedError is logged when a handler hands Error() something that is not
+// a KeyedError: the client gets the generic internal-error key, so the real
+// text must not vanish with it.
+const msgUnkeyedError = "response: unkeyed error replaced with the generic key"
 
 func NewResponder(logger *slog.Logger) *Responder {
 	return &Responder{logger: logger}
@@ -45,18 +76,35 @@ func (rp *Responder) JSON(ctx context.Context, w http.ResponseWriter, status int
 	}
 }
 
-// Error writes status + a {field|general: message} body derived from err.
+// Error writes status + a {field|general: {key, params}} body derived from
+// err. A KeyedError contributes its key + params; anything else contributes
+// the generic internal-error key and logs its real text server-side.
+//
+// The fallback is what keeps "the API ships keys, the frontend renders" true
+// for every caller, not just the disciplined ones: err.Error() in the key slot
+// would put an English sentence where the frontend expects a catalog key, so
+// tm() would report it as an unknown key and render the raw prose at a Czech
+// user. No linter can see what reaches this function, so the invariant has to
+// hold here.
 func (rp *Responder) Error(ctx context.Context, w http.ResponseWriter, status int, err error) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 
-	body := map[string]string{}
+	message := ApiMessage{Key: string(msgkey.CommonInternalError)}
+	var ke KeyedError
+	if errors.As(err, &ke) {
+		message = ApiMessage{Key: string(ke.MessageKey()), Params: ke.MessageParams()}
+	} else {
+		rp.logger.LogAttrs(ctx, slog.LevelWarn, msgUnkeyedError,
+			append(shared.LogAttrs(ctx), slog.Any(shared.LogKeyError, err))...)
+	}
 
+	body := map[string]ApiMessage{}
 	var fe FieldError
 	if errors.As(err, &fe) && fe.ErrorField() != "" {
-		body[fe.ErrorField()] = err.Error()
+		body[fe.ErrorField()] = message
 	} else {
-		body["general"] = err.Error()
+		body["general"] = message
 	}
 
 	rp.encode(ctx, w, body)
@@ -81,9 +129,13 @@ func (rp *Responder) encode(ctx context.Context, w http.ResponseWriter, v any) {
 }
 
 // errInternal is returned to the client on any non-HTTPError so we don't
-// leak raw repo errors, panic messages, or other internals. Operators can
-// correlate the real error via the trace_id surfaced in logs.
-var errInternal = errors.New("internal server error")
+// leak raw repo errors, panic messages, or other internals. Keyed so the 500
+// body renders like every other message; operators correlate the real
+// error via the trace_id surfaced in logs.
+var errInternal = &shared.MessageError{
+	Key:    msgkey.CommonInternalError,
+	Status: http.StatusInternalServerError,
+}
 
 // HandleError maps err to its HTTP status: an HTTPError uses its declared status,
 // anything else funnels to a generic 500 (no internal leak).

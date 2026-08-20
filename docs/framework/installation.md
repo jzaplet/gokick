@@ -58,7 +58,7 @@ Zapne **Actions write + create-PR permissions** (bez nich release-please neotev�
 | `make build` | Wire DI → Vite build → Go build → `bin/app` |
 | `make serve` | Spustí `bin/app serve` |
 | `make test` | Vitest (frontend) + go test (app/ + cmd/) |
-| `make lint` | ESLint + vue-tsc + knip + golangci-lint + go-arch-lint + golines format-check + ts-check + documan-lint |
+| `make lint` | ESLint + vue-tsc + knip + golangci-lint + go-arch-lint + golines format-check + ts-check + boundary-check + errfields-check + i18n-check + docpaths-check + documan-lint |
 | `make format` | ESLint Stylistic fix + golines + documan-fix |
 
 ### Vývoj

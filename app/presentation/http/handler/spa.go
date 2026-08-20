@@ -1,13 +1,15 @@
 package handler
 
 import (
-	"errors"
 	"html"
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 
+	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/presentation/http/response"
 )
 
@@ -32,9 +34,12 @@ type SPAConfig struct {
 }
 
 type SPAHandler struct {
-	resp  *response.Responder
-	fs    http.Handler
-	index []byte
+	resp *response.Responder
+	fs   http.Handler
+	// index holds the served shell per language — same bytes except the
+	// <html lang> attribute, so the SPA bootstraps its locale without a
+	// flash of the wrong language.
+	index map[shared.Lang][]byte
 }
 
 func NewSPAHandler(
@@ -45,13 +50,15 @@ func NewSPAHandler(
 ) *SPAHandler {
 	index, err := fs.ReadFile(publicFS, "index.html")
 	if err != nil {
-		// Not-built fallback: no <head>, no runtime config to inject.
+		// Not-built fallback: no <head>, no runtime config to inject. Dev-only
+		// operator text — deliberately not localized.
+		fallback := []byte(
+			"<!doctype html><html><body>Frontend not built. Run: yarn build</body></html>",
+		)
 		return &SPAHandler{
-			resp: resp,
-			fs:   http.FileServerFS(publicFS),
-			index: []byte(
-				"<!doctype html><html><body>Frontend not built. Run: yarn build</body></html>",
-			),
+			resp:  resp,
+			fs:    http.FileServerFS(publicFS),
+			index: map[shared.Lang][]byte{shared.DefaultLang: fallback},
 		}
 	}
 
@@ -67,11 +74,43 @@ func NewSPAHandler(
 		injected = index
 	}
 
+	variants, ok := shellVariants(injected)
+	if !ok {
+		// No <html lang> anchor — serve the template as-is for every language
+		// rather than failing; the SPA then falls back to its own detection.
+		logger.Warn("spa: index.html has no <html lang> attribute; " +
+			"serving a single-language shell")
+	}
+
 	return &SPAHandler{
 		resp:  resp,
 		fs:    http.FileServerFS(publicFS),
-		index: injected,
+		index: variants,
 	}
+}
+
+// htmlLangRe matches the lang attribute inside the first <html …> tag; the
+// value is rewritten per language at construction time.
+var htmlLangRe = regexp.MustCompile(`(?i)(<html\b[^>]*\blang=")[^"]*(")`)
+
+// shellVariants pre-renders one shell per supported language by rewriting the
+// <html lang> attribute. ok=false means the template exposes no lang anchor
+// and every language maps to the unmodified bytes.
+func shellVariants(index []byte) (map[shared.Lang][]byte, bool) {
+	loc := htmlLangRe.FindSubmatchIndex(index)
+	variants := make(map[shared.Lang][]byte, len(shared.SupportedLangs()))
+	for _, lang := range shared.SupportedLangs() {
+		if loc == nil {
+			variants[lang] = index
+			continue
+		}
+		variant := make([]byte, 0, len(index))
+		variant = append(variant, index[:loc[3]]...)
+		variant = append(variant, lang...)
+		variant = append(variant, index[loc[4]:]...)
+		variants[lang] = variant
+	}
+	return variants, loc != nil
 }
 
 // injectRuntimeConfig writes the frontend config into index.html as <meta> tags
@@ -193,13 +232,48 @@ func (h *SPAHandler) Serve(w http.ResponseWriter, r *http.Request) {
 	// mistyped API call should get a JSON 404, not a 200 text/html page it can't
 	// parse (which masks the real error as a confusing "unexpected token <").
 	if strings.HasPrefix(path, "/api/") {
-		h.resp.Error(r.Context(), w, http.StatusNotFound, errors.New("not found"))
+		h.resp.HandleError(r.Context(), w,
+			&shared.MessageError{Key: msgkey.CommonNotFound, Status: http.StatusNotFound})
 		return
 	}
 
-	// SPA fallback — serve index.html for all other routes
+	// SPA fallback — serve index.html for all other routes. The shell varies
+	// per request on more than Accept-Language (the gk_lang cookie and the
+	// X-App-Lang header pick the variant too), and cookie/header variance is
+	// invisible to shared caches even with a Vary header — so the shell must
+	// not be cached at all. Hashed static assets above stay cacheable; only
+	// the HTML shell is no-store.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Add("Vary", "Accept-Language")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	//gkts:ignore static SPA shell — embedded index.html bytes, not a JSON payload
-	_, _ = w.Write(h.index)
+	_, _ = w.Write(h.shellFor(r))
+}
+
+// shellFor picks the shell variant: an explicit /cs|/en path prefix wins (a
+// deep link into a language), otherwise the ctx language — LangMiddleware
+// already resolved the full ladder (X-App-Lang → gk_lang cookie →
+// Accept-Language → en) for every request, this handler included.
+func (h *SPAHandler) shellFor(r *http.Request) []byte {
+	lang := shared.LangFromContext(r.Context())
+	if parsed, valid := shared.ParseLang(firstPathSegment(r.URL.Path)); valid {
+		lang = parsed
+	}
+	if shell, ok := h.index[lang]; ok {
+		return shell
+	}
+
+	return h.index[shared.DefaultLang]
+}
+
+// firstPathSegment returns the first path segment ("" for the root path) —
+// the caller's ParseLang rejects "" along with everything else unsupported.
+func firstPathSegment(path string) string {
+	trimmed := strings.TrimPrefix(path, "/")
+	if i := strings.IndexByte(trimmed, '/'); i >= 0 {
+		trimmed = trimmed[:i]
+	}
+
+	return trimmed
 }

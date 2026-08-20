@@ -32,10 +32,10 @@ export const fieldLabelClass = (size: FieldSize | undefined): string =>
 // Border state: error wins, then the active (non-empty filter) orange, then
 // the neutral gray with hover.
 export const fieldBorderClass = (
-    error: string | undefined,
+    error: string | null | undefined,
     active: boolean | undefined,
 ): string => {
-    if (error !== undefined && error !== '') {
+    if (error !== undefined && error !== null && error !== '') {
         return 'border-red-300 focus:ring-red-500';
     }
     if (active === true) {

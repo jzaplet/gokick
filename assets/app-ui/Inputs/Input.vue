@@ -10,7 +10,9 @@ type Props = {
     type?: string;
     placeholder?: string;
     label?: string;
-    error?: string | undefined;
+    // null and undefined both mean "no error" — null so tm(errors.x) binds
+    // directly (it returns string | null).
+    error?: string | null;
     required?: boolean;
     disabled?: boolean;
     name?: string;

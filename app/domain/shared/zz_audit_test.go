@@ -1,6 +1,8 @@
 package shared
 
 import (
+	"gokick/app/domain/shared/msgkey"
+
 	"context"
 	"errors"
 	"testing"
@@ -14,10 +16,10 @@ import (
 func TestValidationError_Methods(t *testing.T) {
 	t.Parallel()
 
-	ve := &ValidationError{Field: "nickname", Message: "nickname is required"}
+	ve := &ValidationError{Field: "nickname", Key: msgkey.UserNicknameRequired}
 
-	if got := ve.Error(); got != "nickname is required" {
-		t.Errorf("Error() = %q, want %q", got, "nickname is required")
+	if got := ve.Error(); got != string(msgkey.UserNicknameRequired) {
+		t.Errorf("Error() = %q, want the raw key %q", got, msgkey.UserNicknameRequired)
 	}
 	if got := ve.HTTPStatus(); got != 400 {
 		t.Errorf("HTTPStatus() = %d, want 400", got)
@@ -35,7 +37,7 @@ func TestValidationError_Methods(t *testing.T) {
 func TestValidationError_SatisfiesErrorAndHTTPStatusContracts(t *testing.T) {
 	t.Parallel()
 
-	var err error = &ValidationError{Field: "f", Message: "boom"}
+	var err error = &ValidationError{Field: "f", Key: "boom"}
 
 	var ve *ValidationError
 	if !errors.As(err, &ve) {
@@ -59,10 +61,10 @@ func TestValidationError_SatisfiesErrorAndHTTPStatusContracts(t *testing.T) {
 func TestPermissionError_Methods(t *testing.T) {
 	t.Parallel()
 
-	pe := &PermissionError{Message: "forbidden"}
+	pe := &PermissionError{Key: msgkey.PermissionDenied}
 
-	if got := pe.Error(); got != "forbidden" {
-		t.Errorf("Error() = %q, want %q", got, "forbidden")
+	if got := pe.Error(); got != string(msgkey.PermissionDenied) {
+		t.Errorf("Error() = %q, want the raw key %q", got, msgkey.PermissionDenied)
 	}
 	if got := pe.HTTPStatus(); got != 403 {
 		t.Errorf("HTTPStatus() = %d, want 403", got)
@@ -76,7 +78,7 @@ func TestPermissionError_Methods(t *testing.T) {
 func TestPermissionError_SatisfiesErrorAndHTTPStatusContracts(t *testing.T) {
 	t.Parallel()
 
-	var err error = &PermissionError{Message: "nope"}
+	var err error = &PermissionError{Key: "nope"}
 
 	var pe *PermissionError
 	if !errors.As(err, &pe) {
@@ -172,5 +174,56 @@ func TestEventCollectorFromContext_ReturnsInstalledCollector(t *testing.T) {
 		t.Fatal(
 			"inside the bus, EventCollectorFromContext must return the installed collector, not a throwaway",
 		)
+	}
+}
+
+// TestKeyedError_WireKeyVsOperatorText pins the two-audience split: MessageKey()
+// is what goes on the wire (a bare catalog key the frontend looks up), Error()
+// is what an operator reads in the CLI and the log — and there the params are
+// half the message, since "user.password_too_short" alone does not say what the
+// limit is.
+func TestKeyedError_WireKeyVsOperatorText(t *testing.T) {
+	t.Parallel()
+
+	ve := &ValidationError{
+		Field:  "password",
+		Key:    msgkey.UserPasswordTooShort,
+		Params: map[string]any{"count": 8},
+	}
+
+	if got := ve.MessageKey(); got != msgkey.UserPasswordTooShort {
+		t.Errorf("MessageKey() = %q, want the bare key %q", got, msgkey.UserPasswordTooShort)
+	}
+	if want := "user.password_too_short {count:8}"; ve.Error() != want {
+		t.Errorf("Error() = %q, want %q", ve.Error(), want)
+	}
+	// Params are rendered in sorted order so the text is stable run to run.
+	multi := &MessageError{
+		Key:    msgkey.CommonInternalError,
+		Params: map[string]any{"b": 2, "a": 1},
+		Status: 500,
+	}
+	if want := "common.internal_error {a:1 b:2}"; multi.Error() != want {
+		t.Errorf("Error() = %q, want %q", multi.Error(), want)
+	}
+}
+
+// TestMessageError_ZeroStatusFloorsAt500 pins the floor its three siblings get
+// for free by hardcoding their status. A zero Status would otherwise reach
+// w.WriteHeader(0), which panics inside net/http BEFORE the header is written —
+// the recovery middleware's recorder has already flagged the response as
+// started, so it skips its clean 500 and the client receives a silent 200 with
+// an empty body.
+func TestMessageError_ZeroStatusFloorsAt500(t *testing.T) {
+	t.Parallel()
+
+	forgotten := &MessageError{Key: msgkey.CommonNotFound}
+	if got := forgotten.HTTPStatus(); got != 500 {
+		t.Errorf("HTTPStatus() = %d, want 500 for a forgotten Status", got)
+	}
+
+	explicit := &MessageError{Key: msgkey.CommonNotFound, Status: 404}
+	if got := explicit.HTTPStatus(); got != 404 {
+		t.Errorf("HTTPStatus() = %d, want the explicit 404", got)
 	}
 }

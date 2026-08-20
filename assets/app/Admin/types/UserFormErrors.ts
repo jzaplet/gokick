@@ -1,7 +1,9 @@
+import type { ApiMessage } from '@/app-ui/Fetch/types/ApiMessage';
+
 export type UserFormErrors = {
-    general?: string;
-    nickname?: string;
-    password?: string;
-    email?: string;
-    role?: string;
+    general?: ApiMessage;
+    nickname?: ApiMessage;
+    password?: ApiMessage;
+    email?: ApiMessage;
+    role?: ApiMessage;
 };

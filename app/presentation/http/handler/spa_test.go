@@ -10,6 +10,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"gokick/app/domain/shared"
 	"gokick/app/presentation/http/response"
 )
 
@@ -18,8 +19,11 @@ import (
 func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 
 // testResponder is a Responder over a discard logger for handler tests that
-// don't assert on the (rare) encode-failure log line.
-func testResponder() *response.Responder { return response.NewResponder(discardLogger()) }
+// don't assert on the (rare) encode-failure log line. The Responder emits
+// translation keys, so assertions read the wire body as-is.
+func testResponder() *response.Responder {
+	return response.NewResponder(discardLogger())
+}
 
 // injectRuntimeConfig must tolerate the realistic ways a template's <head> can
 // be written — attributes, casing, whitespace — so a routine index.html edit in
@@ -173,5 +177,156 @@ func TestNewSPAHandler_WarnsButServesWhenNoHead(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "gokick:sentry-dsn") {
 		t.Fatal("a no-head document must NOT have meta injected")
+	}
+}
+
+// The per-language shell is the only response whose BYTES vary per request, so
+// it needs the same pinning injectRuntimeConfig got. shellVariants rewrites the
+// <html lang> value in place: the rest of the tag (other attributes, the rest
+// of the document) must survive byte for byte, or an off-by-one in the submatch
+// offsets would silently corrupt every shell.
+func TestShellVariants(t *testing.T) {
+	t.Parallel()
+	index := []byte(
+		`<!doctype html><html lang="en" data-x="1"><head></head><body>app</body></html>`,
+	)
+
+	variants, ok := shellVariants(index)
+	if !ok {
+		t.Fatal("a document with <html lang> must report ok=true")
+	}
+	for _, lang := range shared.SupportedLangs() {
+		shell, present := variants[lang]
+		if !present {
+			t.Fatalf("no shell for %q", lang)
+		}
+		want := `<html lang="` + string(lang) + `" data-x="1">`
+		if !bytes.Contains(shell, []byte(want)) {
+			t.Errorf("shell %q missing %q, got: %s", lang, want, shell)
+		}
+		// Only the attribute value may change — everything around it is
+		// untouched bytes.
+		if !bytes.HasPrefix(shell, []byte("<!doctype html>")) ||
+			!bytes.HasSuffix(shell, []byte("<head></head><body>app</body></html>")) {
+			t.Errorf("shell %q rewrote more than the lang value: %s", lang, shell)
+		}
+		if len(shell) != len(index) {
+			t.Errorf("shell %q length %d, want %d — the rewrite is not in place",
+				lang, len(shell), len(index))
+		}
+	}
+}
+
+// No <html lang> anchor: every language maps to the unmodified bytes and the
+// caller is told, so it can warn rather than serve a silently wrong shell.
+func TestShellVariants_NoLangAnchor(t *testing.T) {
+	t.Parallel()
+	index := []byte("<html><head></head><body>app</body></html>")
+
+	variants, ok := shellVariants(index)
+	if ok {
+		t.Fatal("a document without <html lang> must report ok=false")
+	}
+	for _, lang := range shared.SupportedLangs() {
+		if !bytes.Equal(variants[lang], index) {
+			t.Errorf("shell %q must be the untouched template, got: %s", lang, variants[lang])
+		}
+	}
+}
+
+// A real index.html with no <html lang> must WARN yet still serve — the same
+// degrade-don't-crash contract the missing-<head> branch has.
+func TestNewSPAHandler_WarnsButServesWhenNoHTMLLang(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	fsys := fstest.MapFS{
+		"index.html": &fstest.MapFile{Data: []byte("<html><head></head><body>app</body></html>")},
+	}
+
+	h := NewSPAHandler(testResponder(), slog.New(slog.NewTextHandler(&buf, nil)), fsys, SPAConfig{})
+
+	rec := httptest.NewRecorder()
+	h.Serve(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	if !strings.Contains(buf.String(), "no <html lang>") {
+		t.Fatalf("must warn about the missing <html lang>, got log: %q", buf.String())
+	}
+	if !strings.Contains(rec.Body.String(), "app") {
+		t.Fatalf("must still serve the page (degraded), got: %q", rec.Body.String())
+	}
+}
+
+func TestFirstPathSegment(t *testing.T) {
+	t.Parallel()
+	tests := []struct{ path, want string }{
+		{"/", ""},
+		{"", ""},
+		{"/cs", "cs"},
+		{"/cs/", "cs"},
+		{"/cs/admin/users", "cs"},
+		{"/admin/users", "admin"},
+	}
+	for _, tt := range tests {
+		if got := firstPathSegment(tt.path); got != tt.want {
+			t.Errorf("firstPathSegment(%q) = %q, want %q", tt.path, got, tt.want)
+		}
+	}
+}
+
+// shellFor's precedence, pinned in the direction that matters: a /<lang> deep
+// link OUTRANKS the ctx language, because the prefix is the canonical carrier
+// of the language in a URL somebody shared or bookmarked.
+func TestShellFor_PathPrefixBeatsContextLang(t *testing.T) {
+	t.Parallel()
+	fsys := fstest.MapFS{
+		"index.html": &fstest.MapFile{
+			Data: []byte(`<html lang="en"><head></head><body>app</body></html>`),
+		},
+	}
+	h := NewSPAHandler(testResponder(), discardLogger(), fsys, SPAConfig{})
+
+	tests := []struct {
+		name    string
+		path    string
+		ctxLang shared.Lang
+		want    string
+	}{
+		{name: "prefix wins over ctx", path: "/cs/admin", ctxLang: "en", want: `lang="cs"`},
+		{name: "prefix wins the other way", path: "/en/admin", ctxLang: "cs", want: `lang="en"`},
+		{name: "no prefix falls back to ctx", path: "/admin", ctxLang: "cs", want: `lang="cs"`},
+		{name: "root falls back to ctx", path: "/", ctxLang: "cs", want: `lang="cs"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			req = req.WithContext(shared.WithLang(req.Context(), tt.ctxLang))
+			if got := string(h.shellFor(req)); !strings.Contains(got, tt.want) {
+				t.Errorf("shellFor(%q, ctx=%q) missing %q, got: %s",
+					tt.path, tt.ctxLang, tt.want, got)
+			}
+		})
+	}
+}
+
+// The SPA shell must never be cached: the variant depends on a cookie and a
+// header, and that variance is invisible to shared caches.
+func TestSPAHandler_ShellIsNotCacheable(t *testing.T) {
+	t.Parallel()
+	fsys := fstest.MapFS{
+		"index.html": &fstest.MapFile{
+			Data: []byte(`<html lang="en"><head></head><body>app</body></html>`),
+		},
+	}
+	h := NewSPAHandler(testResponder(), discardLogger(), fsys, SPAConfig{})
+
+	rec := httptest.NewRecorder()
+	h.Serve(rec, httptest.NewRequest(http.MethodGet, "/admin", nil))
+
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", got)
+	}
+	if got := rec.Header().Get("Vary"); !strings.Contains(got, "Accept-Language") {
+		t.Errorf("Vary = %q, want it to include Accept-Language", got)
 	}
 }

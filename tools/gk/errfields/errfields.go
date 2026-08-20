@@ -279,12 +279,20 @@ func isValidationError(t ast.Expr) bool {
 }
 
 // errorsKeyRe matches one optional key line of an *Errors type, e.g.
-// "    nickname?: string;". The FE convention (gk-frontend-forms) is exactly
-// this shape; anything else in an *Errors file is a parse error on purpose.
-var errorsKeyRe = regexp.MustCompile(`^\s{4}([A-Za-z_][A-Za-z0-9_]*)\?: string;$`)
+// "    nickname?: ApiMessage;". The FE convention (gk-frontend-forms) is
+// exactly this shape — error values are keyed ApiMessage objects rendered by
+// tm(); anything else in an *Errors file is a parse error on purpose.
+var errorsKeyRe = regexp.MustCompile(`^\s{4}([A-Za-z_][A-Za-z0-9_]*)\?: ApiMessage;$`)
 
-// structuralRe matches the non-key lines an *Errors file may contain.
-var structuralRe = regexp.MustCompile(`^(//.*|export type \w+Errors = \{|\};|)$`)
+// structuralRe matches the non-key lines an *Errors file may contain: a
+// comment, ANY type-only import, the type header, the closing brace, a blank
+// line. The import is matched by shape, not by path — the ApiMessage location
+// is owned by the //gkts: directive in app/presentation/http/response, and
+// pinning it here byte-exact would fail the gate on a move with an error
+// naming neither the cause nor the file to change.
+var structuralRe = regexp.MustCompile(
+	`^(//.*|import type \{[^{}]*\} from '[^']*';|export type \w+Errors = \{|\};|)$`,
+)
 
 // strayErrorsRe finds an *Errors type declared outside a *Errors.ts file —
 // line-anchored so `import { type XxxErrors }` lines don't match.
@@ -314,7 +322,7 @@ func collectFeKeys(dir string) (map[string]string, error) {
 			}
 			if !structuralRe.MatchString(strings.TrimRight(line, "\r")) {
 				return fmt.Errorf(
-					"%s:%d: unexpected line in an *Errors type (want `key?: string;` "+
+					"%s:%d: unexpected line in an *Errors type (want `key?: ApiMessage;` "+
 						"per gk-frontend-forms): %q", path, i+1, line)
 			}
 		}

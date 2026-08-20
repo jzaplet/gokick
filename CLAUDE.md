@@ -40,7 +40,7 @@ Migrations live in `migrations/` (Goose SQL format, embedded into binary). Migra
 
 ```bash
 make test                                        # vitest + go test (app/ + cmd/ + tools/gk)
-make lint                                        # ESLint + vue-tsc + knip + golangci-lint + go-arch-lint + golines format-check + ts-check + boundary-check + errfields-check + docpaths-check + documan-lint
+make lint                                        # ESLint + vue-tsc + knip + golangci-lint + go-arch-lint + golines format-check + ts-check + boundary-check + errfields-check + i18n-check + docpaths-check + documan-lint
 make format                                      # ESLint Stylistic fix + golines + documan-fix
 go test ./app/infrastructure/security/ -run TestHash  # Single Go test
 ```
@@ -87,7 +87,7 @@ Bounded contexts in separate packages. **Never import between contexts** (e.g. `
 
 | Package | Contains |
 |---------|----------|
-| `domain/shared/` | `AuthClaims` (incl. `TenantID`), `ValidationError`, `AuthError`, `PermissionError`, `DomainEvent`, `EventCollector`, `AuditCollector` + `AuditEvent` / `AuditRecord`, `PermissionsRegistry`, `DefaultTenantID`, interfaces (`PasswordHasher`, `PermissionChecker`, `TokenService`, `TenantResolver`, `Transactor`, `Seeder`, `AuditLogger`, `RunDispatcher`) |
+| `domain/shared/` | `AuthClaims` (incl. `TenantID`), `ValidationError`, `AuthError`, `PermissionError`, `MessageError`, `Lang` (+ `WithLang`/`LangFromContext`, `LangHeaderName`/`LangCookieName`), `msgkey/` (generated translation-key constants), `DomainEvent`, `EventCollector`, `AuditCollector` + `AuditEvent` / `AuditRecord`, `PermissionsRegistry`, `DefaultTenantID`, interfaces (`PasswordHasher`, `PermissionChecker`, `TokenService`, `TenantResolver`, `Transactor`, `Seeder`, `AuditLogger`, `RunDispatcher`) |
 | `domain/user/` | `User` entity, `Nickname`/`Role` (admin/user/**superadmin**) value objects, `Repository` interface, `PlatformRow` read model, `UserCreated` event |
 | `domain/token/` | `RefreshToken` entity, `Repository` interface |
 | `domain/run/` | `Run` entity, `Repository` interface — the durable background-task primitive (runs OUTSIDE a tx; optional checkpoint, lease + heartbeat, owner-token fencing, cancel, per-attempt timeout) |
@@ -200,8 +200,8 @@ wire.Bind(new(shared.Seeder), new(*sqliteseeder.Seeder))
 | Package | Purpose |
 |---------|---------|
 | `http/handler/` | HTTP handlers — decode JSON, dispatch via bus, return response |
-| `http/middleware/` | Trace ID, IP, ReportScope, Recovery, Security headers, CORS, Logging, JWT Auth, Rate limit — CSRF (stdlib Go 1.25 `http.CrossOriginProtection`) is assembled in `http/server/`; permission checks live in the bus `AuthorizeMiddleware` |
-| `http/response/` | injected `*Responder` — `JSON(ctx, w, …)`, `Error(ctx, w, …)`, `HandleError(ctx, w, err)` methods; maps domain errors to HTTP status (encode failures logged, not swallowed) |
+| `http/middleware/` | Trace ID, IP, Lang (request-language resolution into ctx — serves the SPA shell `<html lang>` and `runs.lang`, not API bodies: the API ships keys and the panic 500 body is a static `{"general":{"key":"common.internal_error"}}`), ReportScope, Recovery, Security headers, CORS, Logging, JWT Auth, Rate limit — CSRF (stdlib Go 1.25 `http.CrossOriginProtection`) is assembled in `http/server/`; permission checks live in the bus `AuthorizeMiddleware` |
+| `http/response/` | injected `*Responder` — `JSON(ctx, w, …)`, `Error(ctx, w, …)`, `HandleError(ctx, w, err)` methods; maps domain errors to HTTP status and writes `{field\|general: ApiMessage}` bodies (`{key, params}` — the API ships translation keys, the frontend renders the text; encode failures logged, not swallowed) |
 | `http/server/` | `http.ServeMux` routing, middleware chain assembly |
 | `console/` | Cobra CLI commands (`serve`, `worker`, `seed`, `create-user`, `create-superadmin`, `create-tenant`) — `serve` co-runs the in-process scheduler + worker alongside the HTTP server, sharing one ctx so SIGTERM drains all. The create/seed commands dispatch through the **`SystemCommandBus`** (operator-trusted: no Authorize/Tenant, but transaction + audit + panic→Sentry); with multitenancy on, `create-user` requires a tenant (`--tenant-id` / `--tenant-name`) |
 
@@ -210,6 +210,8 @@ wire.Bind(new(shared.Seeder), new(*sqliteseeder.Seeder))
 - `*shared.AuthError` → 401 (not authenticated)
 - `*shared.PermissionError` → 403 (authenticated but not permitted)
 - Other errors → 500
+
+Bodies never carry prose: each message is a `response.ApiMessage` — `{"key": "<catalog.key>", "params": {...}?}` (params lowercase; `count` drives CLDR plural selection) — and the frontend renders the text via `tm()` in the active UI language (single catalog `locale/messages.<lang>.json`, `make i18n-gen`; see `/gk-i18n`).
 
 ### Frontend (`assets/`)
 
@@ -270,9 +272,9 @@ wire.Bind(new(shared.Seeder), new(*sqliteseeder.Seeder))
 
 **Forms, requests & errors:**
 - `reactive` for form data, `ref<T>({})` for errors, `ref<boolean>` for `isLoading`.
-- Errors type: all fields optional (`?:`). Key absent = no error.
+- Errors type: all fields optional (`?:`), values are `ApiMessage` (`{key, params}` — rendered with `tm()` at display time). Key absent = no error.
   ```typescript
-  type LoginErrors = { general?: string; nickname?: string; password?: string };
+  type LoginErrors = { general?: ApiMessage; nickname?: ApiMessage; password?: ApiMessage };
   const errors = ref<LoginErrors>({});
   ```
 - Clear field error on edit:
@@ -287,11 +289,11 @@ wire.Bind(new(shared.Seeder), new(*sqliteseeder.Seeder))
   - **Public endpoints** → `apiFetch<Data, Errors, Body>` from `@/app-ui/Fetch`.
   - **Body requires its generic.** `FetchOptions<TBody = never>` — passing `body` without declaring the third generic does not compile. Declare it with the tsgen-generated request type (`UserFormData`, `LoginRequest`, …); ESLint additionally requires explicit generics on every `authFetch`/`apiFetch` call and forbids inline `body` literals (pass a typed variable). GET/DELETE calls without a body stay two-generic.
   - **Data endpoints require `validate`.** When `Data ≠ null`, options must carry `validate:` — the tsgen-generated guard (`isAdminUser`, `arrayOf(isAdminUser)`, `isLoginResponse`, …) — or the call does not compile; the 2xx body is then checked against the generated contract at runtime. A contract-violating body becomes a `{ general }` failure and reports to Sentry. 204 endpoints (`Data = null`) take no guard.
-  - **Failures always merge.** A failure `data` is `TErrors | { general: string }`: the API error body when one arrived, or the synthesized `{ general: … }` for network errors / malformed bodies / contract violations (same `general` key the backend uses for non-field errors). Every `*Errors` type has `general?: string`, so `errors.value = result.data;` stays the one-line merge — no narrowing.
-- **Backend error response shape** (via `Responder.Error()` + `FieldError` interface):
-  - `ValidationError{Field: "nickname"}` → `{ "nickname": "..." }` — routed to specific field.
-  - Any other error → `{ "general": "..." }`.
-- **Frontend error handling:** one-line merge.
+  - **Failures always merge.** A failure `data` is `TErrors | { general: ApiMessage }`: the API error body when one arrived (values are `ApiMessage`, not sentences), or the synthesized `{ general: ApiMessage }` with a `fetch.*` key (`{key: 'fetch.network_error'}`, `fetch.malformed_body`, `fetch.invalid_shape`, `fetch.error_status`) for network errors / malformed bodies / contract violations (same `general` key the backend uses for non-field errors). Every `*Errors` type has `general?: ApiMessage`, so `errors.value = result.data;` stays the one-line merge — no narrowing; display goes through `tm()`.
+- **Backend error response shape** (via `Responder.Error()` + `FieldError` interface; values are `ApiMessage` — `{key, params}`, never prose):
+  - `ValidationError{Field: "nickname"}` → `{ "nickname": { "key": "...", "params": {...} } }` — routed to specific field.
+  - Any other error → `{ "general": { "key": "..." } }`.
+- **Frontend error handling:** one-line merge; render each `ApiMessage` with `tm()` at display time (unknown key → raw-key fallback + Sentry report).
   ```typescript
   const result = await login<LoginErrors>(form);
   if (result.success === false) {

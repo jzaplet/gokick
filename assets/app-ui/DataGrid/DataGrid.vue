@@ -3,6 +3,7 @@ import type { GridColumn, GridSort } from '@/app-ui/DataGrid/createGridState';
 import ScrollShadow from '@/app-ui/ScrollShadow/ScrollShadow.vue';
 import Spinner from '@/app-ui/Loading/Spinner.vue';
 import CheckBox from '@/app-ui/Inputs/CheckBox.vue';
+import { useI18n } from '@/app-ui/I18n';
 
 // The presentational half of the grid: header with sort affordances, loading
 // row and horizontal-scroll shadows. Rows are the CONSUMER's — the #rows slot
@@ -25,6 +26,8 @@ const emit = defineEmits<{
     togglePage: [];
 }>();
 
+const { t } = useI18n();
+
 const handleHeaderClick = (column: GridColumn): void => {
     if (column.sortable === true) {
         emit('sort', column.key);
@@ -43,7 +46,7 @@ const handleHeaderClick = (column: GridColumn): void => {
                     >
                         <CheckBox
                             :model-value="allSelected"
-                            sr-label="Select page"
+                            :sr-label="t('grid.select_page')"
                             @update:model-value="emit('togglePage')"
                         />
                     </th>

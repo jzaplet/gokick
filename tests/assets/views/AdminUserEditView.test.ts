@@ -164,7 +164,7 @@ describe('AdminUserEditView role-change reload (roadmap-96)', () => {
 
     it('editing OWN account and CHANGING role forces a full-page reload to /admin/users', async (): Promise<void> => {
         // Current user is the one being edited.
-        user.value = { id: TARGET_ID, nickname: 'alice', email: '', role: 'user', permissions: [] };
+        user.value = { id: TARGET_ID, nickname: 'alice', email: '', role: 'user', permissions: [], lang: '' };
 
         const router = makeRouter(TARGET_ID);
         const pushSpy = await submitForm(router, {
@@ -181,7 +181,7 @@ describe('AdminUserEditView role-change reload (roadmap-96)', () => {
     });
 
     it('editing OWN account WITHOUT changing role uses router.push, no reload', async (): Promise<void> => {
-        user.value = { id: TARGET_ID, nickname: 'alice', email: '', role: 'user', permissions: [] };
+        user.value = { id: TARGET_ID, nickname: 'alice', email: '', role: 'user', permissions: [], lang: '' };
 
         const router = makeRouter(TARGET_ID);
         const pushSpy = await submitForm(router, {
@@ -197,7 +197,7 @@ describe('AdminUserEditView role-change reload (roadmap-96)', () => {
 
     it('editing a DIFFERENT user and changing their role uses router.push, no reload', async (): Promise<void> => {
         // Logged in as TARGET_ID, but editing OTHER_ID — not self.
-        user.value = { id: TARGET_ID, nickname: 'alice', email: '', role: 'admin', permissions: [] };
+        user.value = { id: TARGET_ID, nickname: 'alice', email: '', role: 'admin', permissions: [], lang: '' };
 
         const router = makeRouter(OTHER_ID);
         const pushSpy = await submitForm(router, {
@@ -213,7 +213,7 @@ describe('AdminUserEditView role-change reload (roadmap-96)', () => {
 
     it('does NOT reload when the PUT fails (errors surface, no navigation)', async (): Promise<void> => {
         // Self + role change, but the server rejects the update.
-        user.value = { id: TARGET_ID, nickname: 'alice', email: '', role: 'user', permissions: [] };
+        user.value = { id: TARGET_ID, nickname: 'alice', email: '', role: 'user', permissions: [], lang: '' };
 
         vi.spyOn(globalThis, 'fetch').mockImplementation(
             (input, init): Promise<Response> => {

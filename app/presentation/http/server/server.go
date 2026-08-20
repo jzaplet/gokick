@@ -226,6 +226,7 @@ func (s *Server) registerRoutes() *http.ServeMux {
 	mux.Handle("POST /api/v1/auth/logout", authed(http.HandlerFunc(s.auth.Logout)))
 	mux.Handle("GET /api/v1/profile", authed(http.HandlerFunc(s.profile.Get)))
 	mux.Handle("PUT /api/v1/profile/password", authed(http.HandlerFunc(s.profile.ChangePassword)))
+	mux.Handle("PUT /api/v1/profile/lang", authed(http.HandlerFunc(s.profile.ChangeLang)))
 	mux.Handle("GET /api/v1/dashboard/user", authed(http.HandlerFunc(s.dashboard.User)))
 
 	// Admin — bus AuthorizeMiddleware enforces admin:* permission per command/query.
@@ -293,22 +294,26 @@ func (s *Server) buildMiddlewareChain(handler http.Handler) http.Handler {
 			s.config.CORSOrigin, err))
 	}
 
-	// Order: Trace → IP → ReportScope → Recovery → Security headers → CORS →
-	// CSRF → Logging (→ handler). HSTS is only emitted in production (gated on
-	// the CookieSecure flag, which already distinguishes HTTPS traffic).
+	// Order: Trace → IP → Lang → ReportScope → Recovery → Security headers →
+	// CORS → CSRF → Logging (→ handler). HSTS is only emitted in production
+	// (gated on the CookieSecure flag, which already distinguishes HTTPS
+	// traffic).
 	//
-	// Trace, IP and ReportScope are pure context-setters — they only stamp ctx
-	// (trace_id, actor IP, the per-request Sentry hub) and never write a
-	// response or fail — so they run BEFORE Recovery on purpose: every panic
-	// report then carries trace_id, the client IP (capture reads it from ctx)
-	// and the breadcrumb trail (log lines accumulate on the request hub).
-	// Recovery still wraps everything that can actually panic — Security, CORS,
-	// CSRF, Logging, the handler and the bus; the http.Server's own recovery
-	// backstops the context-setters. IP also stays upstream of every consumer
-	// (audit, logging, capture) so all see the same IP.
+	// Trace, IP, Lang and ReportScope are pure context-setters — they only
+	// stamp ctx (trace_id, actor IP, request language, the per-request Sentry
+	// hub) and never write a response or fail — so they run BEFORE Recovery on
+	// purpose: every panic report then carries trace_id, the client IP
+	// (capture reads it from ctx) and the breadcrumb trail (log lines
+	// accumulate on the request hub). The panic 500 body itself is a static
+	// key payload, so it needs no language. Recovery still wraps everything that can actually
+	// panic — Security, CORS, CSRF, Logging, the handler and the bus; the
+	// http.Server's own recovery backstops the context-setters. IP also stays
+	// upstream of every consumer (audit, logging, capture) so all see the
+	// same IP.
 	middlewares := []func(http.Handler) http.Handler{
 		middleware.TraceMiddleware(),
 		middleware.IPMiddleware(s.ipExtract),
+		middleware.LangMiddleware(),
 		middleware.ReportScopeMiddleware(s.reporter),
 		middleware.RecoveryMiddleware(s.logger, s.reporter),
 		middleware.SecurityHeadersMiddleware(s.config.CookieSecure, s.config.FrontendSentryDSN),

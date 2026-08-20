@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import LoginForm from '@/app/Auth/Components/LoginForm.vue';
+import LangSwitcher from '@/app-ui/I18n/LangSwitcher.vue';
+import { useI18n } from '@/app-ui/I18n';
+
+const { t } = useI18n();
 </script>
 
 <template>
@@ -7,10 +11,10 @@ import LoginForm from '@/app/Auth/Components/LoginForm.vue';
         <div class="max-w-md w-full space-y-8">
             <div class="text-center">
                 <h2 class="text-3xl font-extrabold text-gray-900">
-                    Sign in
+                    {{ t('common.sign_in') }}
                 </h2>
                 <p class="mt-2 text-sm text-gray-600">
-                    Enter your credentials
+                    {{ t('auth.enter_credentials') }}
                 </p>
             </div>
 
@@ -21,8 +25,12 @@ import LoginForm from '@/app/Auth/Components/LoginForm.vue';
                     :to="{ name: 'home' }"
                     class="text-sm text-gray-500 hover:text-gray-700"
                 >
-                    ← Back to home
+                    ← {{ t('common.back_to_home') }}
                 </RouterLink>
+            </div>
+
+            <div class="flex justify-center">
+                <LangSwitcher />
             </div>
         </div>
     </div>

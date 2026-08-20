@@ -1,6 +1,9 @@
 package user
 
-import "gokick/app/domain/shared"
+import (
+	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
+)
 
 // Role is the wire contract for a user's role, not just a Go VO: tsgen emits it
 // as the FE's Role const + type + guard (which is why the consts below must stay
@@ -26,7 +29,7 @@ func NewRole(s string) (Role, error) {
 	case RoleSuperAdmin, RoleAdmin, RoleUser:
 		return Role(s), nil
 	default:
-		return "", &shared.ValidationError{Field: "role", Message: "invalid role"}
+		return "", &shared.ValidationError{Field: "role", Key: msgkey.UserRoleInvalid}
 	}
 }
 

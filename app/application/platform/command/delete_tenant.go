@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/domain/tenant"
 )
 
@@ -51,7 +52,7 @@ func (h *DeleteTenantHandler) Handle(
 	// exists. It is normally non-empty (superadmins live there) and so already
 	// unreachable — this refuses it by identity rather than by luck.
 	if cmd.ID == shared.DefaultTenantID {
-		return &shared.ValidationError{Message: "the default tenant cannot be deleted"}
+		return &shared.ValidationError{Key: msgkey.TenantDefaultUndeletable}
 	}
 
 	target, err := h.tenants.FindByID(ctx, cmd.ID)
@@ -64,7 +65,7 @@ func (h *DeleteTenantHandler) Handle(
 		// fieldless ValidationError to `general`, which is the one key the FE can
 		// actually read and show. Keying it to a field nothing renders meant the
 		// message was silently dropped and the operator saw only a generic toast.
-		return &shared.ValidationError{Message: "tenant not found"}
+		return &shared.ValidationError{Key: msgkey.TenantNotFound}
 	}
 
 	deleted, err := h.tenants.DeleteIfEmptyAcrossTenants(ctx, cmd.ID)
@@ -79,10 +80,7 @@ func (h *DeleteTenantHandler) Handle(
 	// would cost a second query on a path that only runs when the grid's hint was
 	// already stale; naming both is honest and free.
 	if !deleted {
-		return &shared.ValidationError{
-			Message: "tenant still has users or unfinished background runs — " +
-				"remove them before deleting it",
-		}
+		return &shared.ValidationError{Key: msgkey.TenantNotEmpty}
 	}
 
 	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{

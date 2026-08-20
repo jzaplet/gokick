@@ -6,6 +6,7 @@ import WarningIcon from '@/app-ui/Icons/WarningIcon.vue';
 import InfoIcon from '@/app-ui/Icons/InfoIcon.vue';
 import CloseIcon from '@/app-ui/Icons/CloseIcon.vue';
 import type { Component } from 'vue';
+import { useI18n } from '@/app-ui/I18n';
 
 defineProps<{
     type: ToastType;
@@ -14,6 +15,8 @@ defineProps<{
 const emit = defineEmits<{
     close: [];
 }>();
+
+const { t } = useI18n();
 
 const colors = {
     success: 'text-green-600 bg-green-50',
@@ -61,7 +64,7 @@ const icons: Record<ToastType, Component> = {
         focus:ring-2 focus:ring-gray-300
         transition-colors duration-200 cursor-pointer"
             :class="colors[type]"
-            aria-label="Close"
+            :aria-label="t('common.close')"
             @click="emit('close')"
         >
             <CloseIcon />

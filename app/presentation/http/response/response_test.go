@@ -9,6 +9,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 )
 
 type fakeHTTPErr struct {
@@ -37,18 +40,50 @@ func (h *capturingHandler) Handle(_ context.Context, r slog.Record) error {
 func (h *capturingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
 func (h *capturingHandler) WithGroup(string) slog.Handler      { return h }
 
-func TestHandleError_HTTPErrorPropagatesStatusAndMessage(t *testing.T) {
+func TestHandleError_HTTPErrorPropagatesStatusAndKey(t *testing.T) {
 	rec := httptest.NewRecorder()
 	discardResponder().HandleError(
 		context.Background(), rec,
-		&fakeHTTPErr{msg: "validation failed", status: http.StatusBadRequest},
+		&shared.ValidationError{Key: msgkey.UserNicknameRequired},
 	)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status: got %d want 400", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "validation failed") {
-		t.Fatalf("body should carry HTTPError message, got %q", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), string(msgkey.UserNicknameRequired)) {
+		t.Fatalf("body should carry the HTTPError's key, got %q", rec.Body.String())
+	}
+}
+
+// An HTTPError that is NOT keyed still gets its status, but its prose must not
+// reach the wire: the key slot is a catalog key the frontend looks up, so an
+// Error() sentence there renders raw English at a Czech user. The generic
+// internal-error key goes out instead and the real text goes to the log.
+func TestError_UnkeyedErrorShipsTheGenericKeyAndLogsTheProse(t *testing.T) {
+	handler := &capturingHandler{}
+	rec := httptest.NewRecorder()
+	NewResponder(slog.New(handler)).HandleError(
+		context.Background(), rec,
+		&fakeHTTPErr{msg: "run not found", status: http.StatusNotFound},
+	)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status: got %d want 404", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), "run not found") {
+		t.Fatalf("prose must not reach the key slot, got %q", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), string(msgkey.CommonInternalError)) {
+		t.Fatalf("body should carry the generic key, got %q", rec.Body.String())
+	}
+	logged := false
+	for _, r := range handler.records {
+		if strings.Contains(r.Message, "unkeyed error") {
+			logged = true
+		}
+	}
+	if !logged {
+		t.Error("the dropped prose must still reach the operator through the log")
 	}
 }
 
@@ -64,8 +99,8 @@ func TestHandleError_GenericErrorIsSanitizedTo500(t *testing.T) {
 	if strings.Contains(rec.Body.String(), "sqlite") {
 		t.Fatalf("response leaked internal error: %s", rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "internal server error") {
-		t.Fatalf("expected generic message, got %s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), "common.internal_error") {
+		t.Fatalf("expected the generic keyed message, got %s", rec.Body.String())
 	}
 }
 

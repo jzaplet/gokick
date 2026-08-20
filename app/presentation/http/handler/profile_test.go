@@ -32,6 +32,7 @@ func newProfileHandler(t *testing.T) (*ProfileHandler, *testfx.Fixture) {
 		qryBus,
 		profileqry.NewGetProfileHandler(fx.Users),
 		profilecmd.NewChangePasswordHandler(fx.Users, fx.Hasher),
+		profilecmd.NewChangeLangHandler(fx.Users),
 		registry,
 	)
 
@@ -189,6 +190,82 @@ func TestProfileHandler_ChangePassword_WithoutClaims_Returns401(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ChangePassword(rec, authedReq(http.MethodPut, "/api/v1/profile/password",
 		map[string]string{"old_password": "a", "new_password": "b"},
+		nil,
+	))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status: got %d want 401", rec.Code)
+	}
+}
+
+func TestProfileHandler_ChangeLang_PersistsPreference(t *testing.T) {
+	h, fx := newProfileHandler(t)
+	u := fx.SeedUser(t, "alice", "pwd-12345", "user")
+
+	rec := httptest.NewRecorder()
+	h.ChangeLang(rec, authedReq(http.MethodPut, "/api/v1/profile/lang",
+		map[string]string{"lang": "en"},
+		&shared.AuthClaims{UserID: u.ID, Role: u.Role, Nickname: u.Nickname},
+	))
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status: got %d want 204; body=%s", rec.Code, rec.Body.String())
+	}
+
+	reloaded, _ := fx.Users.FindByID(authedReq(http.MethodGet, "/", nil, nil).Context(), u.ID)
+	if reloaded.PreferredLang() != "en" {
+		t.Fatalf("users.lang: got %q want %q", reloaded.PreferredLang(), "en")
+	}
+}
+
+func TestProfileHandler_ChangeLang_RejectsUnsupportedLanguage(t *testing.T) {
+	h, fx := newProfileHandler(t)
+	u := fx.SeedUser(t, "alice", "pwd-12345", "user")
+
+	rec := httptest.NewRecorder()
+	h.ChangeLang(rec, authedReq(http.MethodPut, "/api/v1/profile/lang",
+		map[string]string{"lang": "de"},
+		&shared.AuthClaims{UserID: u.ID, Role: u.Role, Nickname: u.Nickname},
+	))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status: got %d want 400; body=%s", rec.Code, rec.Body.String())
+	}
+
+	reloaded, _ := fx.Users.FindByID(authedReq(http.MethodGet, "/", nil, nil).Context(), u.ID)
+	if reloaded.Lang != nil {
+		t.Fatalf("users.lang must stay unset (no preference), got %q", *reloaded.Lang)
+	}
+}
+
+func TestProfileHandler_ChangeLang_MalformedJSON(t *testing.T) {
+	h, fx := newProfileHandler(t)
+	u := fx.SeedUser(t, "alice", "pwd-12345", "user")
+
+	req := httptest.NewRequest(
+		http.MethodPut,
+		"/api/v1/profile/lang",
+		strings.NewReader("{broken"),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(shared.ContextWithClaims(req.Context(), &shared.AuthClaims{
+		UserID: u.ID, Role: u.Role, Nickname: u.Nickname,
+	}))
+
+	rec := httptest.NewRecorder()
+	h.ChangeLang(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status: got %d want 400", rec.Code)
+	}
+}
+
+func TestProfileHandler_ChangeLang_WithoutClaims_Returns401(t *testing.T) {
+	h, _ := newProfileHandler(t)
+
+	rec := httptest.NewRecorder()
+	h.ChangeLang(rec, authedReq(http.MethodPut, "/api/v1/profile/lang",
+		map[string]string{"lang": "cs"},
 		nil,
 	))
 

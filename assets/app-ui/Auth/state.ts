@@ -2,6 +2,7 @@ import { ref } from 'vue';
 import type { AuthUser } from '@/app-ui/Auth/types/AuthUser';
 import { isLoginResponse } from '@/app-ui/Auth/types/LoginResponse';
 import { setAccessToken } from '@/app-ui/Fetch/accessToken';
+import { adoptServerLang } from '@/app-ui/I18n';
 
 // Reactive session state — single source of truth for views.
 export const user = ref<AuthUser | null>(null);
@@ -9,6 +10,12 @@ export const isAuthenticated = ref(false);
 
 // Auto-refresh timer — only one pending refresh at a time.
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+// Whether THIS authenticated session already adopted the profile language.
+// establishSession also runs on every ~15-min background token rotation, and
+// re-adopting there would flip a cookie-less user's URL-chosen locale
+// mid-session. Reset in clearAuth so the NEXT login adopts again.
+let langAdopted = false;
 
 const clearRefreshTimer = (): void => {
     if (refreshTimer !== null) {
@@ -70,6 +77,14 @@ export const establishSession = (data: unknown, onExpiry: () => void): boolean =
     setAccessToken(data.access_token);
     user.value = data.user;
     isAuthenticated.value = true;
+    // Adopt the persisted profile language ("" = none) — unless this browser
+    // chose explicitly via the switcher. Only the session's FIRST establish
+    // (bootstrap refresh or interactive login) adopts; background rotations
+    // must not re-flip the locale.
+    if (langAdopted === false) {
+        adoptServerLang(data.user.lang);
+        langAdopted = true;
+    }
     scheduleRefresh(data.access_expiration * 1_000, onExpiry);
 
     return true;
@@ -88,4 +103,5 @@ export const clearAuth = (): void => {
     user.value = null;
     isAuthenticated.value = false;
     clearRefreshTimer();
+    langAdopted = false;
 };

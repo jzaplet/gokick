@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 )
 
 // Name is a validated tenant name: required, trimmed, non-blank. NewTenant takes
@@ -20,7 +21,7 @@ type Name string
 func NewName(s string) (Name, error) {
 	trimmed := strings.TrimSpace(s)
 	if trimmed == "" {
-		return "", &shared.ValidationError{Field: "name", Message: "tenant name is required"}
+		return "", &shared.ValidationError{Field: "name", Key: msgkey.TenantNameRequired}
 	}
 
 	return Name(trimmed), nil

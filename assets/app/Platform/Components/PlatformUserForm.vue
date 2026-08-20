@@ -2,7 +2,9 @@
 import type { PlatformUserCreateData } from '@/app/Platform/types/PlatformUserCreateData';
 import type { PlatformUserFormErrors } from '@/app/Platform/types/PlatformUserFormErrors';
 import { Role } from '@/app/Auth/enums/roles';
-import { reactive, ref } from 'vue';
+import { roleLabel } from '@/app/Auth/enums/roleLabels';
+import { computed, reactive } from 'vue';
+import { tm, useI18n } from '@/app-ui/I18n';
 import Button from '@/app-ui/Buttons/Button.vue';
 import Input from '@/app-ui/Inputs/Input.vue';
 import Select from '@/app-ui/Inputs/Select.vue';
@@ -41,6 +43,8 @@ const emit = defineEmits<{
     clearError: [field: keyof PlatformUserFormErrors];
 }>();
 
+const { t } = useI18n();
+
 const form: PlatformUserCreateData = reactive({
     nickname: initial.nickname ?? '',
     password: '',
@@ -49,9 +53,9 @@ const form: PlatformUserCreateData = reactive({
     tenant_id: initial.tenant_id ?? '',
 });
 
-const roleOptions = ref([
-    { value: Role.User, label: 'User' },
-    { value: Role.Admin, label: 'Admin' },
+const roleOptions = computed<{ value: Role; label: string }[]>(() => [
+    { value: Role.User, label: roleLabel(Role.User) },
+    { value: Role.Admin, label: roleLabel(Role.Admin) },
 ]);
 
 const handleSubmit = (): void => {
@@ -68,8 +72,8 @@ const handleSubmit = (): void => {
             v-model="form.nickname"
             name="nickname"
             type="text"
-            label="Nickname"
-            :error="errors.nickname"
+            :label="t('auth.nickname')"
+            :error="tm(errors.nickname)"
             required
             :disabled="isLoading"
             @update:model-value="() => emit('clearError', 'nickname')"
@@ -79,8 +83,8 @@ const handleSubmit = (): void => {
             v-model="form.password"
             name="password"
             type="password"
-            :label="mode === 'create' ? 'Password' : 'Password (leave empty to keep current)'"
-            :error="errors.password"
+            :label="mode === 'create' ? t('auth.password') : t('users.password_keep')"
+            :error="tm(errors.password)"
             :required="mode === 'create'"
             :disabled="isLoading"
             @update:model-value="() => emit('clearError', 'password')"
@@ -90,8 +94,8 @@ const handleSubmit = (): void => {
             v-model="form.email"
             name="email"
             type="email"
-            label="Email (optional)"
-            :error="errors.email"
+            :label="t('users.email_optional')"
+            :error="tm(errors.email)"
             :disabled="isLoading"
             @update:model-value="() => emit('clearError', 'email')"
         />
@@ -99,9 +103,9 @@ const handleSubmit = (): void => {
         <Select
             v-model="form.role"
             name="role"
-            label="Role"
+            :label="t('common.role')"
             :options="roleOptions"
-            :error="errors.role"
+            :error="tm(errors.role)"
             required
             :disabled="isLoading"
             @update:model-value="() => emit('clearError', 'role')"
@@ -113,15 +117,15 @@ const handleSubmit = (): void => {
             v-if="mode === 'create'"
             v-model="form.tenant_id"
             name="tenant_id"
-            label="Tenant"
+            :label="t('common.tenant')"
             :options="tenants"
-            :error="errors.tenant_id"
+            :error="tm(errors.tenant_id)"
             required
             :disabled="isLoading"
             @update:model-value="() => emit('clearError', 'tenant_id')"
         />
 
-        <ErrorAlert :message="errors.general" />
+        <ErrorAlert :message="tm(errors.general)" />
 
         <div class="flex items-center justify-end gap-3 pt-2">
             <Button
@@ -130,7 +134,7 @@ const handleSubmit = (): void => {
                 :disabled="isLoading"
                 @click="emit('cancel')"
             >
-                Cancel
+                {{ t('common.cancel') }}
             </Button>
             <Button
                 type="submit"

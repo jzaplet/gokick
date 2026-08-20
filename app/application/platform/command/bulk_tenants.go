@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/domain/tenant"
 )
 
@@ -51,7 +52,7 @@ func (h *BulkDeleteTenantsHandler) Handle(
 		Filters:     tenant.ListFilters{Name: cmd.Name, Plan: cmd.Plan},
 	}
 	if sel.IsEmpty() {
-		return 0, &shared.ValidationError{Message: "nothing selected"}
+		return 0, &shared.ValidationError{Key: msgkey.CommonNothingSelected}
 	}
 
 	deleted, err := h.tenants.BulkDeleteEmptyAcrossTenants(ctx, sel)

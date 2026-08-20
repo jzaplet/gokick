@@ -179,7 +179,7 @@ describe('apiUpload', () => {
         expect(result.success).toBe(false);
 
         if (result.success === false) {
-            expect(result.data).toEqual({ general: 'Invalid response shape' });
+            expect(result.data).toEqual({ general: { key: 'fetch.invalid_shape' } });
         }
     });
 
@@ -222,7 +222,7 @@ describe('apiUpload', () => {
         expect(result.success).toBe(false);
 
         if (result.success === false) {
-            expect(result.data).toEqual({ general: 'Network error' });
+            expect(result.data).toEqual({ general: { key: 'fetch.network_error' } });
         }
     });
 });

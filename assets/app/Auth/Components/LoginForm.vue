@@ -5,6 +5,7 @@ import { reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { homeForRole } from '@/router/homeForRole';
 import { useAuth } from '@/app-ui/Auth';
+import { getLocale, localizePath, tm, useI18n } from '@/app-ui/I18n';
 import { useToast } from '@/app-ui/Toast/useToast';
 import Button from '@/app-ui/Buttons/Button.vue';
 import Input from '@/app-ui/Inputs/Input.vue';
@@ -14,6 +15,7 @@ const router = useRouter();
 const route = useRoute();
 const { login } = useAuth();
 const { success } = useToast();
+const { t } = useI18n();
 
 const form: LoginRequest = reactive({
     nickname: '',
@@ -36,7 +38,7 @@ const handleSubmit = async (): Promise<void> => {
         return;
     }
 
-    success(`Welcome back, ${result.data.user.nickname}.`);
+    success(t('auth.welcome_back', { nickname: result.data.user.nickname }));
 
     const redirectQuery = route.query['redirect'];
     const defaultByRole = homeForRole(result.data.user.role);
@@ -52,7 +54,10 @@ const handleSubmit = async (): Promise<void> => {
             : null;
     const target = safeRedirect(redirectQuery) ?? defaultByRole;
 
-    await router.push(target);
+    // Rebase onto the CURRENT locale: a stored ?redirect (captured before an
+    // explicit language switch on the login page) still carries the old
+    // prefix, and pushing it as-is would re-apply the old language.
+    await router.push(localizePath(target, getLocale()));
 };
 </script>
 
@@ -66,8 +71,8 @@ const handleSubmit = async (): Promise<void> => {
                 v-model="form.nickname"
                 name="nickname"
                 type="text"
-                label="Nickname"
-                placeholder="admin"
+                :label="t('auth.nickname')"
+                :placeholder="t('auth.nickname_placeholder')"
                 required
                 :disabled="isLoading"
             />
@@ -76,13 +81,13 @@ const handleSubmit = async (): Promise<void> => {
                 v-model="form.password"
                 name="password"
                 type="password"
-                label="Password"
+                :label="t('auth.password')"
                 required
                 :disabled="isLoading"
             />
         </div>
 
-        <ErrorAlert :message="errors.general" />
+        <ErrorAlert :message="tm(errors.general)" />
 
         <Button
             type="submit"
@@ -92,8 +97,8 @@ const handleSubmit = async (): Promise<void> => {
             :loading="isLoading"
             :disabled="isLoading"
         >
-            <span v-if="isLoading === false">Sign in</span>
-            <span v-else>Signing in...</span>
+            <span v-if="isLoading === false">{{ t('common.sign_in') }}</span>
+            <span v-else>{{ t('auth.signing_in') }}</span>
         </Button>
     </form>
 </template>

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/domain/tenant"
 )
 
@@ -58,8 +59,8 @@ func (h *CreateTenantHandler) Handle(
 	}
 	if existing != nil {
 		return nil, &shared.ValidationError{
-			Field:   "name",
-			Message: "a tenant with this name already exists",
+			Field: "name",
+			Key:   msgkey.TenantNameTaken,
 		}
 	}
 

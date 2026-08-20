@@ -114,7 +114,7 @@ func TestStrayErrorsTypes(t *testing.T) {
 	}
 }
 
-// An *Errors file that breaks the `key?: string;` convention must fail the
+// An *Errors file that breaks the `key?: ApiMessage;` convention must fail the
 // parse — a silently skipped line would hide keys from the parity check.
 func TestFeParse_RejectsNonConventionLines(t *testing.T) {
 	_, err := collectFeKeys(filepath.Join("testdata", "fe-bad"))

@@ -28,7 +28,12 @@ func TestRateLimiter_MiddlewareKeysBucketsOnInjectedExtractor(t *testing.T) {
 	t.Parallel()
 
 	// One token per IP, trust-proxy extractor → buckets are keyed on X-Real-IP.
-	l := NewRateLimiter(RateRule{Tokens: 1, Per: time.Minute}, NewIPExtractor(true), silentLogger())
+	l := NewRateLimiter(
+		RateRule{Tokens: 1, Per: time.Minute},
+		NewIPExtractor(true),
+		silentLogger(),
+		testResponder(),
+	)
 	handler := l.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))

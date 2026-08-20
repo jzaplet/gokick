@@ -13,6 +13,7 @@ import (
 	"gokick-gk/boundary"
 	"gokick-gk/docpaths"
 	"gokick-gk/errfields"
+	"gokick-gk/i18n"
 	"gokick-gk/tsgen"
 )
 
@@ -27,6 +28,8 @@ func main() {
 		boundary.Run(args)
 	case "errfields":
 		errfields.Run(args)
+	case "i18n":
+		i18n.Run(args)
 	case "docpaths":
 		docpaths.Run(args)
 	default:
@@ -42,6 +45,7 @@ tools:
   tsgen generate|check   TypeScript types from //gkts-annotated Go DTOs
   boundary               wire payloads must be //gkts-annotated named structs
   errfields              Go ValidationError fields ↔ FE *Errors keys parity
+  i18n generate|check    msgkey constants from the translation catalogs + parity gate
   docpaths               every path/skill a doc cites must resolve
 `)
 	os.Exit(2)

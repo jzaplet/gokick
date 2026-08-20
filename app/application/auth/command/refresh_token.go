@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/domain/token"
 	"gokick/app/domain/user"
 )
@@ -71,14 +72,14 @@ func (h *RefreshTokenHandler) Handle(
 			if u == nil {
 				// FindByID's not-found contract is (nil, nil): the user's row is
 				// genuinely gone. That IS a definitive auth failure — end the session.
-				return &shared.AuthError{Message: "user no longer exists"}
+				return &shared.AuthError{Key: msgkey.AuthUserNoLongerExists}
 			}
 			if !u.Active {
 				// Deactivated after this session was issued: end it. Access tokens
 				// are stateless so deactivation bites at the next refresh (within
 				// one access-token TTL), not instantly — immediate revocation would
 				// be a separate, heavier change.
-				return &shared.AuthError{Message: "account is inactive"}
+				return &shared.AuthError{Key: msgkey.AuthAccountInactive}
 			}
 			// issueSession's Save is its final write — the contract Rotate's
 			// issue-before-consume ordering relies on.
@@ -94,9 +95,9 @@ func (h *RefreshTokenHandler) Handle(
 	case token.RotationRotated:
 		return res, nil
 	case token.RotationInvalid:
-		return IssuedSession{}, &shared.AuthError{Message: "invalid refresh token"}
+		return IssuedSession{}, &shared.AuthError{Key: msgkey.AuthRefreshTokenInvalid}
 	case token.RotationExpired:
-		return IssuedSession{}, &shared.AuthError{Message: "refresh token expired"}
+		return IssuedSession{}, &shared.AuthError{Key: msgkey.AuthRefreshTokenExpired}
 	case token.RotationTheft:
 		return IssuedSession{}, h.revokeAllAsTheft(ctx, outcome.UserID, outcome.TheftReason)
 	default:
@@ -122,5 +123,5 @@ func (h *RefreshTokenHandler) revokeAllAsTheft(ctx context.Context, userID, reas
 	if err := h.tokens.DeleteByUserID(ctx, userID); err != nil {
 		return err
 	}
-	return &shared.AuthError{Message: "refresh token reuse detected"}
+	return &shared.AuthError{Key: msgkey.AuthRefreshTokenReused}
 }

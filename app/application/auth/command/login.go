@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/domain/token"
 	"gokick/app/domain/user"
 )
@@ -111,7 +112,7 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (IssuedSess
 
 	if u == nil || verifyErr != nil {
 		h.handleFailedLogin(ctx, audit, cmd.Nickname, u, locked)
-		return IssuedSession{}, &shared.AuthError{Message: "invalid credentials"}
+		return IssuedSession{}, &shared.AuthError{Key: msgkey.AuthInvalidCredentials}
 	}
 
 	if locked {
@@ -124,7 +125,7 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (IssuedSess
 			TargetType: "user",
 			TargetID:   u.ID,
 		})
-		return IssuedSession{}, &shared.AuthError{Message: "invalid credentials"}
+		return IssuedSession{}, &shared.AuthError{Key: msgkey.AuthInvalidCredentials}
 	}
 
 	// Deactivated accounts cannot start a session. Checked AFTER Verify (like
@@ -137,7 +138,7 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (IssuedSess
 			TargetType: "user",
 			TargetID:   u.ID,
 		})
-		return IssuedSession{}, &shared.AuthError{Message: "invalid credentials"}
+		return IssuedSession{}, &shared.AuthError{Key: msgkey.AuthInvalidCredentials}
 	}
 
 	// Successful login → clear the counter so the next failure cycle

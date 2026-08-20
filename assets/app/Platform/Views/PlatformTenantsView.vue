@@ -7,6 +7,7 @@ import { createGridState } from '@/app-ui/DataGrid/createGridState';
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { authFetch } from '@/app-ui/Auth';
+import { useI18n } from '@/app-ui/I18n';
 import { useToast } from '@/app-ui/Toast/useToast';
 import { usePlatformTenantsBulk } from '@/app/Platform/Composables/usePlatformTenantsBulk';
 import DataGrid from '@/app-ui/DataGrid/DataGrid.vue';
@@ -22,24 +23,25 @@ import PlatformTenantRow from '@/app/Platform/Components/PlatformTenantRow.vue';
 
 const router = useRouter();
 const { error } = useToast();
+const { t } = useI18n();
 
 const tenants = ref<PlatformTenant[]>([]);
 
-const columns: GridColumn[] = [
-    { key: 'name', label: 'Tenant', sortable: true },
-    { key: 'plan', label: 'Plan' },
-    { key: 'users', label: 'Users', sortable: true, align: 'right' },
+const columns = computed<GridColumn[]>(() => [
+    { key: 'name', label: t('common.tenant'), sortable: true },
+    { key: 'plan', label: t('tenants.plan') },
+    { key: 'users', label: t('common.users'), sortable: true, align: 'right' },
     // The actions column carries no heading (aibobr parity).
     { key: 'actions', label: '', align: 'right' },
-];
+]);
 
 // Mirrors the backend plan tiers (domain/tenant PlanFree). Only "free" exists
 // today; when a paid tier ships (the tenant.go "free/paid…" note), add it here
 // so the filter can reach it — the BE matches any plan string exactly.
-const planOptions = [
-    { value: '', label: 'All plans' },
-    { value: 'free', label: 'free' },
-];
+const planOptions = computed<{ value: string; label: string }[]>(() => [
+    { value: '', label: t('tenants.all_plans') },
+    { value: 'free', label: t('plan.free') },
+]);
 
 const grid = createGridState({
     defaultSort: { column: 'name', direction: 'ASC' },
@@ -66,7 +68,7 @@ const grid = createGridState({
         );
 
         if (result.success === false) {
-            error('Failed to load tenants.');
+            error(t('tenants.load_failed'));
 
             return { ok: false };
         }
@@ -115,7 +117,7 @@ onMounted(async (): Promise<void> => {
         <div class="space-y-6">
             <div class="flex items-center justify-between gap-4">
                 <h1 class="text-2xl font-bold text-gray-900">
-                    Platform tenants
+                    {{ t('tenants.title') }}
                 </h1>
 
                 <Button
@@ -123,7 +125,7 @@ onMounted(async (): Promise<void> => {
                     @click="goToCreate"
                 >
                     <PlusIcon class="w-4 h-4" />
-                    Add tenant
+                    {{ t('tenants.add') }}
                 </Button>
             </div>
 
@@ -135,15 +137,15 @@ onMounted(async (): Promise<void> => {
                 <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <Input
                         v-model="grid.filters.name"
-                        label="Tenant"
-                        placeholder="Search tenant"
+                        :label="t('common.tenant')"
+                        :placeholder="t('tenants.search')"
                         flat
                         size="sm"
                         :active="grid.filters.name !== ''"
                     />
                     <Select
                         :model-value="grid.filters.plan"
-                        label="Plan"
+                        :label="t('tenants.plan')"
                         :options="planOptions"
                         flat
                         size="sm"
@@ -188,7 +190,7 @@ onMounted(async (): Promise<void> => {
                                 :colspan="columns.length + 1"
                                 class="px-4 py-8 text-center text-gray-400"
                             >
-                                No tenants
+                                {{ t('tenants.none') }}
                             </td>
                         </tr>
                     </template>
@@ -204,12 +206,11 @@ onMounted(async (): Promise<void> => {
 
             <ConfirmModal
                 :show="tenantToDelete !== null"
-                title="Delete tenant"
+                :title="t('tenants.delete_title')"
                 :message="tenantToDelete === null
                     ? ''
-                    : `Really delete tenant ${tenantToDelete.name}? This action is irreversible.`"
-                confirm-text="Delete"
-                cancel-text="Cancel"
+                    : t('tenants.delete_confirm', { name: tenantToDelete.name })"
+                :confirm-text="t('common.delete')"
                 @confirm="runDelete"
                 @cancel="cancelDelete"
             />
@@ -218,8 +219,7 @@ onMounted(async (): Promise<void> => {
                 :show="bulkConfirm !== null"
                 :title="bulkConfirm?.title ?? ''"
                 :message="bulkConfirm?.message ?? ''"
-                :confirm-text="bulkConfirm?.confirmText ?? 'Confirm'"
-                cancel-text="Cancel"
+                :confirm-text="bulkConfirm?.confirmText ?? null"
                 @confirm="runPendingBulk"
                 @cancel="cancelPendingBulk"
             />

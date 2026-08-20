@@ -20,6 +20,7 @@ const alice: AuthUser = {
     email: 'alice@example.com',
     role: Role.Admin,
     permissions: [],
+    lang: '',
 };
 
 describe('syncSentryUser', () => {

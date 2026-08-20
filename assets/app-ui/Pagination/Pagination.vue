@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import ChevronLeftIcon from '@/app-ui/Icons/ChevronLeftIcon.vue';
+import { useI18n } from '@/app-ui/I18n';
 
 // "X–Y / N" + a window of up to five page buttons with prev/next chevrons.
 // Pure presentation over (page, perPage, total) — the grid state owns the
@@ -15,6 +16,8 @@ const { page, perPage, total } = defineProps<{
 const emit = defineEmits<{
     'update:page': [page: number];
 }>();
+
+const { t } = useI18n();
 
 const totalPages = computed((): number => Math.max(1, Math.ceil(total / perPage)));
 
@@ -58,12 +61,12 @@ const goTo = (target: number): void => {
         <nav
             v-if="totalPages > 1"
             class="flex gap-1"
-            aria-label="Pagination"
+            :aria-label="t('pagination.label')"
         >
             <button
                 type="button"
                 :disabled="page <= 1"
-                aria-label="Previous page"
+                :aria-label="t('pagination.previous')"
                 :class="[
                     'p-1.5 rounded border border-gray-300',
                     'hover:bg-gray-50 cursor-pointer',
@@ -90,7 +93,7 @@ const goTo = (target: number): void => {
             <button
                 type="button"
                 :disabled="page >= totalPages"
-                aria-label="Next page"
+                :aria-label="t('pagination.next')"
                 :class="[
                     'p-1.5 rounded border border-gray-300',
                     'hover:bg-gray-50 cursor-pointer',

@@ -2,16 +2,25 @@ import type { ApiError } from '@/app-ui/Fetch/types/ApiError';
 import type { ApiResponse } from '@/app-ui/Fetch/types/ApiResponse';
 import type { Guard } from '@/app-ui/Fetch/guards';
 import { isRecord } from '@/app-ui/Fetch/guards';
+import type { TranslationKey, TranslationParams } from '@/app-ui/I18n/lang';
 import { reportUnexpected } from '@/app-ui/Sentry/reportUnexpected';
 
 // A failure with no usable API error body — synthesized in the mergeable
-// ApiGeneralError shape (see its doc), NOT pretending to be TError. Exported
-// so every synthesis site (network errors in apiFetchCore, XHR failures in
-// apiUpload) builds the same shape with the same wording.
-export const generalFailure = <TError>(status: number, general: string): ApiError<TError> => ({
+// ApiGeneralError shape (see its doc), NOT pretending to be TError. The
+// message is a wire-shaped ApiMessage built from a CATALOG key (typed, so a
+// typo fails vue-tsc), not a pre-rendered sentence — rendering happens at the
+// display site via tm(), the same path real backend errors take, so the text
+// follows a language switch. Exported so every synthesis site (network errors
+// in apiFetchCore, XHR failures in apiUpload) builds the same shape with the
+// same keys.
+export const generalFailure = <TError>(
+    status: number,
+    key: TranslationKey,
+    params?: TranslationParams,
+): ApiError<TError> => ({
     success: false,
     status,
-    data: { general },
+    data: { general: params === undefined ? { key } : { key, params } },
 });
 
 // Sentry groups captureMessage by the message text — a raw URL containing a
@@ -70,7 +79,8 @@ export const parseResponse = async <TData, TError>(
         if (parseFailed === true) {
             return generalFailure<TError>(
                 response.status,
-                `Malformed response body (status ${String(response.status)})`,
+                'fetch.malformed_body',
+                { status: response.status },
             );
         }
 
@@ -82,7 +92,7 @@ export const parseResponse = async <TData, TError>(
                 `Response shape violates its generated contract: ${groupableUrl(response.url)} (status ${String(response.status)})`,
             );
 
-            return generalFailure<TError>(response.status, 'Invalid response shape');
+            return generalFailure<TError>(response.status, 'fetch.invalid_shape');
         }
 
         // No guard = a TData `null` endpoint (204/no-content): nothing to
@@ -108,10 +118,8 @@ export const parseResponse = async <TData, TError>(
     // Empty, unparseable, or non-object JSON error body (a proxy answering
     // with a bare string/number would otherwise land in errors.value as a
     // primitive and render NOWHERE) — synthesize the mergeable { general }
-    // shape; keep a bare-string body as the message since it is human-readable.
-    if (typeof json === 'string' && json !== '') {
-        return generalFailure<TError>(response.status, json);
-    }
-
-    return generalFailure<TError>(response.status, `Error ${String(response.status)}`);
+    // shape. A bare-string proxy body is NOT kept as the message: the general
+    // slot renders catalog keys via tm(), and a raw proxy string can't be one
+    // — the status param names the failure instead.
+    return generalFailure<TError>(response.status, 'fetch.error_status', { status: response.status });
 };

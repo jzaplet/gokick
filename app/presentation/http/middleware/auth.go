@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/presentation/http/response"
 )
 
@@ -32,7 +33,7 @@ func AuthMiddleware(
 
 			if !strings.HasPrefix(header, bearerPrefix) {
 				resp.HandleError(
-					r.Context(), w, &shared.AuthError{Message: "invalid Authorization header"},
+					r.Context(), w, &shared.AuthError{Key: msgkey.AuthAuthorizationHeaderInvalid},
 				)
 
 				return
@@ -48,6 +49,12 @@ func AuthMiddleware(
 			}
 
 			ctx := shared.ContextWithClaims(r.Context(), claims)
+			// Persisted-preference override (resolution order:
+			// header → cookie → users.lang → Accept-Language → en). The
+			// global LangMiddleware already resolved the request rungs and
+			// stamped ctx with whether the choice was explicit; the JWT's lang
+			// claim only wins when the client did not choose explicitly.
+			ctx = applyClaimsLang(ctx, claims.Lang)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

@@ -103,6 +103,7 @@ lint:
 	$(MAKE) ts-check
 	$(MAKE) boundary-check
 	$(MAKE) errfields-check
+	$(MAKE) i18n-check
 	$(MAKE) docpaths-check
 	$(MAKE) documan-lint
 
@@ -150,6 +151,19 @@ boundary-check:
 # Escape: //gkerrf:exempt <reason> for fields that never render in a form.
 errfields-check:
 	cd tools/gk && go run . errfields
+
+# Translation-key parity. Generate app/domain/shared/msgkey AND the
+# frontend catalogs (assets/app-ui/I18n/catalog/{en,cs}.ts) from the single
+# locale/messages.<lang>.json namespace (en is canonical) — mirrors `make
+# ts-gen`. Run after editing a catalog. The check (wired into `make lint`) also
+# gates catalog quality (key/param/pluralness parity, valid CLDR forms,
+# lowercase-first params), artifact freshness, dead keys (unused in BOTH Go and
+# frontend source), Go call-site params, and the supported-language mirrors.
+i18n-gen:
+	cd tools/gk && go run . i18n generate
+
+i18n-check:
+	cd tools/gk && go run . i18n check
 
 # Every repo path and /gk-* skill link the docs and skills cite must resolve —
 # the first gate on prose. It checks that pointers land, not that the prose is

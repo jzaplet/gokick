@@ -261,6 +261,19 @@ export default tseslint.config(
     },
   },
 
+  // --- Generated translation catalogs ---
+  // max-lines is a ratchet on HAND-WRITTEN source; these files are emitted by
+  // `make i18n-gen` from locale/*.json and nobody may edit them, so the only
+  // way to satisfy the limit would be to delete translations. Czech hits it
+  // first (a plural block costs one/few/many/other against English's two).
+  // Every other rule still applies.
+  {
+    files: ['assets/app-ui/I18n/catalog/*.ts'],
+    rules: {
+      'max-lines': 'off',
+    },
+  },
+
   // --- Ignored paths ---
   {
     ignores: ['public/**', 'node_modules/**', '*.config.*'],

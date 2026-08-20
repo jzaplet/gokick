@@ -10,6 +10,7 @@ export type AuthUser = {
     email: string;
     role: Role;
     permissions: string[];
+    lang: string;
 };
 
 export const isAuthUser = (v: unknown): v is AuthUser =>
@@ -18,4 +19,5 @@ export const isAuthUser = (v: unknown): v is AuthUser =>
     && isString(v['nickname'])
     && isString(v['email'])
     && isRole(v['role'])
-    && arrayOf(isString)(v['permissions']);
+    && arrayOf(isString)(v['permissions'])
+    && isString(v['lang']);

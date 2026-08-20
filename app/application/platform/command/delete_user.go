@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/domain/user"
 )
 
@@ -31,7 +32,7 @@ func (h *DeletePlatformUserHandler) Handle(
 		return err
 	}
 	if claims.UserID == cmd.ID {
-		return &shared.ValidationError{Message: "cannot delete your own account"}
+		return &shared.ValidationError{Key: msgkey.UserOwnAccountUndeletable}
 	}
 
 	target, err := h.users.FindByID(ctx, cmd.ID)
@@ -40,13 +41,13 @@ func (h *DeletePlatformUserHandler) Handle(
 	}
 	if target == nil {
 		//gkerrf:exempt path-param lookup - the edit/list view redirects on failure, no form field maps id
-		return &shared.ValidationError{Field: "id", Message: "user not found"}
+		return &shared.ValidationError{Field: "id", Key: msgkey.UserNotFound}
 	}
 
 	// A superadmin (platform) account is never deletable through the API — the
 	// repo delete also excludes superadmin rows.
 	if user.Role(target.Role).IsSuperAdmin() {
-		return &shared.PermissionError{Message: "cannot delete a superadmin account"}
+		return &shared.PermissionError{Key: msgkey.PermissionSuperadminUndeletable}
 	}
 
 	if err := h.users.DeleteAcrossTenants(ctx, cmd.ID); err != nil {

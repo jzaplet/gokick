@@ -137,7 +137,7 @@ func TestCORSMiddleware_SetsAllowHeadersAndPassesThroughGET(t *testing.T) {
 	want := map[string]string{
 		"Access-Control-Allow-Origin":      origin,
 		"Access-Control-Allow-Methods":     "GET, POST, PUT, DELETE, OPTIONS",
-		"Access-Control-Allow-Headers":     "Content-Type, Authorization",
+		"Access-Control-Allow-Headers":     "Content-Type, Authorization, X-App-Lang",
 		"Access-Control-Allow-Credentials": "true",
 	}
 	for h, v := range want {

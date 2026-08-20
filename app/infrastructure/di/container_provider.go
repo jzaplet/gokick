@@ -172,6 +172,7 @@ func provideRateLimiters(
 	cfg *config.Config,
 	extract httpmw.IPExtractor,
 	logger *slog.Logger,
+	resp *response.Responder,
 ) (*server.RateLimiters, error) {
 	loginRule, err := httpmw.ParseRateRule(cfg.RateLimitLogin)
 	if err != nil {
@@ -182,8 +183,8 @@ func provideRateLimiters(
 		return nil, fmt.Errorf("APP_RATE_LIMIT_REFRESH: %w", err)
 	}
 	return &server.RateLimiters{
-		Login:   httpmw.NewRateLimiter(loginRule, extract, logger),
-		Refresh: httpmw.NewRateLimiter(refreshRule, extract, logger),
+		Login:   httpmw.NewRateLimiter(loginRule, extract, logger, resp),
+		Refresh: httpmw.NewRateLimiter(refreshRule, extract, logger, resp),
 	}, nil
 }
 
@@ -301,6 +302,7 @@ func providePermissionsRegistry() *shared.PermissionsRegistry {
 	return shared.NewPermissionsRegistry([]shared.Permissioned{
 		authcmd.LogoutCommand{},
 		profilecmd.ChangePasswordCommand{},
+		profilecmd.ChangeLangCommand{},
 		profileqry.GetProfileQuery{},
 		usercmd.CreateUserCommand{},
 		usercmd.UpdateUserCommand{},
@@ -385,6 +387,7 @@ func CreateApplication(
 		authcmd.NewRefreshTokenHandler,
 		authcmd.NewLogoutHandler,
 		profilecmd.NewChangePasswordHandler,
+		profilecmd.NewChangeLangHandler,
 		profileqry.NewGetProfileHandler,
 		usercmd.NewCreateUserHandler,
 		usercmd.NewUpdateUserHandler,

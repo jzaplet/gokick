@@ -10,8 +10,11 @@ type GetUserDashboardQuery struct{}
 
 func (GetUserDashboardQuery) RequiredPermission() string { return "dashboard:read" }
 
+// UserDashboard carries raw data only — the greeting sentence is composed on
+// the frontend from a translation key (no server-rendered prose in
+// data DTOs).
 type UserDashboard struct {
-	Message string
+	Nickname string
 }
 
 type GetUserDashboardHandler struct{}
@@ -29,7 +32,5 @@ func (h *GetUserDashboardHandler) Handle(
 		return UserDashboard{}, err
 	}
 
-	return UserDashboard{
-		Message: "Welcome " + claims.Nickname + " — this is a placeholder user dashboard.",
-	}, nil
+	return UserDashboard{Nickname: claims.Nickname}, nil
 }

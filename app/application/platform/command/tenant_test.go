@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/internal/testfx"
 )
 
@@ -150,8 +150,8 @@ func TestDeleteTenant_RefusesDefaultTenantEvenWhenEmpty(t *testing.T) {
 	if !errors.As(err, &ve) {
 		t.Fatalf("expected *shared.ValidationError, got %T: %v", err, err)
 	}
-	if !strings.Contains(ve.Message, "default tenant") {
-		t.Fatalf("the refusal must name the real reason (identity), got %q", ve.Message)
+	if ve.Key != msgkey.TenantDefaultUndeletable {
+		t.Fatalf("the refusal must name the real reason (identity), got %q", ve.Key)
 	}
 
 	got, err := fx.Tenants.FindByID(ctx, shared.DefaultTenantID)

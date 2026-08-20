@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
 import { useAuth } from '@/app-ui/Auth';
+import { useI18n } from '@/app-ui/I18n';
+import LangSwitcher from '@/app-ui/I18n/LangSwitcher.vue';
 import { useToast } from '@/app-ui/Toast/useToast';
 import { homeForRole } from '@/router/homeForRole';
 import Button from '@/app-ui/Buttons/Button.vue';
 
 const router = useRouter();
 const { success } = useToast();
+const { t } = useI18n();
 const { user, isAuthenticated, logout } = useAuth();
 
 const goToLogin = (): void => {
@@ -23,15 +26,19 @@ const goToDashboard = (): void => {
 
 const handleLogout = async (): Promise<void> => {
     await logout();
-    success('Signed out.');
+    success(t('auth.signed_out'));
 };
 </script>
 
 <template>
-    <div class="flex flex-col items-center justify-center min-h-screen p-10">
+    <div class="relative flex flex-col items-center justify-center min-h-screen p-10">
+        <div class="absolute top-4 right-4">
+            <LangSwitcher />
+        </div>
+
         <img
             src="@/img/go-vue-cqrs-ddd.png"
-            alt="Go Vue CQRS DDD Logo"
+            :alt="t('home.logo_alt')"
             class="max-w-full max-h-[50vh] object-contain"
         >
 
@@ -44,7 +51,7 @@ const handleLogout = async (): Promise<void> => {
                 size="lg"
                 @click="goToLogin"
             >
-                Sign in
+                {{ t('common.sign_in') }}
             </Button>
         </div>
 
@@ -56,7 +63,7 @@ const handleLogout = async (): Promise<void> => {
                 v-if="user !== null"
                 class="text-sm text-gray-600"
             >
-                Signed in as <strong class="text-gray-900">{{ user.nickname }}</strong>
+                {{ t('home.signed_in_as') }} <strong class="text-gray-900">{{ user.nickname }}</strong>
             </p>
 
             <div class="flex flex-wrap items-center justify-center gap-3">
@@ -64,14 +71,14 @@ const handleLogout = async (): Promise<void> => {
                     variant="primary"
                     @click="goToDashboard"
                 >
-                    Dashboard
+                    {{ t('common.dashboard') }}
                 </Button>
 
                 <Button
                     variant="secondary"
                     @click="handleLogout"
                 >
-                    Sign out
+                    {{ t('common.sign_out') }}
                 </Button>
             </div>
         </div>

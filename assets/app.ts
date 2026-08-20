@@ -3,6 +3,7 @@ import App from '@/App.vue';
 import { router } from '@/router';
 import { refresh } from '@/app-ui/Auth/refresh';
 import { hasSessionHint } from '@/app-ui/Auth/sessionHint';
+import { initLocale } from '@/app-ui/I18n';
 import { initSentry } from '@/app-ui/Sentry/initSentry';
 import '@/tailwind.css';
 import '@/img/go-vue-cqrs-ddd.png';
@@ -15,6 +16,12 @@ import '@/img/go-vue-cqrs-ddd.png';
 // (just like a brand-new visitor).
 export const bootstrap = async (): Promise<void> => {
     const app = createApp(App);
+
+    // Resolve the UI language before anything renders or navigates: the
+    // choice cookie, then the server-negotiated <html lang>, then en. Must
+    // precede the router mount — the guard emits translated toasts and
+    // enforces the language URL prefix.
+    initLocale();
 
     // Init error tracking before the first await so failures during refresh and
     // mount are captured too (no-op without VITE_SENTRY_DSN).
