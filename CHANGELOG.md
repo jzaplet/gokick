@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1](https://github.com/jzaplet/gokick/compare/v1.4.0...v1.4.1) (2026-08-20)
+
+
+### Bug Fixes
+
+* **ci:** pin the release gate to the tag, drop the tag trigger, gate required checks on a token ([652affb](https://github.com/jzaplet/gokick/commit/652affbeef21ee5077da0630d6d79b66882981cb))
+
 ## [1.4.0](https://github.com/jzaplet/gokick/compare/v1.3.0...v1.4.0) (2026-08-20)
 
 
