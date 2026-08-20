@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.2](https://github.com/jzaplet/gokick/compare/v1.4.1...v1.4.2) (2026-08-20)
+
+
+### Bug Fixes
+
+* **ci:** skip the tool rebuild on an exact cache hit, and key the cache on go.mod ([54db15e](https://github.com/jzaplet/gokick/commit/54db15e8f5b56e4721257d550d2507ff75a96194))
+
 ## [1.4.1](https://github.com/jzaplet/gokick/compare/v1.4.0...v1.4.1) (2026-08-20)
 
 
