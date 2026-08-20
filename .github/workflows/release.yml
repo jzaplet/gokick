@@ -14,36 +14,55 @@ name: Release
 # If you want anonymous `docker pull` of :latest, flip it to public once in the
 # package settings (Package → Package settings → Change visibility).
 #
-# Nothing else validates a release commit. validate.yml is PR-only, and
-# release-please opens its release PR with GITHUB_TOKEN — a GITHUB_TOKEN-created PR
-# triggers no workflow at all, so that PR carries zero checks. This workflow
-# therefore runs the full suite itself, against the exact commit being released,
-# BEFORE any image is built — see the `validate` job below.
+# Nothing else validates a release commit. validate.yml is PR-only, and the release
+# PR usually carries no checks of its own (see below), so this workflow runs the full
+# suite itself against the exact commit being released, BEFORE any image is built —
+# the `validate` job.
+#
+# On the release PR's checks: release-please opens it with GITHUB_TOKEN, and GitHub is
+# mid-rollout on what that means. This repo has measured BOTH — release PRs #39/#41
+# (2026-07-20) got runs in the `action_required` state that a maintainer approved by
+# hand, while #43 (same day) and #55 (a month later) got none at all. Treat "the
+# release PR validates the release" as something you cannot rely on either way; this
+# gate is what does not depend on it.
 #
 # Two entry points, same build:
-#   - push of a v* tag — the manual/hand-cut release path (full control).
-#   - workflow_call from release-please.yml with the `tag` input — the automated
-#     path (a GITHUB_TOKEN-pushed tag can't trigger `on: push: tags`, so
-#     release-please calls this workflow instead). The build is identical either
-#     way; only where the tag string comes from differs.
+#   - workflow_call from release-please.yml with the `tag` input — the automated path.
+#   - workflow_dispatch with the same input — the manual/hand-cut release, and the
+#     recovery path when a gate failure left a tag with no image behind it.
+#
+# There is deliberately NO `on: push: tags: v*`. With GITHUB_TOKEN it never fired
+# anyway (a token-pushed tag triggers nothing, which is why release-please calls this
+# workflow directly). The moment release-please is given a PAT or App token it WOULD
+# start firing — on top of the workflow_call — and two full runs would build and push
+# the same GHCR tag for one release. Pushing a v* tag by hand therefore builds nothing
+# on purpose; run this workflow with the tag instead:
+#   gh workflow run release.yml -f tag=v1.2.3
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build (e.g. v1.2.3) — must already exist."
+        required: true
+        type: string
   workflow_call:
     inputs:
       tag:
-        description: "Release tag to build (e.g. v1.2.3). Set by release-please; empty on a manual tag push."
-        required: false
+        description: "Release tag to build (e.g. v1.2.3). Set by release-please."
+        required: true
         type: string
 
-# Serialised per tag so a manual tag push and release-please's workflow_call for the
-# same version cannot build and push the same image concurrently. cancel-in-progress is
-# FALSE and must stay that way: a cancelled release build leaves a tag and a GitHub
-# Release with no image behind them, which is worse than two minutes of duplicate work.
+# One group per release version, across BOTH entry points — `inputs.tag` is set on
+# either, so a manual re-run for a version cannot race the automated run for the same
+# version. (The earlier `inputs.tag || github.ref` did NOT do this: it produced
+# `release-v1.2.3` on one path and `release-refs/tags/v1.2.3` on the other, two groups
+# that never serialised against each other.)
+#
+# cancel-in-progress is FALSE and must stay that way: a cancelled release build leaves
+# a tag and a GitHub Release with no image behind them, which is worse than waiting.
 concurrency:
-  group: release-${{ inputs.tag || github.ref }}
+  group: release-${{ inputs.tag }}
   cancel-in-progress: false
 
 permissions:
@@ -53,17 +72,37 @@ permissions:
 jobs:
   # The gate. Runs lint + test + build + E2E against the commit this release is cut
   # from, using the same workflow the PR checks use — one definition, no second copy
-  # to drift. `actions/checkout` inside it takes `github.sha`, which on both entry
-  # points is the commit the tag points at.
+  # to drift.
+  #
+  # `ref` is passed EXPLICITLY and is the whole point: a called workflow's default
+  # checkout takes `github.sha`, which on the workflow_call path is the push-to-main
+  # commit of the run that happened to cut the release — not necessarily the commit
+  # the tag points at. (release-please reads live API state, so a run started by an
+  # earlier push can be the one that tags.) Handing it the same tag the `image` job
+  # builds makes the thing validated and the thing shipped the same object by
+  # construction, instead of by an assumption about release-please's internals.
   #
   # Consequence, accepted deliberately: release-please TAGS before it calls this
   # workflow, so a failure here leaves a tag and a GitHub Release with no image
   # behind them. That is the lesser evil — a visibly incomplete release beats a
-  # silently unvalidated one. Recover by fixing main and re-running this workflow,
-  # or by deleting the tag and its release.
+  # silently unvalidated one.
+  #
+  # RECOVERY, and read this before reaching for "Re-run jobs" — neither re-run button
+  # does what you want. "Re-run failed jobs" replays the SAME commit, so a fix on main
+  # changes nothing and it fails again. "Re-run all jobs" is worse on the automated
+  # path: release-please sees the release already cut (the merged PR carries the
+  # `autorelease: tagged` label), reports release_created=false, and skips this whole
+  # workflow — the run goes green having built nothing. What works: land the fix on
+  # main, let release-please cut the NEXT version, and treat the broken tag as a dud.
+  # If you must ship that exact version, delete the tag and its GitHub Release, flip
+  # the merged release PR's label back to `autorelease: pending`, and re-run
+  # release-please. For a manual build of an existing, known-good tag, use
+  # workflow_dispatch: `gh workflow run release.yml -f tag=vX.Y.Z`.
   validate:
     name: validate the release commit
     uses: ./.github/workflows/validate.yml
+    with:
+      ref: ${{ inputs.tag }}
 
   image:
     name: build + push image
@@ -72,10 +111,9 @@ jobs:
     steps:
       - name: Resolve the release tag
         id: rel
-        # The workflow_call input when release-please called us; the pushed tag
-        # otherwise. Everything downstream reads steps.rel.outputs.tag so neither
-        # trigger has to special-case the version.
-        run: echo "tag=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+        # Both entry points now supply `tag` as a required input, so there is no
+        # fallback to guess at. Everything downstream reads steps.rel.outputs.tag.
+        run: echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v6
         with:

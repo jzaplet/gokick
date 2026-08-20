@@ -90,13 +90,31 @@ jednou dorovnat:
    commit-msg + pre-push hook neběží; do té doby commity chytá CI `commitlint.yml`).
 2. `make setup-github ARGS="--reset-version 0.1.0"` — jednorázový bootstrap
    (potřebuje `gh` login s adminem na repu). Zapne **Actions write + create-PR
-   permissions** (bez nich release-please neotevře release PR ani nepushne tag) a
-   založí **branch ruleset** na `main` (vyžadovat PR, zákaz force-push/mazání).
-   `--reset-version` přepíše `.release-please-manifest.json` z gokickovy verze na
-   tvoji výchozí (jinak by tvůj první release navázal na gokickovu verzi) — commitni
-   ho pak přes PR. Detail: `scripts/setup-github.sh --help`.
-3. (Volitelně) Publikace image do GHCR: `gh variable set RELEASE_PUSH --body true`
-   (bez ní se image jen postaví, nepushne). Sentry: `SENTRY_*` vars + `SENTRY_AUTH_TOKEN`.
+   permissions** (bez nich release-please neotevře release PR ani nepushne tag),
+   nastaví **rebase-only** merge a založí **branch ruleset** na `main` (vyžadovat PR,
+   zákaz force-push/mazání, jen rebase merge). `--reset-version` přepíše
+   `.release-please-manifest.json` z gokickovy verze na tvoji výchozí (jinak by tvůj
+   první release navázal na gokickovu verzi) — commitni ho pak přes PR.
+   Detail: `scripts/setup-github.sh --help`.
+3. **Chceš, aby release opravdu vydal image? Tohle si projdi, ať se pak nedivíš.**
+   Jsou to tři NEZÁVISLÉ věci a pletou se dohromady:
+
+   | Co | Bez toho | Kde se nastavuje |
+   |---|---|---|
+   | `RELEASE_PUSH=true` | image se **jen postaví a zahodí** — nikam se nepushne | `gh variable set RELEASE_PUSH --body true` |
+   | **pull token** na deploy targetu | privátní GHCR package **nejde stáhnout** → deploy neproběhne | u deploy targetu (registry credentials), NE v repu; classic PAT se scope `read:packages` |
+   | **release-please token** (volitelný) | release PR nedostane spolehlivě checky → nejdou zapnout required checks | `make setup-github ARGS="--release-token"` |
+
+   U **privátního** repa jsou první dvě položky povinné, jinak nemáš co deploynout.
+   Třetí je komfort, ne podmínka buildu — viz bod 4.
+4. (Volitelně, doporučeno na ostrém projektu) `make setup-github ARGS="--release-token"`
+   — vyžádá si token (skrytý vstup / `$RELEASE_PLEASE_TOKEN`), uloží ho jako repo secret
+   `RELEASE_PLEASE_TOKEN` a **teprve pak** přidá do rulesetu **required status checks +
+   strict** policy. Až s tím platí „bez rebase a zeleného CI to nemergneš" pro všechny
+   otevřené PR. Token potřebuje repo práva **Contents / Pull requests / Issues:
+   read+write** (classic PAT: scope `repo`). **Není to ten samý token jako pull token
+   pro GHCR** — ten patří na deploy target a stačí mu `read:packages`.
+5. (Volitelně) Sentry: `SENTRY_*` vars + `SENTRY_AUTH_TOKEN`.
 
 Od té chvíle běží plný workflow: Conventional Commits (lokálně hook + CI), branch
 naming, a release-please řídí verze + `CHANGELOG.md`. Konvence: `CONTRIBUTING.md`;

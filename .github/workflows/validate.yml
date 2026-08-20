@@ -5,11 +5,16 @@ name: Validate
 # second run on the push to main re-tests identical content. Re-adding
 # `push: branches: [main]` doubles every merge's CI bill and buys nothing back.
 #
-# What this repo does NOT rely on: required status checks. It has none, on purpose —
-# release-please opens its release PR with GITHUB_TOKEN, and a GITHUB_TOKEN-created
-# PR triggers no workflow at all, so a required context would sit unreported and
-# leave every release PR unmergeable (see scripts/setup-github.sh). The honest
-# consequence: main can go momentarily red with nothing to announce it.
+# What this repo does NOT rely on by default: required status checks. Not because
+# they are wrong, but because what a GITHUB_TOKEN-created PR does is currently
+# unpredictable — GitHub is rolling out "bot-created PRs can run workflows if
+# approved", and THIS repo has measured both outcomes with the same token: release
+# PRs #39/#41 got runs in the `action_required` state (a maintainer clicked approve),
+# while #43 and #55 got none. A required context therefore either blocks forever or
+# costs a click per release, and you cannot tell which in advance. Give release-please
+# a PAT or App token and the picture becomes predictable — that is what
+# `scripts/setup-github.sh --release-token` sets up. The honest consequence of the
+# default: main can go momentarily red with nothing to announce it.
 #
 # What closes that gap is the release, not the merge. The `workflow_call` entry
 # point below is release.yml's gate: it runs this whole suite against the exact
@@ -18,6 +23,16 @@ name: Validate
 on:
   pull_request:
   workflow_call:
+    inputs:
+      ref:
+        description: >-
+          Commit-ish to validate. release.yml passes the release TAG so the thing
+          validated is the same object the image is built from — a called workflow's
+          default checkout would take github.sha, which is the caller's event commit
+          and not necessarily what the tag points at. Empty on the pull_request path,
+          where checkout's own default (the PR merge ref) is correct.
+        required: false
+        type: string
 
 # Supersede a PR's own in-flight run when it is pushed again — the older run is
 # validating a commit nobody will merge. Grouped per ref (not per workflow alone)
@@ -66,6 +81,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Empty on a pull_request — checkout then falls back to its own default
+          # (the PR merge ref), which is what the PR checks must validate.
+          ref: ${{ inputs.ref }}
 
       - uses: actions/setup-go@v6
         with:
@@ -132,6 +151,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Empty on a pull_request — checkout then falls back to its own default
+          # (the PR merge ref), which is what the PR checks must validate.
+          ref: ${{ inputs.ref }}
 
       - uses: actions/setup-go@v6
         with:
