@@ -47,7 +47,11 @@ make setup-github ARGS="--reset-version 0.1.0"
 
 Zapne **Actions write + create-PR permissions** (bez nich release-please neotevře release PR ani nepushne tag), založí **branch ruleset** na `main` (vyžadovat PR, zákaz force-push/mazání) a `--reset-version` přepíše `.release-please-manifest.json` z gokickovy verze na tvoji výchozí — ten commitni přes PR. Bez `--reset-version` příkaz proběhne, ale verze zůstane na gokickově (`1.1.0`). Detail: `scripts/setup-github.sh --help`, kompletní recept `/gk-init`.
 
-> Ruleset je „lehčí" profil: vyžaduje PR + blokuje force-push/mazání, ale **nevynucuje zelené CI ani review** (aby release PR od release-please neuvízl na checku, který přes `GITHUB_TOKEN` neběží). Přísnější gate si přidej sám.
+> Ruleset má dva profily. **Default je „lehčí"**: vyžaduje PR, blokuje force-push/mazání a povoluje jen rebase merge, ale **nevynucuje zelené CI**. Důvod: co dostane release PR od release-please (otevřený přes `GITHUB_TOKEN`) za checky, je dnes nepředvídatelné — GitHub rozjíždí „bot-created PRs can run workflows if approved" a gokick naměřil obojí, běhy ve stavu `action_required` i vůbec nic. Required check by proto release PR buď zablokoval, nebo si vyžádal klik na každé vydání.
+>
+> **Na ostrém projektu použij `make setup-github ARGS="--release-token"`** — uloží token jako secret `RELEASE_PLEASE_TOKEN` (release PR pak checky dostává spolehlivě) a teprve pak přidá **required status checks + strict** policy, tedy „bez rebase a zeleného CI to nemergneš". Token chce repo práva Contents / Pull requests / Issues: read+write.
+>
+> ⚠️ **Nepleť si ho s pull tokenem pro GHCR.** Ten je jiný, žije na deploy targetu (ne v repu), stačí mu `read:packages` a bez něj nestáhneš privátní image. A na to, aby se image vůbec pushnul, potřebuješ repo variable `RELEASE_PUSH=true`.
 
 ## Make příkazy
 
