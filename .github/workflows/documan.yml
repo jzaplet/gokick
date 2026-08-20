@@ -1,9 +1,19 @@
 name: Documan
 
+# PR-ONLY, like validate.yml, and for the same reason: PRs are rebase-merged onto an
+# up-to-date branch, so the docs that land on main are the docs this job already
+# linted on the PR. See validate.yml's header for why this repo has no required
+# status checks and what covers the gap instead.
+#
+# A future `deploy` job (push to a registry) WOULD need `push: branches: [main]`
+# added back — but gated to that job, not to the whole workflow, so the lint does not
+# start running twice again.
 on:
-  push:
-    branches: [main]
   pull_request:
+
+concurrency:
+  group: documan-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -12,12 +22,16 @@ permissions:
 # `docker build` therefore validates every markdown frontmatter, link, and
 # duplicate URI. If anything is wrong the build fails and the PR check fails.
 #
-# A future `deploy` job (push to a registry, gated on `main`) goes here too;
-# see https://docs.documan.ai/ for the secret wiring (DOCUMAN_LICENSE_KEY,
-# DOCUMAN_OPENAI_API_KEY) when you wire it up.
+# See https://docs.documan.ai/ for the secret wiring (DOCUMAN_LICENSE_KEY,
+# DOCUMAN_OPENAI_API_KEY) when you wire up a deploy.
 jobs:
   lint:
     name: Lint docs
+    # Release-please's PR touches CHANGELOG.md and the manifest — neither lives under
+    # docs/, so there is nothing here for it to validate. Dormant with the default
+    # GITHUB_TOKEN (that PR triggers no run at all); see validate.yml's copy of this
+    # condition for when it engages and why it is a job-level `if`.
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

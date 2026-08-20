@@ -1,9 +1,35 @@
 name: Validate
 
+# PR-ONLY, deliberately. PRs are rebase-merged onto an up-to-date branch, so the
+# tree that lands on main is the tree these jobs already validated on the PR — a
+# second run on the push to main re-tests identical content. Re-adding
+# `push: branches: [main]` doubles every merge's CI bill and buys nothing back.
+#
+# What this repo does NOT rely on: required status checks. It has none, on purpose —
+# release-please opens its release PR with GITHUB_TOKEN, and a GITHUB_TOKEN-created
+# PR triggers no workflow at all, so a required context would sit unreported and
+# leave every release PR unmergeable (see scripts/setup-github.sh). The honest
+# consequence: main can go momentarily red with nothing to announce it.
+#
+# What closes that gap is the release, not the merge. The `workflow_call` entry
+# point below is release.yml's gate: it runs this whole suite against the exact
+# commit being released, before any image is built. Nothing ships unvalidated even
+# if something red reached main.
 on:
-  push:
-    branches: [main]
   pull_request:
+  workflow_call:
+
+# Supersede a PR's own in-flight run when it is pushed again — the older run is
+# validating a commit nobody will merge. Grouped per ref (not per workflow alone)
+# so two different PRs never cancel each other. `github.workflow` is the CALLER's
+# name, so a release's gate run never shares a group with a PR run.
+#
+# Cancellation is deliberately OFF outside pull_request: on the workflow_call path
+# this run is the gate a release image waits on, and killing it would abandon the
+# tag release-please already cut.
+concurrency:
+  group: validate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -18,6 +44,25 @@ env:
 jobs:
   validate:
     name: lint + test + build
+    # Skip release-please's own PR: it only ever touches CHANGELOG.md and
+    # .release-please-manifest.json, so building Go + the SPA and running the whole
+    # suite over two text files is ~10 minutes of nothing.
+    #
+    # Dormant as shipped — with the default GITHUB_TOKEN that PR triggers no run at
+    # all, so there is nothing here to skip. It goes live the moment release-please
+    # is given a PAT or App token (the documented upgrade for anyone who also wants
+    # required status checks), and it is a JOB-level `if` rather than a filter in
+    # `on:` for two reasons that matter then: `on.pull_request.branches` filters the
+    # BASE branch and cannot express "not release-please's branch" at all, and a job
+    # skipped by `if` still reports its check while a filtered-out workflow reports
+    # nothing.
+    #
+    # The `event_name != 'pull_request'` half is a guard, not decoration: on the
+    # workflow_call path `github.head_ref` is empty, so the skip branch would already
+    # not match — but if it ever did, both jobs would skip, this workflow would still
+    # succeed, and release.yml's `needs:` gate would be satisfied by a run that
+    # validated nothing. Green-and-empty is the one failure this gate must not have.
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -81,6 +126,9 @@ jobs:
     # public/ files, no frontend build needed — E2E only talks to /health and
     # /debug/runs). See tests/e2e/README.md.
     name: durable-run E2E
+    # Same reasoning as `validate` above — see the comment there for why this is a
+    # job-level `if` rather than a filter in `on:`.
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

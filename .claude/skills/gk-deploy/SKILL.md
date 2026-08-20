@@ -76,10 +76,10 @@ Jedno číslo verze teče do binárky i do SPA, aby Sentry grupoval chyby podle 
 
 ### GitHub CI
 
-- **`validate.yml`** (push na `main` + každý PR): job `validate` = `make install` → `make lint` → `make test` → `make build`; paralelní job `e2e` = `make e2e` (durable-run process-lifecycle testy, viz `/gk-runs`). `SKIP_DOCUMAN: "1"` (doc lint má vlastní `documan.yml`).
+- **`validate.yml`** (**jen na PR** + `workflow_call` z `release.yml`): job `validate` = `make install` → `make lint` → `make test` → `make build`; paralelní job `e2e` = `make e2e` (durable-run process-lifecycle testy, viz `/gk-runs`). `SKIP_DOCUMAN: "1"` (doc lint má vlastní `documan.yml`). Na push do `main` se **nespouští**: PR se rebase-merguje, takže na main přistane strom, který tenhle job na PR už proběhl. Nový push do PR ten předchozí běh zruší (concurrency per ref).
 - **`commitlint.yml`** (na PR): prožene každý commit v PR přes `commitlint` — server-side půlka vynucení Conventional Commits (lokální `commit-msg` hook jde obejít `--no-verify`, tohle ne). Konvence commitů/větví: `CONTRIBUTING.md`.
 - **`release-please.yml`** (push na `main`): drží otevřený „release PR", počítá další SemVer z commitů a přepisuje `CHANGELOG.md`; jeho merge vytvoří tag `vX.Y.Z` a GitHub Release. Verzování je automatické — verze ani changelog se needitují ručně.
-- **`release.yml`** (na tagu `v*` **nebo** `workflow_call` z release-please): postaví produkční image přes multi-stage Dockerfile, stampuje tag jako verzi. Volá se dvěma cestami se stejným buildem, protože tag od release-please (push přes `GITHUB_TOKEN`) `on: push: tags` **nespustí** (GitHub blokuje rekurzi), takže ho release-please zavolá přímo. **Push do GHCR je defaultně VYPNUTÝ** (gokick je template — fork nesmí auto-publikovat); zapneš repo variable `RELEASE_PUSH=true`. Bez ní se image jen postaví (ověří, že release kompiluje), nepushne. Source-map upload do Sentry je optional (`SENTRY_AUTH_TOKEN` build secret + `SENTRY_ORG`/`SENTRY_PROJECT` vars) — celý recept je v `/gk-sentry`.
+- **`release.yml`** (na tagu `v*` **nebo** `workflow_call` z release-please): nejdřív job `validate` — přes `workflow_call` prožene celý `validate.yml` (lint + test + build + E2E) nad **přesně tím commitem, který se vydává**; teprve když projde, job `image` postaví produkční image přes multi-stage Dockerfile a stampuje tag jako verzi. Ta brána je jediné, co release commit validuje (`validate.yml` jinak jede jen na PR a release PR od release-please přes `GITHUB_TOKEN` nespouští žádný check). Pozor na důsledek: release-please **tagne dřív**, než tenhle workflow zavolá, takže selhání v bráně nechá tag a GitHub Release bez image — viditelně nedodělaný release je menší zlo než tiše nevalidovaný. Volá se dvěma cestami se stejným buildem, protože tag od release-please (push přes `GITHUB_TOKEN`) `on: push: tags` **nespustí** (GitHub blokuje rekurzi), takže ho release-please zavolá přímo. **Push do GHCR je defaultně VYPNUTÝ** (gokick je template — fork nesmí auto-publikovat); zapneš repo variable `RELEASE_PUSH=true`. Bez ní se image jen postaví (ověří, že release kompiluje), nepushne. Source-map upload do Sentry je optional (`SENTRY_AUTH_TOKEN` build secret + `SENTRY_ORG`/`SENTRY_PROJECT` vars) — celý recept je v `/gk-sentry`.
 
 ## Recipe: postavit produkční image lokálně
 
@@ -98,7 +98,7 @@ Konvence commitů (typ = bump) a větví: `CONTRIBUTING.md`.
 
 ## Recipe: ruční release (escape hatch)
 
-Když potřebuješ vydat mimo release-please flow: cut tag z **zelené `main`** — `git tag v1.2.3 && git push origin v1.2.3`. `release.yml` se spustí i `on: push: tags` a postaví image stejně. Používej jen výjimečně; běžná cesta je release PR výše.
+Když potřebuješ vydat mimo release-please flow: `git tag v1.2.3 && git push origin v1.2.3`. `release.yml` se spustí i `on: push: tags` a jede stejně — včetně `validate` brány, takže tag z rozbité `main` image nepostaví (spadne na bráně a nechá tag bez artefaktu). Používej jen výjimečně; běžná cesta je release PR výše.
 
 ## Recipe: pull image na deploy target (private vs public GHCR)
 

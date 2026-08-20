@@ -21,6 +21,14 @@ on:
   push:
     branches: [main]
 
+# Serialised, NOT cancelled. Two pushes to main must not race on rewriting the same
+# release PR, so they queue — but cancel-in-progress stays FALSE on purpose: when this
+# run is the one that cut a release it goes on to call release.yml and build the image,
+# and killing that half-way would abandon a tagged release with no artifact.
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
   pull-requests: write
