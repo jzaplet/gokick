@@ -111,22 +111,42 @@ jobs:
           restore-keys: yarn-${{ runner.os }}-
 
       - name: Cache Go tools ($GOBIN binaries + build cache)
-        # `make install-tools` runs 5 version-pinned `go install` commands (built
-        # with the go.mod-pinned toolchain via GOTOOLCHAIN); each rebuilds a
-        # transitive tree (golangci-lint alone is ~hundreds of packages). Caching
-        # the resulting binaries + go-build cache makes subsequent runs
-        # near-instant. The key includes hashFiles('Makefile'), so bumping a
-        # pinned tool version invalidates the cache and reinstalls.
+        id: gotools
+        # `make install-tools` runs 6 version-pinned `go install` commands; each
+        # rebuilds a transitive tree (golangci-lint alone is ~hundreds of packages),
+        # ~28s in total. Caching the binaries + go-build cache makes later runs
+        # near-instant — but only if we then SKIP the rebuild, which is what the
+        # `cache-hit` output below is for.
+        #
+        # The key hashes go.mod as well as the Makefile, and both terms are load
+        # bearing. Makefile carries the pinned tool VERSIONS. go.mod carries the
+        # toolchain that BUILDS them (GO_VERSION is read from it, into
+        # TOOL_GOTOOLCHAIN). Without the go.mod term, bumping the Go line alone
+        # would be an exact hit, the rebuild would be skipped, and the cached
+        # golangci-lint would stay built by the old toolchain — which it refuses to
+        # survive: "the Go language version go1.X used to build golangci-lint is
+        # lower than the targeted go1.Y". Until this step gained the skip, every run
+        # rebuilt and silently self-healed that; now the key has to be right.
         uses: actions/cache@v4
         with:
           path: |
             ~/go/bin
             ~/.cache/go-build
-          key: go-tools-${{ runner.os }}-${{ hashFiles('Makefile') }}
+          key: go-tools-${{ runner.os }}-${{ hashFiles('Makefile', 'go.mod') }}
           restore-keys: go-tools-${{ runner.os }}-
 
       - name: Install (Go deps + tools + frontend deps)
-        run: make install
+        # An EXACT cache hit means ~/go/bin already holds binaries built from these
+        # exact pins by this exact toolchain, so re-running the six `go install`s
+        # rebuilds what was just restored. A partial hit (restore-keys fallback)
+        # sets cache-hit to false and takes the full path, which is correct: the
+        # restored binaries are then from a different pin set.
+        run: |
+          if [ "${{ steps.gotools.outputs.cache-hit }}" = "true" ]; then
+            make go-deps fe-deps hooks
+          else
+            make install
+          fi
 
       - name: Lint
         run: make lint
