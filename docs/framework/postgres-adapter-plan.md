@@ -1,0 +1,622 @@
+---
+layout: 'page'
+uri: '/framework/postgres-adapter-plan'
+position: 95
+slug: 'framework-postgres-adapter-plan'
+parent: 'framework'
+navTitle: 'Plán: Postgres adaptér'
+title: 'Plán: PostgreSQL 18 adaptér'
+description: 'Analýza vazeb na SQLite a plán refaktoringu na přepínatelný SQLite/PostgreSQL 18 backend — DB-agnostické testy, zámky bez globálního write-locku a multitenancy vynucená Postgresem (RLS).'
+---
+
+# Plán: PostgreSQL 18 adaptér
+
+Stačí nastavit `APP_DB_DRIVER=postgres` v env a aplikace **i celá Go test suite** poběží na PostgreSQL 18 se stejným chováním, aniž by se kdekoli otevřela SQLite. Postgres zároveň nahradí globální write-lock zámky na úrovni řádků a přinese multitenancy vynucenou přímo databází (Row-Level Security). Tahle stránka je analýza dnešních vazeb na SQLite a fázovaný plán refaktoringu k tomu cíli.
+
+**Status:** 🔴 draft (k review) · **Roadmap:** [Roadmap (GoKick) → Škálovatelnost](/framework/gokick-roadmap) · **Analýza:** 2026-09-24
+
+> **Konvence cest:** existující soubory cituju plnou cestou (`app/…`), aby je hlídal
+> `make docpaths-check`. **Nové** balíčky, které teprve vzniknou, píšu relativně k `app/`
+> (např. `infrastructure/postgres/run`).
+
+<!-- gkdoc:ignore migrations/sqlite/ — adresář, který plán teprve zakládá (přesun dnešních migrací) -->
+<!-- gkdoc:ignore migrations/postgres/ — adresář, který plán teprve zakládá (PG migrace) -->
+
+
+## TL;DR
+
+1. **Jeden přepínač, jedno místo volby.** Backend vybírá `APP_DB_DRIVER=sqlite|postgres` (plus DSN proměnné). Větví se jen `persistence.Open(cfg)`. Tuto funkci volá Wire v produkci i `testfx` v testech, takže testy z principu nemůžou jet na jiném backendu než aplikace.
+2. **Dva plnohodnotné adaptéry místo `if dialect` v jednom repu.** Postgres dostane vlastní repozitáře a vlastní migrace: `timestamptz`, `boolean`, `uuid`, `bytea`, `jsonb`, `SKIP LOCKED`, RLS. Společné zůstanou doménové porty, mechanika `Conn`/tx-in-context a hlavně **jedna sada kontraktních testů**, která běží proti oběma adaptérům.
+3. **Testy nezávislé na DB.**
+   - `testfx.New(t)` přestane brát cestu k souboru. Týká se to 336 volání a jde o mechanický codemod.
+   - 65 raw SQL literálů v testech nahradí pojmenované fixture helpery.
+   - Testy, které testují jen SQLite, se na Postgresu přeskočí s uvedeným důvodem.
+   - Postgres fixture je klon šablonové DB, cca 15 ms na test (změřeno).
+4. **Trojitá pojistka „na Postgresu žádná SQLite":**
+   - runtime guard: SQLite opener odmítne otevřít DB, když je aktivní driver `postgres`;
+   - statický gate nad testy;
+   - CI job `make test-pg` builduje s `-tags nosqlite`, takže SQLite kód se vůbec nezkompiluje, a po běhu ověří, že nevznikl žádný `*.db` soubor.
+5. **Zámky.** Globální single-writer nahradí MVCC a zámky na úrovni řádků.
+   - Fronta runů: `FOR UPDATE SKIP LOCKED`.
+   - Scheduler a migrace: advisory locky.
+   - Pojistky: `lock_timeout` a `idle_in_transaction_session_timeout`.
+   - Unikátnost a invarianty drží constrainty (23505 a 23503 se mapují na doménové chyby); volitelně `SERIALIZABLE` s retry.
+6. **Multitenancy vynucená Postgresem.**
+   - RLS (`ENABLE` + `FORCE`) na tabulkách vlastněných tenantem.
+   - Tenant se předává v **tx-lokálním** GUC `app.tenant_id`.
+   - Runtime role nemá `BYPASSRLS` a nevlastní tabulky.
+   - Platformní a systémová rovina jede přes oddělenou login roli s `BYPASSRLS`.
+
+   Zapomenutý `WHERE tenant_id` pak vrátí 0 řádků místo cizích dat.
+7. **Doslovný port by byl chybný.** Ověřeno na reálném Postgresu (sekce 8): dnešní `ClaimDue` by na Postgresu **vydal stejný run dvěma workerům**.
+8. **Nejdřív opravit existující bug:** po startovních migracích se ztrácí limit connection poolu, a to už dnes na SQLite (nález N1).
+
+
+## 1. Výchozí stav — jak je SQLite zadrátovaná
+
+### 1.1 Architektonické vazby
+
+- **Chybí DB abstrakce.** Všude se předává konkrétní `*database.SqliteManager` z `app/infrastructure/database/sqlite_manager.go`:
+  - `BaseRepository` v `app/infrastructure/sqlite/conn.go`;
+  - konstruktory pěti repozitářů;
+  - `MigrationManager`;
+  - tři DI providery (CommandBus, SystemCommandBus, RunWorker), kde slouží jako `shared.Transactor`. Nemají `wire.Bind`, takže interface splňuje implicitně konkrétní typ;
+  - `testfx.Fixture.DB`;
+  - `app.NewApplication`, který bere `*database.MigrationManager`.
+- **Wire** (`app/infrastructure/di/wire_gen.go`) volá `NewSqliteManager` bezpodmínečně pro každý subcommand. `app/application.go` pouští migrace před každým subcommandem.
+- **Goose** se používá přes globální API (`SetDialect("sqlite3")`, `SetBaseFS`). Kvůli tomuto globálnímu stavu fixture testy nesmí používat `t.Parallel()`.
+- **Migrace:** `migrations/embed.go` embeduje plochý adresář `*.sql`. `make migrate-*` mají natvrdo `goose … sqlite3 $APP_DB_PATH`.
+- **Konfigurace** zná jen `APP_DB_PATH`, `APP_DB_JOURNAL_MODE` a `APP_DB_MAX_CONNS`. Chybí volba driveru i DSN.
+- **Horizontální škálování:** `serve` spouští in-process scheduler bez koordinace mezi replikami a rate-limiter drží stav v paměti procesu.
+
+### 1.2 Inventura v číslech
+
+| Oblast | Počet |
+|---|---|
+| SQL příkazy v repozitářích | 51 (46 s `?`, 5 named `:name`, 3 dynamické `IN (?,…)` buildery) |
+| Časové funkce SQLite | `NowExpr` 13×, `LeaseExpr` 3×, inline `strftime` 3×, `datetime('now')` 1×, `julianday()` 12× + expression index, `CURRENT_TIMESTAMP` default 8× |
+| `LIKE`, který spoléhá na ASCII case-insensitivitu SQLite | 7 |
+| Boolean uložený jako INTEGER | 2 sloupce (`users.active`, `runs.cancel_requested`), dále `SUM(active)`, `cancel_requested = 1`, `int + (bool)` |
+| Raw-pool zápisy mimo tx | 4 (`RecordLogin`, `RecordFailedLogin`, `ResetFailedLogin`, audit `Save`) |
+| Check-then-insert toky chráněné dnes jen serializací zápisů | 4 (vytvoření uživatele, přejmenování, vytvoření tenanta, seeder) |
+| Testové soubory celkem / se skutečnou DB | 134 / **69** |
+| – DB přes `testfx.New*` / přes helper / přes `NewSqliteManager` | 63 / 1 / 5 |
+| Volání `testfx.New*` | **336** (za běhu `go test` vznikne ≈ 390 databází) |
+| Testy s vlastním raw SQL | 26 souborů, 65 literálů (47 s `?`), plus 2 přímo v `testfx.go` |
+| Testy se sémantikou specifickou pro SQLite | ≈ 25 testů v 11 souborech |
+| Gate testy, které skenují zdrojový kód | 9, z toho 3 vázané na SQLite nebo na cestu `infrastructure/sqlite` |
+| Dokumentace zmiňující SQLite | 12 stránek (framework + README + CLAUDE.md) a 21 skillů |
+
+Úplný seznam testových souborů je v **příloze A**. Seznam dokumentace k aktualizaci je v **příloze B**.
+
+### 1.3 Co už je připravené
+
+- **Porty jsou čisté:** repozitáře leží za doménovými interface. `app/domain/run/repository.go` navíc už formuluje kontrakt s ohledem na Postgres: „SQLite: writer serialization + UPDATE…RETURNING; Postgres: SELECT … FOR UPDATE SKIP LOCKED".
+- **Dialektově neutrální mechaniky:** `RowsAffectedBool`, owner-fencing, `NotTerminalClause`, tx-in-context a `ContextForbidTx`.
+- **Build:** `pgx` je čisté Go, takže `CGO_ENABLED=0` i statická binárka zůstávají.
+- **SQLite driver při startu nic nedělá.** Jeho `init()` jen zaregistruje jméno `sqlite3`; od v0.30 jde o transpilovaný Go kód bez WASM runtime. Na Postgresu se tedy ze SQLite nic nespustí, dokud ji někdo neotevře.
+- **Roadmapa** (Škálovatelnost) s Postgres adaptérem, RLS, `SKIP LOCKED` a advisory locky už počítá.
+
+
+## 2. Nálezy — co by doslovný port rozbil
+
+Seřazeno podle závažnosti. „Ověřeno" znamená, že nález byl reprodukován na reálném Postgresu (sekce 8).
+
+| # | Nález | Dopad na Postgresu | Řešení |
+|---|---|---|---|
+| N1 | **Existující bug:** `MigrationManager.RunUp` volá `SetMaxOpenConns(1)` a pak `defer SetMaxOpenConns(0)`. Hodnota 0 znamená „bez limitu", takže po každém startu je pool neomezený a `MaxIdleConns` zůstane na 1. **Ověřeno:** cap 7 → 0. | Na Postgresu hrozí vyčerpání `max_connections`. Na SQLite to už dnes ruší ochranu F-047. | Opravit samostatně hned (PR 0). S goose Provider API pinning na jedno spojení vůbec není potřeba. |
+| N2 | `ClaimDue` má tvar `UPDATE … WHERE id = (SELECT … LIMIT 1)` a guard „volný nebo expirovaný" je jen v subquery. **Ověřeno:** dva workery dostanou tentýž run a druhý navíc započítá falešný `reclaims`. | Handler se spustí dvakrát (mail nebo API volání 2×), kontrakt „nejvýš jeden worker" je porušený a poison cap se falešně posouvá. | CTE s `FOR UPDATE SKIP LOCKED` a opakovaná kontrola guardu ve vnějším `WHERE`. **Ověřeno:** druhý worker neblokuje a vezme další run. |
+| N3 | Check-then-insert unikátnost (`app/application/userwrite/userwrite.go`, `CreateTenant`, seeder) je dnes korektní jen díky `BEGIN IMMEDIATE`, tedy serializaci všech zápisů. | Pod READ COMMITTED projdou kontrolou obě transakce a poražená dostane 23505, tedy **500** místo 400. | Zdrojem pravdy je constraint. 23505 se namapuje podle jména constraintu na pole a vrátí `ValidationError`. |
+| N4 | `DeleteIfEmptyAcrossTenants` (NOT EXISTS users/runs) může běžet souběžně s enqueue runu, a `runs.tenant_id` nemá FK. | Tenant se smaže a run zůstane bez tenanta. | FK `runs.tenant_id → tenants(id)` v PG schématu; chyba 23503 se namapuje na „tenant není prázdný". **Ověřeno:** DELETE počká na `KEY SHARE` lock souběžného INSERTu a skončí chybou 23503, run bez tenanta nevznikne. |
+| N5 | `LIKE` v 7 filtrech spoléhá na ASCII case-insensitivitu SQLite (viz komentář v `app/infrastructure/sqlite/user/list.go`). **Ověřeno:** `LIKE '%ALI%'` na Postgresu nenajde `alice`. | Hledání v gridech přestane ignorovat velikost písmen. | `ILIKE` a escapování `%`, `_` a `\` (Postgres má `\` jako výchozí escape znak). |
+| N6 | Řazení: SQLite používá `BINARY`, Postgres locale collation. `app/application/platform/query/list_pages_test.go` čeká `Default` před `acme`. | Jiné pořadí v gridech a padající test. | Vytvořit DB s `LOCALE_PROVIDER builtin` a `C.UTF-8`, což dá stejné codepoint pořadí. Lokalizované řazení (ICU `cs-CZ`) ponechat jako vědomé produktové rozhodnutí (D2). |
+| N7 | NULL v `ORDER BY` (`last_login_at` v platform gridu): SQLite řadí při ASC NULL na začátek, Postgres na konec. | Jiné pořadí. | Explicitní `NULLS FIRST/LAST` v PG repozitáři. |
+| N8 | Sloupce typu `uuid`. **Ověřeno:** `WHERE id = 'not-a-uuid'` na Postgresu vyhodí chybu 22P02, SQLite vrátí 0 řádků. Testy používají id, která nejsou UUID (`tnt-abc`, `does-not-exist`, `u-1`, `no-such-id` …). | Nesmyslné id z URL vrátí 500 místo 404 a testy padají. | PG repo převede neplatné UUID u lookupu na „nenalezeno" (parita se SQLite). Testová data převést na platná UUID. Audit `actor_user_id` a `target_id` nechat jako `text`. |
+| N9 | Čas: `now()` v Postgresu vrací začátek **transakce**, kdežto SQLite `'now'` platí pro jeden příkaz. SQLite navíc ukládá datetime ve třech textových formátech (proto všude `julianday`). | Časy lease a zámků by uvnitř delší transakce „stály". | `statement_timestamp()` (případně `clock_timestamp()`) a typ `timestamptz`. `MsPrecisionUTC` zachovat kvůli stejným round-tripům, čtení normalizovat na UTC. |
+| N10 | Dvoje hodiny: `run_at` a `expires_at` píše Go, lease a zámky počítá DB. | Když DB běží na jiném hostu, rozdíl hodin posouvá okamžik, kdy je run způsobilý ke claimu. | Zdokumentovat požadavek na NTP. Volitelně počítat `run_at` v DB (`statement_timestamp() + interval`). |
+| N11 | Typy: `SUM(active)`, `int + (bool)`, `cancel_requested = 1`. | Syntaktické a typové chyby. | `COUNT(*) FILTER (WHERE active)`, `::int`, `TRUE`. |
+| N12 | Audit `metadata` je `[]byte` JSON. `runs.payload` a `runs.state` jsou libovolné bajty (existuje test s NUL bajty a 2 MiB blobem). | Typ `text` odmítne bajt 0x00, `jsonb` přeformátuje `{"step":1}`. | `payload` a `state` jako `bytea`. Audit `metadata` jako `jsonb`, test porovnávat sémanticky (rovnost JSON). |
+| N13 | Při souběžném startu N replik každá pouští `goose Up`. | Migrace běží souběžně. | Goose `Provider` s `lock.NewPostgresSessionLocker()` (advisory lock). |
+| N14 | Scheduler běží v každé `serve` replice; `TestScheduler_TwoInstancesTickIndependently` to výslovně dokumentuje. | Každý job proběhne N× za interval. | Advisory lock pro každý job (sekce 5). |
+| N15 | `sqlx` pro driver `pgx` nepřepisuje placeholdery `?` (automaticky jen named parametry). | Týká se 46 statementů a 47 testových literálů. | PG repozitáře píšou `$n` nativně, testy jdou přes helpery (sekce 7). |
+
+**Drobnosti mimo Postgres nalezené cestou:**
+- `app/domain/tenant/repository.go` má zastaralý komentář „Name is not unique", přestože unikátní index existuje.
+- `docs/framework/configuration.md` uvádí default `APP_SEED_ADMIN_TENANT` jako `Tenant 1`, v kódu je `Default`.
+- `GOOSE_VERSION` v Makefile je v3.27.1, v go.mod v3.27.0.
+
+
+## 3. Cílová architektura
+
+### 3.1 Balíčky
+
+```
+app/infrastructure/
+  database/        driver-neutrální: Driver, tx-in-context (TxFromContext), port Migrator,
+                   klasifikace DB chyb (ErrUniqueViolation{Constraint}, ErrFKViolation, ErrSerialization …)
+  persistence/     Open(cfg) → *Store  ← JEDINÉ místo, kde se větví podle driveru
+                   (+ build-tagged opener pro sqlite a postgres)
+  sqlite/          dnešní adaptér + SqliteManager (přesun z database/), sqlite migrátor
+  postgres/        nový adaptér: Manager (dva pooly, BeginTx s rovinou a GUC), BaseRepository,
+    user/ token/ run/ tenant/ audit/        časové helpery, mapování chyb, advisory Locker
+  seeder/          přesun z sqlite/seeder (neobsahuje SQL, je DB-neutrální)
+app/internal/
+  testfx/          backend-agnostické fixtures (New(t) bez cesty)
+  repotest/        sdílené kontraktní testy portů (dnešní testy v infrastructure/sqlite/<ctx>)
+migrations/
+  sqlite/          dnešní 4 soubory, beze změny verzí
+  postgres/        squashnutý init + budoucí dvojčata (stejné verze)
+```
+
+`persistence.Store` nese doménové porty. Wire ho vezme přes `wire.FieldsOf`, takže `container_provider.go` přestane znát konkrétní repozitáře:
+
+```go
+type Store struct {
+    Driver          database.Driver
+    Users           user.Repository
+    PlatformUsers   user.PlatformRepository
+    Tokens          token.Repository
+    Runs            run.Repository
+    Tenants         tenant.Repository
+    PlatformTenants tenant.PlatformRepository
+    Audit           shared.AuditLogger
+    Tx              shared.Transactor   // BeginTx / BeginReadTx / Commit / Rollback
+    Locker          shared.Locker       // advisory lock; SQLite = in-process no-op
+    Migrator        database.Migrator
+}
+
+// Wire provider: cleanup zavře pooly (dnes se Close v produkci nevolá vůbec).
+func providePersistence(cfg *config.Config, log *slog.Logger) (*persistence.Store, func(), error)
+```
+
+**Důsledky:**
+- DI providery budou brát `shared.Transactor` místo `*database.SqliteManager`.
+- `app.NewApplication` bude brát `database.Migrator`.
+- `.go-arch-lint.yml` dostane nové komponenty `postgres_base`, `postgres_repos` a `persistence`. Hranice bounded contextů pro Postgres se vyjmenují stejně jako pro `sqlite_repos`.
+
+### 3.2 Konfigurace
+
+| Env | Default | Význam |
+|---|---|---|
+| `APP_DB_DRIVER` | `sqlite` | `sqlite` nebo `postgres`. Striktní parsování, při neplatné hodnotě start selže (jako `getEnvBool`). |
+| `APP_DB_PATH`, `APP_DB_JOURNAL_MODE` | beze změny | Jen pro SQLite. Whitelist journal módů se přesune do configu. |
+| `APP_DB_URL` | — | DSN **runtime role** (tenantová rovina, podléhá RLS). Pro `postgres` povinné. |
+| `APP_DB_SYSTEM_URL` | — | DSN **systémové role** (`BYPASSRLS`) pro platformní a systémovou rovinu (sekce 6). Pro `postgres` povinné. |
+| `APP_DB_MIGRATE_URL` | — | DSN **vlastníka schématu**. Používá se jen pro migrace na startu, pod advisory lockem. |
+| `APP_DB_MAX_CONNS` | auto | Na Postgresu platí pro každý pool zvlášť. Dimenzovat vůči `max_connections` × počtu replik. |
+| `APP_DB_LOCK_TIMEOUT` / `APP_DB_STATEMENT_TIMEOUT` / `APP_DB_IDLE_TX_TIMEOUT` | `5s` / `30s` / `60s` | Session parametry Postgresu (sekce 5). `5s` odpovídá dnešnímu `busy_timeout(5000)`. |
+| `APP_TEST_DB_URL` | — | Jen pro testy: admin DSN testovacího clusteru (sekce 7). |
+
+**Driver:** `pgx/v5` přes `pgx/v5/stdlib` a `sqlx`.
+- Zachová se tím interface `Conn`, `db` tagy i named queries.
+- `lib/pq` ne: `[]byte` posílá jako bytea escape text, což rozbije `jsonb` sloupce.
+- Nastavení poolu: `SetConnMaxLifetime` a `SetConnMaxIdleTime`, plus runtime parametry `TimeZone=UTC` a `application_name=gokick`.
+- Na depguard allow-list v `.golangci.yml` přibude `github.com/jackc/pgx/v5`.
+
+### 3.3 Migrace
+
+- **Dva adresáře:**
+  - `migrations/sqlite/` obsahuje dnešní soubory. Verze v `goose_db_version` se nemění, takže existující deploymenty nic nepoznají.
+  - `migrations/postgres/` obsahuje jeden squashnutý init se stejnou verzí `20260327000001` a tři navazující dvojčata se stejnými verzemi, nebo jejich obsah zahrnutý v initu. Nové migrace se vždy píšou **ve dvojici se stejnou verzí**.
+- **Goose Provider API** (`goose.NewProvider`) místo globálního stavu:
+  - pro Postgres `goose.DialectPostgres` a `lock.NewPostgresSessionLocker()`;
+  - pro SQLite `DialectSQLite3` bez lockeru.
+
+  Tím odpadne i pinning na jedno spojení, a s ním bug N1.
+- **Gate:** množiny verzí v obou adresářích musí být identické. Zachytí zapomenuté dvojče.
+- **`make migrate-*`** budou respektovat driver. `make migrate-create NAME=x` založí oba soubory se stejným timestampem. Parsování `.env` přes `grep | cut` nahradí `goose -env` nebo malý `gk` subcommand, protože DSN obsahuje `=`.
+- **Role** jsou objekty clusteru, ne databáze, proto nepatří do migrací. Zakládá je bootstrap skript (`docker/postgres/init-roles.sql`), který použije docker-compose, CI i testovací harness. Migrace dělají jen `GRANT` a RLS politiky; jména rolí jsou pevná (`gokick_app`, `gokick_system`) s možností přepsat je přes goose `ENVSUB`.
+
+
+## 4. Postgres schéma
+
+| Tabulka | Změny oproti SQLite |
+|---|---|
+| `tenants` | `id uuid`, `created_at`/`updated_at timestamptz DEFAULT now()`, unikátní index na `name` beze změny. Pro `C.UTF-8` je porovnání case-sensitive jako dnes. |
+| `users` | `id uuid`, `tenant_id uuid REFERENCES tenants`, `active boolean DEFAULT true`, datumy jako `timestamptz`, `role` s CHECK beze změny, `nickname` UNIQUE (globálně, jako dnes), index `(tenant_id, nickname)`. |
+| `refresh_tokens` | `id` a `user_id` jako `uuid`, `ON DELETE CASCADE` beze změny. **Odpadá** redundantní `idx_refresh_tokens_token_hash`, protože UNIQUE už má vlastní index. |
+| `audit_log` | `id uuid`, `metadata jsonb`, `created_at timestamptz`. `actor_user_id`, `target_id` a `actor_ip` zůstávají `text` (polymorfní hodnoty; audit nikdy nesmí selhat na tvaru dat). |
+| `runs` | `id uuid`, `tenant_id uuid` **nově s FK** na `tenants` (N4), `payload bytea NOT NULL`, `state bytea`, `cancel_requested boolean`, časy jako `timestamptz`. `locked_by` zůstává `text` (nejde o UUID, je to `workerID-claimUUID`). Index `idx_runs_claim ON runs (run_at) WHERE <not terminal>`. |
+
+Postgres 18 nabízí navíc nativní `uuidv7()`. Aplikace dál generuje id v Go, ale funkce se hodí pro defaulty v ručních skriptech. Dále je k dispozici `transaction_timeout` (od verze 17) a builtin collation `C.UTF-8` (od verze 17).
+
+
+## 5. Zámky a souběh
+
+SQLite dnes serializuje **všechny** zápisy (`_txlock=immediate`, jeden writer). Je to jednoduché a korektní, ale jeden pomalý zápis zastaví celou aplikaci. Postgres dovoluje paralelní zápisy, takže každý invariant, který dnes „drží serializace", musí držet něco explicitního:
+
+| Situace | Dnes (SQLite) | Postgres |
+|---|---|---|
+| Souběžné commandy | jeden po druhém (globální write-lock) | paralelně, MVCC + zámky na úrovni řádků, READ COMMITTED |
+| Claim z fronty runů | serializovaný `UPDATE … WHERE id=(subquery)` | `FOR UPDATE SKIP LOCKED` a opakovaná kontrola guardu; N workerů běží paralelně bez double-claimu (ověřeno) |
+| Owner-fencing (`WHERE locked_by=?`) a CAS rotace refresh tokenu | podmíněný UPDATE | beze změny. Postgres po získání zámku znovu vyhodnotí celé `WHERE` na nejnovější verzi řádku, takže je to bezpečné. |
+| Brute-force čítač (`RecordFailedLogin`) | jeden `UPDATE … RETURNING` | beze změny (atomický) |
+| Unikátnost nickname a jména tenanta | kontrola před zápisem (serializovaná) | rozhoduje constraint; 23505 se namapuje na pole a vrátí `ValidationError` (N3) |
+| Smazání tenanta vs. souběžný insert uživatele nebo runu | serializace | FK na obou stranách (N4); FK check drží `KEY SHARE` na řádku tenanta, 23503 znamená „tenant není prázdný" |
+| Invarianty přes více řádků (guardy superadmina, budoucí „poslední admin") | serializace | zámek na „kotvě": `SELECT … FROM tenants WHERE id=$1 FOR UPDATE`, případně `pg_advisory_xact_lock(key)`; alternativně `SERIALIZABLE` (viz níže) |
+| Bulk operace nad mnoha řádky | serializace | zamykat v deterministickém pořadí (`… WHERE id IN (SELECT id … ORDER BY id FOR UPDATE)`); 40P01 (deadlock) je retryovatelný |
+| Scheduler v N replikách | každá replika spustí job | `Locker.TryWithLock("job:<name>")`: session `pg_try_advisory_lock` na vyhrazeném spojení, job, pak `pg_advisory_unlock`. Nevlastník tick přeskočí. |
+| Migrace při startu N replik | — | goose session locker (advisory lock) |
+| Dlouhá transakce | freeze celé DB | drží zámky řádků a spojení a blokuje vacuum; `idle_in_transaction_session_timeout` ji ukončí. `ContextForbidTx` zůstává a mění se jen zdůvodnění. |
+| Čekání na zámek | `busy_timeout(5000)` | `lock_timeout=5s` → chyba 55P03 se namapuje na retryovatelnou chybu |
+
+**`ClaimDue` pro Postgres** (ověřený tvar):
+
+```sql
+WITH next AS (
+    SELECT id FROM runs
+    WHERE completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL
+      AND run_at <= statement_timestamp()
+      AND (locked_until IS NULL OR locked_until < statement_timestamp())
+    ORDER BY run_at
+    LIMIT 1
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE runs r
+SET locked_by    = $1,
+    locked_until = statement_timestamp() + make_interval(secs => $2),
+    reclaims     = r.reclaims + (r.locked_until IS NOT NULL)::int,
+    updated_at   = statement_timestamp()
+FROM next
+WHERE r.id = next.id
+RETURNING r.*;
+```
+
+**Volitelně `SERIALIZABLE`.** Command se přihlásí markerem (např. `shared.RequiresSerializable`). `TransactionMiddleware` ho na Postgresu otevře jako `SERIALIZABLE` a při 40001/40P01 zopakuje celý handler (nejvýš 3×, s jitterem). Bezpečné je to proto, že eventy se dispatchují až po commitu a audit leží mimo transakci. Na SQLite je marker no-op, protože SQLite serializuje vždy. Doporučuju začít bez něj a přidat ho jen tam, kde invariant nejde vyjádřit constraintem ani zámkem na kotvě.
+
+**Volitelně `LISTEN/NOTIFY`.** Po commitu enqueue se pošle `pg_notify('gokick_runs', …)` a worker se probudí okamžitě. Polling zůstane jako fallback. Zkrátí to latenci z `APP_RUN_WORKER_POLL` na milisekundy.
+
+**Mimo rozsah:** rate-limiter drží stav v paměti každé repliky (`app/presentation/http/middleware/ratelimit.go`), takže efektivní limit je N× nastavená hodnota. Řešení (PG tabulka s UPSERT token bucketem nebo Redis) je samostatný krok. Lockout účtu je v DB, a tedy globální už dnes.
+
+
+## 6. Multitenancy vynucená Postgresem (RLS)
+
+Dnes izoluje tenanty aplikace: `WHERE tenant_id = ?` v každém dotazu, conformance gate `zz_tenant_test.go` a fail-closed `BaseRepository.Tenant`. RLS přidá **druhou zeď v databázi**. Když se na `WHERE` zapomene, dotaz vrátí 0 řádků a zápis do cizího tenanta skončí chybou.
+
+### 6.1 Role a roviny
+
+```
+                 ┌──────────────────────── tenantová rovina ────────────────────────┐
+HTTP/bus ───────►│ pool APP_DB_URL  → role gokick_app   (NOBYPASSRLS, nevlastní tabulky)│
+                 │ BEGIN; SELECT set_config('app.tenant_id', $tenant, true); …; COMMIT│
+                 └───────────────────────────────────────────────────────────────────┘
+                 ┌──────────────────────── systémová rovina ─────────────────────────┐
+platform:*, CLI,►│ pool APP_DB_SYSTEM_URL → role gokick_system (BYPASSRLS)           │
+worker claim,    │ login lookup, brute-force čítače, refresh tokeny, audit, scheduler │
+scheduler        └───────────────────────────────────────────────────────────────────┘
+migrace ────────► APP_DB_MIGRATE_URL → role gokick_owner (vlastník; runtime ji nepoužívá)
+```
+
+- **Dvě login role a dva pooly** místo jedné role se `SET LOCAL ROLE`. Injektované SQL v tenantové rovině se tak nemůže povýšit, protože `gokick_app` není členem `gokick_system`. Variantu se `SET LOCAL ROLE` jsem ověřil jako funkční, ale je slabší (rozhodnutí D4).
+- **Rovina se určuje v ctx:** `shared.ContextWithPlane` a `shared.PlaneFrom`.
+  - Nový `PlaneMiddleware` v `BaseChain` hned za Authorize nastaví rovinu `platform`, pokud `RequiredPermission()` začíná `platform:`, jinak `tenant`. Zdroj pravdy je jeden a existující gate `zz_platform_isolation_test.go` už hlídá, že se `*AcrossTenants` volá jen z `application/platform`.
+  - `SystemCommandBus`, worker (claim, lease, finalize), scheduler a seeder nastaví rovinu `system`.
+- **`Transactor.BeginTx(ctx)` na Postgresu** vybere pool podle roviny. V tenantové rovině navíc nastaví `set_config('app.tenant_id', tenant, true)`. Parametr `true` znamená platnost jen pro transakci, takže se hodnota nikdy nepřenese na další uživatele spojení z poolu (ověřeno).
+- **Každý přístup v tenantové rovině musí běžet v transakci.** `set_config(…, true)` mimo transakci nemá žádný efekt (ověřeno). Proto:
+  - `CommandBus` má `TransactionMiddleware` už dnes;
+  - `QueryBus` dostane `ReadTxMiddleware` (`BEGIN READ ONLY` + scope). Na SQLite je to no-op a čte se z poolu jako dnes, bez IMMEDIATE locku;
+  - cesty mimo bus (run handler bez `WithTx`, event handlery) obslouží PG `BaseRepository.Conn(ctx)`: bez transakce v ctx otevře krátkou scoped transakci pro jeden příkaz. Je to korektní, jen o tři round-tripy dražší. Metrika v logu ukáže, jestli to někde neběží na horké cestě.
+- **Klasifikace markerů.** Každý z **17** dnešních markerů `tenant-scope-exempt` dostane rovinu:
+  - `(rls)` znamená, že dotaz nemá `WHERE tenant_id`, ale RLS ho i tak omezí na vlastní tenant. Patří sem vlastní změna hesla a jazyka.
+  - `(system)` znamená, že jde přes `r.SystemConn(ctx)`. Patří sem platformní dotazy, login lookup a brute-force čítače.
+  - U `FindByID` („identity load by id") je potřeba projít volající: profil patří do tenantové roviny, refresh do systémové.
+
+  Gate ověří, že marker `(system)` se vyskytuje jen v metodě, která volá `SystemConn`. `SystemConn` uvnitř tenantové transakce smí jen **číst**; zápis vrátí chybu, protože by tiše rozbil atomicitu.
+
+### 6.2 Politiky a granty
+
+```sql
+CREATE FUNCTION gokick_current_tenant() RETURNS uuid LANGUAGE sql STABLE AS
+$$ SELECT NULLIF(current_setting('app.tenant_id', true), '')::uuid $$;
+-- NULLIF je nutné: po skončení tx vrací znovu použité spojení '' (ne NULL) a ''::uuid
+-- by místo 0 řádků vyhodilo chybu (ověřeno).
+
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE users FORCE  ROW LEVEL SECURITY;           -- platí i pro vlastníka
+CREATE POLICY tenant_isolation ON users
+  USING      (tenant_id = gokick_current_tenant())
+  WITH CHECK (tenant_id = gokick_current_tenant());    -- cross-tenant INSERT/UPDATE → chyba
+-- totéž pro runs; tenants: SELECT USING (id = gokick_current_tenant())
+```
+
+| Tabulka | `gokick_app` (tenantová rovina) | `gokick_system` |
+|---|---|---|
+| `users`, `runs` | DML, podléhá RLS | DML (BYPASSRLS) |
+| `tenants` | jen `SELECT` vlastního řádku | DML |
+| `refresh_tokens` | **žádný grant** (vše kolem tokenů probíhá před autentizací nebo jako auth plumbing) | DML |
+| `audit_log` | **žádný grant** | jen `INSERT` + `SELECT`, takže **append-only vynucuje DB** |
+| `goose_db_version` | — | — (jen `gokick_owner`) |
+
+### 6.3 Pojistky
+
+- **Kontrola rolí při startu.** Superuser obchází RLS **vždy**, i s `FORCE`; typicky jde o výchozího uživatele `postgres` v dockeru. Proto se při startu ověří, že role pro `APP_DB_URL` nemá `rolsuper` ani `rolbypassrls` a nevlastní tabulky. Jinak start selže (fail fast).
+- **RLS zapnuté i v single-tenant módu.** GUC má vždy hodnotu `DefaultTenantID`, takže se chování nemění a kód má jednu cestu. Testy tak RLS procházejí pořád.
+- **Explicitní `WHERE tenant_id` v repozitářích zůstává.** Slouží jako obrana do hloubky a pomáhá planneru s indexem, a `zz_tenant` gate platí i pro PG repozitáře. RLS je záloha, ne náhrada.
+- **Porušení `WITH CHECK`** (SQLSTATE 42501) je bug, protože `AssertTenantScope` měl zasáhnout dřív. Namapuje se na interní chybu a reportuje do Sentry.
+- **Nová PG-only testovací sada** ověří izolaci **v databázi, nezávisle na kódu repozitářů**:
+  - raw `SELECT count(*) FROM users` bez `WHERE` v transakci tenanta A vidí jen A;
+  - `UPDATE` cizího řádku podle id ovlivní 0 řádků;
+  - cross-tenant `INSERT` selže;
+  - systémová rovina vidí vše;
+  - chybějící tenant dá 0 řádků.
+
+
+## 7. Testy nezávislé na backendu
+
+### 7.1 Principy
+
+1. Backend v testech vybírá **stejná proměnná** jako v aplikaci: `APP_DB_DRIVER`, pro Postgres doplněná o `APP_TEST_DB_URL`.
+   - `make test` pouští SQLite jako dnes.
+   - `make test-pg` pustí `docker compose --profile pg-test up -d` s Postgres 18 a pak celou suite s `APP_DB_DRIVER=postgres` a `-tags nosqlite`.
+2. `testfx` otevírá DB přes **`persistence.Open`**, tedy stejnou funkci jako produkce, jen s testovacím configem.
+3. **Tělo testu neobsahuje žádné SQL specifické pro dialekt.** SQL žije buď v adaptéru, nebo v pojmenovaném fixture helperu implementovaném pro oba backendy.
+4. Kontraktní testy repozitářů se napíšou **jednou** a běží **proti oběma** adaptérům.
+
+### 7.2 Nové API `testfx`
+
+```go
+fx := testfx.New(t)              // dřív: testfx.New(t, filepath.Join(t.TempDir(), "x.db"))
+fx := testfx.NewMultitenant(t)
+
+fx.Tx                            // shared.Transactor (místo konkrétního *SqliteManager)
+fx.Driver()                      // database.Driver
+testfx.RequireDriver(t, database.DriverSQLite)   // jinak t.Skip("sqlite-only: …")
+testfx.SystemCtx() / testfx.TenantCtx(tenantID)  // seedování a cross-tenant data (RLS)
+```
+
+- **Codemod:** 336 volání `testfx.New*` se přepíše mechanicky přes `gofmt -r 'testfx.New(a, b) -> testfx.New(a)'` a totéž pro `NewMultitenant`. Na vzorku dvou souborů ověřeno: pokryje všechny tři styly zápisu cesty. Ručně zbude jediný tabulkový případ v `app/application/platform/command/create_user_test.go` (`tc.fx(t, …)` s typem `func(*testing.T, string)`) a úklid nepoužitých importů `filepath` přes `goimports`. Jméno souboru dnes nic nenese.
+- **Seed helpery** (`SeedUser`, `SeedUserInTenant`, `SeedRunInTenant` …) poběží v systémové rovině. Seedování je systémová operace a pod RLS by jinak `WITH CHECK` odmítl řádek cizího tenanta.
+- **`NewJwt`** se přesune do samostatného balíčku bez DB (např. `internal/testfx/jwtfx`). Tři testy middleware, které z `testfx` potřebují jen JWT, pak nebudou linkovat DB adaptéry.
+
+### 7.3 Postgres harness (izolace per test)
+
+- **Šablona:** při prvním použití v procesu vznikne databáze `gokick_tpl_<hash(migrations/postgres)>`.
+  - Přípravu kryje `pg_advisory_lock` na clusteru, protože `go test` pouští balíčky jako paralelní procesy.
+  - Na šablonu se pustí migrace přes goose Provider (bez globálního stavu).
+  - Když se změní migrace, změní se hash, a tím i šablona.
+- **Fixture:** `CREATE DATABASE gokick_t_<rand> TEMPLATE gokick_tpl_… STRATEGY FILE_COPY`, v `t.Cleanup` pak `DROP DATABASE … WITH (FORCE)`.
+  - **Změřeno:** s `fsync=off`, `full_page_writes=off` a `synchronous_commit=off` trvá klon zhruba 15 ms a drop zhruba 5 ms (bez režie klienta). S `fsync=on` je to zhruba 110 ms kvůli checkpointu, proto testovací kontejner běží s vypnutými fsync flagy.
+  - Celkem ≈ 390 databází × 20 ms ≈ 8 s sériově, rozložených do paralelních balíčků.
+- **Role** zakládá bootstrap skript idempotentně jednou za cluster; DSN rolí sestaví harness.
+- **`t.Parallel()`:** po odstranění globálního goose stavu ho lze v DB testech postupně povolit. Jde o volitelný výkonový krok.
+
+### 7.4 Kategorie testů
+
+| Kat. | Význam | Souborů | Akce |
+|---|---|---|---|
+| **A** | Nezávislé na backendu, bez SQL | 26 | jen codemod `New(t)` |
+| **A+** | Nezávislé na backendu, ale obsahují raw SQL nebo `fx.DB` | 14 + 1 | codemod + SQL nahradit helpery (7.5); „+1" je `app/zz_gap_test.go`, který se přepisem změní z S na A+ |
+| **K** | Kontraktní testy portů (dnes v `infrastructure/sqlite/<ctx>`) | 23 | přesun do `internal/repotest/<ctx>`, poběží na obou backendech; `run/repository_test.go` má navíc SQLite-only část |
+| **S** | Sémantika specifická pro SQLite | 5 | zůstanou v SQLite adaptéru s `RequireDriver(sqlite)` a `//go:build !nosqlite`; kde to dává smysl, vznikne **PG dvojče** |
+| **G** | Gate testy nad zdrojovým kódem (bez DB) | 2 dotčené + 2 nové | sekce 7.6 |
+
+Rozpis po souborech je v **příloze A**.
+
+**SQLite-only testy a jejich PG dvojčata:**
+
+| SQLite test | Co testuje | PG dvojče |
+|---|---|---|
+| `TestSqliteManager_ConcurrentTxWritesDoNotReturnBusy` | `_txlock=immediate` vs. `SQLITE_BUSY_SNAPSHOT` (read-modify-write bez chyby) | souběžné commandy s atomickým `val = val + 1`: nic se neztratí, žádná 500; plus test mapování 40001/55P03 |
+| busy_timeout, `PRAGMA foreign_keys` pro každé spojení, whitelist journal módů | tuning SQLite DSN | `lock_timeout`, `idle_in_transaction_session_timeout` a kontrola rolí při startu (6.3) |
+| `sqlite_master` introspekce, goose `Down` | schéma a rollback migrace | `pg_indexes` / `information_schema`, Down přes Provider |
+| `sqlite/user/zz_audit_test.go` (raw-pool zápis čeká na write-lock) | self-deadlock pod SQLite | zámek řádku uvnitř bus tx vs. raw-pool zápis stejného řádku → `lock_timeout`, ne zamrznutí |
+| precizní testy `julianday`/`strftime` (run repo) | textové datetime a ms zaokrouhlení | kontrakt „ms-precise round-trip" poběží pro oba; PG: `statement_timestamp()` vs. `now()` v dlouhé tx |
+| `sqlite_loadtest_test.go` (tag `loadtest`) | propustnost jednoho writeru | volitelně PG load test: N workerů × M runů, exactly-once, propustnost |
+| — | — | **nové:** RLS sada (6.3), `SKIP LOCKED` s reálně paralelními workery, advisory lock scheduleru, souběžné migrace |
+
+### 7.5 Raw SQL v testech → pojmenované helpery
+
+| Dnes v testu | Helper (implementace pro oba dialekty v `testfx`) |
+|---|---|
+| `UPDATE runs SET locked_until = strftime(…'now','-1 hour')` (`forceExpire`, `forceExpireW`) | `fx.ForceExpireLease(t, runID)` |
+| `UPDATE runs SET locked_by=?, locked_until=strftime(…'+1 hour')` (`stealLeaseW`) | `fx.StealLease(t, runID, owner)` |
+| `UPDATE runs SET run_at = strftime(…'-1 second')` | `fx.SetRunDueInPast(t, runID)` |
+| `UPDATE runs SET completed_at/failed_at = strftime(…)` | `fx.ForceTerminalRaw(t, runID, kind)` |
+| `UPDATE runs SET locked_until = julianday(…) ± ms` | `fx.SetLeaseRelativeToDBNow(t, runID, d)` |
+| `UPDATE runs SET reclaims/parks = ?` | `fx.SetRunCounters(t, runID, reclaims, parks)` |
+| `UPDATE users SET active = 0 WHERE id = ?` (5×) | `fx.SetUserActive(t, userID, false)` |
+| `UPDATE users SET locked_until = ?` | `fx.SetUserLockedUntil(t, userID, ts)` |
+| `INSERT INTO users … datetime('now') …` (`rawInsertUser`) | `fx.RawInsertUser(t, …)` (obchází repo kvůli testu constraintu) |
+| `INSERT INTO refresh_tokens …` (test NOT NULL/UNIQUE) | `fx.RawInsertToken(t, …)` a assert přes **klasifikovanou** chybu (`database.ErrUniqueViolation`), ne přes text, protože Postgres píše „not-null" |
+| `SELECT COUNT(*) FROM audit_log WHERE action=? AND target_id=?` | `fx.CountAudit(t, action, targetID)` |
+| `SELECT COUNT(*) FROM runs/users/tenants …` | `fx.Count(t, table, where, args…)` (přenositelná podmnožina, `?` přes `Rebind`) |
+| `UPDATE tenants SET plan=?` (již `SeedTenantWithPlan`) | beze změny API, interně `Rebind` |
+| `sqliteaudit.NewRepository(fx.DB)`, `provideCommandBus(…, fx.DB, …)` | `fx.NewAuditLogger()`, `fx.Tx` |
+
+**Úpravy testových dat:**
+- Id, která nejsou UUID (`tnt-abc`, `tnt-123`, `tnt-7`, `T1/T2`, `tenant-A`, `tenant-x`, `u-1/u-2`), převést na konstanty platných UUID. Funguje to na obou backendech.
+- „Neexistující" id (`does-not-exist`, `no-such-id`) mohou zůstat, protože PG repo neplatné UUID vrátí jako „nenalezeno" (N8).
+- Porovnání audit `metadata` přepsat na sémantickou rovnost JSON.
+
+### 7.6 Gate testy
+
+| Gate | Změna |
+|---|---|
+| `app/infrastructure/sqlite/zz_tenant_test.go` | Skener se parametrizuje adresářem a poběží pro `infrastructure/sqlite` i `infrastructure/postgres`. Přibude **guard proti prázdnému výsledku**: dnes projde naprázdno, když v adresáři nic nenajde. Pro PG SQL se opraví `tableRe`, který by jinak chytal `FOR UPDATE SKIP LOCKED` jako tabulku `skip`, podobně `ON CONFLICT … DO UPDATE SET`, `EXTRACT(… FROM …)` a `FROM unnest(…)`. Exempt tabulky budou pro každý dialekt zvlášť. Markery dostanou rovinu `(rls)` nebo `(system)` (6.1). |
+| `app/infrastructure/sqlite/zz_sqltime_test.go` | Zůstane jen pro SQLite. PG dvojče zakáže `now()` a `CURRENT_TIMESTAMP` v repo SQL a vyžádá `statement_timestamp()`/`clock_timestamp()` (N9). |
+| `app/domain/zz_gap_test.go` | Mezi zakázané importy handlerů přibudou `infrastructure/postgres` a `infrastructure/persistence` (dnes je natvrdo jen `infraSqliteRoot`). |
+| `app/infrastructure/worker/zz_notx_test.go` | Beze změny, kromě komentáře. |
+| **nový** `zz_nosqlite` | Testové soubory mimo `infrastructure/sqlite/**` nesmí: importovat `infrastructure/sqlite*` ani ncruces, obsahovat `NewSqliteManager`, cesty `*.db` nebo tokeny `julianday`, `strftime`, `datetime(`, `PRAGMA`, `sqlite_master`. Každý balíček pod `infrastructure/sqlite/**` musí mít `//go:build !nosqlite` a `RequireDriver`. |
+| **nový** `zz_migration_twins` | Množiny verzí v `migrations/sqlite/` a `migrations/postgres/` se musí shodovat. |
+
+### 7.7 Trojitá pojistka „žádná SQLite na Postgresu"
+
+1. **Runtime:** SQLite opener v `persistence` odmítne otevřít DB, když je aktivní driver `postgres`. Test, který by to zkusil, selže nahlas místo toho, aby tiše běžel na SQLite.
+2. **Staticky:** gate `zz_nosqlite` (7.6) a `go-arch-lint`: jen `persistence` a `infrastructure/sqlite/**` smí záviset na SQLite adaptéru.
+3. **Kompilace a artefakty v CI:**
+   - `make test-pg` = `go test -tags nosqlite ./...` s `APP_DB_DRIVER=postgres`. SQLite adaptér, SQLite-only testy i registrace ncruces driveru jsou za `//go:build !nosqlite`, takže jakákoli zbylá závislost **neprojde kompilací**.
+   - Dále `go list -tags nosqlite -deps ./... | grep ncruces` musí být prázdné.
+   - Test proběhne s `TMPDIR` v čerstvém adresáři a po běhu tam nesmí být žádný `*.db`, `*-wal` ani `*-journal`.
+
+**CI matice** (`.github/workflows/validate.yml`):
+- job `validate` poběží pro `driver: [sqlite, postgres]`, s service kontejnerem `postgres:18` (health-check, fsync flagy);
+- lint poběží pro obě sady build tagů;
+- e2e (`tests/e2e/lib.sh`) dostane PG variantu. `at_least_once.sh` dnes volá CLI `sqlite3`; nahradí ho `psql` nebo počet přes `/debug/runs`;
+- odložený e2e test *multi-process fencing* (dvě procesy workeru nad jednou DB) má na Postgresu konečně smysl.
+
+
+## 8. Ověřeno na reálném Postgresu
+
+Tvrzení v nálezech a v návrhu jsem ověřoval na lokálním PostgreSQL 16.13; image verze 18 v tomto prostředí nebyl k dispozici. Použité mechanismy (row locks, `SKIP LOCKED`, RLS, GUC, advisory locky, `CREATE DATABASE … TEMPLATE … STRATEGY`) se ve verzi 18 chovají stejně. PG18-specifické je jen `uuidv7()` a nová cesta `PGDATA` v oficiálním docker image, proto je potřeba mountovat `/var/lib/postgresql`.
+
+| # | Experiment | Výsledek |
+|---|---|---|
+| V1 | Doslovný port `ClaimDue`, dvě souběžné session | ❌ **oba workery dostaly tentýž run**, druhý navíc `reclaims=1` |
+| V2 | `ClaimDue` s CTE `FOR UPDATE SKIP LOCKED` | ✅ druhý worker neblokuje a vezme další run, `reclaims=0` |
+| V3 | RLS, runtime role bez nastaveného tenanta | ✅ 0 řádků (fail-closed) |
+| V4 | `set_config(…, true)` v tx, pak stejné spojení po `COMMIT` | ✅ tenant platí jen uvnitř tx, po commitu 0 řádků (nic se nepřenese přes pool) |
+| V5 | `set_config(…, true)` v autocommitu | ✅ bez efektu, takže čtení v tenantové rovině musí běžet v tx |
+| V6 | Cross-tenant `INSERT` a `UPDATE` podle id | ✅ `INSERT` selže na RLS policy, `UPDATE` ovlivní 0 řádků |
+| V7 | Role s `BYPASSRLS` / vlastník s `FORCE` | ✅ systémová role vidí vše, vlastník s `FORCE` je filtrovaný |
+| V8 | Globální `UNIQUE(nickname)` pod RLS | ✅ vynuceno napříč tenanty (23505) |
+| V9 | Politika bez `NULLIF`, znovu použité spojení | ⚠️ `''::uuid` vyhodí chybu, proto je `NULLIF` nutné |
+| V10 | `WHERE id = 'not-a-uuid'` nad `uuid` | ⚠️ chyba 22P02, proto parse v repu (N8) |
+| V11 | `LIKE` vs. `ILIKE` | ⚠️ `LIKE` je case-sensitive (N5) |
+| V12 | `SET LOCAL ROLE` na `BYPASSRLS` roli (alternativa D4) | ✅ funguje, po commitu se vrací původní role |
+| V13 | `lock_timeout=1s` proti drženému zámku řádku | ✅ „canceling statement due to lock timeout" (55P03) |
+| V14 | `pg_try_advisory_lock`, dvě session | ✅ zámek získá jen první (leader election pro scheduler) |
+| V15 | DELETE tenanta vs. souběžný INSERT runu s FK | ✅ DELETE čeká ≈ 1,5 s na `KEY SHARE` lock a skončí chybou 23503, run bez tenanta nevznikne |
+| V16 | `CREATE DATABASE … TEMPLATE` × 30 | ✅ `FILE_COPY` + `fsync=off` ≈ 15 ms klon, ≈ 5 ms drop (bez režie klienta) |
+| V17 | Pool cap po `RunUp` (dnešní SQLite kód) | ❌ **7 → 0 (bez limitu)**, bug N1 |
+
+
+## 9. Plán refaktoringu — fáze a PR
+
+Pořadí je zvolené tak, aby **fáze 1 a 2 byly čisté refaktory bez změny chování**, zelené na SQLite. Když pak přibude Postgres, celá suite už je na backendu nezávislá. Každá fáze = jeden nebo více PR s Conventional Commits (`refactor:`, `test:`, `feat(db):` …).
+
+| Fáze | Obsah | Hotovo, když |
+|---|---|---|
+| **0 — bugfix** | Oprava N1 (pool cap po migracích) a regresní test. Drobnosti z konce sekce 2. | `MaxOpenConnections` po `RunUp` = nastavený cap |
+| **1 — švy (jen SQLite)** | `database.Driver`, port `Migrator`, goose Provider API; `migrations/sqlite/` a embed podle dialektu. `SqliteManager` se přesune do `infrastructure/sqlite`. `persistence.Store` + `Open`, Wire přes `FieldsOf`, cleanup zavírá pool. Providery berou `shared.Transactor`, `NewApplication` bere `Migrator`. Seeder se přesune do `infrastructure/seeder`. Porty `shared.Locker` a `Transactor.BeginReadTx` (na SQLite no-op). Úprava `.go-arch-lint.yml`. | `make lint test` zelené; `*database.SqliteManager` mimo `sqlite` a `persistence` neexistuje |
+| **2 — testy nezávislé na backendu (ještě SQLite)** | Codemod `testfx.New(t)`; `fx.Tx`, helpery ze 7.5, `SystemCtx`/`TenantCtx`; UUID testová data. Kontraktní testy do `internal/repotest`; SQLite-only testy označit (`RequireDriver` + build tag). Gate `zz_nosqlite` a guard proti prázdnému výsledku v `zz_tenant`/`zz_sqltime`. `NewJwt` bez DB. | Mimo `infrastructure/sqlite/**` není v testech ani řádek SQLite SQL; `go test -tags nosqlite ./...` se **zkompiluje** (bez PG zatím s chybou „driver not built") |
+| **3 — PG základ** | Config (sekce 3.2), `pgx`, `postgres.Manager` se dvěma pooly, rovinami a GUC, kontrola rolí při startu. `PlaneMiddleware` a `ReadTxMiddleware` (na SQLite no-op). `migrations/postgres/` init s typy, FK, RLS a granty; bootstrap rolí. Profil `postgres` v docker-compose (PG 18). PG harness v `testfx`, `make test-pg`. | Na PG proběhnou migrace a `testfx` fixture; RLS sada (6.3) zelená |
+| **4 — PG repozitáře** | `user`, `tenant`, `token`, `run`, `audit` v `$n` SQL; `ClaimDue` se `SKIP LOCKED`; časy přes `statement_timestamp()`; `ILIKE` s escapováním; `NULLS FIRST/LAST`; parse UUID; mapování chyb (23505, 23503, 42501, 40001, 40P01, 55P03, 22P02). `zz_tenant` pro PG. | **Celá suite zelená na obou backendech**; `make test-pg` s `-tags nosqlite` |
+| **5 — zámky** | Advisory `Locker` pro scheduler, locker migrací, timeouty (sekce 3.2), zamykání „kotvy" u invariantů, deterministické pořadí u bulk operací, volitelný `RequiresSerializable` + retry. PG testy souběhu (N workerů × M runů exactly-once, dvě instance scheduleru, souběžné migrace). Úprava `TestScheduler_TwoInstancesTickIndependently`. | Testy souběhu zelené na PG a opakovaně (`-count=20`) |
+| **6 — CI a pojistky** | Matice v `validate.yml`, service `postgres:18`, lint pro obě sady tagů, kontrola artefaktů `*.db` a `go list -deps`, e2e na PG + multi-process fencing. | Oba joby povinné v branch rulesetu |
+| **7 — dokumentace** | Příloha B: CLAUDE.md, skilly, framework docs, README, roadmapa (zapsat rozhodnutí D1–D8). | `make docpaths-check` + `documan-lint` zelené |
+| volitelně | `LISTEN/NOTIFY` wake-up workeru; produkční build `-tags nosqlite`; sdílený stav rate-limiteru; nástroj pro migraci dat SQLite → PG; `t.Parallel()` v DB testech. | — |
+
+
+## 10. Rozhodnutí k potvrzení
+
+| # | Otázka | Doporučení | Proč |
+|---|---|---|---|
+| D1 | Typ id sloupců v PG: `uuid` nebo `text` | **`uuid`** (audit id jako `text`) | Nativní 16 B a rychlejší indexy. Riziko 22P02 řeší parse v repu a testová data se opraví jednorázově. |
+| D2 | Collation | **`builtin C.UTF-8`** | Stejné pořadí jako SQLite, deterministické a rychlé. České řazení (ICU `cs-CZ`) je samostatné produktové rozhodnutí. |
+| D3 | Fronta na PG: vlastní engine, nebo River (roadmapa zmiňuje River) | **Vlastní engine + `SKIP LOCKED`** | Fencing, checkpointy, cancel, parks/reclaims a propagace tenanta a jazyka jsou hotové a pokryté testy. River by byl přepis domény a běžel by jen na PG, čímž by se rozbila parita SQLite/PG. Roadmapu upravit. |
+| D4 | Systémová rovina: dvě login role + dva pooly, nebo jedna role + `SET LOCAL ROLE` | **Dvě role** | Injektované SQL v tenantové rovině se nemůže povýšit. Cena je jedna DSN proměnná navíc. |
+| D5 | RLS v single-tenant módu | **Zapnuté** | Jedna cesta kódu; testy RLS procházejí vždy; náklad je zanedbatelný. |
+| D6 | Výchozí driver | **`sqlite`** | Beze změny pro stávající instalace a dev (single-binary). |
+| D7 | Postgres pro testy: externí URL (docker compose / CI service), nebo testcontainers | **Externí URL** | Bez další závislosti na depguard allow-listu a bez Dockeru uvnitř testů. `make test-pg` si kontejner zvedne sám. |
+| D8 | Migrace dat SQLite → PG pro existující instalace | **Mimo rozsah**, případně později jako CLI příkaz | Převod tří formátů datetime, 0/1 na boolean a BLOB metadata na jsonb je samostatný úkol. |
+
+
+## 11. Rizika
+
+- **Rozsah.** Fáze 2 sahá do 69 testových souborů. Codemod je mechanický, ale review je velké. Proto je v samostatném PR bez změny chování.
+- **Dvě sady SQL.** Každý nový dotaz vznikne dvakrát. Mitigace: sdílené kontraktní testy (drift okamžitě spadne na jednom z backendů), gate na dvojčata migrací a parametrizovaný `zz_tenant`.
+- **RLS a testy s `context.Background()`.** Testy, které volají repozitář bez tenanta pro jiný než výchozí tenant, spadnou na Postgresu na `WITH CHECK`. Je to záměr, ale očekávám desítky úprav: `TenantCtx`/`SystemCtx`.
+- **Výkon scoped mini-transakcí** mimo bus (tři round-tripy navíc). Mitigace: bus cesty mají transakci na požadavek, zbytek hlídá metrika.
+- **Rozdíl hodin aplikace a DB** (N10) při odděleném DB hostu.
+- **Superuser v DSN** tiše vypne RLS. Proto je kontrola rolí při startu povinná a ne jen doporučená.
+
+
+## Příloha A — všechny testové soubory se skutečnou DB (69)
+
+Kategorie: **A** nezávislý na backendu · **A+** nezávislý, ale s raw SQL nebo `fx.DB` · **K** kontraktní test portu → `internal/repotest` · **S** jen SQLite (+ PG dvojče) · *fx* = počet volání `testfx.New*`.
+
+| Soubor | fx | Vazba na SQLite | Kat. |
+|---|---|---|---|
+| `app/application/auth/command/login_test.go` | 15 | `UPDATE users SET active = 0 WHERE id = ?`; komentář o write-locku v deadlock testu | A+ |
+| `app/application/auth/command/logout_test.go` | 4 | — | A |
+| `app/application/auth/command/refresh_token_test.go` | 12 | `active = 0`; `"database is locked"` jen jako fake chyba (neškodí) | A+ |
+| `app/application/auth/command/zz_audit_test.go` | 6 | — (UTC normalizace je obecná) | A |
+| `app/application/auth/command/zz_gap_test.go` | 3 | — | A |
+| `app/application/bus/middleware/zz_audit_test.go` | 2 | import `sqlite/audit`, `TransactionMiddleware(fx.DB)`, 3× `COUNT … ?` | A+ |
+| `app/application/dashboard/query/get_admin_dashboard_test.go` | 1 | `active = 0` | A+ |
+| `app/application/platform/command/bulk_users_test.go` | 3 | — | A |
+| `app/application/platform/command/create_tenant_test.go` | 7 | — | A |
+| `app/application/platform/command/create_user_test.go` | 7 | — | A |
+| `app/application/platform/command/platform_test.go` | 12 | — | A |
+| `app/application/platform/command/tenant_test.go` | 12 | — (`SeedTenantWithPlan` řeší testfx) | A |
+| `app/application/platform/query/get_tenant_test.go` | 1 | id `no-such-id` (N8, řeší repo) | A |
+| `app/application/platform/query/list_pages_test.go` | 2 | `UPDATE tenants SET plan … ?`; očekává BINARY řazení (N6) | A+ |
+| `app/application/platform/query/platform_test.go` | 2 | — | A |
+| `app/application/profile/command/change_password_test.go` | 6 | — | A |
+| `app/application/profile/command/zz_audit_test.go` | 1 | — | A |
+| `app/application/profile/query/get_profile_test.go` | 3 | — | A |
+| `app/application/run/dispatcher_test.go` | 6 | tenant `tenant-x` → UUID | A |
+| `app/application/user/command/bulk_users_test.go` | 6 | `active = 0` | A+ |
+| `app/application/user/command/create_user_test.go` | 10 | `SELECT COUNT(*) … nickname = 'alice'` přes `fx.DB` | A+ |
+| `app/application/user/command/delete_user_test.go` | 5 | — | A |
+| `app/application/user/command/superadmin_guard_test.go` | 2 | — | A |
+| `app/application/user/command/update_user_test.go` | 8 | — | A |
+| `app/application/user/command/zz_audit_test.go` | 7 | — | A |
+| `app/application/user/query/list_users_test.go` | 3 | — | A |
+| `app/application/userwrite/userwrite_test.go` | 5 | — | A |
+| `app/infrastructure/database/sqlite_loadtest_test.go` | 0 | tag `loadtest`; `NewSqliteManager`, vlastní DDL, `SQLITE_BUSY` | S |
+| `app/infrastructure/database/sqlite_manager_test.go` | 0 | `NewSqliteManager`, pool cap (WASM), `_txlock=immediate`, `"database is locked"`; test no-tx zóny je obecný → kontrakt | S |
+| `app/infrastructure/database/zz_audit_test.go` | 0 | `PRAGMA busy_timeout/foreign_keys/journal_mode`, `datetime('now','+1 hour')`; test kaskády tokenů → kontrakt | S |
+| `app/infrastructure/database/zz_gap_test.go` | 0 | `sqlite_master`, `PRAGMA index_list`, `goose.SetDialect("sqlite3")` + Down | S |
+| `app/infrastructure/di/bus_integration_test.go` | 5 | import `sqlite/audit`, `provideCommandBus(…, fx.DB, …)`, `COUNT` audit/runs | A+ |
+| `app/infrastructure/di/zz_audit_test.go` | 3 | import `sqlite/audit`, `provideCommandBus(…, fx.DB, …)` | A+ |
+| `app/infrastructure/sqlite/audit/repository_test.go` | 1 | `SELECT … metadata … WHERE id=?`, porovnání bajtů → JSON | K |
+| `app/infrastructure/sqlite/audit/zz_audit_test.go` | 0 | `fx.DB.BeginTx/Rollback`, raw `INSERT INTO audit_log … ?` (audit přežije rollback) | K |
+| `app/infrastructure/sqlite/run/repository_cancel_test.go` | 9 | — (používá `forceExpire`) | K |
+| `app/infrastructure/sqlite/run/repository_checkpoint_test.go` | 11 | 2 MiB blob, NUL bajty → `bytea` | K |
+| `app/infrastructure/sqlite/run/repository_concurrency_test.go` | 12 | komentáře o busy_timeout; ms round-trip; `tnt-abc`, `T1/T2` | K |
+| `app/infrastructure/sqlite/run/repository_fencing_test.go` | 15 | `tnt-123` | K |
+| `app/infrastructure/sqlite/run/repository_tenant_test.go` | 2 | — | K |
+| `app/infrastructure/sqlite/run/repository_test.go` | 21 | `forceExpire` (`strftime`), `julianday ± ms`, `fx.DB.BeginTx/Commit/Rollback`; precizní testy julianday → S část | K + S |
+| `app/infrastructure/sqlite/seeder/seeder_test.go` | 10 | import `sqlite/seeder`; `COUNT` tenants/audit | K |
+| `app/infrastructure/sqlite/seeder/zz_audit_test.go` | 2 | — | K |
+| `app/infrastructure/sqlite/tenant/platform_test.go` | 1 | — | K |
+| `app/infrastructure/sqlite/tenant/repository_test.go` | 3 | `does-not-exist` (N8) | K |
+| `app/infrastructure/sqlite/token/repository_test.go` | 2 | — | K |
+| `app/infrastructure/sqlite/token/zz_audit_test.go` | 2 | motivací je lexikální porovnání TEXT datetime; kontrakt je obecný | K |
+| `app/infrastructure/sqlite/token/zz_gap_test.go` | 1 | raw `INSERT INTO refresh_tokens … ?`; assert textu `"NOT NULL"` (PG: „not-null") | K |
+| `app/infrastructure/sqlite/user/platform_test.go` | 2 | — | K |
+| `app/infrastructure/sqlite/user/read_one_test.go` | 4 | — | K |
+| `app/infrastructure/sqlite/user/repository_test.go` | 5 | `UPDATE users SET locked_until = ? …` | K |
+| `app/infrastructure/sqlite/user/save_tenant_test.go` | 1 | — | K |
+| `app/infrastructure/sqlite/user/superadmin_guard_test.go` | 1 | — | K |
+| `app/infrastructure/sqlite/user/tenant_isolation_test.go` | 4 | — | K |
+| `app/infrastructure/sqlite/user/tenant_test.go` | 2 | `SELECT name FROM tenants WHERE id = ?` | K |
+| `app/infrastructure/sqlite/user/zz_audit_test.go` | 2 | `fx.DB.BeginTx`, raw-pool zápis čeká na BEGIN IMMEDIATE write-lock | S |
+| `app/infrastructure/sqlite/user/zz_gap_test.go` | 2 | `rawInsertUser` s `datetime('now')`, `active = 1` | K |
+| `app/infrastructure/worker/run_timeout_withtx_test.go` | 5 | `COUNT(*) FROM runs … ?`; `fx.DB` jako Transactor | A+ |
+| `app/infrastructure/worker/run_worker_audit_test.go` | 1 | `COUNT(*) FROM audit_log … ?` | A+ |
+| `app/infrastructure/worker/run_worker_review_test.go` | 16 | `UPDATE runs SET run_at = strftime(…)` | A+ |
+| `app/infrastructure/worker/run_worker_test.go` | 18 | `forceExpireW`/`stealLeaseW` (`strftime`), `UPDATE runs SET reclaims/parks`, `fx.DB.BeginTx`, `tenant-A` | A+ |
+| `app/presentation/console/zz_audit_test.go` | 5 | — (komentář o globálním stavu goose) | A |
+| `app/presentation/console/zz_gap_test.go` | 10 | `COUNT … audit_log … ?`; `--tenant-id no-such-id` | A+ |
+| `app/presentation/http/handler/auth_test.go` | 1 | — | A |
+| `app/presentation/http/handler/debug_run_test.go` | 2 | run id `does-not-exist` → 404 (N8) | A |
+| `app/presentation/http/handler/profile_test.go` | 1 | — | A |
+| `app/presentation/http/handler/zz_audit_test.go` | 2 | — | A |
+| `app/presentation/http/server/zz_gap_test.go` | 1 | — | A |
+| `app/zz_gap_test.go` | 0 | `NewSqliteManager`, `sqlite_master`; životní cyklus `Application.Run` → přepsat přes `persistence` + `Migrator` | S → A+ |
+
+**Mimo tabulku:**
+- **Tři soubory importují `testfx` jen kvůli `NewJwt`** a DB nepoužívají: `app/presentation/http/middleware/auth_test.go`, `app/presentation/http/middleware/lang_test.go` a `app/presentation/http/server/zz_audit_test.go`. Přes `testfx` ale linkují SQLite driver, což řeší přesun `NewJwt` (7.2).
+- **`app/internal/testfx/testfx.go`** sám obsahuje raw SQL `SELECT COUNT(*) FROM refresh_tokens` a `UPDATE tenants SET plan=? WHERE id=?` s `?`.
+
+**Kontrolní součty:**
+- 26 × A + 14 × A+ + 22 × K + 1 × K + S + 5 × S + 1 × S → A+ = **69 souborů**.
+- Sloupec *fx* dává dohromady **336** volání `testfx.New*` v 63 souborech. K tomu 7 přímých volání `NewSqliteManager` v 5 souborech a 1 soubor (`sqlite/audit/zz_audit_test.go`), který DB dostává přes helper.
+- Seznam vznikl dvěma nezávislými průchody (mechanický grep a ruční čtení každého souboru). Výsledky se shodly a tabulka byla proti nim zkontrolována strojově.
+
+
+## Příloha B — dokumentace k aktualizaci (fáze 7)
+
+- **CLAUDE.md**: sekce Database, Environment, tabulka Infrastructure (`SqliteManager`, `sqlite/*`), vzor repozitáře a `wire.Bind`, checklist nové feature, invarianty (`*sqliteuser.Repository`, výjimky raw poolu, tenant scoping + RLS).
+- **Skilly**: `/gk-repositories` (rozdělit na SQLite a Postgres část), `/gk-runs` (claim, split deploy, „roadmap krok 7"), `/gk-migrations` (dvojčata, Provider, `make migrate-*`), `/gk-testing` (`testfx.New(t)`, `make test-pg`, kategorie, pojistky), `/gk-multitenancy` (RLS, roviny, role), `/gk-config`, `/gk-deploy` (DSN proměnné, compose profil, bez volume `/data` na PG), `/gk-scheduler` (advisory lock), `/gk-rate-limiting`. Menší zmínky: `/gk-architecture`, `/gk-di`, `/gk-feature`, `/gk-bus`, `/gk-audit`, `/gk-auth`, `/gk-commands`, `/gk-entities`, `/gk-frontend-grid`, `/gk-init`, `/gk-queries`, `/gk`.
+- **Framework docs**: `docs/framework/architecture.md` (startup sekvence), `docs/framework/configuration.md` (sekce Database / SQLite), `docs/framework/installation.md` (prerekvizity, migrace), `docs/framework/background/overview.md`, `docs/framework/background/durable-run.md`, `docs/framework/background/fire-and-forget.md`, `docs/framework/background/scheduler.md`, `docs/framework/gokick-roadmap.md` (Škálovatelnost: odkaz sem a rozhodnutí D3).
+- **Ostatní**: `README.md`, `tests/e2e/README.md`, `.env.example`, `docker-compose.yml`, `docker/production/Dockerfile` (komentáře k `/data` a CGO).
+
+
+## Související
+
+- [Roadmap (GoKick)](/framework/gokick-roadmap) — sekce Škálovatelnost, ze které plán vychází.
+- [Architektura](/framework/architecture) a [Konfigurace](/framework/configuration) — dnešní stav, který fáze 7 aktualizuje.
+- Skilly: `/gk-repositories` (repozitáře, raw pool, tx), `/gk-runs` (durable fronta, lease, fencing), `/gk-multitenancy` (tenant scoping, conformance gate), `/gk-migrations`, `/gk-testing` (testfx, gate testy), `/gk-scheduler`, `/gk-di`.
