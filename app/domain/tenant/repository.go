@@ -10,8 +10,9 @@ type Repository interface {
 	Save(ctx context.Context, t *Tenant) error
 	FindByID(ctx context.Context, id string) (*Tenant, error)
 
-	// FindByName returns the first tenant with the given name, or (nil, nil) if
-	// none — used for idempotent find-or-create (seeder). Name is not unique.
+	// FindByName returns the tenant with the given name, or (nil, nil) if none —
+	// used for idempotent find-or-create (seeder) and the create-tenant collision
+	// check. Name is unique (idx_tenants_name, case-sensitive).
 	FindByName(ctx context.Context, name string) (*Tenant, error)
 }
 
