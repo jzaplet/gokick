@@ -25,7 +25,7 @@ Stačí nastavit `APP_DB_DRIVER=postgres` v env a aplikace **i celá Go test sui
 
 ## TL;DR
 
-1. **Jeden přepínač, jedno místo volby.** Backend vybírá `APP_DB_DRIVER=sqlite|postgres` (plus DSN proměnné). Větví se jen `persistence.Open(cfg)`. Tuto funkci volá Wire v produkci i `testfx` v testech, takže testy z principu nemůžou jet na jiném backendu než aplikace.
+1. **Jeden přepínač, jedno místo volby.** Backend vybírá `APP_DB_DRIVER=sqlite|postgres` (plus DSN proměnné). Větví se jen `persistence.Open(cfg)` (volá ji Wire) a jeho zrcadlo v `testfx`, které čte **stejnou** proměnnou a sestaví Store **stejnou** funkcí adaptéru (`persistence.SQLiteStore`). Testy tak z principu jedou na backendu, který určuje `APP_DB_DRIVER`, se stejným zapojením jako aplikace.
 2. **Dva plnohodnotné adaptéry místo `if dialect` v jednom repu.** Postgres dostane vlastní repozitáře a vlastní migrace: `timestamptz`, `boolean`, `uuid`, `bytea`, `jsonb`, `SKIP LOCKED`, RLS. Společné zůstanou doménové porty, mechanika `Conn`/tx-in-context a hlavně **jedna sada kontraktních testů**, která běží proti oběma adaptérům.
 3. **Testy nezávislé na DB.**
    - `testfx.New(t)` přestane brát cestu k souboru. Týká se to 336 volání a jde o mechanický codemod.
@@ -34,7 +34,7 @@ Stačí nastavit `APP_DB_DRIVER=postgres` v env a aplikace **i celá Go test sui
    - Postgres fixture je klon šablonové DB, cca 15 ms na test (změřeno).
    - **Testy běží vždy na obou DB:** `make test` je pouští paralelně a v CI jsou dva povinné joby.
 4. **Trojitá pojistka „na Postgresu žádná SQLite":**
-   - runtime guard: SQLite opener odmítne otevřít DB, když je aktivní driver `postgres`;
+   - runtime guard: `testfx` otevře jen adaptér z `APP_DB_DRIVER` a adaptér chybějící v buildu hlasitě odmítne; testy SQLite adaptéru se při jiném driveru přeskočí (`TestMain` → `testfx.MainFor`);
    - statický gate nad testy;
    - CI job `make test-pg` builduje s `-tags nosqlite`, takže SQLite kód se vůbec nezkompiluje, a po běhu ověří, že nevznikl žádný `*.db` soubor.
 5. **Zámky.** Globální single-writer nahradí MVCC a zámky na úrovni řádků.
@@ -499,7 +499,7 @@ CREATE POLICY tenant_isolation ON users
    - **CI** pustí oba běhy jako dva paralelní joby a oba budou povinné checky v branch rulesetu (sekce 7.7).
    - **Čas:** dnešní Go suite na SQLite trvá 63 s včetně kompilace (V20). Postgres běh se odhaduje podobně (klon DB ≈ 15 ms × ≈ 390 fixtures, rozloženo do paralelních balíčků). Protože běží paralelně, celková doba se prodlouží jen mírně, ne na dvojnásobek.
    - Backend konkrétního běhu vybírá **stejná proměnná** jako v aplikaci, `APP_DB_DRIVER`; pro Postgres ji doplní `APP_TEST_DB_URL`, kterou `make` nastaví sám.
-2. `testfx` otevírá DB přes **`persistence.Open`**, tedy stejnou funkci jako produkce, jen s testovacím configem.
+2. `testfx` staví Store **stejnou funkcí adaptéru jako produkce** (`persistence.SQLiteStore`, později `persistence.PostgresStore`). Od `persistence.Open` se liší jen tím, že si ponechá handle pro fixture zápisy (`app/internal/testfx/sqlite.go`, soubor s build tagem).
 3. **Seedovat ručně se nic nemusí.** Harness si šablonovou DB sám vytvoří a zmigruje (7.3). Každý test si data založí fixture helpery (`SeedUser`, `SeedTenant` …) jako dnes a po testu se DB zahodí.
 4. **Tělo testu neobsahuje žádné SQL specifické pro dialekt.** SQL žije buď v adaptéru, nebo v pojmenovaném fixture helperu implementovaném pro oba backendy.
 5. Kontraktní testy repozitářů se napíšou **jednou** a běží **proti oběma** adaptérům.
@@ -510,15 +510,19 @@ CREATE POLICY tenant_isolation ON users
 fx := testfx.New(t)              // dřív: testfx.New(t, filepath.Join(t.TempDir(), "x.db"))
 fx := testfx.NewMultitenant(t)
 
-fx.Tx                            // shared.Transactor (místo konkrétního *SqliteManager)
-fx.Driver()                      // database.Driver
-testfx.RequireDriver(t, database.DriverSQLite)   // jinak t.Skip("sqlite-only: …")
-testfx.SystemCtx() / testfx.TenantCtx(tenantID)  // seedování a cross-tenant data (RLS)
+fx.Tx                            // shared.Transactor (místo konkrétního *sqlite.Manager)
+fx.Audit                         // shared.AuditLogger (místo sqliteaudit.NewRepository(fx.DB))
+testfx.ActiveDriver()            // database.Driver z APP_DB_DRIVER (jen prostředí procesu)
+testfx.RequireDriver(t, database.DriverSQLite)   // jinak t.Skip
+func TestMain(m *testing.M) { testfx.MainFor(m, database.DriverSQLite) } // testy adaptéru
+jwtfx.New(t, accessExp)          // JWT bez DB (gokick/app/internal/testfx/jwtfx)
 ```
 
-- **Codemod:** 336 volání `testfx.New*` se přepíše mechanicky přes `gofmt -r 'testfx.New(a, b) -> testfx.New(a)'` a totéž pro `NewMultitenant`. Na vzorku dvou souborů ověřeno: pokryje všechny tři styly zápisu cesty. Ručně zbude jediný tabulkový případ v `app/application/platform/command/create_user_test.go` (`tc.fx(t, …)` s typem `func(*testing.T, string)`) a úklid nepoužitých importů `filepath` přes `goimports`. Jméno souboru dnes nic nenese.
+✅ **Hotovo ve fázi 2.** `testfx.SystemCtx()` / `TenantCtx(tenantID)` se přesouvají do fáze 3: bez rovin a RLS by byly jen prázdné no-op (stejný důvod jako u `Locker` a `BeginReadTx`).
+
+- **Codemod (✅ proveden):** 336 volání `testfx.New*` se přepíše mechanicky přes `gofmt -r 'testfx.New(a, b) -> testfx.New(a)'` a totéž pro `NewMultitenant`. Na vzorku dvou souborů ověřeno: pokryje všechny tři styly zápisu cesty. Ručně zbude jediný tabulkový případ v `app/application/platform/command/create_user_test.go` (`tc.fx(t, …)` s typem `func(*testing.T, string)`) a úklid nepoužitých importů `filepath` přes `goimports`. Jméno souboru dnes nic nenese.
 - **Seed helpery** (`SeedUser`, `SeedUserInTenant`, `SeedRunInTenant` …) poběží v systémové rovině. Seedování je systémová operace a pod RLS by jinak `WITH CHECK` odmítl řádek cizího tenanta.
-- **`NewJwt`** se přesune do samostatného balíčku bez DB (např. `internal/testfx/jwtfx`). Tři testy middleware, které z `testfx` potřebují jen JWT, pak nebudou linkovat DB adaptéry.
+- **`NewJwt`** je přesunutý do samostatného balíčku bez DB, `app/internal/testfx/jwtfx` (✅). Tři testy middleware, které z `testfx` potřebují jen JWT, už nelinkují DB adaptéry.
 
 ### 7.3 Postgres harness (izolace per test)
 
@@ -538,7 +542,7 @@ testfx.SystemCtx() / testfx.TenantCtx(tenantID)  // seedování a cross-tenant d
 |---|---|---|---|
 | **A** | Nezávislé na backendu, bez SQL | 26 | jen codemod `New(t)` |
 | **A+** | Nezávislé na backendu, ale obsahují raw SQL nebo `fx.DB` | 14 + 1 | codemod + SQL nahradit helpery (7.5); „+1" je `app/zz_gap_test.go`, který se přepisem změní z S na A+ |
-| **K** | Kontraktní testy portů (dnes v `infrastructure/sqlite/<ctx>`) | 23 | přesun do `internal/repotest/<ctx>`, poběží na obou backendech; `run/repository_test.go` má navíc SQLite-only část |
+| **K** | Kontraktní testy portů (dříve v `infrastructure/sqlite/<ctx>`) | 23 | ✅ přesunuty do `app/internal/repotest/<ctx>`, poběží na obou backendech; precizní část `run/repository_test.go` se ukázala jako přenositelná (`fx.SetLeaseFromNow`) |
 | **S** | Sémantika specifická pro SQLite | 5 | zůstanou v SQLite adaptéru s `RequireDriver(sqlite)` a `//go:build !nosqlite`; kde to dává smysl, vznikne **PG dvojče** |
 | **G** | Gate testy nad zdrojovým kódem (bez DB) | 2 dotčené + 2 nové | sekce 7.6 |
 
@@ -551,53 +555,55 @@ Rozpis po souborech je v **příloze A**.
 | `TestManager_ConcurrentTxWritesDoNotReturnBusy` | `_txlock=immediate` vs. `SQLITE_BUSY_SNAPSHOT` (read-modify-write bez chyby) | souběžné commandy s atomickým `val = val + 1`: nic se neztratí, žádná 500; plus test mapování 40001/55P03 |
 | busy_timeout, `PRAGMA foreign_keys` pro každé spojení, whitelist journal módů | tuning SQLite DSN | `lock_timeout`, `idle_in_transaction_session_timeout` a kontrola rolí při startu (6.3) |
 | `sqlite_master` introspekce, goose `Down` | schéma a rollback migrace | `pg_indexes` / `information_schema`, Down přes Provider |
-| `sqlite/user/zz_audit_test.go` (raw-pool zápis čeká na write-lock) | self-deadlock pod SQLite | zámek řádku uvnitř bus tx vs. raw-pool zápis stejného řádku → `lock_timeout`, ne zamrznutí |
-| precizní testy `julianday`/`strftime` (run repo) | textové datetime a ms zaokrouhlení | kontrakt „ms-precise round-trip" poběží pro oba; PG: `statement_timestamp()` vs. `now()` v dlouhé tx |
+| ~~raw-pool zápis čeká na write-lock~~ | ✅ ve fázi 2 se ukázal jako přenositelný: na Postgresu drží zámek řádek místo celé DB a test platí beze změny. Je v `app/internal/repotest/user/zz_audit_test.go`. | PG navíc: `lock_timeout` místo zamrznutí (fáze 5) |
+| ~~precizní testy `julianday`/`strftime` (run repo)~~ | ✅ přepsány přes `fx.SetLeaseFromNow` (posun vůči hodinám DB) a jsou kontraktem v `app/internal/repotest/run/repository_test.go` | PG navíc: `statement_timestamp()` vs. `now()` v dlouhé tx |
 | `sqlite_loadtest_test.go` (tag `loadtest`) | propustnost jednoho writeru | volitelně PG load test: N workerů × M runů, exactly-once, propustnost |
 | — | — | **nové:** RLS sada (6.3), `SKIP LOCKED` s reálně paralelními workery, advisory lock scheduleru, souběžné migrace |
 
 ### 7.5 Raw SQL v testech → pojmenované helpery
 
-| Dnes v testu | Helper (implementace pro oba dialekty v `testfx`) |
+✅ **Hotovo ve fázi 2** (`app/internal/testfx/raw.go`). Jediný dialektový kus je výraz „hodiny DB + ? sekund", který dodá backend (SQLite: `sqlite.LeaseExpr`); zbytek je přenositelné SQL s `?` přes `Rebind`.
+
+| Dříve v testu | Helper v `testfx` |
 |---|---|
 | `UPDATE runs SET locked_until = strftime(…'now','-1 hour')` (`forceExpire`, `forceExpireW`) | `fx.ForceExpireLease(t, runID)` |
 | `UPDATE runs SET locked_by=?, locked_until=strftime(…'+1 hour')` (`stealLeaseW`) | `fx.StealLease(t, runID, owner)` |
-| `UPDATE runs SET run_at = strftime(…'-1 second')` | `fx.SetRunDueInPast(t, runID)` |
-| `UPDATE runs SET completed_at/failed_at = strftime(…)` | `fx.ForceTerminalRaw(t, runID, kind)` |
-| `UPDATE runs SET locked_until = julianday(…) ± ms` | `fx.SetLeaseRelativeToDBNow(t, runID, d)` |
-| `UPDATE runs SET reclaims/parks = ?` | `fx.SetRunCounters(t, runID, reclaims, parks)` |
+| `UPDATE runs SET run_at = strftime(…'-1 second')` | `fx.MakeRunDue(t, runID)` |
+| `UPDATE runs SET completed_at/failed_at = strftime(…)` | `fx.ForceRunCompleted(t, runID)` / `fx.ForceRunFailed(t, runID)` |
+| `UPDATE runs SET locked_until = julianday(…) ± ms` | `fx.SetLeaseFromNow(t, runID, d)` |
+| `UPDATE runs SET reclaims/parks = ?` | `fx.SetRunReclaims(t, runID, n)` / `fx.SetRunParks(t, runID, n)` |
 | `UPDATE users SET active = 0 WHERE id = ?` (5×) | `fx.SetUserActive(t, userID, false)` |
 | `UPDATE users SET locked_until = ?` | `fx.SetUserLockedUntil(t, userID, ts)` |
-| `INSERT INTO users … datetime('now') …` (`rawInsertUser`) | `fx.RawInsertUser(t, …)` (obchází repo kvůli testu constraintu) |
-| `INSERT INTO refresh_tokens …` (test NOT NULL/UNIQUE) | `fx.RawInsertToken(t, …)` a assert přes **klasifikovanou** chybu (`database.ErrUniqueViolation`), ne přes text, protože Postgres píše „not-null" |
-| `SELECT COUNT(*) FROM audit_log WHERE action=? AND target_id=?` | `fx.CountAudit(t, action, targetID)` |
-| `SELECT COUNT(*) FROM runs/users/tenants …` | `fx.Count(t, table, where, args…)` (přenositelná podmnožina, `?` přes `Rebind`) |
-| `UPDATE tenants SET plan=?` (již `SeedTenantWithPlan`) | beze změny API, interně `Rebind` |
-| `sqliteaudit.NewRepository(fx.DB)`, `provideCommandBus(…, fx.DB, …)` | `fx.NewAuditLogger()`, `fx.Tx` |
+| `INSERT INTO users … datetime('now') …`, `INSERT INTO refresh_tokens …` (testy constraintů) | `fx.RawExec(query, args…)` s přenositelným SQL a assert přes **klasifikovanou** chybu `fx.Violated(err)` → `testfx.NotNull` / `Unique` / `Check` / `ForeignKey` (z kódu chyby driveru, ne z textu — Postgres píše „not-null") |
+| `SELECT COUNT(*) FROM audit_log/runs/users/tenants …` | `fx.Count(t, table, where, args…)` |
+| `SELECT … FROM audit_log WHERE id=?` | `fx.AuditEntry(t, id)` |
+| `UPDATE tenants SET plan=?` (`SeedTenantWithPlan`) | beze změny API, interně přes fixture handle |
+| `sqliteaudit.NewRepository(fx.DB)`, `provideCommandBus(…, fx.DB, …)` | `fx.Audit`, `fx.Tx` |
 
 **Úpravy testových dat:**
-- Id, která nejsou UUID (`tnt-abc`, `tnt-123`, `tnt-7`, `T1/T2`, `tenant-A`, `tenant-x`, `u-1/u-2`), převést na konstanty platných UUID. Funguje to na obou backendech.
+- ✅ Id, která nejsou UUID (`tnt-abc`, `tnt-123`, `tnt-7`, `T1/T2`, `tenant-A`, `tenant-x`, `u-1/u-2`), jsou nahrazená. Tenanti v datech runů jsou skuteční (`fx.SeedTenant(t, "acme").ID`), protože Postgres vedle typu `uuid` drží i FK `runs.tenant_id`.
 - „Neexistující" id (`does-not-exist`, `no-such-id`) mohou zůstat, protože PG repo neplatné UUID vrátí jako „nenalezeno" (N8).
-- Porovnání audit `metadata` přepsat na sémantickou rovnost JSON.
+- ✅ Porovnání audit `metadata` je sémantická rovnost JSON.
 
 ### 7.6 Gate testy
 
 | Gate | Změna |
 |---|---|
-| `app/infrastructure/sqlite/zz_tenant_test.go` | Skener se parametrizuje adresářem a poběží pro `infrastructure/sqlite` i `infrastructure/postgres`. Přibude **guard proti prázdnému výsledku**: dnes projde naprázdno, když v adresáři nic nenajde. Pro PG SQL se opraví `tableRe`, který by jinak chytal `FOR UPDATE SKIP LOCKED` jako tabulku `skip`, podobně `ON CONFLICT … DO UPDATE SET`, `EXTRACT(… FROM …)` a `FROM unnest(…)`. Exempt tabulky budou pro každý dialekt zvlášť. Markery dostanou rovinu `(rls)` nebo `(system)` (6.1). |
-| `app/infrastructure/sqlite/zz_sqltime_test.go` | Zůstane jen pro SQLite. PG dvojče zakáže `now()` a `CURRENT_TIMESTAMP` v repo SQL a vyžádá `statement_timestamp()`/`clock_timestamp()` (N9). |
-| `app/domain/zz_gap_test.go` | Mezi zakázané importy handlerů přibudou `infrastructure/postgres` a `infrastructure/persistence` (dnes je natvrdo jen `infraSqliteRoot`). |
+| `app/infrastructure/sqlite/zz_tenant_test.go` | Skener se parametrizuje adresářem a poběží pro `infrastructure/sqlite` i `infrastructure/postgres` (fáze 4). **Guard proti prázdnému výsledku** ✅ (fáze 2): každý balíček repozitáře musí dát aspoň jeden dotaz a write gate aspoň jeden INSERT s `tenant_id`, jinak test selže jako „scan went blind". Pro PG SQL se opraví `tableRe`, který by jinak chytal `FOR UPDATE SKIP LOCKED` jako tabulku `skip`, podobně `ON CONFLICT … DO UPDATE SET`, `EXTRACT(… FROM …)` a `FROM unnest(…)`. Exempt tabulky budou pro každý dialekt zvlášť. Markery dostanou rovinu `(rls)` nebo `(system)` (6.1). |
+| `app/infrastructure/sqlite/zz_sqltime_test.go` | Zůstane jen pro SQLite; guard proti prázdnému výsledku ✅ (fáze 2). PG dvojče zakáže `now()` a `CURRENT_TIMESTAMP` v repo SQL a vyžádá `statement_timestamp()`/`clock_timestamp()` (N9). |
+| `app/domain/zz_gap_test.go` | ✅ Mezi zakázanými importy handlerů jsou všechny DB kořeny: `infrastructure/sqlite`, `infrastructure/postgres`, `infrastructure/persistence`. |
 | `app/infrastructure/worker/zz_notx_test.go` | Beze změny, kromě komentáře. |
-| **nový** `zz_nosqlite` | Testové soubory mimo `infrastructure/sqlite/**` nesmí: importovat `infrastructure/sqlite*` ani ncruces, obsahovat `sqlite.NewManager`, cesty `*.db` nebo tokeny `julianday`, `strftime`, `datetime(`, `PRAGMA`, `sqlite_master`. Každý balíček pod `infrastructure/sqlite/**` musí mít `//go:build !nosqlite` a `RequireDriver`. |
+| ✅ **nový** `app/zz_nosqlite_test.go` | Soubor, který importuje SQLite adaptér nebo ncruces, musí mít `//go:build !nosqlite` (mimo adaptér jsou to jen dva openery). Každý soubor pod `infrastructure/sqlite/**` ten tag má a každý jeho testovací balíček má `TestMain` s `testfx.MainFor(m, database.DriverSQLite)`. Testy a fixtures mimo tagované soubory nenesou SQLite dialekt: `julianday(`, `strftime(`, `datetime(`, `PRAGMA`, `sqlite_master`, `INSERT OR …`, cestu `*.db`. Každé pravidlo má vlastní „bite" test. |
 | **nový** `zz_migration_twins` | Množiny verzí v `migrations/sqlite/` a `migrations/postgres/` se musí shodovat. |
 
 ### 7.7 Trojitá pojistka „žádná SQLite na Postgresu"
 
-1. **Runtime:** SQLite opener v `persistence` odmítne otevřít DB, když je aktivní driver `postgres`. Test, který by to zkusil, selže nahlas místo toho, aby tiše běžel na SQLite.
+1. **Runtime:** `testfx` otevře jen adaptér z `APP_DB_DRIVER` a testy SQLite adaptéru se při jiném driveru přeskočí (`TestMain` → `MainFor`). V buildu bez adaptéru (`-tags nosqlite`) selže fixture i `persistence.Open` nahlas („not built into this binary"), místo aby cokoli tiše běželo na SQLite. ✅
 2. **Staticky:** gate `zz_nosqlite` (7.6) a `go-arch-lint`: jen `persistence` a `infrastructure/sqlite/**` smí záviset na SQLite adaptéru.
 3. **Kompilace a artefakty v CI:**
    - `make test-pg` = `go test -tags nosqlite ./...` s `APP_DB_DRIVER=postgres`. SQLite adaptér, SQLite-only testy i registrace ncruces driveru jsou za `//go:build !nosqlite`, takže jakákoli zbylá závislost **neprojde kompilací**.
    - Dále `go list -tags nosqlite -deps ./... | grep ncruces` musí být prázdné.
+   - ✅ Už od fáze 2 to hlídá `make nosqlite-check` (součást `make lint`): `golangci-lint --build-tags nosqlite` nad celým stromem včetně testů a `go list -tags nosqlite -test -deps`, který nesmí obsahovat ncruces ani adaptér.
    - Test proběhne s `TMPDIR` v čerstvém adresáři a po běhu tam nesmí být žádný `*.db`, `*-wal` ani `*-journal`.
 
 **CI** (`.github/workflows/validate.yml`), rozhodnutí D7:
@@ -650,7 +656,7 @@ Pořadí je zvolené tak, aby **fáze 1 a 2 byly čisté refaktory bez změny ch
 | **0 — bugfix** ✅ | Oprava N1 (pool cap po migracích) a regresní test. Drobnosti z konce sekce 2. | ✅ hotovo: `MaxOpenConnections` po `RunUp` = nastavený cap, idle limit taky |
 | **1 — švy (jen SQLite)** ✅ | Migrace v `migrations/sqlite/` přes goose Provider API (bez globálního stavu; Provider sám drží jedno `*sql.Conn`, takže pinning poolu odpadl). `database` je driver-neutrální (tx v kontextu, port `Migrator`); `sqlite.Manager` a `sqlite.Migrator` v adaptéru. `persistence.Store` + `Open`, Wire přes `FieldsOf`, cleanup zavírá pool při ukončení. Providery berou `shared.Transactor`, `NewApplication` bere `Migrator`. Seeder v `infrastructure/seeder`. `.go-arch-lint.yml` upraven. Porty `shared.Locker` a `Transactor.BeginReadTx` přesunuty do fáze 3 (bez PG by byly jen prázdné no-op). | ✅ hotovo: lint, arch-check, testy a gates zelené; ověřeno na binárce (migrace, seed, serve, login) |
 | **1b — české řazení a UUIDv7 (jen SQLite, `feat`)** ✅ | SQLite manager přes `driver.Open` + init callback `registerConnFuncs`: Unicode `LIKE`, collation `app_sort` (`cs-CZ`), SQL funkce `uuidv7()`. Sort whitelisty a textové tie-breaky s `sqlite.CollateSort`, filtry přes `sqlite.LikeContains` + `LikeEscape`. `refresh_tokens` a `audit_log` id na v7. Zlatý korpus `app/infrastructure/database/testdata/sort_cs/` (očekávání vyrobil Postgres, ICU `cs-CZ`) + test `app/infrastructure/sqlite/collation_test.go`. Úprava `list_pages_test`. | ✅ hotovo: zlatý test zelený (a spadne s binární collation), celá suite zelená |
-| **2 — testy nezávislé na backendu (ještě SQLite)** | Codemod `testfx.New(t)`; `fx.Tx`, helpery ze 7.5, `SystemCtx`/`TenantCtx`; UUID testová data. Kontraktní testy do `internal/repotest`; SQLite-only testy označit (`RequireDriver` + build tag). Gate `zz_nosqlite` a guard proti prázdnému výsledku v `zz_tenant`/`zz_sqltime`. `NewJwt` bez DB. | Mimo `infrastructure/sqlite/**` není v testech ani řádek SQLite SQL; `go test -tags nosqlite ./...` se **zkompiluje** (bez PG zatím s chybou „driver not built") |
+| **2 — testy nezávislé na backendu (ještě SQLite)** ✅ | `APP_DB_DRIVER` + `database.Driver`; `persistence.Open` větví podle driveru a SQLite opener je soubor s tagem `!nosqlite` (celý adaptér taky). Codemod `testfx.New(t)`; `fx.Tx`, `fx.Audit`, helpery ze 7.5; UUID / skuteční tenanti v testových datech. Kontraktní testy v `app/internal/repotest/<ctx>` (vč. testů, které se ukázaly jako přenositelné: raw-pool vs. zámek, ms přesnost leasu, no-tx zóna, kaskáda tokenů); testy adaptéru s `TestMain` → `testfx.MainFor`. Gate `app/zz_nosqlite_test.go`, guard proti prázdnému výsledku v `zz_tenant`/`zz_sqltime`, handler gate na všechny DB kořeny; `make nosqlite-check` v `make lint`. `NewJwt` → `jwtfx`. `SystemCtx`/`TenantCtx` přesunuty do fáze 3. | ✅ hotovo: mimo `infrastructure/sqlite/**` a tagované openery není v testech ani řádek SQLite SQL; s `-tags nosqlite` se celý strom včetně testů zkompiluje a lintuje bez ncruces; test pak hlásí „no fixture backend for APP_DB_DRIVER=postgres" |
 | **3 — PG základ** | Config (sekce 3.2), `pgx`, `postgres.Manager` se dvěma pooly, rovinami a GUC, kontrola rolí při startu. Porty `shared.Locker` (SQLite: in-process no-op) a `Transactor.BeginReadTx` (SQLite: no-op). `PlaneMiddleware` a `ReadTxMiddleware` (na SQLite no-op). `migrations/postgres/` init s typy, FK, RLS a granty. `docker/postgres/Dockerfile` + `initdb/01-roles.sh`, služby `db` a `db-test` v `docker-compose.yml` (OrbStack domény, bez portů), `make db-up` v `build`/`serve` + `db-down`/`db-reset`/`db-psql`, `.env.example` (sekce 3.4). PG harness v `testfx`, `make test-pg`. | Na PG proběhnou migrace a `testfx` fixture; RLS sada (6.3) zelená |
 | **4 — PG repozitáře** | `user`, `tenant`, `token`, `run`, `audit` v `$n` SQL; `ClaimDue` se `SKIP LOCKED`; časy přes `statement_timestamp()`; `ILIKE` s escapováním; `NULLS FIRST/LAST`; parse UUID; mapování chyb (23505, 23503, 42501, 40001, 40P01, 55P03, 22P02). `zz_tenant` pro PG. | **Celá suite zelená na obou backendech**; `make test-pg` s `-tags nosqlite` |
 | **5 — zámky** | Advisory `Locker` pro scheduler, locker migrací, timeouty (sekce 3.2), zamykání „kotvy" u invariantů, deterministické pořadí u bulk operací, volitelný `RequiresSerializable` + retry. PG testy souběhu (N workerů × M runů exactly-once, dvě instance scheduleru, souběžné migrace). Úprava `TestScheduler_TwoInstancesTickIndependently`. | Testy souběhu zelené na PG a opakovaně (`-count=20`) |
@@ -731,6 +737,8 @@ gokick má ve výchozím stavu multitenancy vypnutou (`APP_MULTITENANCY=false`).
 
 ## Příloha A — všechny testové soubory se skutečnou DB (69)
 
+Inventura je stav **před fází 2**; cesty v tabulce jsou aktuální (kontraktní testy už žijí v `app/internal/repotest/`). Co fáze 2 udělala jinak, než inventura předpokládala, je pod tabulkou.
+
 Kategorie: **A** nezávislý na backendu · **A+** nezávislý, ale s raw SQL nebo `fx.DB` · **K** kontraktní test portu → `internal/repotest` · **S** jen SQLite (+ PG dvojče) · *fx* = počet volání `testfx.New*`.
 
 | Soubor | fx | Vazba na SQLite | Kat. |
@@ -768,30 +776,30 @@ Kategorie: **A** nezávislý na backendu · **A+** nezávislý, ale s raw SQL ne
 | `app/infrastructure/sqlite/zz_gap_test.go` | 0 | `sqlite_master`, `PRAGMA index_list`, `goose.SetDialect("sqlite3")` + Down | S |
 | `app/infrastructure/di/bus_integration_test.go` | 5 | import `sqlite/audit`, `provideCommandBus(…, fx.DB, …)`, `COUNT` audit/runs | A+ |
 | `app/infrastructure/di/zz_audit_test.go` | 3 | import `sqlite/audit`, `provideCommandBus(…, fx.DB, …)` | A+ |
-| `app/infrastructure/sqlite/audit/repository_test.go` | 1 | `SELECT … metadata … WHERE id=?`, porovnání bajtů → JSON | K |
-| `app/infrastructure/sqlite/audit/zz_audit_test.go` | 0 | `fx.DB.BeginTx/Rollback`, raw `INSERT INTO audit_log … ?` (audit přežije rollback) | K |
-| `app/infrastructure/sqlite/run/repository_cancel_test.go` | 9 | — (používá `forceExpire`) | K |
-| `app/infrastructure/sqlite/run/repository_checkpoint_test.go` | 11 | 2 MiB blob, NUL bajty → `bytea` | K |
-| `app/infrastructure/sqlite/run/repository_concurrency_test.go` | 12 | komentáře o busy_timeout; ms round-trip; `tnt-abc`, `T1/T2` | K |
-| `app/infrastructure/sqlite/run/repository_fencing_test.go` | 15 | `tnt-123` | K |
-| `app/infrastructure/sqlite/run/repository_tenant_test.go` | 2 | — | K |
-| `app/infrastructure/sqlite/run/repository_test.go` | 21 | `forceExpire` (`strftime`), `julianday ± ms`, `fx.DB.BeginTx/Commit/Rollback`; precizní testy julianday → S část | K + S |
+| `app/internal/repotest/audit/repository_test.go` | 1 | `SELECT … metadata … WHERE id=?`, porovnání bajtů → JSON | K |
+| `app/internal/repotest/audit/zz_audit_test.go` | 0 | `fx.DB.BeginTx/Rollback`, raw `INSERT INTO audit_log … ?` (audit přežije rollback) | K |
+| `app/internal/repotest/run/repository_cancel_test.go` | 9 | — (používá `forceExpire`) | K |
+| `app/internal/repotest/run/repository_checkpoint_test.go` | 11 | 2 MiB blob, NUL bajty → `bytea` | K |
+| `app/internal/repotest/run/repository_concurrency_test.go` | 12 | komentáře o busy_timeout; ms round-trip; `tnt-abc`, `T1/T2` | K |
+| `app/internal/repotest/run/repository_fencing_test.go` | 15 | `tnt-123` | K |
+| `app/internal/repotest/run/repository_tenant_test.go` | 2 | — | K |
+| `app/internal/repotest/run/repository_test.go` | 21 | `forceExpire` (`strftime`), `julianday ± ms`, `fx.DB.BeginTx/Commit/Rollback`; precizní testy julianday → S část | K + S |
 | `app/infrastructure/seeder/seeder_test.go` | 10 | import `sqlite/seeder`; `COUNT` tenants/audit | K |
 | `app/infrastructure/seeder/zz_audit_test.go` | 2 | — | K |
-| `app/infrastructure/sqlite/tenant/platform_test.go` | 1 | — | K |
-| `app/infrastructure/sqlite/tenant/repository_test.go` | 3 | `does-not-exist` (N8) | K |
-| `app/infrastructure/sqlite/token/repository_test.go` | 2 | — | K |
-| `app/infrastructure/sqlite/token/zz_audit_test.go` | 2 | motivací je lexikální porovnání TEXT datetime; kontrakt je obecný | K |
-| `app/infrastructure/sqlite/token/zz_gap_test.go` | 1 | raw `INSERT INTO refresh_tokens … ?`; assert textu `"NOT NULL"` (PG: „not-null") | K |
-| `app/infrastructure/sqlite/user/platform_test.go` | 2 | — | K |
-| `app/infrastructure/sqlite/user/read_one_test.go` | 4 | — | K |
-| `app/infrastructure/sqlite/user/repository_test.go` | 5 | `UPDATE users SET locked_until = ? …` | K |
-| `app/infrastructure/sqlite/user/save_tenant_test.go` | 1 | — | K |
-| `app/infrastructure/sqlite/user/superadmin_guard_test.go` | 1 | — | K |
-| `app/infrastructure/sqlite/user/tenant_isolation_test.go` | 4 | — | K |
-| `app/infrastructure/sqlite/user/tenant_test.go` | 2 | `SELECT name FROM tenants WHERE id = ?` | K |
-| `app/infrastructure/sqlite/user/zz_audit_test.go` | 2 | `fx.DB.BeginTx`, raw-pool zápis čeká na BEGIN IMMEDIATE write-lock | S |
-| `app/infrastructure/sqlite/user/zz_gap_test.go` | 2 | `rawInsertUser` s `datetime('now')`, `active = 1` | K |
+| `app/internal/repotest/tenant/platform_test.go` | 1 | — | K |
+| `app/internal/repotest/tenant/repository_test.go` | 3 | `does-not-exist` (N8) | K |
+| `app/internal/repotest/token/repository_test.go` | 2 | — | K |
+| `app/internal/repotest/token/zz_audit_test.go` | 2 | motivací je lexikální porovnání TEXT datetime; kontrakt je obecný | K |
+| `app/internal/repotest/token/zz_gap_test.go` | 1 | raw `INSERT INTO refresh_tokens … ?`; assert textu `"NOT NULL"` (PG: „not-null") | K |
+| `app/internal/repotest/user/platform_test.go` | 2 | — | K |
+| `app/internal/repotest/user/read_one_test.go` | 4 | — | K |
+| `app/internal/repotest/user/repository_test.go` | 5 | `UPDATE users SET locked_until = ? …` | K |
+| `app/internal/repotest/user/save_tenant_test.go` | 1 | — | K |
+| `app/internal/repotest/user/superadmin_guard_test.go` | 1 | — | K |
+| `app/internal/repotest/user/tenant_isolation_test.go` | 4 | — | K |
+| `app/internal/repotest/user/tenant_test.go` | 2 | `SELECT name FROM tenants WHERE id = ?` | K |
+| `app/internal/repotest/user/zz_audit_test.go` | 2 | `fx.DB.BeginTx`, raw-pool zápis čeká na BEGIN IMMEDIATE write-lock | S |
+| `app/internal/repotest/user/zz_gap_test.go` | 2 | `rawInsertUser` s `datetime('now')`, `active = 1` | K |
 | `app/infrastructure/worker/run_timeout_withtx_test.go` | 5 | `COUNT(*) FROM runs … ?`; `fx.DB` jako Transactor | A+ |
 | `app/infrastructure/worker/run_worker_audit_test.go` | 1 | `COUNT(*) FROM audit_log … ?` | A+ |
 | `app/infrastructure/worker/run_worker_review_test.go` | 16 | `UPDATE runs SET run_at = strftime(…)` | A+ |
@@ -813,6 +821,13 @@ Kategorie: **A** nezávislý na backendu · **A+** nezávislý, ale s raw SQL ne
 - 26 × A + 14 × A+ + 22 × K + 1 × K + S + 5 × S + 1 × S → A+ = **69 souborů**.
 - Sloupec *fx* dává dohromady **336** volání `testfx.New*` v 63 souborech. K tomu 7 přímých volání `NewSqliteManager` v 5 souborech a 1 soubor (`sqlite/audit/zz_audit_test.go`), který DB dostává přes helper.
 - Seznam vznikl dvěma nezávislými průchody (mechanický grep a ruční čtení každého souboru). Výsledky se shodly a tabulka byla proti nim zkontrolována strojově.
+
+**Stav po fázi 2:**
+- `app/internal/repotest/user/zz_audit_test.go` (kat. S) je kontrakt: raw-pool zápis čeká na zámek vnější tx a po jejím rollbacku přežije. Na Postgresu drží zámek řádek místo celé DB, test platí beze změny.
+- `app/internal/repotest/run/repository_test.go` (kat. K + S) je celý kontrakt: posuny leasu o ±ms dělá `fx.SetLeaseFromNow` vůči hodinám databáze.
+- Z SQLite adaptéru se do kontraktů přesunuly i dva obecné testy: no-tx zóna (`app/internal/repotest/tx/tx_test.go`) a kaskáda refresh tokenů při smazání uživatele (`app/internal/repotest/token/cascade_test.go`).
+- `app/zz_gap_test.go` (kat. S → A+) nepotřebuje DB vůbec: pořadí „migrace před subpříkazem" ověřuje se zástupným `Migrator`em.
+- V SQLite adaptéru zůstaly jen jeho vlastní testy: DSN pragmata, whitelist journal módů, pool cap, souběh `_txlock=immediate`, collation, `sqlite_master`/goose Down a gate testy nad jeho SQL.
 
 
 ## Příloha B — dokumentace k aktualizaci (fáze 7)

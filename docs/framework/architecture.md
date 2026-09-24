@@ -88,7 +88,7 @@ Každý doménový kontext (`domain/user/`, `domain/token/`, ...) je izolovaný 
 - Eventy používají jen primitivy (string ID, ne celé entity).
 - go-arch-lint zachytí cross-domain import při `make arch-check`.
 
-Nový kontext (např. `domain/order/`) **vyžaduje** vlastní komponentu v `.go-arch-lint.yml` — právě to, že každý kontext je samostatná komponenta (a `domain/**` není jeden společný wildcard), je důvod, proč go-arch-lint cross-context import vůbec zachytí. Cenou za tu izolaci je explicitní zápis: přidat komponentu `domain_order`, povolit ji v `mayDependOn` u každého konzumenta (`application`, `sqlite_repos`, `testfx`, …) a přidat `infrastructure/sqlite/order/**` do `sqlite_repos`. Naproti tomu broad-glob komponenty (`application/**`, `presentation/http/handler/**`) nové podbalíčky pokrývají automaticky.
+Nový kontext (např. `domain/order/`) **vyžaduje** vlastní komponentu v `.go-arch-lint.yml` — právě to, že každý kontext je samostatná komponenta (a `domain/**` není jeden společný wildcard), je důvod, proč go-arch-lint cross-context import vůbec zachytí. Cenou za tu izolaci je explicitní zápis: přidat komponentu `domain_order`, povolit ji v `mayDependOn` u každého konzumenta (`application`, `sqlite_repos`, `testfx`, `repotest`, …) a přidat `infrastructure/sqlite/order/**` do `sqlite_repos`. Naproti tomu broad-glob komponenty (`application/**`, `presentation/http/handler/**`) nové podbalíčky pokrývají automaticky.
 
 ### Přidání nové feature (checklist)
 

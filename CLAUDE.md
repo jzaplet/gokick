@@ -40,7 +40,7 @@ Migrations live in `migrations/sqlite/` — one directory per dialect, versions 
 
 ```bash
 make test                                        # vitest + go test (app/ + cmd/ + tools/gk)
-make lint                                        # ESLint + vue-tsc + knip + golangci-lint + go-arch-lint + golines format-check + ts-check + boundary-check + errfields-check + i18n-check + docpaths-check + documan-lint
+make lint                                        # ESLint + vue-tsc + knip + golangci-lint + go-arch-lint + nosqlite-check + golines format-check + ts-check + boundary-check + errfields-check + i18n-check + docpaths-check + documan-lint
 make format                                      # ESLint Stylistic fix + golines + documan-fix
 go test ./app/infrastructure/security/ -run TestHash  # Single Go test
 ```
@@ -58,7 +58,7 @@ go test ./app/infrastructure/security/ -run TestHash  # Single Go test
 
 ### Environment
 
-Copy `.env.example` to `.env`. Key vars: `APP_HTTP_PORT`, `APP_DB_PATH`, `APP_JWT_SECRET` (≥ 32 chars), `APP_CORS_ORIGIN`, `APP_JWT_ACCESS_EXPIRATION`, `APP_JWT_REFRESH_EXPIRATION`, `APP_COOKIE_SECURE`, `APP_SEED_ADMIN_PASSWORD` (required by `./bin/app seed`), `APP_SEED_SUPERADMIN_PASSWORD` (optional — seeds a platform superadmin), `APP_MULTITENANCY` (default `false` = single-tenant; `true` = row-level multitenancy, fail-closed enforcement), `APP_SEED_ADMIN_TENANT` (admin's tenant name when multitenant), `APP_TRUST_PROXY_HEADERS` (flip to `true` only behind a trusted reverse proxy — flips IP source for rate limit + audit), `APP_RATE_LIMIT_LOGIN`, `APP_RATE_LIMIT_REFRESH`, `APP_SENTRY_DSN` / `APP_SENTRY_DSN_FRONTEND` (error tracking, empty = off). Full reference: [Configuration](docs/framework/configuration.md); Sentry setup: the `/gk-sentry` skill.
+Copy `.env.example` to `.env`. Key vars: `APP_HTTP_PORT`, `APP_DB_DRIVER` (default `sqlite`; the Postgres adapter is in progress — see [the plan](docs/framework/postgres-adapter-plan.md)), `APP_DB_PATH`, `APP_JWT_SECRET` (≥ 32 chars), `APP_CORS_ORIGIN`, `APP_JWT_ACCESS_EXPIRATION`, `APP_JWT_REFRESH_EXPIRATION`, `APP_COOKIE_SECURE`, `APP_SEED_ADMIN_PASSWORD` (required by `./bin/app seed`), `APP_SEED_SUPERADMIN_PASSWORD` (optional — seeds a platform superadmin), `APP_MULTITENANCY` (default `false` = single-tenant; `true` = row-level multitenancy, fail-closed enforcement), `APP_SEED_ADMIN_TENANT` (admin's tenant name when multitenant), `APP_TRUST_PROXY_HEADERS` (flip to `true` only behind a trusted reverse proxy — flips IP source for rate limit + audit), `APP_RATE_LIMIT_LOGIN`, `APP_RATE_LIMIT_REFRESH`, `APP_SENTRY_DSN` / `APP_SENTRY_DSN_FRONTEND` (error tracking, empty = off). Full reference: [Configuration](docs/framework/configuration.md); Sentry setup: the `/gk-sentry` skill.
 
 ## Architecture
 
@@ -168,7 +168,7 @@ Taking `*CommandBus`/`*QueryBus` makes the bus↔operation pairing compile-check
 | Package | Purpose |
 |---------|---------|
 | `config/` | `LoadConfig()` from `.env` via godotenv → `*Config` struct |
-| `database/` | Driver-neutral: transaction-in-context (`ContextWithTx` / `TxFromContext`) and the `Migrator` port — links no driver |
+| `database/` | Driver-neutral: the `Driver` name (`APP_DB_DRIVER`), transaction-in-context (`ContextWithTx` / `TxFromContext`) and the `Migrator` port — links no driver |
 | `sqlite/` | `Manager` (connection pool, WAL, `_txlock=immediate`, `busy_timeout`, `foreign_keys` via DSN; per-connection `registerConnFuncs`: Czech sort collation `app_sort`, Unicode `LIKE`, `uuidv7()`; implements `shared.Transactor`: `BeginTx`/`Commit`/`Rollback`), `Migrator` (goose Provider over `migrations/sqlite`), `BaseRepository` (embed in repos for transparent tx support via `r.Conn(ctx)`) |
 | `sqlite/user/` | `user.Repository` impl (incl. `RecordFailedLogin` / `ResetFailedLogin` / `RecordLogin` raw-pool on purpose; tenant-scoped admin reads/writes + cross-tenant platform reads/writes — the `*AcrossTenants` set. The ones that touch EXISTING rows exclude superadmins in the statement itself; `SaveAcrossTenants` (the platform create) has no existing row to exclude, so the superadmin role is refused by `userwrite.Create` instead — that floor is what makes `userwrite.CreateSuperAdmin` the only way through the application layer; the seeder mints its superadmin straight through the repository and never reaches either) |
 | `sqlite/token/` | `token.Repository` implementation |
@@ -177,7 +177,7 @@ Taking `*CommandBus`/`*QueryBus` makes the bus↔operation pairing compile-check
 | `sqlite/audit/` | `shared.AuditLogger` implementation (raw-pool — survives business rollback) |
 | `seeder/` | `shared.Seeder` impl (DB-neutral — seeds through the repository ports) — admin (+ optional superadmin) seeding; `SeedAdminPassword` / `SeedSuperAdminPassword` / `SeedAdminTenant` / `Multitenant` Wire-distinct types |
 | `security/` | `JwtService` (HS256 access + crypto/rand refresh), `PasswordHasher` (SHA-256 prehash + bcrypt), `PermissionChecker` |
-| `persistence/` | `Open(cfg)` → `Store` (every database port: repositories, `Tx` Transactor, `Audit`, `Migrator`) + cleanup that closes the pool — the single place that knows which adapter backs the ports |
+| `persistence/` | `Open(cfg)` → `Store` (every database port: repositories, `Tx` Transactor, `Audit`, `Migrator`) + cleanup that closes the pool — the single place that knows which adapter backs the ports. Branches on `APP_DB_DRIVER`; each adapter's opener is a build-tagged file (`sqlite.go` is `//go:build !nosqlite`) |
 | `di/` | Wire compile-time DI. `container_provider.go` (wireinject tag) + generated `wire_gen.go` |
 
 **Repository pattern:**
@@ -339,7 +339,7 @@ version or changelog. Full guide: `CONTRIBUTING.md`; release mechanics: `/gk-dep
 6. **`infrastructure/di/container_provider.go`** — add Wire providers + `wire.Bind` for interfaces. A new **repository** goes on `persistence.Store` instead: a field typed as its domain port, built in `persistence.Open`, and listed in the `wire.FieldsOf(...)` call
 7. **`make di && make arch-check`** — regenerate DI + verify layer rules
 
-Broad-glob components auto-cover new sub-packages: a new `application/<ctx>/command/` matches `application/**`, a new handler matches `presentation/http/handler/**`. But the **bounded-context** components are enumerated, not wildcarded — `domain` is split per context (`domain_user`, `domain_token`, `domain_run`, `domain_tenant`) and `sqlite_repos` lists each repo dir — exactly so a cross-context import is caught. So adding a new context (`domain/order/`, `infrastructure/sqlite/order/`) **does** require editing `.go-arch-lint.yml`: add a `domain_order` component, grant it in each consumer's `mayDependOn` (`application`, `sqlite_repos`, `testfx`, …), and add `infrastructure/sqlite/order/**` to `sqlite_repos`. That ~6-line edit is the price of enforcing cross-context isolation in the linter.
+Broad-glob components auto-cover new sub-packages: a new `application/<ctx>/command/` matches `application/**`, a new handler matches `presentation/http/handler/**`. But the **bounded-context** components are enumerated, not wildcarded — `domain` is split per context (`domain_user`, `domain_token`, `domain_run`, `domain_tenant`) and `sqlite_repos` lists each repo dir — exactly so a cross-context import is caught. So adding a new context (`domain/order/`, `infrastructure/sqlite/order/`) **does** require editing `.go-arch-lint.yml`: add a `domain_order` component, grant it in each consumer's `mayDependOn` (`application`, `sqlite_repos`, `testfx`, `repotest`, …), and add `infrastructure/sqlite/order/**` to `sqlite_repos`. That ~6-line edit is the price of enforcing cross-context isolation in the linter.
 
 ## Key Invariants
 

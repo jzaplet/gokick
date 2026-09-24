@@ -6,15 +6,17 @@ slug: 'skills-gk-testing'
 parent: 'skills-ship'
 navTitle: 'gk-testing'
 title: 'GK — Testing'
-description: 'Testování v gokicku — testfx harness s reálnou SQLite DB, architektonické konformní testy (zz_audit/zz_gap) a quality gate (lint + arch + test + race + vitest + docs). Use when píšeš handler/repo test, nevíš jak rozjet DB v testu, řešíš proč ti spadl zz_audit/zz_gap, nebo co musí projít před commitem.'
+description: 'Testování v gokicku — testfx harness s reálnou DB na zvoleném adaptéru (APP_DB_DRIVER), kontraktní testy repozitářů, architektonické konformní testy (zz_audit/zz_gap/zz_nosqlite) a quality gate (lint + arch + test + race + vitest + docs). Use when píšeš handler/repo test, nevíš jak rozjet DB v testu, řešíš proč ti spadl zz_audit/zz_gap/zz_nosqlite, nebo co musí projít před commitem.'
 name: 'gk-testing'
 ---
 
 # GK — Testing
 
-Jak se v gokicku testuje: integrační testy nad **reálnou** SQLite databází přes
-`testfx`, samokontrolní testy hlídající architekturu (`zz_audit` / `zz_gap`) a
-quality gate, který to celé před commitem prožene.
+Jak se v gokicku testuje: integrační testy nad **reálnou** databází přes
+`testfx` (na adaptéru, který vybere `APP_DB_DRIVER` — dnes SQLite, s Postgres
+adaptérem stejný test beze změny i na Postgresu), samokontrolní testy hlídající
+architekturu (`zz_audit` / `zz_gap` / `zz_nosqlite`) a quality gate, který to
+celé před commitem prožene.
 
 ## What & when
 - Sáhni sem, když: píšeš test pro command/query handler nebo repozitář,
@@ -26,9 +28,10 @@ quality gate, který to celé před commitem prožene.
 
 ## For non-tech / juniors
 Testy tu nejsou mockované — místo „předstíráme databázi" se pro každý test
-založí **opravdová** malá SQLite databáze v dočasném souboru, naběhnou na ni
-migrace a test píše a čte reálná data. Po testu se smaže sama. Tomu lešení se
-říká `testfx` (test fixtures = připravené testovací prostředí).
+založí **opravdová** malá databáze, naběhnou na ni migrace a test píše a čte
+reálná data. Po testu se smaže sama. Tomu lešení se říká `testfx` (test
+fixtures = připravené testovací prostředí). Test sám neví, jaká databáze pod ním
+běží — to určuje proměnná `APP_DB_DRIVER` stejně jako u aplikace.
 
 Druhá skupina testů jsou „hlídači architektury". Projekt má pravidlo „tahle
 vrstva nesmí sahat na tamtu". Tyhle testy projdou zdrojový kód jako text a
@@ -53,14 +56,35 @@ ověří, že všechno (styl, architektura, testy) je v pořádku, než to pošl
 
 
 ### testfx — reálná DB v testu
-`app/internal/testfx/testfx.go`, import path `gokick/app/internal/testfx`.
-`testfx.New(t, dbPath)` otevře izolovanou SQLite na `dbPath`, spustí migrace a
-vrátí `*Fixture` s reálnými implementacemi (`Users`, `PlatformUsers`, `Tokens`, `Runs`, `Tenants`, `PlatformTenants`, `Hasher`, `Jwt`, `DB`).. DB se zavře automaticky přes `t.Cleanup`. Logger je tichý
-(`io.Discard`). Užitečné helpery na `*Fixture`:
-- `SeedUser(t, nickname, password, role)` / `SeedRefreshToken(t, userID, expiresAt)` — naplnění dat
-- `AssertTokenCount(t, n)` — kontrola počtu řádků v `refresh_tokens`
-- `NewBuses()` — postaví Command/Query/EventBus přesně jako `container_provider` (plný middleware chain)
+`app/internal/testfx/`, import path `gokick/app/internal/testfx`.
+`testfx.New(t)` (nebo `testfx.NewMultitenant(t)`) založí testu vlastní
+databázi na adaptéru z `APP_DB_DRIVER` (default `sqlite`; čte se **jen**
+z prostředí procesu, nikdy z `.env`), spustí migrace a vrátí `*Fixture`
+s reálnými porty ze **stejného** `persistence.Store` jako produkce: `Users`,
+`PlatformUsers`, `Tokens`, `Runs`, `Tenants`, `PlatformTenants`, `Audit`, `Tx`
+(`shared.Transactor`), plus `Hasher` a `Jwt`. DB zmizí sama přes `t.Cleanup`.
+Logger je tichý (`io.Discard`). Test nikdy nevidí konkrétní adaptér ani cestu
+k souboru. Každý backend má vlastní opener s build tagem
+(`app/internal/testfx/sqlite.go` je `//go:build !nosqlite`).
+
+Helpery na `*Fixture`:
+- **Seed:** `SeedUser`, `SeedUserInTenant`, `SeedTenant`, `SeedTenantWithPlan`, `SeedRunInTenant`, `SeedRefreshToken`, `MarkRunCompleted`.
+- **Stav, který porty vyrobit neumí** (`app/internal/testfx/raw.go`): `SetUserActive`, `SetUserLockedUntil`, `ForceExpireLease`, `SetLeaseFromNow(t, id, d)` (vůči hodinám **databáze**, ms přesně), `StealLease`, `MakeRunDue`, `ForceRunCompleted` / `ForceRunFailed`, `SetRunReclaims` / `SetRunParks`.
+- **Čtení mimo porty:** `Count(t, table, where, args…)`, `AuditEntry(t, id)`, `AssertTokenCount(t, n)`.
+- **Constraint testy:** `RawExec(query, args…)` (přenositelné SQL s `?`) + `Violated(err)` → `testfx.NotNull` / `Unique` / `Check` / `ForeignKey`, klasifikované z kódu chyby driveru, ne z textu hlášky.
+- **Busy:** `NewBuses()` postaví Command/Query/EventBus přesně jako `container_provider` (plný middleware chain), `NewSystemBus()` jeho CLI obdobu.
 - `ExecCommand[R](ctx, cmdBus, name, cmd, fn)` — **sankcionovaný způsob**, jak v handler testu protáhnout command celým chainem (tx, audit, eventy). Handler balíček nesmí importovat `application/bus` přímo (arch-lint: komponenta `application` nemá grant na `bus` ani na `bus_middleware`), takže to běží přes testfx.
+- **Jen JWT, bez DB:** `jwtfx.New(t, accessExp)` z `gokick/app/internal/testfx/jwtfx`. Middleware testy tak nelinkují žádný DB adaptér.
+
+**Výběr driveru v testu:** `testfx.ActiveDriver()`; `testfx.RequireDriver(t, database.DriverSQLite)` přeskočí test, který pinuje chování jednoho adaptéru. Vlastní testy adaptéru mají v balíčku `TestMain` s `testfx.MainFor(m, database.DriverSQLite)`, takže při jiném driveru neběží vůbec.
+
+### Kontraktní testy repozitářů
+`app/internal/repotest/<ctx>/` (`audit`, `run`, `tenant`, `token`, `user`, `tx`)
+testují **porty** (`user.Repository`, `run.Repository`, …), ne konkrétní
+adaptér. Napíšou se jednou a poběží na každém adaptéru, který `testfx` umí
+otevřít. V adaptéru (`app/infrastructure/sqlite/`) zůstávají jen testy jeho
+vlastních specifik (DSN pragmata, collation, pool cap, goose Down, gate testy
+nad jeho SQL).
 
 Mimo bus (přímé volání handleru) se eventy chytají přes
 `shared.ContextWithEventCollector(ctx)` + `collector.Flush()` —
@@ -74,8 +98,14 @@ fyzické podoby:
 
 1. **Parser walks** (`go/parser`) — projdou zdrojáky jako text a pinují pravidla vrstev:
    - `app/domain/zz_audit_test.go` — domain smí importovat jen stdlib + `uuid` + jiný `domain/` (overview-39).
-   - `app/domain/zz_gap_test.go` — HTTP handler nesmí importovat `infrastructure/sqlite`, `infrastructure/security` ani `application/**/event` (overview-41).
-2. **testfx-wired black-box testy** — postaví reálné prostředí a pinují konkrétní coverage claim, např. `app/infrastructure/sqlite/user/zz_gap_test.go` (DB-level `CHECK`/`UNIQUE` constraints přes raw insert).
+   - `app/domain/zz_gap_test.go` — HTTP handler nesmí importovat DB adaptér (`infrastructure/sqlite`, `infrastructure/postgres`, `infrastructure/persistence`), `infrastructure/security` ani `application/**/event` (overview-41).
+   - `app/zz_nosqlite_test.go` — viz „Žádná SQLite při přepnutém adaptéru" níže.
+2. **testfx-wired black-box testy** — postaví reálné prostředí a pinují konkrétní coverage claim, např. `app/internal/repotest/user/zz_gap_test.go` (DB-level `CHECK`/`UNIQUE` constraints přes raw insert).
+
+### Žádná SQLite při přepnutém adaptéru (trojitá pojistka)
+1. **Kompilace:** celý SQLite adaptér a oba jeho openery (`app/infrastructure/persistence/sqlite.go`, `app/internal/testfx/sqlite.go`) jsou za `//go:build !nosqlite`. `make nosqlite-check` (součást `make lint`) spustí `golangci-lint --build-tags nosqlite` a ověří, že `go list -tags nosqlite -test -deps` neobsahuje ncruces ani adaptér — žádný balíček, ani testovací.
+2. **Staticky:** `app/zz_nosqlite_test.go` hlídá, že SQLite import je jen v souborech s tagem, každý soubor adaptéru tag má, každý testovací balíček adaptéru má `TestMain` s `MainFor` a žádný test ani fixture mimo tagované soubory nenese SQLite dialekt (`julianday(`, `strftime(`, `datetime(`, `PRAGMA`, `sqlite_master`, `INSERT OR …`, cestu `*.db`).
+3. **Runtime:** `testfx` otevře jen adaptér z `APP_DB_DRIVER`; v buildu bez něj test hlasitě selže, místo aby tiše běžel jinde.
 
 **Proč existují vedle go-arch-lintu:** parser walks jsou **silnější než
 arch-lint** tam, kde matice závislostí nepomůže — `presentation → infrastructure`
@@ -88,22 +118,27 @@ svůj produkční balíček (vypadá to jako cyklus), jsou v `.go-arch-lint.yml`
 
 ### Quality gate
 `make test` = `yarn test` (vitest, v CI job `lint + test + build`) + `go test ./app/... ./cmd/...` + `cd tools/gk && go test ./...` (dev nástroje tsgen/boundary/errfields/docpaths jsou vlastní modul, takže je `./app/...` nepokrývá).
-`make lint` = ESLint + `vue-tsc` (type-check) + `knip` (dead code) + `golangci-lint` + `make arch-check` (go-arch-lint) + `format-check` (golines) + `ts-check` (Go→TS parita typů) + `boundary-check` (wire DTO hranice) + `errfields-check` (parita chybových polí) + `i18n-check` (parita překladových katalogů a freshness generovaných artefaktů) + `docpaths-check` (každá cesta a `/gk-*` odkaz v docs/skills musí existovat) + `documan-lint`.
+`make lint` = ESLint + `vue-tsc` (type-check) + `knip` (dead code) + `golangci-lint` + `make arch-check` (go-arch-lint) + `nosqlite-check` (build bez SQLite, viz výše) + `format-check` (golines) + `ts-check` (Go→TS parita typů) + `boundary-check` (wire DTO hranice) + `errfields-check` (parita chybových polí) + `i18n-check` (parita překladových katalogů a freshness generovaných artefaktů) + `docpaths-check` (každá cesta a `/gk-*` odkaz v docs/skills musí existovat) + `documan-lint`.
 CI (`.github/workflows/validate.yml`): job `validate` = `make install` → `make lint` → `make test` → `make build`, se `SKIP_DOCUMAN=1` (dokumentaci v CI validuje samostatný `.github/workflows/documan.yml` přes `docker/documan/Dockerfile`); paralelní job `e2e` spouští `make e2e` (durable-run process-lifecycle testy, viz `tests/e2e/README.md`).
 
 ## Recipe
 
 ### Napsat integrační test handleru / repozitáře
-1. `fx := testfx.New(t, filepath.Join(t.TempDir(), "moje.db"))` — reálná DB + migrace.
+1. `fx := testfx.New(t)` — reálná DB + migrace na adaptéru z `APP_DB_DRIVER`.
 2. Naplň data: `u := fx.SeedUser(t, "bob", "secret12", "user")`.
 3. Postav handler s reálnými závislostmi z `fx` (`fx.Users`, `fx.Hasher`, …).
 4. Voláš handler buď přímo (eventy přes `shared.ContextWithEventCollector` + `collector.Flush()`),
    nebo přes plný chain: `cmdBus, _, _ := fx.NewBuses()` + `testfx.ExecCommand[...](...)`.
-5. Asertuj proti DB (`fx.Users.FindByNickname(...)`, `fx.AssertTokenCount(t, n)`).
+5. Asertuj přes porty (`fx.Users.FindByNickname(...)`), a kde port chybí, přes helpery (`fx.Count`, `fx.AuditEntry`, `fx.AssertTokenCount`). Do těla testu nepiš SQL; když ho test potřebuje, patří do helperu v `testfx`.
+
+### Test repozitáře
+Test portu patří do `app/internal/repotest/<ctx>/`, ne do adaptéru. Tenant id
+v datech musí být skutečný tenant (`fx.SeedTenant(t, "acme").ID`), ne
+libovolný řetězec: Postgres drží `uuid` typ a FK.
 
 ### Než commitnu
 1. `make format` — srovná styl (ESLint Stylistic + golines).
-2. `make lint` — ESLint + tsc + knip + golangci-lint + arch-check + format-check + ts-check + boundary-check + errfields-check + i18n-check + docpaths-check (+ documan lokálně).
+2. `make lint` — ESLint + tsc + knip + golangci-lint + arch-check + nosqlite-check + format-check + ts-check + boundary-check + errfields-check + i18n-check + docpaths-check (+ documan lokálně).
 3. `make test` — vitest + `go test`.
 4. `go test -race ./app/... ./cmd/...` — **manuální** krok na souběh; **není**
    v `make test` ani v CI, ale spouští se lokálně před většími změnami.
@@ -116,18 +151,23 @@ CI (`.github/workflows/validate.yml`): job `validate` = `make install` → `make
 - **Nepřejmenuj `zz_`-testy bez kontextu.** Ruší se na nich claim-ID a
   anti-vacuity kontroly; prefix `zz_` je záměrný (řazení nakonec).
 - **Nový bounded context = nový `domain_<ctx>` + grant v `mayDependOn`** napříč
-  konzumenty (`application`, `sqlite_repos`, `testfx`, …), jinak arch-check padá.
+  konzumenty (`application`, `sqlite_repos`, `testfx`, `repotest`, …), jinak arch-check padá.
   Viz `/gk-architecture`.
 - **`-race` se hlídá ručně.** Není ve `make test` ani v `validate.yml` —
   nezapomeň ho pustit u změn, co se dotýkají souběhu (collector per-request, worker).
-- **Každý test má izolovanou DB** přes `t.TempDir()` — nesdílej cestu mezi testy,
-  ať jdou paralelně bez „database is locked".
+- **Každý `testfx.New(t)` má vlastní izolovanou DB** — nesdílej fixture mezi
+  testy. Na SQLite je to soubor v `t.TempDir()`.
+- **V testu žádné SQL konkrétního dialektu.** `zz_nosqlite` spadne na
+  `strftime(`/`julianday(`/`datetime(`/`PRAGMA`/`*.db`. Stav, který porty
+  neumí, nastav helperem z `testfx` (má implementaci pro každý backend).
 
 ## Related
 - Skills: `/gk-architecture` (vrstvy + go-arch-lint), `/gk-commands`, `/gk-queries`
   (struktura handlerů), `/gk-repositories` (`r.Conn(ctx)`, raw-pool výjimky), `/gk-di`.
 - Docs: [Architecture](/framework/architecture) (§ go-arch-lint, cross-domain izolace).
-- Kód: `app/internal/testfx/testfx.go`, `app/domain/zz_audit_test.go`,
-  `app/domain/zz_gap_test.go`, `app/infrastructure/sqlite/user/zz_gap_test.go`,
-  `.go-arch-lint.yml`, `.golangci.yml`, `Makefile` (`test`, `lint`, `arch-check`),
-  `.github/workflows/validate.yml`.
+- Kód: `app/internal/testfx/testfx.go`, `app/internal/testfx/raw.go`,
+  `app/internal/repotest/`, `app/domain/zz_audit_test.go`,
+  `app/domain/zz_gap_test.go`, `app/zz_nosqlite_test.go`,
+  `.go-arch-lint.yml`, `.golangci.yml`, `Makefile` (`test`, `lint`, `arch-check`,
+  `nosqlite-check`), `.github/workflows/validate.yml`.
+- Plán: [Postgres adaptér](/framework/postgres-adapter-plan) (sekce 7).
