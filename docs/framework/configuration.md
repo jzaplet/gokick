@@ -51,6 +51,7 @@ Sémantickou validaci dělají konzumenti:
 
 | Proměnná | Default | Co dělá |
 |---|---|---|
+| `APP_DB_DRIVER` | `sqlite` | Databázový adaptér. Parsuje se striktně, neznámá hodnota shodí start. `postgres` se připravuje ([plán](/framework/postgres-adapter-plan)); do té doby ho binárka odmítne s chybou „not built into this binary". Testy čtou stejnou proměnnou (jen z prostředí procesu, ne z `.env`) a běží na zvoleném adaptéru. |
 | `APP_DB_PATH` | `./data/app.db` | Cesta k souboru SQLite databáze. |
 | `APP_DB_JOURNAL_MODE` | `WAL` | SQLite journal mode. `WAL` je default a správná volba pro normální běh. Přepni na `DELETE`, když stejnou DB čte přes Docker bind mount jiný proces (např. prohlížení `data/app.db` v IDE, zatímco kontejner zapisuje) — virtualizovaný FS Docker Desktopu nezaručuje koordinaci mmap/shm, kterou WAL vyžaduje. |
 | `APP_DB_MAX_CONNS` | `0` (auto) | Strop SQLite connection poolu. Nenastavené/`0` = auto: `clamp(2×NumCPU, 4, 32)`. SQLite zápisy stejně serializuje — limit řídí paměť a backpressure, ne propustnost; override jen při neobvyklém poměru RAM:CPU. |

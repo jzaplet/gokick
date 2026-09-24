@@ -1,7 +1,8 @@
 // Package database holds the driver-neutral pieces every SQL adapter shares: the
-// transaction-in-context carrier and the migrator port. Driver-specific code (the
-// connection manager, DSN tuning, the migration set) lives in the adapter package
-// (infrastructure/sqlite), so importing this package never links a driver.
+// Driver name, the transaction-in-context carrier and the migrator port.
+// Driver-specific code (the connection manager, DSN tuning, the migration set)
+// lives in the adapter package (infrastructure/sqlite), so importing this package
+// never links a driver.
 package database
 
 import (
