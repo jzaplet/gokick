@@ -13,7 +13,7 @@ description: 'Analýza vazeb na SQLite a plán refaktoringu na přepínatelný S
 
 Stačí nastavit `APP_DB_DRIVER=postgres` v env a aplikace **i celá Go test suite** poběží na PostgreSQL 18 se stejným chováním, aniž by se kdekoli otevřela SQLite. Postgres zároveň nahradí globální write-lock zámky na úrovni řádků a přinese multitenancy vynucenou přímo databází (Row-Level Security). Tahle stránka je analýza dnešních vazeb na SQLite a fázovaný plán refaktoringu k tomu cíli.
 
-**Status:** 🔴 draft (k review) · **Roadmap:** [Roadmap (GoKick) → Škálovatelnost](/framework/gokick-roadmap) · **Analýza:** 2026-09-24
+**Status:** 🟡 draft — 1. kolo rozhodnutí zapracováno (D1, D2, D6, D8, D9 potvrzeny; D3, D4, D5, D7 čekají) · **Roadmap:** [Roadmap (GoKick) → Škálovatelnost](/framework/gokick-roadmap) · **Analýza:** 2026-09-24
 
 > **Konvence cest:** existující soubory cituju plnou cestou (`app/…`), aby je hlídal
 > `make docpaths-check`. **Nové** balíčky, které teprve vzniknou, píšu relativně k `app/`
@@ -32,6 +32,7 @@ Stačí nastavit `APP_DB_DRIVER=postgres` v env a aplikace **i celá Go test sui
    - 65 raw SQL literálů v testech nahradí pojmenované fixture helpery.
    - Testy, které testují jen SQLite, se na Postgresu přeskočí s uvedeným důvodem.
    - Postgres fixture je klon šablonové DB, cca 15 ms na test (změřeno).
+   - **Testy běží vždy na obou DB:** `make test` je pouští paralelně a v CI jsou dva povinné joby.
 4. **Trojitá pojistka „na Postgresu žádná SQLite":**
    - runtime guard: SQLite opener odmítne otevřít DB, když je aktivní driver `postgres`;
    - statický gate nad testy;
@@ -49,7 +50,8 @@ Stačí nastavit `APP_DB_DRIVER=postgres` v env a aplikace **i celá Go test sui
 
    Zapomenutý `WHERE tenant_id` pak vrátí 0 řádků místo cizích dat.
 7. **Doslovný port by byl chybný.** Ověřeno na reálném Postgresu (sekce 8): dnešní `ClaimDue` by na Postgresu **vydal stejný run dvěma workerům**.
-8. **Nejdřív opravit existující bug:** po startovních migracích se ztrácí limit connection poolu, a to už dnes na SQLite (nález N1).
+8. **České řazení a UUIDv7 v obou DB.** Gridy se řadí podle české abecedy a hledání ignoruje velikost písmen i u Č/Ř/Ž, se stejným výsledkem v SQLite i v Postgresu (ověřeno na 3 085 řetězcích). Všechny primární klíče jsou UUIDv7.
+9. **Nejdřív opravit existující bug:** po startovních migracích se ztrácí limit connection poolu, a to už dnes na SQLite (nález N1).
 
 
 ## 1. Výchozí stav — jak je SQLite zadrátovaná
@@ -108,8 +110,8 @@ Seřazeno podle závažnosti. „Ověřeno" znamená, že nález byl reprodukov�
 | N2 | `ClaimDue` má tvar `UPDATE … WHERE id = (SELECT … LIMIT 1)` a guard „volný nebo expirovaný" je jen v subquery. **Ověřeno:** dva workery dostanou tentýž run a druhý navíc započítá falešný `reclaims`. | Handler se spustí dvakrát (mail nebo API volání 2×), kontrakt „nejvýš jeden worker" je porušený a poison cap se falešně posouvá. | CTE s `FOR UPDATE SKIP LOCKED` a opakovaná kontrola guardu ve vnějším `WHERE`. **Ověřeno:** druhý worker neblokuje a vezme další run. |
 | N3 | Check-then-insert unikátnost (`app/application/userwrite/userwrite.go`, `CreateTenant`, seeder) je dnes korektní jen díky `BEGIN IMMEDIATE`, tedy serializaci všech zápisů. | Pod READ COMMITTED projdou kontrolou obě transakce a poražená dostane 23505, tedy **500** místo 400. | Zdrojem pravdy je constraint. 23505 se namapuje podle jména constraintu na pole a vrátí `ValidationError`. |
 | N4 | `DeleteIfEmptyAcrossTenants` (NOT EXISTS users/runs) může běžet souběžně s enqueue runu, a `runs.tenant_id` nemá FK. | Tenant se smaže a run zůstane bez tenanta. | FK `runs.tenant_id → tenants(id)` v PG schématu; chyba 23503 se namapuje na „tenant není prázdný". **Ověřeno:** DELETE počká na `KEY SHARE` lock souběžného INSERTu a skončí chybou 23503, run bez tenanta nevznikne. |
-| N5 | `LIKE` v 7 filtrech spoléhá na ASCII case-insensitivitu SQLite (viz komentář v `app/infrastructure/sqlite/user/list.go`). **Ověřeno:** `LIKE '%ALI%'` na Postgresu nenajde `alice`. | Hledání v gridech přestane ignorovat velikost písmen. | `ILIKE` a escapování `%`, `_` a `\` (Postgres má `\` jako výchozí escape znak). |
-| N6 | Řazení: SQLite používá `BINARY`, Postgres locale collation. `app/application/platform/query/list_pages_test.go` čeká `Default` před `acme`. | Jiné pořadí v gridech a padající test. | Vytvořit DB s `LOCALE_PROVIDER builtin` a `C.UTF-8`, což dá stejné codepoint pořadí. Lokalizované řazení (ICU `cs-CZ`) ponechat jako vědomé produktové rozhodnutí (D2). |
+| N5 | `LIKE` v 7 filtrech spoléhá na ASCII case-insensitivitu SQLite (viz komentář v `app/infrastructure/sqlite/user/list.go`). **Ověřeno:** `LIKE '%ALI%'` na Postgresu nenajde `alice`. | Hledání v gridech přestane ignorovat velikost písmen. | SQLite: Unicode `LIKE` z `ext/unicode`; Postgres: `ILIKE … COLLATE app_sort`; v obou escapování `%`, `_` a `\`. **Ověřeno:** stejné výsledky vč. Č/Ř/Ž (sekce 4.2). |
+| N6 | Řazení: SQLite používá `BINARY`, Postgres locale collation. `app/application/platform/query/list_pages_test.go` čeká `Default` před `acme`. | Jiné pořadí v gridech a padající test. | **České řazení v obou DB** přes stejně pojmenovanou collation `app_sort`: v SQLite `x/text/collate`, v Postgresu ICU `cs-CZ`. **Ověřeno:** identické pořadí (sekce 4.2, rozhodnutí D2). |
 | N7 | NULL v `ORDER BY` (`last_login_at` v platform gridu): SQLite řadí při ASC NULL na začátek, Postgres na konec. | Jiné pořadí. | Explicitní `NULLS FIRST/LAST` v PG repozitáři. |
 | N8 | Sloupce typu `uuid`. **Ověřeno:** `WHERE id = 'not-a-uuid'` na Postgresu vyhodí chybu 22P02, SQLite vrátí 0 řádků. Testy používají id, která nejsou UUID (`tnt-abc`, `does-not-exist`, `u-1`, `no-such-id` …). | Nesmyslné id z URL vrátí 500 místo 404 a testy padají. | PG repo převede neplatné UUID u lookupu na „nenalezeno" (parita se SQLite). Testová data převést na platná UUID. Audit `actor_user_id` a `target_id` nechat jako `text`. |
 | N9 | Čas: `now()` v Postgresu vrací začátek **transakce**, kdežto SQLite `'now'` platí pro jeden příkaz. SQLite navíc ukládá datetime ve třech textových formátech (proto všude `julianday`). | Časy lease a zámků by uvnitř delší transakce „stály". | `statement_timestamp()` (případně `clock_timestamp()`) a typ `timestamptz`. `MsPrecisionUTC` zachovat kvůli stejným round-tripům, čtení normalizovat na UTC. |
@@ -212,13 +214,66 @@ func providePersistence(cfg *config.Config, log *slog.Logger) (*persistence.Stor
 
 | Tabulka | Změny oproti SQLite |
 |---|---|
-| `tenants` | `id uuid`, `created_at`/`updated_at timestamptz DEFAULT now()`, unikátní index na `name` beze změny. Pro `C.UTF-8` je porovnání case-sensitive jako dnes. |
+| `tenants` | `id uuid`, `created_at`/`updated_at timestamptz DEFAULT now()`, unikátní index na `name` beze změny. Rovnost (UNIQUE) zůstává binární a case-sensitive jako dnes; české řazení se používá jen v `ORDER BY` (4.2). |
 | `users` | `id uuid`, `tenant_id uuid REFERENCES tenants`, `active boolean DEFAULT true`, datumy jako `timestamptz`, `role` s CHECK beze změny, `nickname` UNIQUE (globálně, jako dnes), index `(tenant_id, nickname)`. |
 | `refresh_tokens` | `id` a `user_id` jako `uuid`, `ON DELETE CASCADE` beze změny. **Odpadá** redundantní `idx_refresh_tokens_token_hash`, protože UNIQUE už má vlastní index. |
 | `audit_log` | `id uuid`, `metadata jsonb`, `created_at timestamptz`. `actor_user_id`, `target_id` a `actor_ip` zůstávají `text` (polymorfní hodnoty; audit nikdy nesmí selhat na tvaru dat). |
 | `runs` | `id uuid`, `tenant_id uuid` **nově s FK** na `tenants` (N4), `payload bytea NOT NULL`, `state bytea`, `cancel_requested boolean`, časy jako `timestamptz`. `locked_by` zůstává `text` (nejde o UUID, je to `workerID-claimUUID`). Index `idx_runs_claim ON runs (run_at) WHERE <not terminal>`. |
 
-Postgres 18 nabízí navíc nativní `uuidv7()`. Aplikace dál generuje id v Go, ale funkce se hodí pro defaulty v ručních skriptech. Dále je k dispozici `transaction_timeout` (od verze 17) a builtin collation `C.UTF-8` (od verze 17).
+Z novinek Postgresu 17/18 se hodí `uuidv7()` (4.1) a `transaction_timeout` (od verze 17).
+
+### 4.1 Identifikátory: UUIDv7 všude (rozhodnutí D1 ✅)
+
+- **Všechny primární klíče jsou UUIDv7**, tedy časově seřazené, takže se v B-tree indexu vkládají na konec a nerozhazují stránky.
+  - `tenants`, `users` a `runs` už v7 generují.
+  - `refresh_tokens` a `audit_log` dnes používají v4 na třech místech: `app/domain/token/refresh_token.go`, `app/application/bus/middleware/audit.go` a `app/infrastructure/worker/run_worker_audit.go`. Tato místa se sjednotí na `uuid.NewV7()`.
+  - Časová informace v id tokenu nevadí, protože tajemstvím je hash, ne id.
+- **Typ sloupce:**
+  - Postgres: nativní `uuid` (16 B).
+  - SQLite: `TEXT`, jako dnes.
+  - Generuje vždy aplikace v Go; DB default slouží jen pro ruční SQL (seedy).
+- **SQL funkce `uuidv7()` existuje v obou DB:**
+  - v Postgresu 18 je vestavěná;
+  - v SQLite ji adaptér zaregistruje na každém spojení (jedna funkce nad `google/uuid`, žádná nová závislost). ncruces sám nabízí jen `uuid(7)`.
+
+  Stejný SQL seed tak běží beze změny na obou (4.3).
+- **Neplatné UUID z URL** vrátí v PG repozitáři „nenalezeno" (parita se SQLite, N8).
+
+### 4.2 Řazení a vyhledávání česky — stejně v SQLite i Postgresu (rozhodnutí D2 ✅)
+
+**Cíl:** gridy se řadí podle české abecedy (ch za h, č za c, ř za r, malá před velkými) a hledání ignoruje velikost písmen i u Č/Ř/Ž, s **identickým výsledkem v obou databázích**.
+
+| | SQLite | Postgres |
+|---|---|---|
+| Řazení | collation `app_sort` registrovaná na každém spojení přes `ext/unicode` z ncruces (`RegisterCollation(conn, "cs-CZ", "app_sort")`, interně `golang.org/x/text/collate`, pravidla CLDR) | `CREATE COLLATION app_sort (provider = icu, locale = 'cs-CZ')` v migraci (ICU, pravidla CLDR) |
+| Hledání bez ohledu na velikost | `ext/unicode` přepíše `LIKE` na Unicode case-insensitive (`unicode.Register(conn)`) | `ILIKE` na výrazu `… COLLATE app_sort` |
+| Diakritika | rozlišuje se (`cerny` nenajde `Černý`) | rozlišuje se, stejně |
+| Rovnost / UNIQUE | binární, beze změny | deterministická ICU collation = binární rovnost, beze změny |
+
+**Pravidla implementace:**
+- **Collation jen v dotazech, nikdy ve schématu ani v indexech.**
+  - Repozitáře píšou `ORDER BY nickname COLLATE app_sort` v sort whitelistech.
+  - Kdyby byla ve schématu, SQLite soubor by nešel otevřít v GUI nástrojích bez registrované collation (chyba „no such collation sequence").
+  - Jméno `app_sort` je v obou dialektech stejné; locale je jedna konstanta v kódu (`cs-CZ`), aby šla v jiném projektu ze šablony změnit na jednom místě.
+- **SQLite manager** přejde ze `sqlx.Open("sqlite3", dsn)` na `driver.Open(dsn, initFn)` + `sqlx.NewDb`, kde `initFn` na každém novém spojení zaregistruje `unicode.Register`, collation `app_sort` a `uuidv7()`. Balíček `ext/unicode` je součástí už používaného modulu ncruces, takže nepřibude žádná závislost.
+- **Escapování uživatelského vstupu** (`%`, `_`, `\`) s `ESCAPE '\'` v obou dialektech. Wildcardy z vyhledávacího pole se dnes nevyescapují ani v SQLite.
+- **Jde o změnu chování i pro stávající SQLite instalace:** například `acme` se nově řadí před `Default`. Test `app/application/platform/query/list_pages_test.go`, který dnes čeká binární pořadí, se upraví.
+- **Ověřeno** (V18, V19):
+  - 3 085 řetězců (ruční české případy + náhodné řetězce z české abecedy včetně „ch", číslic a interpunkce) je seřazeno **identicky** vzestupně i sestupně;
+  - 30 vyhledávacích vzorů (Č/č, Ř/ř, Ů/ů, ß/SS, …) dává **stejné počty** shod.
+- **Trvalá pojistka proti rozjetí:** CLDR data v `x/text` a v ICU se aktualizují nezávisle. Proto bude v repu uložený pevný korpus a „zlaté" očekávané pořadí a kontraktní test ho ověří v obou CI jobech. Pokud aktualizace jedné strany pořadí změní, test spadne dřív, než se to dostane k uživatelům.
+
+### 4.3 Seedy — stejné pro oba adaptéry (rozhodnutí D8 ✅)
+
+Adaptér se volí **při založení projektu** a data mezi SQLite a Postgresem se nepřevádějí, takže nástroj na migraci dat není potřeba. Požadavek je jen, aby **seedy dávaly stejná data na obou**:
+
+1. **Primární cesta jsou seedy přes aplikaci:** `./bin/app seed` a případné další seed commandy přes `SystemCommandBus`, tedy repozitáře. Na obou DB jsou identické automaticky a navíc validují doménová pravidla a zapisují audit.
+2. **Volitelně SQL seedy** (`INSERT INTO …`, třeba pro hromadná demo data) v **přenositelné podmnožině SQL**:
+   - id jako UUID literály nebo `uuidv7()` (existuje v obou, 4.1);
+   - časy jako ISO-8601 UTC literály (`'2026-01-01 00:00:00'`);
+   - booleany jako `TRUE`/`FALSE` (SQLite je zná od verze 3.23);
+   - žádné dialektové funkce.
+3. **Kontraktní test** pustí každý SQL seed na obou backendech a porovná výsledek přes repozitáře (počty, klíčové hodnoty). Nepřenositelný seed tak spadne v CI.
 
 
 ## 5. Zámky a souběh
@@ -345,12 +400,20 @@ CREATE POLICY tenant_isolation ON users
 
 ### 7.1 Principy
 
-1. Backend v testech vybírá **stejná proměnná** jako v aplikaci: `APP_DB_DRIVER`, pro Postgres doplněná o `APP_TEST_DB_URL`.
-   - `make test` pouští SQLite jako dnes.
-   - `make test-pg` pustí `docker compose --profile pg-test up -d` s Postgres 18 a pak celou suite s `APP_DB_DRIVER=postgres` a `-tags nosqlite`.
+1. **Testy běží vždy proti oběma databázím** (rozhodnutí D9 ✅), lokálně i v pipeline:
+   - **`make test` = SQLite + Postgres, paralelně.**
+     - Nejdřív `docker compose up -d --wait postgres-test`: Postgres 18 na tmpfs s `fsync=off`. Kontejner se nechá běžet a další `make test` ho znovu použije.
+     - Pak se paralelně spustí dva `go test` procesy: `APP_DB_DRIVER=sqlite` a `APP_DB_DRIVER=postgres -tags nosqlite`. Výstupy se prefixují `[sqlite]` a `[postgres]`.
+     - Selhání kterékoli z nich = selhání `make test`.
+   - **Bez běžícího Dockeru** `make test` **selže** se srozumitelnou hláškou a nabídne `make test-sqlite`. Druhá DB se tedy nikdy tiše nepřeskočí.
+   - `make test-sqlite` a `make test-pg` zůstanou pro rychlou iteraci nad jednou DB.
+   - **CI** pustí oba běhy jako dva paralelní joby a oba budou povinné checky v branch rulesetu (sekce 7.7).
+   - **Čas:** dnešní Go suite na SQLite trvá 63 s včetně kompilace (V20). Postgres běh se odhaduje podobně (klon DB ≈ 15 ms × ≈ 390 fixtures, rozloženo do paralelních balíčků). Protože běží paralelně, celková doba se prodlouží jen mírně, ne na dvojnásobek.
+   - Backend konkrétního běhu vybírá **stejná proměnná** jako v aplikaci, `APP_DB_DRIVER`; pro Postgres ji doplní `APP_TEST_DB_URL`, kterou `make` nastaví sám.
 2. `testfx` otevírá DB přes **`persistence.Open`**, tedy stejnou funkci jako produkce, jen s testovacím configem.
-3. **Tělo testu neobsahuje žádné SQL specifické pro dialekt.** SQL žije buď v adaptéru, nebo v pojmenovaném fixture helperu implementovaném pro oba backendy.
-4. Kontraktní testy repozitářů se napíšou **jednou** a běží **proti oběma** adaptérům.
+3. **Seedovat ručně se nic nemusí.** Harness si šablonovou DB sám vytvoří a zmigruje (7.3). Každý test si data založí fixture helpery (`SeedUser`, `SeedTenant` …) jako dnes a po testu se DB zahodí.
+4. **Tělo testu neobsahuje žádné SQL specifické pro dialekt.** SQL žije buď v adaptéru, nebo v pojmenovaném fixture helperu implementovaném pro oba backendy.
+5. Kontraktní testy repozitářů se napíšou **jednou** a běží **proti oběma** adaptérům.
 
 ### 7.2 Nové API `testfx`
 
@@ -448,11 +511,17 @@ Rozpis po souborech je v **příloze A**.
    - Dále `go list -tags nosqlite -deps ./... | grep ncruces` musí být prázdné.
    - Test proběhne s `TMPDIR` v čerstvém adresáři a po běhu tam nesmí být žádný `*.db`, `*-wal` ani `*-journal`.
 
-**CI matice** (`.github/workflows/validate.yml`):
-- job `validate` poběží pro `driver: [sqlite, postgres]`, s service kontejnerem `postgres:18` (health-check, fsync flagy);
-- lint poběží pro obě sady build tagů;
-- e2e (`tests/e2e/lib.sh`) dostane PG variantu. `at_least_once.sh` dnes volá CLI `sqlite3`; nahradí ho `psql` nebo počet přes `/debug/runs`;
-- odložený e2e test *multi-process fencing* (dvě procesy workeru nad jednou DB) má na Postgresu konečně smysl.
+**CI** (`.github/workflows/validate.yml`), rozhodnutí D7:
+- **Dva paralelní joby, oba povinné:**
+  - `validate` zůstává jako dnes: lint, testy na SQLite, build;
+  - nový `test-postgres` spustí Postgres 18 jako `docker run … postgres:18 -c fsync=off -c full_page_writes=off -c synchronous_commit=off` na tmpfs a pak `go test -tags nosqlite` s `APP_DB_DRIVER=postgres`.
+
+  Protože joby běží souběžně, pipeline se neprodlouží. Lint poběží pro obě sady build tagů.
+- **Kde to běží a kolik to stojí:**
+  - **GitHub-hosted runnery.** `jzaplet/gokick` je veřejný repozitář, takže minuty jsou **zdarma** a Postgres se startuje v rámci jobu; žádný vlastní server není potřeba.
+  - Projekty založené ze šablony jako **privátní** repozitáře čerpají měsíční kvótu minut z GitHub plánu. Jeden běh je řádově 2 × ~1–2 min, takže běžný provoz se vejde; aktuální kvóty a ceny je potřeba ověřit v ceníku GitHubu.
+  - **Self-hosted runner** na vlastním dedikovaném serveru je volitelná optimalizace **jen pro privátní repozitáře**: teplá cache a vlastní CPU = rychlejší běh. Na veřejném repu je to bezpečnostní riziko, protože PR z forku by mohl spustit cizí kód na serveru; GitHub to u veřejných repozitářů nedoporučuje.
+- **E2E:** `tests/e2e/lib.sh` dostane PG variantu. `at_least_once.sh` dnes volá CLI `sqlite3`; nahradí ho `psql` nebo počet přes `/debug/runs`. Odložený e2e test *multi-process fencing* (dva procesy workeru nad jednou DB) má na Postgresu konečně smysl.
 
 
 ## 8. Ověřeno na reálném Postgresu
@@ -478,6 +547,9 @@ Tvrzení v nálezech a v návrhu jsem ověřoval na lokálním PostgreSQL 16.13;
 | V15 | DELETE tenanta vs. souběžný INSERT runu s FK | ✅ DELETE čeká ≈ 1,5 s na `KEY SHARE` lock a skončí chybou 23503, run bez tenanta nevznikne |
 | V16 | `CREATE DATABASE … TEMPLATE` × 30 | ✅ `FILE_COPY` + `fsync=off` ≈ 15 ms klon, ≈ 5 ms drop (bez režie klienta) |
 | V17 | Pool cap po `RunUp` (dnešní SQLite kód) | ❌ **7 → 0 (bez limitu)**, bug N1 |
+| V18 | České řazení: SQLite (ncruces `ext/unicode`, `x/text/collate` `cs-CZ`, registrace na spojení) vs. Postgres (ICU 74 `cs-CZ`), 3 085 řetězců | ✅ **identické pořadí** ASC i DESC (ch za h, č za c, malá před velkými) |
+| V19 | Vyhledávání bez ohledu na velikost: SQLite Unicode `LIKE` vs. Postgres `ILIKE … COLLATE`, 30 vzorů | ✅ **identické počty** shod (Č/č, Ř/ř, Ů/ů, ß/SS; diakritika rozlišená v obou). Bez `unicode.Register` SQLite ignoruje velikost jen u ASCII. |
+| V20 | Doba dnešní Go suite na SQLite (`go test ./app/... ./cmd/...`) | 63 s včetně kompilace, 40 balíčků OK |
 
 
 ## 9. Plán refaktoringu — fáze a PR
@@ -488,27 +560,71 @@ Pořadí je zvolené tak, aby **fáze 1 a 2 byly čisté refaktory bez změny ch
 |---|---|---|
 | **0 — bugfix** | Oprava N1 (pool cap po migracích) a regresní test. Drobnosti z konce sekce 2. | `MaxOpenConnections` po `RunUp` = nastavený cap |
 | **1 — švy (jen SQLite)** | `database.Driver`, port `Migrator`, goose Provider API; `migrations/sqlite/` a embed podle dialektu. `SqliteManager` se přesune do `infrastructure/sqlite`. `persistence.Store` + `Open`, Wire přes `FieldsOf`, cleanup zavírá pool. Providery berou `shared.Transactor`, `NewApplication` bere `Migrator`. Seeder se přesune do `infrastructure/seeder`. Porty `shared.Locker` a `Transactor.BeginReadTx` (na SQLite no-op). Úprava `.go-arch-lint.yml`. | `make lint test` zelené; `*database.SqliteManager` mimo `sqlite` a `persistence` neexistuje |
+| **1b — české řazení a UUIDv7 (jen SQLite, `feat`)** | SQLite manager přes `driver.Open` + init callback: `unicode.Register`, collation `app_sort` (`cs-CZ`), SQL funkce `uuidv7()`. Sort whitelisty s `COLLATE app_sort`, escapování `LIKE`. `refresh_tokens` a `audit_log` id na v7. Zlatý korpus řazení + kontraktní test. Úprava `list_pages_test`. | Gridy řadí česky na SQLite; zlatý test zelený |
 | **2 — testy nezávislé na backendu (ještě SQLite)** | Codemod `testfx.New(t)`; `fx.Tx`, helpery ze 7.5, `SystemCtx`/`TenantCtx`; UUID testová data. Kontraktní testy do `internal/repotest`; SQLite-only testy označit (`RequireDriver` + build tag). Gate `zz_nosqlite` a guard proti prázdnému výsledku v `zz_tenant`/`zz_sqltime`. `NewJwt` bez DB. | Mimo `infrastructure/sqlite/**` není v testech ani řádek SQLite SQL; `go test -tags nosqlite ./...` se **zkompiluje** (bez PG zatím s chybou „driver not built") |
 | **3 — PG základ** | Config (sekce 3.2), `pgx`, `postgres.Manager` se dvěma pooly, rovinami a GUC, kontrola rolí při startu. `PlaneMiddleware` a `ReadTxMiddleware` (na SQLite no-op). `migrations/postgres/` init s typy, FK, RLS a granty; bootstrap rolí. Profil `postgres` v docker-compose (PG 18). PG harness v `testfx`, `make test-pg`. | Na PG proběhnou migrace a `testfx` fixture; RLS sada (6.3) zelená |
 | **4 — PG repozitáře** | `user`, `tenant`, `token`, `run`, `audit` v `$n` SQL; `ClaimDue` se `SKIP LOCKED`; časy přes `statement_timestamp()`; `ILIKE` s escapováním; `NULLS FIRST/LAST`; parse UUID; mapování chyb (23505, 23503, 42501, 40001, 40P01, 55P03, 22P02). `zz_tenant` pro PG. | **Celá suite zelená na obou backendech**; `make test-pg` s `-tags nosqlite` |
 | **5 — zámky** | Advisory `Locker` pro scheduler, locker migrací, timeouty (sekce 3.2), zamykání „kotvy" u invariantů, deterministické pořadí u bulk operací, volitelný `RequiresSerializable` + retry. PG testy souběhu (N workerů × M runů exactly-once, dvě instance scheduleru, souběžné migrace). Úprava `TestScheduler_TwoInstancesTickIndependently`. | Testy souběhu zelené na PG a opakovaně (`-count=20`) |
-| **6 — CI a pojistky** | Matice v `validate.yml`, service `postgres:18`, lint pro obě sady tagů, kontrola artefaktů `*.db` a `go list -deps`, e2e na PG + multi-process fencing. | Oba joby povinné v branch rulesetu |
-| **7 — dokumentace** | Příloha B: CLAUDE.md, skilly, framework docs, README, roadmapa (zapsat rozhodnutí D1–D8). | `make docpaths-check` + `documan-lint` zelené |
-| volitelně | `LISTEN/NOTIFY` wake-up workeru; produkční build `-tags nosqlite`; sdílený stav rate-limiteru; nástroj pro migraci dat SQLite → PG; `t.Parallel()` v DB testech. | — |
+| **6 — CI a pojistky** | Paralelní joby `validate` (SQLite) a `test-postgres` (Postgres 18 přes `docker run` s fsync flagy) v `validate.yml`; `make test` = obě DB paralelně (`docker compose` služba `postgres-test`, bez Dockeru selže s nabídkou `make test-sqlite`). Lint pro obě sady tagů, kontrola artefaktů `*.db` a `go list -deps`, e2e na PG + multi-process fencing. | Oba joby povinné v branch rulesetu; `make test` pouští obě DB |
+| **7 — dokumentace** | Příloha B: CLAUDE.md, skilly, framework docs, README, roadmapa (zapsat rozhodnutí D1–D9). | `make docpaths-check` + `documan-lint` zelené |
+| volitelně | `LISTEN/NOTIFY` wake-up workeru; produkční build `-tags nosqlite`; sdílený stav rate-limiteru; `t.Parallel()` v DB testech; self-hosted runner pro privátní projekty ze šablony. | — |
 
 
-## 10. Rozhodnutí k potvrzení
+## 10. Rozhodnutí
 
-| # | Otázka | Doporučení | Proč |
+Stav k 2026-09-24: ✅ potvrzeno · 🟡 doporučení čeká na potvrzení.
+
+| # | Otázka | Stav | Rozhodnutí / doporučení |
 |---|---|---|---|
-| D1 | Typ id sloupců v PG: `uuid` nebo `text` | **`uuid`** (audit id jako `text`) | Nativní 16 B a rychlejší indexy. Riziko 22P02 řeší parse v repu a testová data se opraví jednorázově. |
-| D2 | Collation | **`builtin C.UTF-8`** | Stejné pořadí jako SQLite, deterministické a rychlé. České řazení (ICU `cs-CZ`) je samostatné produktové rozhodnutí. |
-| D3 | Fronta na PG: vlastní engine, nebo River (roadmapa zmiňuje River) | **Vlastní engine + `SKIP LOCKED`** | Fencing, checkpointy, cancel, parks/reclaims a propagace tenanta a jazyka jsou hotové a pokryté testy. River by byl přepis domény a běžel by jen na PG, čímž by se rozbila parita SQLite/PG. Roadmapu upravit. |
-| D4 | Systémová rovina: dvě login role + dva pooly, nebo jedna role + `SET LOCAL ROLE` | **Dvě role** | Injektované SQL v tenantové rovině se nemůže povýšit. Cena je jedna DSN proměnná navíc. |
-| D5 | RLS v single-tenant módu | **Zapnuté** | Jedna cesta kódu; testy RLS procházejí vždy; náklad je zanedbatelný. |
-| D6 | Výchozí driver | **`sqlite`** | Beze změny pro stávající instalace a dev (single-binary). |
-| D7 | Postgres pro testy: externí URL (docker compose / CI service), nebo testcontainers | **Externí URL** | Bez další závislosti na depguard allow-listu a bez Dockeru uvnitř testů. `make test-pg` si kontejner zvedne sám. |
-| D8 | Migrace dat SQLite → PG pro existující instalace | **Mimo rozsah**, případně později jako CLI příkaz | Převod tří formátů datetime, 0/1 na boolean a BLOB metadata na jsonb je samostatný úkol. |
+| D1 | Identifikátory | ✅ | **UUIDv7 všude.** V Postgresu typ `uuid`, v SQLite `TEXT`; `uuidv7()` jako SQL funkce v obou (4.1). |
+| D2 | Řazení | ✅ | **Česky, identicky v obou DB.** Collation `app_sort` = `cs-CZ` (4.2, ověřeno V18/V19). |
+| D3 | Fronta na background práci: vlastní engine, nebo River | 🟡 | **Vlastní engine + `SKIP LOCKED`**, viz vysvětlení níže. |
+| D4 | Jak se k datům dostane „systémová" část aplikace | 🟡 | **Dvě DB role (dva účty)**, viz níže. |
+| D5 | RLS i v režimu bez multitenancy | 🟡 | **Zapnuté**, viz níže. |
+| D6 | Výchozí driver | ✅ | **`sqlite`** |
+| D7 | Kde běží Postgres pro testy | 🟡 | **Lokálně Docker (`make test`), v CI GitHub-hosted runner** — pro veřejný repo zdarma, bez vlastního serveru (7.7). Self-hosted runner jen volitelně pro privátní projekty. |
+| D8 | Převod dat mezi DB | ✅ | **Nepotřeba** — adaptér se volí při založení projektu; seedy musí dávat stejná data na obou (4.3). |
+| D9 | Testy na obou DB | ✅ | **Vždy obě:** `make test` pouští obě paralelně, v CI dva povinné joby (7.1, 7.7). |
+
+### D3 — vlastní fronta, nebo River
+
+„Fronta" je engine pro práci na pozadí, například odeslání mailu, webhook, velký import nebo generování reportu (`/gk-runs`). gokick má vlastní: tabulka `runs` + worker. **River** je hotová open-source Go knihovna na fronty, postavená **výhradně na Postgresu**.
+
+| | Vlastní engine (+ `SKIP LOCKED`) | River |
+|---|---|---|
+| Běží na SQLite i Postgresu | ✅ stejné chování, jedna sada testů | ❌ jen Postgres, pro SQLite by zůstal vlastní engine, tedy dvě různé fronty |
+| Práce na přechodu | malá: přepsat `ClaimDue` + časové funkce | velká: nové tabulky, nové API workerů, přepis handlerů a testů |
+| Funkce gokicku (checkpoint + resume dlouhých běhů, owner fencing, dvoufázový cancel, oddělené čítače retry/reclaim/park, propagace tenanta a jazyka, zákaz transakcí v handleru) | ✅ hotové a otestované | část má jinou podobu nebo chybí, musely by se dopsat nad River |
+| Hotové „navíc" (webové UI fronty, priority, unikátní joby, periodické joby, dávky) | ❌ když budou potřeba, dopíšou se | ✅ |
+| Kdo to udržuje | my | komunita / autoři Riveru |
+
+**Doporučení:** vlastní engine. River dává smysl až ve chvíli, kdy by se SQLite úplně opustila, nebo když bude potřeba jeho UI či pokročilé funkce. Roadmapu (bod „Durable fronta na Postgresu → River") pak upravit.
+
+### D4 — dvě DB role, nebo jedna s přepínáním
+
+RLS znamená, že databáze sama pustí aplikaci jen k řádkům aktivního tenanta. Některé části aplikace ale **musí vidět všechny tenanty**: superadmin, CLI příkazy, worker, který vybírá runy napříč tenanty, a login, protože před přihlášením ještě tenanta neznáme. Tyto části potřebují DB účet, který RLS smí obejít.
+
+| | A — dva DB účty (dvě DSN, dva pooly) | B — jeden účet, který se v transakci přepne (`SET LOCAL ROLE`) |
+|---|---|---|
+| Bezpečnost | běžný účet obejít RLS **fyzicky nemůže**; i kdyby se někdy objevila SQL injection v běžné části, cizí tenanty neuvidí | kdo dokáže přes aplikaci spustit libovolné SQL, může se sám přepnout a RLS obejít |
+| Konfigurace | o jednu proměnnou a heslo víc (`APP_DB_SYSTEM_URL`) | jedna DSN |
+| Spojení na DB | dva pooly, tedy o něco víc spojení | jeden pool |
+| Ověřeno | — | V12 funguje |
+
+**Doporučení:** A. Cena je jedna proměnná navíc, přínos je, že izolaci tenantů nejde obejít ani chybou v aplikaci.
+
+### D5 — RLS i bez multitenancy
+
+gokick má ve výchozím stavu multitenancy vypnutou (`APP_MULTITENANCY=false`). Všechna data pak patří jednomu tenantovi „Default" a uživatel žádné tenanty nevidí. Otázka zní, jestli má Postgres RLS kontrolovat i v tomto režimu.
+
+- **Zapnuté** (doporučení):
+  - aplikace do DB vždy pošle tenanta „Default", takže uživatel nepozná žádný rozdíl;
+  - běží jedna a tatáž cesta kódu v obou režimech;
+  - testy ověřují RLS pořád;
+  - pozdější zapnutí multitenancy už nevyžaduje žádnou změnu v databázi.
+
+  Režie je zanedbatelná (jedno porovnání UUID na řádek).
+- **Vypnuté:** o chlup jednodušší DB, ale vzniknou dvě cesty kódu a zapnutí multitenancy později znamená zapínat RLS na živé databázi.
 
 
 ## 11. Rizika
@@ -518,6 +634,8 @@ Pořadí je zvolené tak, aby **fáze 1 a 2 byly čisté refaktory bez změny ch
 - **RLS a testy s `context.Background()`.** Testy, které volají repozitář bez tenanta pro jiný než výchozí tenant, spadnou na Postgresu na `WITH CHECK`. Je to záměr, ale očekávám desítky úprav: `TenantCtx`/`SystemCtx`.
 - **Výkon scoped mini-transakcí** mimo bus (tři round-tripy navíc). Mitigace: bus cesty mají transakci na požadavek, zbytek hlídá metrika.
 - **Rozdíl hodin aplikace a DB** (N10) při odděleném DB hostu.
+- **České řazení mění pořadí i na stávajících SQLite instalacích** (fáze 1b). Je to záměr, ale je potřeba to uvést v changelogu.
+- **Rozjetí CLDR dat** mezi `x/text` (SQLite) a ICU (Postgres) po aktualizaci jedné ze stran. Mitigace: zlatý korpus řazení v kontraktních testech obou jobů (4.2).
 - **Superuser v DSN** tiše vypne RLS. Proto je kontrola rolí při startu povinná a ne jen doporučená.
 
 
