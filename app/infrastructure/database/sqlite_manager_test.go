@@ -2,6 +2,9 @@ package database_test
 
 import (
 	"context"
+	"database/sql"
+	"io"
+	"log/slog"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -43,6 +46,54 @@ func TestSqliteManager_PoolCap(t *testing.T) {
 	}
 	if got := mgrAuto.DB().Stats().MaxOpenConnections; got != want {
 		t.Fatalf("auto cap: got %d want %d (clamp 2×NumCPU to [4,32])", got, want)
+	}
+}
+
+// F-047 regression: MigrationManager.RunUp pins the pool to one connection for the
+// migration run and must hand the configured cap back afterwards — BOTH limits.
+// database/sql has no "restore": SetMaxOpenConns(0) means unlimited, and narrowing
+// the open limit also lowers the idle limit. RunUp runs on every CLI start, so a
+// naive restore left every process with an unbounded pool that pooled one idle
+// connection — the exact OOM exposure the cap exists to prevent.
+func TestMigrationManager_RunUp_KeepsPoolCap(t *testing.T) {
+	const poolCap = 7
+	mgr, err := database.NewSqliteManager(&config.Config{
+		DBPath:     filepath.Join(t.TempDir(), "migrate_cap.db"),
+		DBMaxConns: poolCap,
+	})
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	if err := database.NewMigrationManager(mgr, logger).RunUp(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	if got := mgr.DB().Stats().MaxOpenConnections; got != poolCap {
+		t.Fatalf("open cap after RunUp: got %d want %d (0 = unlimited)", got, poolCap)
+	}
+
+	// Stats does not expose the idle limit, so observe it: hold several
+	// connections at once, release them, and every one must stay pooled. An idle
+	// limit left at 1 would close all but one of them on release.
+	const held = 5
+	ctx := context.Background()
+	conns := make([]*sql.Conn, 0, held)
+	for range held {
+		c, err := mgr.DB().Conn(ctx)
+		if err != nil {
+			t.Fatalf("acquire conn: %v", err)
+		}
+		conns = append(conns, c)
+	}
+	for _, c := range conns {
+		_ = c.Close()
+	}
+	if got := mgr.DB().Stats().Idle; got != held {
+		t.Fatalf("idle conns after release: got %d want %d (idle limit must be the cap, not 1)",
+			got, held)
 	}
 }
 

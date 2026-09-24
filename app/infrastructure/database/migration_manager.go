@@ -20,14 +20,16 @@ const (
 )
 
 type MigrationManager struct {
-	db     *sqlx.DB
-	logger *slog.Logger
+	manager *SqliteManager
+	db      *sqlx.DB
+	logger  *slog.Logger
 }
 
 func NewMigrationManager(manager *SqliteManager, logger *slog.Logger) *MigrationManager {
 	return &MigrationManager{
-		db:     manager.DB(),
-		logger: logger,
+		manager: manager,
+		db:      manager.DB(),
+		logger:  logger,
 	}
 }
 
@@ -46,9 +48,9 @@ func (m *MigrationManager) RunUp() error {
 	// statements on the *sql.DB pool, where the next statement may land on a
 	// different connection. One connection makes the PRAGMA hold across the whole
 	// rebuild. Migrations run once at startup, serially, so this costs nothing;
-	// restore the pool afterward.
+	// restore the configured pool cap afterward (open AND idle — F-047).
 	m.db.SetMaxOpenConns(1)
-	defer m.db.SetMaxOpenConns(0)
+	defer m.manager.applyPoolLimits()
 
 	before, errBefore := goose.GetDBVersion(m.db.DB)
 
