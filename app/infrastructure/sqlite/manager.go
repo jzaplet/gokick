@@ -11,7 +11,7 @@ import (
 	"runtime"
 
 	"github.com/jmoiron/sqlx"
-	_ "github.com/ncruces/go-sqlite3/driver"
+	"github.com/ncruces/go-sqlite3/driver"
 )
 
 // Manager owns the SQLite connection pool and implements shared.Transactor: the
@@ -77,10 +77,13 @@ func NewManager(config *config.Config) (*Manager, error) {
 		"&_pragma=foreign_keys(on)" +
 		"&_pragma=journal_mode(" + journalMode + ")"
 
-	db, err := sqlx.Open("sqlite3", dsn)
+	// driver.Open (not sqlx.Open) so every pooled connection runs
+	// registerConnFuncs: Unicode LIKE, the Czech sort collation and uuidv7().
+	sqlDB, err := driver.Open(dsn, registerConnFuncs)
 	if err != nil {
 		return nil, err
 	}
+	db := sqlx.NewDb(sqlDB, "sqlite3")
 
 	// Bound the connection pool. SQLite serializes writes on a single writer
 	// (_txlock=immediate), so a bigger pool does NOT raise write throughput — its

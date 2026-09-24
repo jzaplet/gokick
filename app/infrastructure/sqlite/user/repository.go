@@ -186,7 +186,7 @@ func (r *Repository) FindByNickname(ctx context.Context, nickname string) (*user
 func (r *Repository) FindAll(ctx context.Context) ([]user.User, error) {
 	var users []user.User
 	err := r.Conn(ctx).SelectContext(ctx, &users,
-		`SELECT * FROM users WHERE tenant_id=? AND role != 'superadmin' ORDER BY nickname`,
+		`SELECT * FROM users WHERE tenant_id=? AND role != 'superadmin' ORDER BY nickname`+sqlite.CollateSort,
 		r.Tenant(ctx))
 	return users, err
 }

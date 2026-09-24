@@ -129,8 +129,8 @@ func overviewFilterConds(f tenant.ListFilters, prefix string) ([]string, []any) 
 	conds := []string{}
 	args := []any{}
 	if f.Name != "" {
-		conds = append(conds, prefix+"name LIKE ?")
-		args = append(args, "%"+f.Name+"%")
+		conds = append(conds, prefix+"name LIKE ?"+sqlite.LikeEscape)
+		args = append(args, sqlite.LikeContains(f.Name))
 	}
 	if f.Plan != "" {
 		conds = append(conds, prefix+"plan = ?")
@@ -191,8 +191,10 @@ func (r *Repository) BulkDeleteEmptyAcrossTenants(
 	return ids, nil
 }
 
+// overviewSortSQL: the name sorts through the Czech collation (sqlite.CollateSort),
+// the user count numerically.
 var overviewSortSQL = map[tenant.SortColumn]string{
-	tenant.SortByName:  "t.name",
+	tenant.SortByName:  "t.name" + sqlite.CollateSort,
 	tenant.SortByUsers: "user_count",
 }
 
@@ -220,9 +222,9 @@ func (r *Repository) OverviewPageAcrossTenants(
 
 	col, ok := overviewSortSQL[c.Sort]
 	if !ok {
-		col = "t.name"
+		col = "t.name" + sqlite.CollateSort
 	}
-	orderBy := fmt.Sprintf(` ORDER BY %s %s, t.name ASC`, col, c.SortDir)
+	orderBy := fmt.Sprintf(` ORDER BY %s %s, t.name%s ASC`, col, c.SortDir, sqlite.CollateSort)
 	err := r.Conn(ctx).SelectContext(ctx, &page.Items,
 		`SELECT t.id, t.name, t.plan, COUNT(u.id) AS user_count
 		   FROM tenants t
