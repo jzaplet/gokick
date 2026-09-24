@@ -1,4 +1,4 @@
-package database
+package sqlite
 
 import (
 	"context"
@@ -20,19 +20,21 @@ const (
 	logKeyVersion = "version"
 )
 
-type MigrationManager struct {
+// Migrator applies the embedded SQLite migration set (migrations.SQLite) — the
+// adapter's database.Migrator.
+type Migrator struct {
 	db     *sqlx.DB
 	logger *slog.Logger
 }
 
-func NewMigrationManager(manager *SqliteManager, logger *slog.Logger) *MigrationManager {
-	return &MigrationManager{
+func NewMigrator(manager *Manager, logger *slog.Logger) *Migrator {
+	return &Migrator{
 		db:     manager.DB(),
 		logger: logger,
 	}
 }
 
-// NewSQLiteMigrationProvider builds the goose provider for the SQLite migration
+// NewMigrationProvider builds the goose provider for the SQLite migration
 // set. A Provider carries its own state (no package-level goose globals), so two
 // migrators — or two tests — never share a dialect/FS setting. The global Go
 // migration registry is disabled: this project ships SQL migrations only.
@@ -43,16 +45,16 @@ func NewMigrationManager(manager *SqliteManager, logger *slog.Logger) *Migration
 // referenced table does not cascade-delete through ON DELETE CASCADE), and the
 // PRAGMA must hold for the whole rebuild. The pool itself is never narrowed, so
 // its cap (F-047) is untouched.
-func NewSQLiteMigrationProvider(db *sql.DB) (*goose.Provider, error) {
+func NewMigrationProvider(db *sql.DB) (*goose.Provider, error) {
 	return goose.NewProvider(goose.DialectSQLite3, db, migrations.SQLite,
 		goose.WithDisableGlobalRegistry(true),
 		goose.WithLogger(goose.NopLogger()),
 	)
 }
 
-func (m *MigrationManager) RunUp() error {
+func (m *Migrator) RunUp() error {
 	ctx := context.Background()
-	provider, err := NewSQLiteMigrationProvider(m.db.DB)
+	provider, err := NewMigrationProvider(m.db.DB)
 	if err != nil {
 		return err
 	}

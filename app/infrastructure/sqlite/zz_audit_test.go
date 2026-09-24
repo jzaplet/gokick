@@ -1,4 +1,4 @@
-package database_test
+package sqlite_test
 
 import (
 	"context"
@@ -9,32 +9,32 @@ import (
 	"testing"
 
 	"gokick/app/infrastructure/config"
-	"gokick/app/infrastructure/database"
+	"gokick/app/infrastructure/sqlite"
 
 	"github.com/google/uuid"
 )
 
-// newManagerWithMode opens a SqliteManager with an explicit journal mode.
+// newManagerWithMode opens a sqlite.Manager with an explicit journal mode.
 // Returns the manager and the construction error so whitelist-rejection
 // cases can assert on the error directly.
-func newManagerWithMode(t *testing.T, mode string) (*database.SqliteManager, error) {
+func newManagerWithMode(t *testing.T, mode string) (*sqlite.Manager, error) {
 	t.Helper()
 	cfg := &config.Config{
 		DBPath:        filepath.Join(t.TempDir(), "test.db"),
 		DBJournalMode: mode,
 	}
-	mgr, err := database.NewSqliteManager(cfg)
+	mgr, err := sqlite.NewManager(cfg)
 	if mgr != nil {
 		t.Cleanup(func() { _ = mgr.Close() })
 	}
 	return mgr, err
 }
 
-// TestSqliteManager_BusyTimeoutPragmaIsApplied pins the busy_timeout(5000)
+// TestManager_BusyTimeoutPragmaIsApplied pins the busy_timeout(5000)
 // DSN pragma (claims infra-db-security-01, infra-db-security-03): a pooled
 // connection must report PRAGMA busy_timeout == 5000. If the DSN dropped the
 // busy_timeout pragma it would revert to SQLite's default (0) and this fails.
-func TestSqliteManager_BusyTimeoutPragmaIsApplied(t *testing.T) {
+func TestManager_BusyTimeoutPragmaIsApplied(t *testing.T) {
 	mgr := newTestManager(t)
 
 	var busyTimeout int
@@ -46,7 +46,7 @@ func TestSqliteManager_BusyTimeoutPragmaIsApplied(t *testing.T) {
 	}
 }
 
-// TestSqliteManager_ForeignKeysEnabledPerConnection pins the
+// TestManager_ForeignKeysEnabledPerConnection pins the
 // foreign_keys(on) DSN pragma and its per-connection guarantee (claims
 // infra-db-security-01, infra-db-security-04, roadmap-87). It checks the
 // pragma on two distinct, simultaneously-held pool connections, then proves
@@ -54,7 +54,7 @@ func TestSqliteManager_BusyTimeoutPragmaIsApplied(t *testing.T) {
 // parent/child schema (no migration coupling). Removing foreign_keys(on)
 // from the DSN defaults the pragma OFF on every connection, so the violating
 // insert would silently succeed and this test would fail.
-func TestSqliteManager_ForeignKeysEnabledPerConnection(t *testing.T) {
+func TestManager_ForeignKeysEnabledPerConnection(t *testing.T) {
 	mgr := newTestManager(t)
 	ctx := context.Background()
 
@@ -105,18 +105,18 @@ func TestSqliteManager_ForeignKeysEnabledPerConnection(t *testing.T) {
 	}
 }
 
-// TestSqliteManager_RefreshTokensCascadeOnUserDelete pins the migration's
+// TestManager_RefreshTokensCascadeOnUserDelete pins the migration's
 // ON DELETE CASCADE on refresh_tokens.user_id (claim infra-db-security-13).
 // It runs the real migrations, inserts a user + a refresh token referencing
 // it, deletes the user, and asserts the refresh_tokens row was cascade
 // deleted. Without ON DELETE CASCADE (or with FKs off) the orphan row would
 // survive and the count would be 1.
-func TestSqliteManager_RefreshTokensCascadeOnUserDelete(t *testing.T) {
+func TestManager_RefreshTokensCascadeOnUserDelete(t *testing.T) {
 	mgr := newTestManager(t)
 	ctx := context.Background()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	if err := database.NewMigrationManager(mgr, logger).RunUp(); err != nil {
+	if err := sqlite.NewMigrator(mgr, logger).RunUp(); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 
@@ -156,11 +156,11 @@ func TestSqliteManager_RefreshTokensCascadeOnUserDelete(t *testing.T) {
 	}
 }
 
-// TestSqliteManager_RejectsUnknownJournalMode pins the APP_DB_JOURNAL_MODE
+// TestManager_RejectsUnknownJournalMode pins the APP_DB_JOURNAL_MODE
 // whitelist (claims infra-db-security-05, roadmap-83). An out-of-whitelist
-// value (a PRAGMA-injection attempt) must make NewSqliteManager return an
+// value (a PRAGMA-injection attempt) must make sqlite.NewManager return an
 // error naming the allowed modes; it must not silently open the pool.
-func TestSqliteManager_RejectsUnknownJournalMode(t *testing.T) {
+func TestManager_RejectsUnknownJournalMode(t *testing.T) {
 	mgr, err := newManagerWithMode(t, "WAL; PRAGMA foreign_keys=off")
 	if err == nil {
 		t.Fatal("expected error for non-whitelisted journal mode, got nil")
@@ -173,21 +173,21 @@ func TestSqliteManager_RejectsUnknownJournalMode(t *testing.T) {
 	}
 }
 
-// TestSqliteManager_AcceptsWhitelistedJournalModes pins the accepted half of
+// TestManager_AcceptsWhitelistedJournalModes pins the accepted half of
 // the whitelist (claims infra-db-security-05, roadmap-83): each of WAL,
 // DELETE, MEMORY opens successfully. For WAL — the only mode the code claims
 // persists on the pool — the readback is also asserted (SQLite reports it
 // lowercase). DELETE/MEMORY only assert successful open, since their PRAGMA
 // runs once and a readback may land on a different pooled connection.
-func TestSqliteManager_AcceptsWhitelistedJournalModes(t *testing.T) {
+func TestManager_AcceptsWhitelistedJournalModes(t *testing.T) {
 	for _, mode := range []string{"WAL", "DELETE", "MEMORY"} {
 		t.Run(mode, func(t *testing.T) {
 			mgr, err := newManagerWithMode(t, mode)
 			if err != nil {
-				t.Fatalf("NewSqliteManager(%q) returned error: %v", mode, err)
+				t.Fatalf("NewManager(%q) returned error: %v", mode, err)
 			}
 			if mgr == nil {
-				t.Fatalf("NewSqliteManager(%q) returned nil manager", mode)
+				t.Fatalf("NewManager(%q) returned nil manager", mode)
 			}
 
 			if mode == "WAL" {

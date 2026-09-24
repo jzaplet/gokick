@@ -1,4 +1,4 @@
-package database_test
+package sqlite_test
 
 import (
 	"context"
@@ -6,14 +6,14 @@ import (
 	"log/slog"
 	"testing"
 
-	"gokick/app/infrastructure/database"
+	"gokick/app/infrastructure/sqlite"
 )
 
 // indexExists reports whether an index with the given name exists in
 // sqlite_master. Using sqlite_master (rather than PRAGMA index_list) lets the
 // query name the index directly, so a renamed or dropped index fails the
 // lookup unambiguously.
-func indexExists(t *testing.T, mgr *database.SqliteManager, name string) bool {
+func indexExists(t *testing.T, mgr *sqlite.Manager, name string) bool {
 	t.Helper()
 	var count int
 	if err := mgr.DB().Get(
@@ -26,19 +26,19 @@ func indexExists(t *testing.T, mgr *database.SqliteManager, name string) bool {
 	return count == 1
 }
 
-// TestMigrationManager_InitSchemaCreatesRefreshTokenIndexes pins the two
+// TestMigrator_InitSchemaCreatesRefreshTokenIndexes pins the two
 // indexes the init migration documents (claim infra-db-security-12):
 // idx_refresh_tokens_token_hash on refresh_tokens(token_hash) and
 // idx_refresh_tokens_user_id on refresh_tokens(user_id). It runs the real
-// embedded migrations via MigrationManager.RunUp() and then asserts both named
+// embedded migrations via Migrator.RunUp() and then asserts both named
 // indexes are present in sqlite_master. If either CREATE INDEX line is removed
 // from 20260327000001_init_schema.sql (or the index renamed), the corresponding
 // lookup returns 0 and this test fails.
-func TestMigrationManager_InitSchemaCreatesRefreshTokenIndexes(t *testing.T) {
+func TestMigrator_InitSchemaCreatesRefreshTokenIndexes(t *testing.T) {
 	mgr := newTestManager(t)
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	if err := database.NewMigrationManager(mgr, logger).RunUp(); err != nil {
+	if err := sqlite.NewMigrator(mgr, logger).RunUp(); err != nil {
 		t.Fatalf("migrate up: %v", err)
 	}
 
@@ -70,7 +70,7 @@ func TestMigrationManager_InitSchemaCreatesRefreshTokenIndexes(t *testing.T) {
 // TestMigrationDown_RollsBackLastMigration pins that a single goose down step
 // rolls back exactly the most recent migration (claim overview-102, mirroring
 // `make migrate-down`). It applies every embedded migration up via the
-// production MigrationManager.RunUp(), then runs one goose Down step exactly
+// production Migrator.RunUp(), then runs one goose Down step exactly
 // as the Makefile target does. It asserts the generic round-trip property rather
 // than a specific migration's artifact (so adding a migration doesn't break it):
 // the version drops, an early table (users) survives the single step, and
@@ -82,14 +82,14 @@ func TestMigrationDown_RollsBackLastMigration(t *testing.T) {
 	ctx := context.Background()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	if err := database.NewMigrationManager(mgr, logger).RunUp(); err != nil {
+	if err := sqlite.NewMigrator(mgr, logger).RunUp(); err != nil {
 		t.Fatalf("migrate up: %v", err)
 	}
 
 	// Mirror the Makefile's `goose ... down` invocation: same dialect, same
 	// embedded SQLite migration set, one step down — through the SAME provider
 	// constructor RunUp uses, so the test exercises the production goose setup.
-	provider, err := database.NewSQLiteMigrationProvider(mgr.DB().DB)
+	provider, err := sqlite.NewMigrationProvider(mgr.DB().DB)
 	if err != nil {
 		t.Fatalf("goose provider: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestMigrationDown_RollsBackLastMigration(t *testing.T) {
 	// The rolled-back migration must be reversible: re-applying it restores the
 	// version. Verifies the last migration's Down actually ran and is the inverse
 	// of its Up, without hardcoding which artifact (table/column) it touches.
-	if err := database.NewMigrationManager(mgr, logger).RunUp(); err != nil {
+	if err := sqlite.NewMigrator(mgr, logger).RunUp(); err != nil {
 		t.Fatalf("re-up after down: %v", err)
 	}
 	restored, err := provider.GetDBVersion(ctx)
@@ -140,7 +140,7 @@ func TestMigrationDown_RollsBackLastMigration(t *testing.T) {
 }
 
 // tableExists reports whether a base table with the given name exists.
-func tableExists(t *testing.T, ctx context.Context, mgr *database.SqliteManager, name string) bool {
+func tableExists(t *testing.T, ctx context.Context, mgr *sqlite.Manager, name string) bool {
 	t.Helper()
 	var count int
 	if err := mgr.DB().GetContext(

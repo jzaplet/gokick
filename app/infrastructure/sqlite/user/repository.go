@@ -10,7 +10,6 @@ import (
 	"gokick/app/domain/shared"
 	"gokick/app/domain/shared/msgkey"
 	"gokick/app/domain/user"
-	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/sqlite"
 )
 
@@ -18,7 +17,7 @@ type Repository struct {
 	sqlite.BaseRepository
 }
 
-func NewRepository(db *database.SqliteManager) *Repository {
+func NewRepository(db *sqlite.Manager) *Repository {
 	return &Repository{BaseRepository: sqlite.BaseRepository{DB: db}}
 }
 

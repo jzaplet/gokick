@@ -58,7 +58,7 @@ Stačí nastavit `APP_DB_DRIVER=postgres` v env a aplikace **i celá Go test sui
 
 ### 1.1 Architektonické vazby
 
-- **Chybí DB abstrakce.** Všude se předává konkrétní `*database.SqliteManager` z `app/infrastructure/database/sqlite_manager.go`:
+- **Chybí DB abstrakce.** Všude se předává konkrétní `*database.SqliteManager` (po fázi 1 `*sqlite.Manager` v `app/infrastructure/sqlite/manager.go`):
   - `BaseRepository` v `app/infrastructure/sqlite/conn.go`;
   - konstruktory pěti repozitářů;
   - `MigrationManager`;
@@ -548,7 +548,7 @@ Rozpis po souborech je v **příloze A**.
 
 | SQLite test | Co testuje | PG dvojče |
 |---|---|---|
-| `TestSqliteManager_ConcurrentTxWritesDoNotReturnBusy` | `_txlock=immediate` vs. `SQLITE_BUSY_SNAPSHOT` (read-modify-write bez chyby) | souběžné commandy s atomickým `val = val + 1`: nic se neztratí, žádná 500; plus test mapování 40001/55P03 |
+| `TestManager_ConcurrentTxWritesDoNotReturnBusy` | `_txlock=immediate` vs. `SQLITE_BUSY_SNAPSHOT` (read-modify-write bez chyby) | souběžné commandy s atomickým `val = val + 1`: nic se neztratí, žádná 500; plus test mapování 40001/55P03 |
 | busy_timeout, `PRAGMA foreign_keys` pro každé spojení, whitelist journal módů | tuning SQLite DSN | `lock_timeout`, `idle_in_transaction_session_timeout` a kontrola rolí při startu (6.3) |
 | `sqlite_master` introspekce, goose `Down` | schéma a rollback migrace | `pg_indexes` / `information_schema`, Down přes Provider |
 | `sqlite/user/zz_audit_test.go` (raw-pool zápis čeká na write-lock) | self-deadlock pod SQLite | zámek řádku uvnitř bus tx vs. raw-pool zápis stejného řádku → `lock_timeout`, ne zamrznutí |
@@ -588,7 +588,7 @@ Rozpis po souborech je v **příloze A**.
 | `app/infrastructure/sqlite/zz_sqltime_test.go` | Zůstane jen pro SQLite. PG dvojče zakáže `now()` a `CURRENT_TIMESTAMP` v repo SQL a vyžádá `statement_timestamp()`/`clock_timestamp()` (N9). |
 | `app/domain/zz_gap_test.go` | Mezi zakázané importy handlerů přibudou `infrastructure/postgres` a `infrastructure/persistence` (dnes je natvrdo jen `infraSqliteRoot`). |
 | `app/infrastructure/worker/zz_notx_test.go` | Beze změny, kromě komentáře. |
-| **nový** `zz_nosqlite` | Testové soubory mimo `infrastructure/sqlite/**` nesmí: importovat `infrastructure/sqlite*` ani ncruces, obsahovat `NewSqliteManager`, cesty `*.db` nebo tokeny `julianday`, `strftime`, `datetime(`, `PRAGMA`, `sqlite_master`. Každý balíček pod `infrastructure/sqlite/**` musí mít `//go:build !nosqlite` a `RequireDriver`. |
+| **nový** `zz_nosqlite` | Testové soubory mimo `infrastructure/sqlite/**` nesmí: importovat `infrastructure/sqlite*` ani ncruces, obsahovat `sqlite.NewManager`, cesty `*.db` nebo tokeny `julianday`, `strftime`, `datetime(`, `PRAGMA`, `sqlite_master`. Každý balíček pod `infrastructure/sqlite/**` musí mít `//go:build !nosqlite` a `RequireDriver`. |
 | **nový** `zz_migration_twins` | Množiny verzí v `migrations/sqlite/` a `migrations/postgres/` se musí shodovat. |
 
 ### 7.7 Trojitá pojistka „žádná SQLite na Postgresu"
@@ -762,10 +762,10 @@ Kategorie: **A** nezávislý na backendu · **A+** nezávislý, ale s raw SQL ne
 | `app/application/user/command/zz_audit_test.go` | 7 | — | A |
 | `app/application/user/query/list_users_test.go` | 3 | — | A |
 | `app/application/userwrite/userwrite_test.go` | 5 | — | A |
-| `app/infrastructure/database/sqlite_loadtest_test.go` | 0 | tag `loadtest`; `NewSqliteManager`, vlastní DDL, `SQLITE_BUSY` | S |
-| `app/infrastructure/database/sqlite_manager_test.go` | 0 | `NewSqliteManager`, pool cap (WASM), `_txlock=immediate`, `"database is locked"`; test no-tx zóny je obecný → kontrakt | S |
-| `app/infrastructure/database/zz_audit_test.go` | 0 | `PRAGMA busy_timeout/foreign_keys/journal_mode`, `datetime('now','+1 hour')`; test kaskády tokenů → kontrakt | S |
-| `app/infrastructure/database/zz_gap_test.go` | 0 | `sqlite_master`, `PRAGMA index_list`, `goose.SetDialect("sqlite3")` + Down | S |
+| `app/infrastructure/sqlite/loadtest_test.go` | 0 | tag `loadtest`; `sqlite.NewManager`, vlastní DDL, `SQLITE_BUSY` | S |
+| `app/infrastructure/sqlite/manager_test.go` | 0 | `sqlite.NewManager`, pool cap (WASM), `_txlock=immediate`, `"database is locked"`; test no-tx zóny je obecný → kontrakt | S |
+| `app/infrastructure/sqlite/zz_audit_test.go` | 0 | `PRAGMA busy_timeout/foreign_keys/journal_mode`, `datetime('now','+1 hour')`; test kaskády tokenů → kontrakt | S |
+| `app/infrastructure/sqlite/zz_gap_test.go` | 0 | `sqlite_master`, `PRAGMA index_list`, `goose.SetDialect("sqlite3")` + Down | S |
 | `app/infrastructure/di/bus_integration_test.go` | 5 | import `sqlite/audit`, `provideCommandBus(…, fx.DB, …)`, `COUNT` audit/runs | A+ |
 | `app/infrastructure/di/zz_audit_test.go` | 3 | import `sqlite/audit`, `provideCommandBus(…, fx.DB, …)` | A+ |
 | `app/infrastructure/sqlite/audit/repository_test.go` | 1 | `SELECT … metadata … WHERE id=?`, porovnání bajtů → JSON | K |
@@ -776,8 +776,8 @@ Kategorie: **A** nezávislý na backendu · **A+** nezávislý, ale s raw SQL ne
 | `app/infrastructure/sqlite/run/repository_fencing_test.go` | 15 | `tnt-123` | K |
 | `app/infrastructure/sqlite/run/repository_tenant_test.go` | 2 | — | K |
 | `app/infrastructure/sqlite/run/repository_test.go` | 21 | `forceExpire` (`strftime`), `julianday ± ms`, `fx.DB.BeginTx/Commit/Rollback`; precizní testy julianday → S část | K + S |
-| `app/infrastructure/sqlite/seeder/seeder_test.go` | 10 | import `sqlite/seeder`; `COUNT` tenants/audit | K |
-| `app/infrastructure/sqlite/seeder/zz_audit_test.go` | 2 | — | K |
+| `app/infrastructure/seeder/seeder_test.go` | 10 | import `sqlite/seeder`; `COUNT` tenants/audit | K |
+| `app/infrastructure/seeder/zz_audit_test.go` | 2 | — | K |
 | `app/infrastructure/sqlite/tenant/platform_test.go` | 1 | — | K |
 | `app/infrastructure/sqlite/tenant/repository_test.go` | 3 | `does-not-exist` (N8) | K |
 | `app/infrastructure/sqlite/token/repository_test.go` | 2 | — | K |
@@ -803,7 +803,7 @@ Kategorie: **A** nezávislý na backendu · **A+** nezávislý, ale s raw SQL ne
 | `app/presentation/http/handler/profile_test.go` | 1 | — | A |
 | `app/presentation/http/handler/zz_audit_test.go` | 2 | — | A |
 | `app/presentation/http/server/zz_gap_test.go` | 1 | — | A |
-| `app/zz_gap_test.go` | 0 | `NewSqliteManager`, `sqlite_master`; životní cyklus `Application.Run` → přepsat přes `persistence` + `Migrator` | S → A+ |
+| `app/zz_gap_test.go` | 0 | `sqlite.NewManager`, `sqlite_master`; životní cyklus `Application.Run` → přepsat přes `persistence` + `Migrator` | S → A+ |
 
 **Mimo tabulku:**
 - **Tři soubory importují `testfx` jen kvůli `NewJwt`** a DB nepoužívají: `app/presentation/http/middleware/auth_test.go`, `app/presentation/http/middleware/lang_test.go` a `app/presentation/http/server/zz_audit_test.go`. Přes `testfx` ale linkují SQLite driver, což řeší přesun `NewJwt` (7.2).

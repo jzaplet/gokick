@@ -10,7 +10,7 @@ import (
 
 	"gokick/app/application/bus"
 	"gokick/app/domain/shared"
-	"gokick/app/infrastructure/sqlite/seeder"
+	"gokick/app/infrastructure/seeder"
 	"gokick/app/internal/testfx"
 )
 

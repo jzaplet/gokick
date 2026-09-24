@@ -18,8 +18,8 @@ import (
 	"gokick/app/domain/token"
 	"gokick/app/domain/user"
 	"gokick/app/infrastructure/config"
-	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/security"
+	"gokick/app/infrastructure/sqlite"
 	sqliteaudit "gokick/app/infrastructure/sqlite/audit"
 	sqliterun "gokick/app/infrastructure/sqlite/run"
 	sqlitetenant "gokick/app/infrastructure/sqlite/tenant"
@@ -28,7 +28,7 @@ import (
 )
 
 type Fixture struct {
-	DB              *database.SqliteManager
+	DB              *sqlite.Manager
 	Users           user.Repository
 	PlatformUsers   user.PlatformRepository // same concrete repo; the cross-tenant port for platform handler tests
 	Tokens          token.Repository
@@ -63,14 +63,14 @@ func newFixture(t *testing.T, dbPath string, multitenant bool) *Fixture {
 		Multitenancy:         multitenant,
 	}
 
-	db, err := database.NewSqliteManager(cfg)
+	db, err := sqlite.NewManager(cfg)
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	if err := database.NewMigrationManager(db, logger).RunUp(); err != nil {
+	if err := sqlite.NewMigrator(db, logger).RunUp(); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 

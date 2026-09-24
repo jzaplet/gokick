@@ -31,7 +31,7 @@ type Conn interface {
 // BaseRepository provides transaction-aware DB connection resolution.
 // Embed it in concrete repositories to avoid repeating ConnFromContext calls.
 type BaseRepository struct {
-	DB *database.SqliteManager
+	DB *Manager
 }
 
 func (b *BaseRepository) Conn(ctx context.Context) Conn {

@@ -11,14 +11,14 @@ import (
 	"gokick/app/application/bus"
 	busmw "gokick/app/application/bus/middleware"
 	"gokick/app/infrastructure/config"
-	"gokick/app/infrastructure/database"
+	"gokick/app/infrastructure/sqlite"
 	"gokick/app/presentation/console"
 )
 
 // ---------------------------------------------------------------------------
 // Application.Run lifecycle
 //
-//	overview-09     — Application.Run runs MigrationManager.RunUp() on startup.
+//	overview-09     — Application.Run runs Migrator.RunUp() on startup.
 //	presentation-02 — migrations are applied BEFORE the subcommand runs, so the
 //	                  subcommand already sees the migrated schema.
 //
@@ -38,7 +38,7 @@ import (
 // the `seed` subcommand and records whether the `users` table (created by the
 // init migration) is present at the moment the subcommand executes.
 type migrationProbeSeeder struct {
-	db                   *database.SqliteManager
+	db                   *sqlite.Manager
 	called               bool
 	usersTablePresent    bool
 	usersTableQueryError error
@@ -58,11 +58,11 @@ func (s *migrationProbeSeeder) Seed(ctx context.Context) error {
 
 func TestApplicationRun_MigratesBeforeSubcommand(t *testing.T) {
 	// No t.Parallel: this test mutates the process-global os.Args (so cobra
-	// parses our args instead of the test binary's flags) and RunUp drives
-	// goose's process-global SetLogger/SetDialect. Both are racy in parallel.
+	// parses our args instead of the test binary's flags), which is racy in
+	// parallel.
 
 	dbPath := filepath.Join(t.TempDir(), "app-lifecycle.db")
-	manager, err := database.NewSqliteManager(&config.Config{DBPath: dbPath})
+	manager, err := sqlite.NewManager(&config.Config{DBPath: dbPath})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestApplicationRun_MigratesBeforeSubcommand(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	migrations := database.NewMigrationManager(manager, logger)
+	migrations := sqlite.NewMigrator(manager, logger)
 
 	probe := &migrationProbeSeeder{db: manager}
 	// seed now dispatches through the SystemCommandBus; a minimal one (just
@@ -136,22 +136,22 @@ func TestApplicationRun_MigratesBeforeSubcommand(t *testing.T) {
 
 // TestApplicationRun_PropagatesMigrationFailure pins the ordering from the other
 // side: when RunUp fails, Run must return that error and must NOT proceed to the
-// subcommand. A DSN with an invalid journal mode makes NewMigrationManager's
+// subcommand. A DSN with an invalid journal mode makes the migrator's
 // RunUp target a manager whose pool errors — but more robustly, we force RunUp
 // to fail by closing the underlying DB before Run, then assert the subcommand
 // never executed. This is the `if err := RunUp(); err != nil { return err }`
 // guard at application.go:25-27.
 func TestApplicationRun_StopsWhenMigrationFails(t *testing.T) {
-	// No t.Parallel — os.Args + goose globals (see test above).
+	// No t.Parallel — os.Args (see test above).
 
 	dbPath := filepath.Join(t.TempDir(), "app-fail.db")
-	manager, err := database.NewSqliteManager(&config.Config{DBPath: dbPath})
+	manager, err := sqlite.NewManager(&config.Config{DBPath: dbPath})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	migrations := database.NewMigrationManager(manager, logger)
+	migrations := sqlite.NewMigrator(manager, logger)
 
 	probe := &migrationProbeSeeder{db: manager}
 	rootCmd := console.NewRootCommand(

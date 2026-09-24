@@ -8,12 +8,12 @@ import (
 
 type Application struct {
 	rootCmd    *console.RootCommand
-	migrations *database.MigrationManager
+	migrations database.Migrator
 }
 
 func NewApplication(
 	rootCmd *console.RootCommand,
-	migrations *database.MigrationManager,
+	migrations database.Migrator,
 ) *Application {
 	return &Application{
 		rootCmd:    rootCmd,

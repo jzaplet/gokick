@@ -25,9 +25,10 @@ import (
 	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/scheduler"
 	"gokick/app/infrastructure/security"
+	"gokick/app/infrastructure/seeder"
+	"gokick/app/infrastructure/sqlite"
 	sqliteaudit "gokick/app/infrastructure/sqlite/audit"
 	sqliterun "gokick/app/infrastructure/sqlite/run"
-	sqliteseeder "gokick/app/infrastructure/sqlite/seeder"
 	sqlitetenant "gokick/app/infrastructure/sqlite/tenant"
 	sqlitetoken "gokick/app/infrastructure/sqlite/token"
 	sqliteuser "gokick/app/infrastructure/sqlite/user"
@@ -65,7 +66,7 @@ func provideTenantResolver() shared.TenantResolver {
 // source of the chain order, shared with testfx so they can't drift).
 func provideCommandBus(
 	logger *slog.Logger,
-	db *database.SqliteManager,
+	tx shared.Transactor,
 	checker shared.PermissionChecker,
 	eventBus *bus.EventBus,
 	runDispatcher shared.RunDispatcher,
@@ -82,7 +83,7 @@ func provideCommandBus(
 			audit,
 			runDispatcher,
 			eventBus,
-			db,
+			tx,
 		)...,
 	)
 }
@@ -95,14 +96,14 @@ func provideCommandBus(
 // bus.SystemCommandBus.
 func provideSystemCommandBus(
 	logger *slog.Logger,
-	db *database.SqliteManager,
+	tx shared.Transactor,
 	eventBus *bus.EventBus,
 	audit shared.AuditLogger,
 	runDispatcher shared.RunDispatcher,
 	reporter shared.ErrorReporter,
 ) *bus.SystemCommandBus {
 	return bus.NewSystemCommandBus(
-		busmw.SystemChain(logger, db, eventBus, audit, runDispatcher, reporter)...,
+		busmw.SystemChain(logger, tx, eventBus, audit, runDispatcher, reporter)...,
 	)
 }
 
@@ -191,24 +192,24 @@ func provideRateLimiters(
 // provideSeedAdminPassword surfaces the seed admin password as a distinct
 // Wire-bound type so the seeder's constructor can take it without colliding
 // with other strings in the DI graph.
-func provideSeedAdminPassword(cfg *config.Config) sqliteseeder.SeedAdminPassword {
-	return sqliteseeder.SeedAdminPassword(cfg.SeedAdminPassword)
+func provideSeedAdminPassword(cfg *config.Config) seeder.SeedAdminPassword {
+	return seeder.SeedAdminPassword(cfg.SeedAdminPassword)
 }
 
 // provideSeedSuperAdminPassword surfaces the OPTIONAL superadmin seed password
 // as its own Wire-bound type. Empty = no superadmin seeded.
-func provideSeedSuperAdminPassword(cfg *config.Config) sqliteseeder.SeedSuperAdminPassword {
-	return sqliteseeder.SeedSuperAdminPassword(cfg.SeedSuperAdminPassword)
+func provideSeedSuperAdminPassword(cfg *config.Config) seeder.SeedSuperAdminPassword {
+	return seeder.SeedSuperAdminPassword(cfg.SeedSuperAdminPassword)
 }
 
 // provideSeedAdminTenant / provideMultitenant surface the seeder's tenant inputs
 // as Wire-distinct types so it gets the specific values, not the whole config.
-func provideSeedAdminTenant(cfg *config.Config) sqliteseeder.SeedAdminTenant {
-	return sqliteseeder.SeedAdminTenant(cfg.SeedAdminTenant)
+func provideSeedAdminTenant(cfg *config.Config) seeder.SeedAdminTenant {
+	return seeder.SeedAdminTenant(cfg.SeedAdminTenant)
 }
 
-func provideMultitenant(cfg *config.Config) sqliteseeder.Multitenant {
-	return sqliteseeder.Multitenant(cfg.Multitenancy)
+func provideMultitenant(cfg *config.Config) seeder.Multitenant {
+	return seeder.Multitenant(cfg.Multitenancy)
 }
 
 // provideMultitenancy surfaces APP_MULTITENANCY to application-layer constructors
@@ -266,7 +267,7 @@ func provideRunDispatcher(
 
 // provideRunWorker wires the durable run worker (the one background-work engine) from
 // config. It injects the run dispatcher (so a handler can enqueue a child task), the
-// SqliteManager as the Transactor backing shared.WithTx (short atomic writes the handler
+// Transactor backing shared.WithTx (short atomic writes the handler
 // scopes itself), and the AuditLogger so a run handler's audit events are drained and
 // persisted — the worker bypasses the bus, where these are normally injected.
 func provideRunWorker(
@@ -275,7 +276,7 @@ func provideRunWorker(
 	repo run.Repository,
 	registry *runapp.HandlerRegistry,
 	runDispatcher shared.RunDispatcher,
-	db *database.SqliteManager,
+	tx shared.Transactor,
 	audit shared.AuditLogger,
 	cfg *config.Config,
 ) *worker.RunWorker {
@@ -285,7 +286,7 @@ func provideRunWorker(
 		repo,
 		registry,
 		runDispatcher,
-		db,
+		tx,
 		audit,
 		worker.RunWorkerConfig{
 			DefaultLease:      cfg.RunWorkerLease,
@@ -343,8 +344,10 @@ func CreateApplication(
 ) (*app.Application, error) {
 	wire.Build(
 		config.LoadConfig,
-		database.NewSqliteManager,
-		database.NewMigrationManager,
+		sqlite.NewManager,
+		sqlite.NewMigrator,
+		wire.Bind(new(shared.Transactor), new(*sqlite.Manager)),
+		wire.Bind(new(database.Migrator), new(*sqlite.Migrator)),
 		providePasswordHasher,
 		providePermissionChecker,
 		provideTenantResolver,
@@ -375,13 +378,13 @@ func CreateApplication(
 		wire.Bind(new(run.Repository), new(*sqliterun.Repository)),
 		wire.Bind(new(tenant.Repository), new(*sqlitetenant.Repository)),
 		wire.Bind(new(tenant.PlatformRepository), new(*sqlitetenant.Repository)),
-		wire.Bind(new(shared.Seeder), new(*sqliteseeder.Seeder)),
+		wire.Bind(new(shared.Seeder), new(*seeder.Seeder)),
 		wire.Bind(new(shared.AuditLogger), new(*sqliteaudit.Repository)),
 		sqliteuser.NewRepository,
 		sqlitetoken.NewRepository,
 		sqliterun.NewRepository,
 		sqlitetenant.NewRepository,
-		sqliteseeder.NewSeeder,
+		seeder.NewSeeder,
 		sqliteaudit.NewRepository,
 		authcmd.NewLoginHandler,
 		authcmd.NewRefreshTokenHandler,

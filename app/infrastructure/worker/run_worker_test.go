@@ -673,7 +673,7 @@ func TestRunWorker_HandlerCannotOpenTransaction(t *testing.T) {
 	fx := testfx.New(t, t.TempDir()+"/rw_notx.db")
 	beginErr := make(chan error, 1)
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
-		_, err := fx.DB.BeginTx(ctx) // fx.DB is the SqliteManager (shared.Transactor)
+		_, err := fx.DB.BeginTx(ctx) // fx.DB is the sqlite.Manager (shared.Transactor)
 		beginErr <- err
 		return nil
 	}

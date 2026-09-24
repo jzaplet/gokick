@@ -42,7 +42,7 @@ func (r *Repository) Save(ctx context.Context, u *user.User) error {
 }
 ```
 
-`Conn(ctx)` se podívá do contextu: pokud běží transakce (otevřel ji `TransactionMiddleware`), vrátí `*sqlx.Tx`; jinak vrátí surový pool `*sqlx.DB`. Repo tak nic neví o tom, jestli je v transakci nebo ne — viz `BaseRepository.Conn` v `conn.go` a `TxFromContext` v `app/infrastructure/database/sqlite_manager.go`. SQL se píše přes `sqlx` named queries (`NamedExecContext` mapuje `db:"..."` tagy structu rovnou na `:placeholder`).
+`Conn(ctx)` se podívá do contextu: pokud běží transakce (otevřel ji `TransactionMiddleware`), vrátí `*sqlx.Tx`; jinak vrátí surový pool `*sqlx.DB`. Repo tak nic neví o tom, jestli je v transakci nebo ne — viz `BaseRepository.Conn` v `conn.go` a `TxFromContext` v `app/infrastructure/database/tx.go` (driver-neutrální nosič transakce; `BeginTx` ji tam uloží přes `ContextWithTx`). SQL se píše přes `sqlx` named queries (`NamedExecContext` mapuje `db:"..."` tagy structu rovnou na `:placeholder`).
 
 ### Raw-pool výjimka — zápisy, co musí přežít rollback
 Čtyři zápisy **vědomě obcházejí** `r.Conn(ctx)` a jdou surovým poolem `r.DB.DB()`, aby se uložily (commit) nezávisle na obklopující bus transakci (ta se může vrátit zpět):
@@ -54,7 +54,7 @@ func (r *Repository) Save(ctx context.Context, u *user.User) error {
 Tohle je **uzavřená množina** čtyř metod ve dvou repozitářích — žádný jiný repozitář raw pool legitimně nepoužívá a každá výjimka má u metody komentář s důvodem.
 
 ### SQLite tuning
-`NewSqliteManager` v `app/infrastructure/database/sqlite_manager.go` otevírá pool s DSN:
+`sqlite.NewManager` v `app/infrastructure/sqlite/manager.go` otevírá pool s DSN:
 
 ```
 file:<path>?_txlock=immediate&_pragma=busy_timeout(5000)&_pragma=foreign_keys(on)&_pragma=journal_mode(<WAL|DELETE|MEMORY>)
@@ -72,7 +72,7 @@ file:<path>?_txlock=immediate&_pragma=busy_timeout(5000)&_pragma=foreign_keys(on
 
 ## Recipe: nový repozitář
 1. Vytvoř `app/infrastructure/sqlite/<context>/repository.go` se `type Repository struct { sqlite.BaseRepository }`.
-2. Constructor: `NewRepository(db *database.SqliteManager) *Repository { return &Repository{BaseRepository: sqlite.BaseRepository{DB: db}} }`.
+2. Constructor: `NewRepository(db *sqlite.Manager) *Repository { return &Repository{BaseRepository: sqlite.BaseRepository{DB: db}} }`.
 3. Implementuj metody doménového interface (`<context>.Repository` z `app/domain/<context>/`). SQL vždy přes `r.Conn(ctx)`.
 4. Konvence not-found: lookupy vracejí `nil, nil` — bez výjimky (od F-011 to platí i pro `user.Repository.FindByID`): nil entita je signál not-found, ne-nil error je skutečné selhání.
 5. Wire binding v `app/infrastructure/di/container_provider.go`: `wire.Bind(new(<context>.Repository), new(*sqlite<context>.Repository))`, pak `make di`.
@@ -88,4 +88,4 @@ file:<path>?_txlock=immediate&_pragma=busy_timeout(5000)&_pragma=foreign_keys(on
 - `/gk-entities` — definuje doménový `Repository` interface a entity (`db:"..."` tagy), které tahle vrstva implementuje.
 - `/gk-bus` — `TransactionMiddleware` je to, co rozhodne, jestli `Conn(ctx)` vrátí transakci; vysvětluje i pořadí Audit vs. Transaction.
 - `/gk-feature` — repozitář je krok 2 v checklistu nové featury (domain → repo → command/query → handler → route → DI).
-- Kód: `app/infrastructure/database/sqlite_manager.go`, `app/infrastructure/sqlite/conn.go`, `app/infrastructure/sqlite/*/repository.go`
+- Kód: `app/infrastructure/sqlite/manager.go`, `app/infrastructure/database/tx.go`, `app/infrastructure/sqlite/conn.go`, `app/infrastructure/sqlite/*/repository.go`

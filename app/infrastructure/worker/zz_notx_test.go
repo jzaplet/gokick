@@ -19,7 +19,7 @@ import (
 // (outside this file set) and is the only sanctioned caller of BeginTx/Commit/Rollback in
 // the run path; forbidding that call syntax HERE keeps the plumbing from wrapping the
 // handler. The LOAD-BEARING guard against an accidental implicit tx in an app HANDLER is
-// the runtime check (shared.ContextForbidTx → SqliteManager.BeginTx fails closed);
+// the runtime check (shared.ContextForbidTx → sqlite.Manager.BeginTx fails closed);
 // shared.WithTx clears the marker only for its own short scope.
 //
 // Why a source scan and not go-arch-lint: the transaction is driven via the
@@ -55,7 +55,7 @@ func TestRunPath_NeverOpensTransaction(t *testing.T) {
 
 	// Transaction-control CALL syntax only (NOT the shared.Transactor type, which the
 	// worker legitimately holds to back a handler's shared.WithTx). Covers the wrapper
-	// (SqliteManager.BeginTx) AND the raw sqlx/database-sql openers, so a tx driven by
+	// (sqlite.Manager.BeginTx) AND the raw sqlx/database-sql openers, so a tx driven by
 	// bypassing the wrapper is caught too. The trailing "(" keeps doc comments that merely
 	// mention "BeginTx" from tripping the gate.
 	forbidden := []string{

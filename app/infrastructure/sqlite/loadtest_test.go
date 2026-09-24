@@ -19,7 +19,7 @@
 //	    -run TestSqliteDurableWriteLoad -v -timeout 10m
 //
 // MEASURED RESULTS are recorded at the bottom of this file after each run.
-package database_test
+package sqlite_test
 
 import (
 	"context"
@@ -34,7 +34,7 @@ import (
 	"time"
 
 	"gokick/app/infrastructure/config"
-	"gokick/app/infrastructure/database"
+	"gokick/app/infrastructure/sqlite"
 )
 
 const (
@@ -49,7 +49,7 @@ const (
 	// compared against it: a gap approaching the lease is a false-expiry risk.
 	loadLeaseMs = 30_000
 	// loadMaxOpenConns caps the connection pool. The app currently sets NO cap
-	// (NewSqliteManager) — a real gap for many-goroutine workloads. Writes
+	// (sqlite.NewManager) — a real gap for many-goroutine workloads. Writes
 	// serialize on SQLite's single write lock regardless of pool size; the pool
 	// only decides whether a blocked writer waits at SQLite (busy_timeout) or at
 	// Go's pool gate. 25 keeps WASM memory bounded while still exposing strain.
@@ -229,10 +229,10 @@ func classifyWriteErr(err error, busy, timeout, other *int64) {
 	}
 }
 
-func newLoadManager(t *testing.T) *database.SqliteManager {
+func newLoadManager(t *testing.T) *sqlite.Manager {
 	t.Helper()
 	cfg := &config.Config{DBPath: filepath.Join(t.TempDir(), "load.db")}
-	mgr, err := database.NewSqliteManager(cfg)
+	mgr, err := sqlite.NewManager(cfg)
 	if err != nil {
 		t.Fatalf("open manager: %v", err)
 	}

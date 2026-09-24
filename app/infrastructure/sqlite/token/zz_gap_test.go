@@ -28,7 +28,7 @@ import (
 //   - drop UNIQUE on token_hash -> the duplicate-hash INSERT would succeed.
 //
 // The cascade half of infra-db-security-11 (and infra-db-security-13) is
-// already pinned by TestSqliteManager_RefreshTokensCascadeOnUserDelete in
+// already pinned by TestManager_RefreshTokensCascadeOnUserDelete in
 // app/infrastructure/database; it is deliberately not duplicated here.
 func TestRefreshTokensSchema_EnforcesUserIDNotNullAndHashUnique(t *testing.T) {
 	ctx := context.Background()

@@ -1,4 +1,4 @@
-package database_test
+package sqlite_test
 
 import (
 	"context"
@@ -15,14 +15,15 @@ import (
 	"gokick/app/domain/shared"
 	"gokick/app/infrastructure/config"
 	"gokick/app/infrastructure/database"
+	"gokick/app/infrastructure/sqlite"
 )
 
 // F-047: the connection pool must be BOUNDED (a write burst can otherwise inflate
 // WASM SQLite connections unbounded → OOM). An explicit APP_DB_MAX_CONNS wins;
 // unset auto-scales from CPU count, clamped to [4, 32].
-func TestSqliteManager_PoolCap(t *testing.T) {
+func TestManager_PoolCap(t *testing.T) {
 	explicit := &config.Config{DBPath: filepath.Join(t.TempDir(), "cap.db"), DBMaxConns: 7}
-	mgr, err := database.NewSqliteManager(explicit)
+	mgr, err := sqlite.NewManager(explicit)
 	if err != nil {
 		t.Fatalf("open explicit: %v", err)
 	}
@@ -32,7 +33,7 @@ func TestSqliteManager_PoolCap(t *testing.T) {
 	}
 
 	auto := &config.Config{DBPath: filepath.Join(t.TempDir(), "auto.db")} // DBMaxConns 0 → auto
-	mgrAuto, err := database.NewSqliteManager(auto)
+	mgrAuto, err := sqlite.NewManager(auto)
 	if err != nil {
 		t.Fatalf("open auto: %v", err)
 	}
@@ -49,15 +50,15 @@ func TestSqliteManager_PoolCap(t *testing.T) {
 	}
 }
 
-// F-047 regression: MigrationManager.RunUp pins the pool to one connection for the
-// migration run and must hand the configured cap back afterwards — BOTH limits.
-// database/sql has no "restore": SetMaxOpenConns(0) means unlimited, and narrowing
-// the open limit also lowers the idle limit. RunUp runs on every CLI start, so a
-// naive restore left every process with an unbounded pool that pooled one idle
-// connection — the exact OOM exposure the cap exists to prevent.
-func TestMigrationManager_RunUp_KeepsPoolCap(t *testing.T) {
+// F-047 regression: RunUp runs before every CLI command and must leave the
+// configured pool cap intact — BOTH limits. It once pinned the pool to one
+// connection and "restored" it with SetMaxOpenConns(0), which database/sql reads
+// as unlimited (and the narrowing had also dropped the idle limit to 1), leaving
+// every process with an unbounded pool — the exact OOM exposure the cap exists to
+// prevent. The migrator now pins a single *sql.Conn and never touches the pool.
+func TestMigrator_RunUp_KeepsPoolCap(t *testing.T) {
 	const poolCap = 7
-	mgr, err := database.NewSqliteManager(&config.Config{
+	mgr, err := sqlite.NewManager(&config.Config{
 		DBPath:     filepath.Join(t.TempDir(), "migrate_cap.db"),
 		DBMaxConns: poolCap,
 	})
@@ -67,7 +68,7 @@ func TestMigrationManager_RunUp_KeepsPoolCap(t *testing.T) {
 	t.Cleanup(func() { _ = mgr.Close() })
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	if err := database.NewMigrationManager(mgr, logger).RunUp(); err != nil {
+	if err := sqlite.NewMigrator(mgr, logger).RunUp(); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 
@@ -101,7 +102,7 @@ func TestMigrationManager_RunUp_KeepsPoolCap(t *testing.T) {
 // shared.ContextForbidTx (a durable run handler ctx), so an accidental transaction
 // in a long-running run surfaces immediately instead of freezing the DB by holding
 // the global SQLite write lock for the run's lifetime.
-func TestSqliteManager_BeginTx_FailsClosedInNoTxZone(t *testing.T) {
+func TestManager_BeginTx_FailsClosedInNoTxZone(t *testing.T) {
 	mgr := newTestManager(t)
 
 	// A normal ctx → BeginTx succeeds (and we roll it back).
@@ -119,14 +120,14 @@ func TestSqliteManager_BeginTx_FailsClosedInNoTxZone(t *testing.T) {
 	}
 }
 
-// TestSqliteManager_ConcurrentTxWritesDoNotReturnBusy reproduces the
+// TestManager_ConcurrentTxWritesDoNotReturnBusy reproduces the
 // "sqlite3: database is locked" regression caused by BEGIN DEFERRED +
 // no busy_timeout. The handler pattern read → CPU-hold → write inside
 // one transaction must survive a concurrent committed write on a
 // sibling connection. Without _txlock=immediate this fails almost
 // every run with SQLITE_BUSY_SNAPSHOT during the UPDATE; with
 // IMMEDIATE the writers serialize at BEGIN and all goroutines win.
-func TestSqliteManager_ConcurrentTxWritesDoNotReturnBusy(t *testing.T) {
+func TestManager_ConcurrentTxWritesDoNotReturnBusy(t *testing.T) {
 	mgr := newTestManager(t)
 
 	if _, err := mgr.DB().Exec(`CREATE TABLE counters (id INTEGER PRIMARY KEY, val INTEGER NOT NULL)`); err != nil {
@@ -187,7 +188,7 @@ func TestSqliteManager_ConcurrentTxWritesDoNotReturnBusy(t *testing.T) {
 // CPU-ish moment, then UPDATE based on what was read. With IMMEDIATE
 // locking each call serializes cleanly; with DEFERRED it races the
 // snapshot.
-func bumpCounterInTx(mgr *database.SqliteManager, hold time.Duration) error {
+func bumpCounterInTx(mgr *sqlite.Manager, hold time.Duration) error {
 	ctx, err := mgr.BeginTx(context.Background())
 	if err != nil {
 		return err
@@ -210,12 +211,12 @@ func bumpCounterInTx(mgr *database.SqliteManager, hold time.Duration) error {
 	return mgr.Commit(ctx)
 }
 
-func newTestManager(t *testing.T) *database.SqliteManager {
+func newTestManager(t *testing.T) *sqlite.Manager {
 	t.Helper()
 	cfg := &config.Config{
 		DBPath: filepath.Join(t.TempDir(), "test.db"),
 	}
-	mgr, err := database.NewSqliteManager(cfg)
+	mgr, err := sqlite.NewManager(cfg)
 	if err != nil {
 		t.Fatalf("open manager: %v", err)
 	}

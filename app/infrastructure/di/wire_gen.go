@@ -24,12 +24,12 @@ import (
 	"gokick/app/domain/shared"
 	token2 "gokick/app/domain/token"
 	"gokick/app/infrastructure/config"
-	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/scheduler"
 	"gokick/app/infrastructure/security"
+	"gokick/app/infrastructure/seeder"
+	"gokick/app/infrastructure/sqlite"
 	"gokick/app/infrastructure/sqlite/audit"
 	"gokick/app/infrastructure/sqlite/run"
-	"gokick/app/infrastructure/sqlite/seeder"
 	"gokick/app/infrastructure/sqlite/tenant"
 	"gokick/app/infrastructure/sqlite/token"
 	"gokick/app/infrastructure/sqlite/user"
@@ -67,24 +67,24 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	spaConfig := provideSPAConfig(configConfig)
 	spaHandler := handler.NewSPAHandler(responder, logger, fs, spaConfig)
 	cookieSecure := provideCookieSecure(configConfig)
-	sqliteManager, err := database.NewSqliteManager(configConfig)
+	manager, err := sqlite.NewManager(configConfig)
 	if err != nil {
 		return nil, err
 	}
 	permissionChecker := providePermissionChecker()
 	v := provideEventHandlers()
 	eventBus := provideEventBus(logger, v, reporter)
-	repository := run.NewRepository(sqliteManager)
+	repository := run.NewRepository(manager)
 	handlerRegistry, err := provideRunHandlerRegistry(configConfig)
 	if err != nil {
 		return nil, err
 	}
 	runDispatcher := provideRunDispatcher(repository, handlerRegistry)
-	auditRepository := audit.NewRepository(sqliteManager)
+	auditRepository := audit.NewRepository(manager)
 	tenantResolver := provideTenantResolver()
-	commandBus := provideCommandBus(logger, sqliteManager, permissionChecker, eventBus, runDispatcher, auditRepository, reporter, tenantResolver)
-	userRepository := user.NewRepository(sqliteManager)
-	tokenRepository := token.NewRepository(sqliteManager)
+	commandBus := provideCommandBus(logger, manager, permissionChecker, eventBus, runDispatcher, auditRepository, reporter, tenantResolver)
+	userRepository := user.NewRepository(manager)
+	tokenRepository := token.NewRepository(manager)
 	passwordHasher := providePasswordHasher()
 	loginHandler := command.NewLoginHandler(userRepository, tokenRepository, passwordHasher, jwtService)
 	refreshTokenHandler := command.NewRefreshTokenHandler(userRepository, tokenRepository, jwtService)
@@ -108,7 +108,7 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	getUserDashboardHandler := query3.NewGetUserDashboardHandler()
 	getAdminDashboardHandler := query3.NewGetAdminDashboardHandler(userRepository)
 	dashboardHandler := handler.NewDashboardHandler(responder, queryBus, getUserDashboardHandler, getAdminDashboardHandler)
-	tenantRepository := tenant.NewRepository(sqliteManager)
+	tenantRepository := tenant.NewRepository(manager)
 	getStatsHandler := query4.NewGetStatsHandler(tenantRepository, userRepository)
 	listAllUsersHandler := query4.NewListAllUsersHandler(userRepository)
 	queryGetUserHandler := query4.NewGetUserHandler(userRepository)
@@ -129,14 +129,14 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	if err != nil {
 		return nil, err
 	}
-	runWorker := provideRunWorker(logger, reporter, repository, handlerRegistry, runDispatcher, sqliteManager, auditRepository, configConfig)
+	runWorker := provideRunWorker(logger, reporter, repository, handlerRegistry, runDispatcher, manager, auditRepository, configConfig)
 	serveCommand := console.NewServeCommand(serverServer, scheduler, runWorker)
 	seedAdminPassword := provideSeedAdminPassword(configConfig)
 	seedSuperAdminPassword := provideSeedSuperAdminPassword(configConfig)
 	seedAdminTenant := provideSeedAdminTenant(configConfig)
 	multitenant := provideMultitenant(configConfig)
 	seederSeeder := seeder.NewSeeder(userRepository, tenantRepository, passwordHasher, seedAdminPassword, seedSuperAdminPassword, seedAdminTenant, multitenant, logger)
-	systemCommandBus := provideSystemCommandBus(logger, sqliteManager, eventBus, auditRepository, runDispatcher, reporter)
+	systemCommandBus := provideSystemCommandBus(logger, manager, eventBus, auditRepository, runDispatcher, reporter)
 	seedCommand := console.NewSeedCommand(seederSeeder, systemCommandBus)
 	getTenantHandler := query4.NewGetTenantHandler(tenantRepository)
 	createUserCommand := console.NewCreateUserCommand(createUserHandler, createTenantHandler, getTenantHandler, configConfig, systemCommandBus)
@@ -145,8 +145,8 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	createTenantCommand := console.NewCreateTenantCommand(createTenantHandler, systemCommandBus)
 	workerCommand := console.NewWorkerCommand(runWorker)
 	rootCommand := console.NewRootCommand(serveCommand, seedCommand, createUserCommand, createSuperAdminCommand, createTenantCommand, workerCommand)
-	migrationManager := database.NewMigrationManager(sqliteManager, logger)
-	application := app.NewApplication(rootCommand, migrationManager)
+	migrator := sqlite.NewMigrator(manager, logger)
+	application := app.NewApplication(rootCommand, migrator)
 	return application, nil
 }
 
@@ -171,7 +171,7 @@ func provideTenantResolver() shared.TenantResolver {
 // source of the chain order, shared with testfx so they can't drift).
 func provideCommandBus(
 	logger *slog.Logger,
-	db *database.SqliteManager,
+	tx shared.Transactor,
 	checker shared.PermissionChecker,
 	eventBus *bus.EventBus,
 	runDispatcher shared.RunDispatcher, audit2 shared.AuditLogger,
@@ -185,7 +185,7 @@ func provideCommandBus(
 		reporter,
 		tenantResolver, audit2, runDispatcher,
 		eventBus,
-		db,
+		tx,
 	)...,
 	)
 }
@@ -198,13 +198,13 @@ func provideCommandBus(
 // bus.SystemCommandBus.
 func provideSystemCommandBus(
 	logger *slog.Logger,
-	db *database.SqliteManager,
+	tx shared.Transactor,
 	eventBus *bus.EventBus, audit2 shared.AuditLogger,
 
 	runDispatcher shared.RunDispatcher,
 	reporter shared.ErrorReporter,
 ) *bus.SystemCommandBus {
-	return bus.NewSystemCommandBus(middleware.SystemChain(logger, db, eventBus, audit2, runDispatcher, reporter)...,
+	return bus.NewSystemCommandBus(middleware.SystemChain(logger, tx, eventBus, audit2, runDispatcher, reporter)...,
 	)
 }
 
@@ -363,7 +363,7 @@ func provideRunDispatcher(
 
 // provideRunWorker wires the durable run worker (the one background-work engine) from
 // config. It injects the run dispatcher (so a handler can enqueue a child task), the
-// SqliteManager as the Transactor backing shared.WithTx (short atomic writes the handler
+// Transactor backing shared.WithTx (short atomic writes the handler
 // scopes itself), and the AuditLogger so a run handler's audit events are drained and
 // persisted — the worker bypasses the bus, where these are normally injected.
 func provideRunWorker(
@@ -372,7 +372,7 @@ func provideRunWorker(
 	repo run3.Repository,
 	registry *run2.HandlerRegistry,
 	runDispatcher shared.RunDispatcher,
-	db *database.SqliteManager, audit2 shared.AuditLogger,
+	tx shared.Transactor, audit2 shared.AuditLogger,
 
 	cfg *config.Config,
 ) *worker.RunWorker {
@@ -382,7 +382,7 @@ func provideRunWorker(
 		repo,
 		registry,
 		runDispatcher,
-		db, audit2, worker.RunWorkerConfig{
+		tx, audit2, worker.RunWorkerConfig{
 			DefaultLease:      cfg.RunWorkerLease,
 			HeartbeatInterval: cfg.RunWorkerHeartbeat,
 			PollInterval:      cfg.RunWorkerPoll,
