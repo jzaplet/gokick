@@ -1,11 +1,19 @@
 -- +goose Up
--- The ONE init migration. As a boilerplate, gokick ships its final schema as a
--- single migration — the incremental history (12 steps: jobs table + its drop,
--- users-table rebuilds for tenants/superadmin, …) was squashed 2026-07-15. New
--- deployments apply just this file; deployments that already ran the old chain
--- have this version recorded and skip it (their goose_db_version keeps the
--- historical entries — harmless). Project-specific migrations go in NEW files
--- after this one (make migrate-create).
+-- The ONE init migration. As a boilerplate, gokick ships its current schema as a
+-- single migration: the incremental history was squashed twice — 2026-07-15 (12
+-- steps: jobs table + its drop, users-table rebuilds for tenants/superadmin, …)
+-- and 2026-09-24 (the unique tenant-name index and the users.lang / runs.lang
+-- columns). New deployments apply just this file.
+--
+-- It keeps the FIRST version number on purpose: a deployment that already ran the
+-- old chain has this version recorded and skips the file (its goose_db_version
+-- keeps the historical entries — harmless, goose ignores versions it has no file
+-- for). That only holds for a deployment that ran the WHOLE old chain: one still
+-- on a release older than v1.4.0 must first start a release in v1.4.0–v1.4.2
+-- (which applies the remaining steps) before it runs a binary with this file.
+--
+-- Project-specific migrations go in NEW files after this one (make
+-- migrate-create).
 
 -- Tenant registry (row-level multitenancy boundary; see /gk-multitenancy).
 CREATE TABLE IF NOT EXISTS tenants (
@@ -15,6 +23,15 @@ CREATE TABLE IF NOT EXISTS tenants (
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     plan TEXT NOT NULL DEFAULT 'free'
 );
+
+-- A tenant's name is its identity to an operator: the platform grid lists tenants
+-- by name and the Add-user form's tenant picker maps each option to {id, name}, so
+-- two same-named tenants would render as two identical, unpickable choices — and a
+-- user filed into the wrong one cannot be moved (users.tenant_id is never in an
+-- update's SET clause), only deleted and recreated. The index is the floor;
+-- CreateTenantHandler checks first so the operator gets a 400 on the name field
+-- rather than a constraint violation surfacing as a 500. Case-sensitive (binary).
+CREATE UNIQUE INDEX idx_tenants_name ON tenants(name);
 
 -- Bootstrap "Default" tenant. In single-tenant mode every user belongs to it
 -- (shared.DefaultTenantID = nil UUID). It is created here, not by the seeder,
@@ -28,6 +45,16 @@ INSERT INTO tenants (id, name)
 -- (superadmin > admin > user); gating who may CREATE a superadmin is the
 -- application/CLI layer's job. The brute-force lock columns are written on the
 -- raw pool (outside any bus tx) — see /gk-repositories.
+--
+-- lang is the persisted UI-language preference (en canonical + cs, extensible).
+-- It feeds one rung of the per-request resolution ladder (X-App-Lang → cookie →
+-- users.lang → Accept-Language → en): minted into the JWT claims at session issue
+-- and returned by login/refresh so the SPA adopts it on a fresh browser.
+-- NULLABLE on purpose — NULL means "no preference expressed" and the browser's
+-- Accept-Language decides; no DEFAULT, an explicit choice is the only writer.
+-- Validation to the supported set lives in the domain value object. Background
+-- work does NOT read it: a run inherits the enqueuing request's language via
+-- runs.lang.
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     nickname TEXT NOT NULL UNIQUE,
@@ -41,7 +68,8 @@ CREATE TABLE IF NOT EXISTS users (
     last_failed_login_at DATETIME,
     locked_until DATETIME,
     tenant_id TEXT NOT NULL REFERENCES tenants(id),
-    last_login_at DATETIME
+    last_login_at DATETIME,
+    lang TEXT
 );
 
 -- Composite index: the tenant_id prefix serves tenant-scoped lists / GROUP BY,
@@ -125,7 +153,14 @@ CREATE TABLE runs (
     cancel_requested INTEGER NOT NULL DEFAULT 0,
     cancelled_at DATETIME,
     created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP  -- bumped on every checkpoint / heartbeat
+    updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,  -- bumped on every checkpoint / heartbeat
+    -- lang mirrors tenant_id: work that executes OUTSIDE a request on a user's
+    -- behalf (a mail send, a long agent turn) has no headers to read, so the
+    -- language rides on the row — stamped by the dispatcher from the enqueuing
+    -- request's context and restored into the handler context by the worker. The
+    -- DEFAULT only covers direct repo enqueues (debug endpoints, fixtures); the
+    -- worker parses defensively and falls back to the product default.
+    lang         TEXT NOT NULL DEFAULT 'en'
 );
 
 -- Partial index over non-terminal runs; julianday() matches the repo-wide

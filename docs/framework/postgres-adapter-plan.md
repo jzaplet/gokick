@@ -146,8 +146,8 @@ app/internal/
   testfx/          backend-agnostické fixtures (New(t) bez cesty)
   repotest/        sdílené kontraktní testy portů (dnešní testy v infrastructure/sqlite/<ctx>)
 migrations/
-  sqlite/          dnešní 4 soubory, beze změny verzí
-  postgres/        squashnutý init + budoucí dvojčata (stejné verze)
+  sqlite/          jediný squashnutý init (20260327000001), beze změny verze
+  postgres/        jeho dvojče se stejnou verzí + budoucí dvojčata (stejné verze)
 ```
 
 `persistence.Store` nese doménové porty. Wire ho vezme přes `wire.FieldsOf`, takže `container_provider.go` přestane znát konkrétní repozitáře:
@@ -198,8 +198,8 @@ func providePersistence(cfg *config.Config, log *slog.Logger) (*persistence.Stor
 ### 3.3 Migrace
 
 - **Dva adresáře:**
-  - `migrations/sqlite/` obsahuje dnešní soubory. Verze v `goose_db_version` se nemění, takže existující deploymenty nic nepoznají.
-  - `migrations/postgres/` obsahuje jeden squashnutý init se stejnou verzí `20260327000001` a tři navazující dvojčata se stejnými verzemi, nebo jejich obsah zahrnutý v initu. Nové migrace se vždy píšou **ve dvojici se stejnou verzí**.
+  - `migrations/sqlite/` obsahuje jediný squashnutý init (`20260327000001`, sloučeno 2026-09-24). Verze se nemění, takže existující deploymenty ho přeskočí (pravidlo upgradu přes v1.4.x viz `/gk-migrations`).
+  - `migrations/postgres/` obsahuje dvojče squashnutého initu se stejnou verzí `20260327000001`. SQLite historie je od 2026-09-24 sloučená do jediného initu, takže dvojče je taky jen jedno. Nové migrace se vždy píšou **ve dvojici se stejnou verzí**.
 - **Goose Provider API** (`goose.NewProvider`) místo globálního stavu:
   - pro Postgres `goose.DialectPostgres` a `lock.NewPostgresSessionLocker()`;
   - pro SQLite `DialectSQLite3` bez lockeru.
