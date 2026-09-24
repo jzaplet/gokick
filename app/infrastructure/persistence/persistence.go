@@ -1,11 +1,14 @@
 // Package persistence opens the database adapter and hands the rest of the
 // application its ports. It is the ONE place that knows which adapter backs the
 // repositories: Wire takes every port from the Store (wire.FieldsOf), so neither
-// DI nor any handler names a concrete repository type. Adding the Postgres
-// adapter means branching here on the configured driver — nothing else changes.
+// DI nor any handler names a concrete repository type. Open branches on the
+// configured driver (APP_DB_DRIVER); each adapter's opener lives in its own
+// build-tagged file, so a binary built without an adapter (-tags nosqlite) does
+// not link it at all and refuses that driver at startup.
 package persistence
 
 import (
+	"fmt"
 	"log/slog"
 
 	"gokick/app/domain/run"
@@ -15,12 +18,6 @@ import (
 	"gokick/app/domain/user"
 	"gokick/app/infrastructure/config"
 	"gokick/app/infrastructure/database"
-	"gokick/app/infrastructure/sqlite"
-	sqliteaudit "gokick/app/infrastructure/sqlite/audit"
-	sqliterun "gokick/app/infrastructure/sqlite/run"
-	sqlitetenant "gokick/app/infrastructure/sqlite/tenant"
-	sqlitetoken "gokick/app/infrastructure/sqlite/token"
-	sqliteuser "gokick/app/infrastructure/sqlite/user"
 )
 
 // logMsgCloseFailed is logged when closing the pool at shutdown fails — the
@@ -43,31 +40,39 @@ type Store struct {
 	Migrator        database.Migrator
 }
 
-// Open connects the database and builds the Store. The returned cleanup closes
-// the connection pool; Wire runs it when the application shuts down.
+// Open connects the configured adapter and builds the Store. The returned
+// cleanup closes the connection pool; Wire runs it when the application shuts
+// down.
 func Open(cfg *config.Config, logger *slog.Logger) (*Store, func(), error) {
-	mgr, err := sqlite.NewManager(cfg)
+	var (
+		store   *Store
+		closeFn func() error
+		err     error
+	)
+	switch cfg.DBDriver {
+	case database.DriverSQLite:
+		store, closeFn, err = openSQLite(cfg, logger)
+	default:
+		err = notBuilt(cfg.DBDriver)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
+	return store, closer(closeFn, logger), nil
+}
 
-	users := sqliteuser.NewRepository(mgr)
-	tenants := sqlitetenant.NewRepository(mgr)
-	store := &Store{
-		Users:           users,
-		PlatformUsers:   users,
-		Tokens:          sqlitetoken.NewRepository(mgr),
-		Runs:            sqliterun.NewRepository(mgr),
-		Tenants:         tenants,
-		PlatformTenants: tenants,
-		Audit:           sqliteaudit.NewRepository(mgr),
-		Tx:              mgr,
-		Migrator:        sqlite.NewMigrator(mgr, logger),
-	}
-	cleanup := func() {
-		if err := mgr.Close(); err != nil {
+// notBuilt is the error for a driver this binary has no adapter for — either
+// excluded by a build tag or (Postgres, for now) not written yet.
+func notBuilt(d database.Driver) error {
+	return fmt.Errorf("persistence: database driver %q is not built into this binary", d)
+}
+
+// closer returns the Store cleanup: close the pool, and log (not return) a
+// failure — the process is on its way out.
+func closer(closeFn func() error, logger *slog.Logger) func() {
+	return func() {
+		if err := closeFn(); err != nil {
 			logger.Warn(logMsgCloseFailed, shared.LogKeyError, err)
 		}
 	}
-	return store, cleanup, nil
 }

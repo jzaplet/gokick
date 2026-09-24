@@ -48,6 +48,7 @@ Pozn.: `APP_SENTRY_ENVIRONMENT` čtou **oba** structy (BE reporter ze `StartupCo
 | Proměnná | Default v kódu | Pozn. |
 |---|---|---|
 | `APP_HTTP_PORT` | `3000` | |
+| `APP_DB_DRIVER` | `sqlite` | adaptér DB, striktní parse (`database.ParseDriver`); `postgres` se připravuje. Testy (`testfx`) čtou totéž z prostředí procesu |
 | `APP_DB_PATH` | `./data/app.db` | |
 | `APP_DB_JOURNAL_MODE` | `WAL` | `.env.example` má `DELETE` (bind-mount dev DB) |
 | `APP_DB_MAX_CONNS` | `0` = auto | Pool cap. Auto = `clamp(2×NumCPU, 4, 32)`. SQLite serializuje zápisy → jde o paměť/backpressure, ne throughput |

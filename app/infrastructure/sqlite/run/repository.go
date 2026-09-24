@@ -1,3 +1,5 @@
+//go:build !nosqlite
+
 // Package run implements run.Repository on SQLite. It uses the project's
 // julianday/ms-precision time discipline (julianday comparisons, ms-precision writes) and adds the
 // owner-token fencing the durable model needs: every worker mutating method past

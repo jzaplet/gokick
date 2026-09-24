@@ -7,11 +7,16 @@ import (
 	"strconv"
 	"time"
 
+	"gokick/app/infrastructure/database"
+
 	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	HTTPPort      string
+	HTTPPort string
+	// DBDriver picks the database adapter (APP_DB_DRIVER, default sqlite). Parsed
+	// strictly: an unknown name fails the start instead of falling back.
+	DBDriver      database.Driver
 	DBPath        string
 	DBJournalMode string
 	// DBMaxConns caps the SQLite connection pool. <= 0 means auto (sqlite.NewManager
@@ -114,6 +119,10 @@ func LoadConfig() (*Config, error) {
 	}
 
 	var err error
+
+	if config.DBDriver, err = database.ParseDriver(getEnv("APP_DB_DRIVER", "sqlite")); err != nil {
+		return nil, fmt.Errorf("invalid APP_DB_DRIVER: %w", err)
+	}
 
 	// Booleans are parsed strictly (getEnvBool): a typo fails fast instead of
 	// silently coercing to false — for APP_COOKIE_SECURE that would ship insecure

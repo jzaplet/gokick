@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gokick/app/infrastructure/database"
 )
 
 // F-065: a malformed .env must fail fast at LoadConfig, not be silently swallowed
@@ -88,6 +90,32 @@ func TestLoadConfig_StrictBool_RejectsTypo(t *testing.T) {
 	_, err := LoadConfig()
 	if err == nil || !strings.Contains(err.Error(), "APP_COOKIE_SECURE") {
 		t.Fatalf("expected a strict-bool error naming the key, got %v", err)
+	}
+}
+
+// APP_DB_DRIVER picks the adapter: unset means sqlite, a known name is taken as
+// is, and a typo fails the start instead of silently running on the default.
+func TestLoadConfig_DBDriver(t *testing.T) {
+	t.Chdir(t.TempDir()) // no .env: only the vars set below count
+
+	for env, want := range map[string]database.Driver{
+		"":         database.DriverSQLite,
+		"sqlite":   database.DriverSQLite,
+		"postgres": database.DriverPostgres,
+	} {
+		t.Setenv("APP_DB_DRIVER", env)
+		cfg, err := LoadConfig()
+		if err != nil {
+			t.Fatalf("APP_DB_DRIVER=%q: %v", env, err)
+		}
+		if cfg.DBDriver != want {
+			t.Fatalf("APP_DB_DRIVER=%q: got %q want %q", env, cfg.DBDriver, want)
+		}
+	}
+
+	t.Setenv("APP_DB_DRIVER", "sqlite3")
+	if _, err := LoadConfig(); err == nil || !strings.Contains(err.Error(), "APP_DB_DRIVER") {
+		t.Fatalf("expected an APP_DB_DRIVER error for a typo, got %v", err)
 	}
 }
 

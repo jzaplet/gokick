@@ -204,6 +204,8 @@ deps:
 
   # Infrastructure — depends on domain
   config:
+    mayDependOn:
+      - database
     anyVendorDeps: true
   database:
     anyVendorDeps: true
