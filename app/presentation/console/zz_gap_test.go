@@ -150,9 +150,9 @@ func serveTestRunWorker(
 // close) until the test closes release. The test asserts RunE is still blocked
 // at that point, then closes release and asserts RunE returns.
 func TestServeCommand_SchedulerDoneGatesReturnAndSharesCtx(t *testing.T) {
-	// No t.Parallel: testfx.New runs goose migrations (process-global SetLogger/
-	// SetDialect) — concurrent New() calls race under -race. Matches the rest of
-	// the testfx-backed tests in this package.
+	// No t.Parallel: testfx-backed tests are kept serial by convention for now. (The original reason — goose's process-global
+	// state — is gone since migrations run through a goose Provider; enabling
+	// t.Parallel for DB tests is a separate step of the Postgres plan, phase 2.)
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "serve.db"))
 
 	logger, snapshot := newCaptureLogger()
@@ -245,7 +245,7 @@ func TestServeCommand_SchedulerDoneGatesReturnAndSharesCtx(t *testing.T) {
 // persists a superadmin out-of-band — the path the HTTP/admin API refuses. It
 // also enforces the required flags before RunE runs.
 func TestCreateSuperAdminCommand_CreatesSuperAdmin(t *testing.T) {
-	// No t.Parallel — see the other testfx-backed tests in this package (goose globals).
+	// No t.Parallel — see the other testfx-backed tests in this package.
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "console_superadmin.db"))
 	handler := platformcmd.NewCreateSuperAdminHandler(fx.Users, fx.Hasher)
 

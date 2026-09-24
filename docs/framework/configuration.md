@@ -123,7 +123,7 @@ Pořadí rozlišení:
 |---|---|---|
 | `APP_MULTITENANCY` | `false` | Zapínatelný row-level multitenancy. `false` (single-tenant) = dnešní chování; `true` = multitenant s **fail-closed** vynucením. |
 
-Čteno přes `Config` struct (teče do `SqliteManager`). Vybírá jen **striktnost vynucení** při chybějícím tenantu, ne resoluci (ta je vždy data-driven z JWT):
+Čteno přes `Config` struct (teče do `sqlite.Manager`). Vybírá jen **striktnost vynucení** při chybějícím tenantu, ne resoluci (ta je vždy data-driven z JWT):
 
 - `false` (default) — **fail-open**: dotaz bez resolvovaného tenantu spadne na default tenant, takže single-tenant nasazení běží beze změny.
 - `true` — **fail-closed**: chybějící tenant je **panika** (`r.Tenant(ctx)` → HTTP 500), nikdy tiché scopnutí na default. Zapínej jen v nasazení, které reálně zakládá víc tenantů.

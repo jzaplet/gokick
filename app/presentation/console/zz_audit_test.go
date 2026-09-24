@@ -76,9 +76,9 @@ func TestCreateUserCommand_FlagSpec(t *testing.T) {
 }
 
 func TestCreateUserCommand_MissingRequiredFlagErrors(t *testing.T) {
-	// No t.Parallel: testfx.New runs goose migrations, which set process-global
-	// state (SetLogger/SetDialect) — concurrent New() calls race under -race.
-	// The rest of the codebase keeps testfx-backed tests serial for this reason.
+	// No t.Parallel: testfx-backed tests are kept serial by convention for now. (The original reason — goose's process-global
+	// state — is gone since migrations run through a goose Provider; enabling
+	// t.Parallel for DB tests is a separate step of the Postgres plan, phase 2.)
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "console.db"))
 	handler := usercmd.NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	cmd := NewCreateUserCommand(handler, nil, nil, &config.Config{}, fx.NewSystemBus()).Command()
@@ -102,7 +102,7 @@ func TestCreateUserCommand_MissingRequiredFlagErrors(t *testing.T) {
 }
 
 func TestCreateUserCommand_DefaultsRoleToAdmin(t *testing.T) {
-	// No t.Parallel — see TestCreateUserCommand_MissingRequiredFlagErrors (goose globals).
+	// No t.Parallel — see TestCreateUserCommand_MissingRequiredFlagErrors.
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "console.db"))
 	handler := usercmd.NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	cmd := NewCreateUserCommand(handler, nil, nil, &config.Config{}, fx.NewSystemBus()).Command()
@@ -127,7 +127,7 @@ func TestCreateUserCommand_DefaultsRoleToAdmin(t *testing.T) {
 }
 
 func TestCreateUserCommand_RoleFlagCreatesUserRole(t *testing.T) {
-	// No t.Parallel — see TestCreateUserCommand_MissingRequiredFlagErrors (goose globals).
+	// No t.Parallel — see TestCreateUserCommand_MissingRequiredFlagErrors.
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "console.db"))
 	handler := usercmd.NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	cmd := NewCreateUserCommand(handler, nil, nil, &config.Config{}, fx.NewSystemBus()).Command()
@@ -206,8 +206,8 @@ func (s *recordingSeeder) Seed(ctx context.Context) error {
 }
 
 func TestSeedCommand_DelegatesToSeederWithContext(t *testing.T) {
-	// No t.Parallel — testfx.New runs goose migrations (process-global goose
-	// state). The system bus's TransactionMiddleware needs a real DB to BeginTx.
+	// No t.Parallel — see TestCreateUserCommand_MissingRequiredFlagErrors. The
+	// system bus's TransactionMiddleware needs a real DB to BeginTx.
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "seed_delegate.db"))
 
 	seeder := &recordingSeeder{}
@@ -255,7 +255,7 @@ func newTestRunWorker(t *testing.T, fx *testfx.Fixture) *worker.RunWorker {
 }
 
 func TestWorkerCommand_RunDrainsOnContextCancel(t *testing.T) {
-	// No t.Parallel — see TestCreateUserCommand_MissingRequiredFlagErrors (goose globals).
+	// No t.Parallel — see TestCreateUserCommand_MissingRequiredFlagErrors.
 	fx := testfx.New(t, filepath.Join(t.TempDir(), "console.db"))
 	cmd := NewWorkerCommand(newTestRunWorker(t, fx)).Command()
 	cmd.SilenceUsage = true

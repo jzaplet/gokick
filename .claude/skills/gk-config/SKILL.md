@@ -82,7 +82,7 @@ Bool proměnné: parsují se přísně přes `getEnvBool` — akceptuje jen `"tr
 - **Jediná cesta k env je `getEnv`.** Žádné `os.Getenv` roztroušené po `cmd/` — vše přes config reader (CLAUDE.md invariant).
 - **`LoadConfig` selže rychle na rozbité konfiguraci.** Může selhat na: rozbitém `.env` (parse error je fatální), překlepu v bool (`getEnvBool` bere jen `true`/`false`), špatném intu (`APP_DB_MAX_CONNS`, run-worker limity), špatném duration a nekladné `APP_JWT_*` expiraci (sign guard — token nesmí vzniknout prošlý/nekonečný). Hlubší doménové validace žijí jinde: Ostatní validace žijí jinde:
   - JWT secret min. **32 znaků** → `NewJwtService` (`minJWTSecretLen` v `app/infrastructure/security/jwt.go`). Chybějící/krátký secret shodí stavbu aplikace přes Wire, ne `LoadConfig`.
-  - Journal mode whitelist `WAL|DELETE|MEMORY` → `NewSqliteManager` (`app/infrastructure/database/sqlite_manager.go`), ne config.
+  - Journal mode whitelist `WAL|DELETE|MEMORY` → `sqlite.NewManager` (`app/infrastructure/sqlite/manager.go`), ne config.
 - **Default v kódu ≠ hodnota v `.env.example`** u dvou proměnných: `APP_COOKIE_SECURE` (kód `true`, soubor `false`) a `APP_DB_JOURNAL_MODE` (kód `WAL`, soubor `DELETE`). `.env.example` je laděný na lokální dev; produkce drží kódové defaulty.
 - **Prázdná hodnota = nenastaveno.** `KLÍČ=` v `.env` použije default (nejde takhle „vynutit prázdno" tam, kde default není prázdný).
 - **`APP_SENTRY_DEBUG=true` nikdy v produkci** — odemyká záměrné spouštěče chyb; aplikace při startu varuje.

@@ -1,10 +1,11 @@
-package database
+package sqlite
 
 import (
 	"context"
 	"fmt"
 	"gokick/app/domain/shared"
 	"gokick/app/infrastructure/config"
+	"gokick/app/infrastructure/database"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -13,11 +14,10 @@ import (
 	_ "github.com/ncruces/go-sqlite3/driver"
 )
 
-type txKeyType struct{}
-
-var txKey = txKeyType{}
-
-type SqliteManager struct {
+// Manager owns the SQLite connection pool and implements shared.Transactor: the
+// transaction it opens rides in ctx (database.ContextWithTx), where the repos'
+// BaseRepository.Conn picks it up.
+type Manager struct {
 	db          *sqlx.DB
 	multitenant bool
 	maxConns    int // the resolved pool cap; see applyPoolLimits
@@ -26,9 +26,9 @@ type SqliteManager struct {
 // Multitenant reports the configured enforcement mode (APP_MULTITENANCY). When
 // true, BaseRepository.Tenant fails closed (panics) on a missing tenant instead
 // of falling back to the default tenant.
-func (m *SqliteManager) Multitenant() bool { return m.multitenant }
+func (m *Manager) Multitenant() bool { return m.multitenant }
 
-func NewSqliteManager(config *config.Config) (*SqliteManager, error) {
+func NewManager(config *config.Config) (*Manager, error) {
 	dir := filepath.Dir(config.DBPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, err
@@ -93,7 +93,7 @@ func NewSqliteManager(config *config.Config) (*SqliteManager, error) {
 	if maxConns <= 0 {
 		maxConns = autoMaxConns()
 	}
-	m := &SqliteManager{db: db, multitenant: config.Multitenancy, maxConns: maxConns}
+	m := &Manager{db: db, multitenant: config.Multitenancy, maxConns: maxConns}
 	m.applyPoolLimits()
 
 	return m, nil
@@ -105,7 +105,7 @@ func NewSqliteManager(config *config.Config) (*SqliteManager, error) {
 // UNLIMITED) and narrowing the open limit silently lowers the idle limit too. That
 // trap is how startup migrations once left every process with an unbounded pool;
 // the migrator now pins a single *sql.Conn instead of touching the pool.
-func (m *SqliteManager) applyPoolLimits() {
+func (m *Manager) applyPoolLimits() {
 	m.db.SetMaxOpenConns(m.maxConns)
 	m.db.SetMaxIdleConns(m.maxConns)
 }
@@ -135,15 +135,15 @@ func autoMaxConns() int {
 	return n
 }
 
-func (m *SqliteManager) DB() *sqlx.DB {
+func (m *Manager) DB() *sqlx.DB {
 	return m.db
 }
 
-func (m *SqliteManager) Close() error {
+func (m *Manager) Close() error {
 	return m.db.Close()
 }
 
-func (m *SqliteManager) BeginTx(ctx context.Context) (context.Context, error) {
+func (m *Manager) BeginTx(ctx context.Context) (context.Context, error) {
 	// Fail closed in a no-transaction zone (a durable run handler): a long handler
 	// inside a transaction would hold the global SQLite write lock for its whole
 	// lifetime and freeze every other write. See shared.ContextForbidTx.
@@ -158,26 +158,21 @@ func (m *SqliteManager) BeginTx(ctx context.Context) (context.Context, error) {
 	if err != nil {
 		return ctx, err
 	}
-	return context.WithValue(ctx, txKey, tx), nil
+	return database.ContextWithTx(ctx, tx), nil
 }
 
-func (m *SqliteManager) Commit(ctx context.Context) error {
-	tx := TxFromContext(ctx)
+func (m *Manager) Commit(ctx context.Context) error {
+	tx := database.TxFromContext(ctx)
 	if tx == nil {
 		return fmt.Errorf("database: no transaction in context")
 	}
 	return tx.Commit()
 }
 
-func (m *SqliteManager) Rollback(ctx context.Context) error {
-	tx := TxFromContext(ctx)
+func (m *Manager) Rollback(ctx context.Context) error {
+	tx := database.TxFromContext(ctx)
 	if tx == nil {
 		return fmt.Errorf("database: no transaction in context")
 	}
 	return tx.Rollback()
-}
-
-func TxFromContext(ctx context.Context) *sqlx.Tx {
-	tx, _ := ctx.Value(txKey).(*sqlx.Tx)
-	return tx
 }

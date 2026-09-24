@@ -168,14 +168,14 @@ Taking `*CommandBus`/`*QueryBus` makes the bus↔operation pairing compile-check
 | Package | Purpose |
 |---------|---------|
 | `config/` | `LoadConfig()` from `.env` via godotenv → `*Config` struct |
-| `database/` | `SqliteManager` (connection, WAL, `_txlock=immediate`, `busy_timeout`, `foreign_keys` via DSN), `MigrationManager` (Goose), transaction context (`BeginTx`/`Commit`/`Rollback`) |
-| `sqlite/` | `BaseRepository` (embed in repos for transparent tx support via `r.Conn(ctx)`) |
+| `database/` | Driver-neutral: transaction-in-context (`ContextWithTx` / `TxFromContext`) and the `Migrator` port — links no driver |
+| `sqlite/` | `Manager` (connection pool, WAL, `_txlock=immediate`, `busy_timeout`, `foreign_keys` via DSN; implements `shared.Transactor`: `BeginTx`/`Commit`/`Rollback`), `Migrator` (goose Provider over `migrations/sqlite`), `BaseRepository` (embed in repos for transparent tx support via `r.Conn(ctx)`) |
 | `sqlite/user/` | `user.Repository` impl (incl. `RecordFailedLogin` / `ResetFailedLogin` / `RecordLogin` raw-pool on purpose; tenant-scoped admin reads/writes + cross-tenant platform reads/writes — the `*AcrossTenants` set. The ones that touch EXISTING rows exclude superadmins in the statement itself; `SaveAcrossTenants` (the platform create) has no existing row to exclude, so the superadmin role is refused by `userwrite.Create` instead — that floor is what makes `userwrite.CreateSuperAdmin` the only way through the application layer; the seeder mints its superadmin straight through the repository and never reaches either) |
 | `sqlite/token/` | `token.Repository` implementation |
 | `sqlite/run/` | `run.Repository` implementation (owner-fenced; julianday/ms time discipline shared via `sqlite/sqltime.go`) |
 | `sqlite/tenant/` | `tenant.Repository` implementation (row-level multitenancy boundary) |
 | `sqlite/audit/` | `shared.AuditLogger` implementation (raw-pool — survives business rollback) |
-| `sqlite/seeder/` | `shared.Seeder` impl — admin (+ optional superadmin) seeding; `SeedAdminPassword` / `SeedSuperAdminPassword` / `SeedAdminTenant` / `Multitenant` Wire-distinct types |
+| `seeder/` | `shared.Seeder` impl (DB-neutral — seeds through the repository ports) — admin (+ optional superadmin) seeding; `SeedAdminPassword` / `SeedSuperAdminPassword` / `SeedAdminTenant` / `Multitenant` Wire-distinct types |
 | `security/` | `JwtService` (HS256 access + crypto/rand refresh), `PasswordHasher` (SHA-256 prehash + bcrypt), `PermissionChecker` |
 | `di/` | Wire compile-time DI. `container_provider.go` (wireinject tag) + generated `wire_gen.go` |
 

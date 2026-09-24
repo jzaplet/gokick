@@ -14,7 +14,7 @@ type Config struct {
 	HTTPPort      string
 	DBPath        string
 	DBJournalMode string
-	// DBMaxConns caps the SQLite connection pool. <= 0 means auto (NewSqliteManager
+	// DBMaxConns caps the SQLite connection pool. <= 0 means auto (sqlite.NewManager
 	// derives it from CPU count). APP_DB_MAX_CONNS overrides.
 	DBMaxConns           int
 	JWTSecret            string
@@ -156,7 +156,7 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("APP_JWT_REFRESH_EXPIRATION must be positive")
 	}
 
-	// 0 = auto (NewSqliteManager derives the cap from CPU count).
+	// 0 = auto (sqlite.NewManager derives the cap from CPU count).
 	if config.DBMaxConns, err = getEnvInt("APP_DB_MAX_CONNS", 0); err != nil {
 		return nil, fmt.Errorf("invalid APP_DB_MAX_CONNS: %w", err)
 	}

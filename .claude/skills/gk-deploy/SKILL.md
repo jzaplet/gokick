@@ -38,7 +38,7 @@ Proč to tak je: nic se nemůže rozejít. Frontend vždy odpovídá backendu (j
 
 - `public/embed.go` embeduje výsledek Vite buildu (`//go:embed *` → `embed.FS`), server ho obsluhuje jako SPA.
 - `migrations/embed.go` embeduje SQL migrace (`//go:embed sqlite/*.sql`, adresář na dialekt).
-- Migrace se aplikují **automaticky při startu** přes `database.MigrationManager` (`app/application.go`) — a to **před každým** subcommandem (`serve`, `worker`, `seed`, `create-user`, `create-superadmin`, `create-tenant`), ne jen při `serve`. Detail: `/gk-migrations`.
+- Migrace se aplikují **automaticky při startu** přes `database.Migrator` (`app/application.go`; SQLite implementace `sqlite.Migrator`) — a to **před každým** subcommandem (`serve`, `worker`, `seed`, `create-user`, `create-superadmin`, `create-tenant`), ne jen při `serve`. Detail: `/gk-migrations`.
 
 ### CLI příkazy (`app/presentation/console/`)
 

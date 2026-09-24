@@ -52,8 +52,8 @@ Existují **dvě oddělené cesty**, jak se migrace spustí:
   **před** `rootCmd.Execute(ctx)`. Takže auto-up proběhne při **každém**
   subcommandu — `serve`, `worker`, `seed`, `create-user`, `create-superadmin`,
   `create-tenant` — ne jen u `serve`.
-- `MigrationManager.RunUp()` (`app/infrastructure/database/migration_manager.go`)
-  spustí `Up` goose **Provideru** (`NewSQLiteMigrationProvider`) na embedded FS. **Jen
+- `sqlite.Migrator.RunUp()` (`app/infrastructure/sqlite/migrator.go`, port `database.Migrator`)
+  spustí `Up` goose **Provideru** (`sqlite.NewMigrationProvider`) na embedded FS. **Jen
   směr Up** — automaticky se nikdy nic nerolluje zpět. Provider nemá žádný globální
   goose stav a celý běh pouští na **jednom** `*sql.Conn` — i `-- +goose NO
   TRANSACTION` migrace, takže `PRAGMA foreign_keys=off` při table-rebuildu platí po
@@ -111,5 +111,5 @@ Existují **dvě oddělené cesty**, jak se migrace spustí:
   `/gk-repositories` (čtení/zápis do migrované tabulky, transakce),
   `/gk-feature` (přidání featury end-to-end — migrace je její součást).
 - Kód: `migrations/sqlite/` (SQL), `migrations/embed.go`,
-  `app/infrastructure/database/migration_manager.go` (`RunUp`),
+  `app/infrastructure/sqlite/migrator.go` (`RunUp`),
   `app/application.go` (auto-up při startu), `Makefile` (`migrate-*` targety).

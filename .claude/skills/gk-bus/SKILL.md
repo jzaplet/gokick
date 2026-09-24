@@ -93,7 +93,7 @@ Co která stanice dělá (`app/application/bus/middleware/`):
   sebrané eventy a rozešle je přes `EventBus` synchronně. Při chybě/rollbacku
   se eventy zahodí.
 - **Transaction** (`transaction.go`) — `BeginTx`/`Commit`/`Rollback` přes
-  `shared.Transactor` (duck typing, `SqliteManager` ho implementuje). Command
+  `shared.Transactor` (duck typing, `sqlite.Manager` ho implementuje). Command
   může opt-outnout přes marker `shared.SkipsTransaction` — ze dvou různých
   důvodů: raw-pool zápisy (Login, jinak SQLite self-deadlock) a cleanup,
   který musí přežít vrácený error (RefreshToken — theft/expiry smaže tokeny

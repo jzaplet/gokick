@@ -50,14 +50,13 @@ type plainCmd struct{}
 // so it cannot prove the audit row actually lands in SQLite while the business
 // write is rolled back. This wires the REAL production ordering —
 // AuditMiddleware(outer) -> TransactionMiddleware(inner) -> handler — against a
-// real SqliteManager, and asserts the business row is gone but the audit_log
+// real sqlite.Manager, and asserts the business row is gone but the audit_log
 // row is physically present.
 // ---------------------------------------------------------------------------
 func TestAuditMiddleware_PersistsAcrossBusinessRollback(t *testing.T) {
-	// Not t.Parallel: tests calling testfx.New run goose migrations, and
-	// goose sets process-global state (SetLogger/SetBaseFS) in RunUp — two
-	// concurrent New() calls race on those globals under -race. Serializing
-	// the DB-backed tests avoids it without touching production code.
+	// Not t.Parallel: testfx-backed tests are kept serial by convention for now. (The original reason — goose's process-global
+	// state — is gone since migrations run through a goose Provider; enabling
+	// t.Parallel for DB tests is a separate step of the Postgres plan, phase 2.)
 	fx := testfx.New(t, t.TempDir()+"/audit_rollback.db")
 	auditRepo := sqliteaudit.NewRepository(fx.DB) // real raw-pool AuditLogger
 
@@ -248,8 +247,7 @@ func TestAuditMiddleware_FlushUsesDetachedContext(t *testing.T) {
 // AND fires the handler; the rollback path fires nothing and leaves no row.
 // ---------------------------------------------------------------------------
 func TestDispatchEventsMiddleware_AfterCommitSideEffectWithRealDB(t *testing.T) {
-	// Not t.Parallel — see note in TestAuditMiddleware_PersistsAcrossBusinessRollback
-	// (goose RunUp touches process-global state; serialize DB-backed tests).
+	// Not t.Parallel — see note in TestAuditMiddleware_PersistsAcrossBusinessRollback.
 	fx := testfx.New(t, t.TempDir()+"/events_commit.db")
 	logger := quietLogger()
 

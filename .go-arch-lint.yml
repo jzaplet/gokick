@@ -21,26 +21,26 @@ exclude:
 excludeFiles:
   # External `_test` package self-imports the production package for
   # NewSeeder / SeedAdminPassword — arch-lint flags this as a cycle.
-  - infrastructure/sqlite/seeder/seeder_test.go
+  - infrastructure/seeder/seeder_test.go
   # Same self-import quirk: audit/repository_test.go is `package audit_test`
   # importing the audit package to construct *Repository directly.
   - infrastructure/sqlite/audit/repository_test.go
-  # Same self-import quirk: sqlite_manager_test.go is `package database_test`
-  # importing the database package to drive *SqliteManager from a black-box test.
-  - infrastructure/database/sqlite_manager_test.go
-  # Same quirk: sqlite_loadtest_test.go (build-tag `loadtest`) is `package
-  # database_test` self-importing to characterize the driver under write load.
-  - infrastructure/database/sqlite_loadtest_test.go
+  # Same self-import quirk: manager_test.go is `package sqlite_test` importing
+  # the sqlite package to drive *sqlite.Manager from a black-box test.
+  - infrastructure/sqlite/manager_test.go
+  # Same quirk: loadtest_test.go (build-tag `loadtest`) is `package sqlite_test`
+  # self-importing to characterize the driver under write load.
+  - infrastructure/sqlite/loadtest_test.go
   # Integration tests that wire real fixtures (testfx) / black-box self-import to
   # exercise production behavior end-to-end. Same sanctioned test-only exception
   # as the entries above — these files are tests, never imported by production.
   - application/bus/middleware/zz_audit_test.go
-  - infrastructure/database/zz_audit_test.go
+  - infrastructure/sqlite/zz_audit_test.go
   - presentation/console/zz_audit_test.go
   - presentation/http/server/zz_audit_test.go
   # Gap-closure black-box / fixture-wired tests from the curated coverage pass —
   # same test-only rationale (build a full server / run migrations / wire testfx).
-  - infrastructure/database/zz_gap_test.go
+  - infrastructure/sqlite/zz_gap_test.go
   - presentation/console/zz_gap_test.go
   - presentation/http/server/zz_gap_test.go
   - app/zz_gap_test.go
@@ -91,6 +91,8 @@ components:
   # Layer 3: Infrastructure
   config:
     in: infrastructure/config/**
+  # Driver-neutral SQL plumbing (tx-in-context, the Migrator port). Adapters
+  # depend on it, never the other way round — so it links no driver.
   database:
     in: infrastructure/database
   # Root-level embedded data set — lives outside the app/ workdir, addressed
@@ -109,8 +111,9 @@ components:
       - infrastructure/sqlite/tenant/**
       - infrastructure/sqlite/token/**
       - infrastructure/sqlite/user/**
-  sqlite_seeder:
-    in: infrastructure/sqlite/seeder/**
+  # DB-neutral: seeds through the repository ports, so it serves every adapter.
+  seeder:
+    in: infrastructure/seeder/**
   scheduler:
     in: infrastructure/scheduler/**
   worker:
@@ -196,15 +199,15 @@ deps:
   config:
     anyVendorDeps: true
   database:
-    mayDependOn:
-      - config
-      - migrations
+    anyVendorDeps: true
   security:
     mayDependOn:
       - config
   sqlite_base:
     mayDependOn:
       - database
+      - config
+      - migrations
   sqlite_repos:
     mayDependOn:
       - sqlite_base
@@ -214,9 +217,8 @@ deps:
       - domain_token
       - domain_tenant
       - domain_run
-  sqlite_seeder:
+  seeder:
     mayDependOn:
-      - database
       - testfx
       - domain_user
       - domain_tenant
