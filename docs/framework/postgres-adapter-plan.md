@@ -51,7 +51,7 @@ Stačí nastavit `APP_DB_DRIVER=postgres` v env a aplikace **i celá Go test sui
    Zapomenutý `WHERE tenant_id` pak vrátí 0 řádků místo cizích dat.
 7. **Doslovný port by byl chybný.** Ověřeno na reálném Postgresu (sekce 8): dnešní `ClaimDue` by na Postgresu **vydal stejný run dvěma workerům**.
 8. **České řazení a UUIDv7 v obou DB.** Gridy se řadí podle české abecedy a hledání ignoruje velikost písmen i u Č/Ř/Ž, se stejným výsledkem v SQLite i v Postgresu (ověřeno na 3 085 řetězcích). Všechny primární klíče jsou UUIDv7.
-9. **Nejdřív opravit existující bug:** po startovních migracích se ztrácí limit connection poolu, a to už dnes na SQLite (nález N1).
+9. **Existující bug už je opravený:** po startovních migracích se ztrácel limit connection poolu, a to už na SQLite (nález N1, fáze 0 ✅).
 
 
 ## 1. Výchozí stav — jak je SQLite zadrátovaná
@@ -106,7 +106,7 @@ Seřazeno podle závažnosti. „Ověřeno" znamená, že nález byl reprodukov�
 
 | # | Nález | Dopad na Postgresu | Řešení |
 |---|---|---|---|
-| N1 | **Existující bug:** `MigrationManager.RunUp` volá `SetMaxOpenConns(1)` a pak `defer SetMaxOpenConns(0)`. Hodnota 0 znamená „bez limitu", takže po každém startu je pool neomezený a `MaxIdleConns` zůstane na 1. **Ověřeno:** cap 7 → 0. | Na Postgresu hrozí vyčerpání `max_connections`. Na SQLite to už dnes ruší ochranu F-047. | Opravit samostatně hned (PR 0). S goose Provider API pinning na jedno spojení vůbec není potřeba. |
+| N1 | **Existující bug:** `MigrationManager.RunUp` volá `SetMaxOpenConns(1)` a pak `defer SetMaxOpenConns(0)`. Hodnota 0 znamená „bez limitu", takže po každém startu je pool neomezený a `MaxIdleConns` zůstane na 1. **Ověřeno:** cap 7 → 0. | Na Postgresu hrozí vyčerpání `max_connections`. Na SQLite to už dnes ruší ochranu F-047. | ✅ **Opraveno ve fázi 0:** limit se po migracích obnovuje (open i idle), s regresním testem. S goose Provider API (fáze 1) pinning na jedno spojení úplně odpadne. |
 | N2 | `ClaimDue` má tvar `UPDATE … WHERE id = (SELECT … LIMIT 1)` a guard „volný nebo expirovaný" je jen v subquery. **Ověřeno:** dva workery dostanou tentýž run a druhý navíc započítá falešný `reclaims`. | Handler se spustí dvakrát (mail nebo API volání 2×), kontrakt „nejvýš jeden worker" je porušený a poison cap se falešně posouvá. | CTE s `FOR UPDATE SKIP LOCKED` a opakovaná kontrola guardu ve vnějším `WHERE`. **Ověřeno:** druhý worker neblokuje a vezme další run. |
 | N3 | Check-then-insert unikátnost (`app/application/userwrite/userwrite.go`, `CreateTenant`, seeder) je dnes korektní jen díky `BEGIN IMMEDIATE`, tedy serializaci všech zápisů. | Pod READ COMMITTED projdou kontrolou obě transakce a poražená dostane 23505, tedy **500** místo 400. | Zdrojem pravdy je constraint. 23505 se namapuje podle jména constraintu na pole a vrátí `ValidationError`. |
 | N4 | `DeleteIfEmptyAcrossTenants` (NOT EXISTS users/runs) může běžet souběžně s enqueue runu, a `runs.tenant_id` nemá FK. | Tenant se smaže a run zůstane bez tenanta. | FK `runs.tenant_id → tenants(id)` v PG schématu; chyba 23503 se namapuje na „tenant není prázdný". **Ověřeno:** DELETE počká na `KEY SHARE` lock souběžného INSERTu a skončí chybou 23503, run bez tenanta nevznikne. |
@@ -122,7 +122,7 @@ Seřazeno podle závažnosti. „Ověřeno" znamená, že nález byl reprodukov�
 | N14 | Scheduler běží v každé `serve` replice; `TestScheduler_TwoInstancesTickIndependently` to výslovně dokumentuje. | Každý job proběhne N× za interval. | Advisory lock pro každý job (sekce 5). |
 | N15 | `sqlx` pro driver `pgx` nepřepisuje placeholdery `?` (automaticky jen named parametry). | Týká se 46 statementů a 47 testových literálů. | PG repozitáře píšou `$n` nativně, testy jdou přes helpery (sekce 7). |
 
-**Drobnosti mimo Postgres nalezené cestou:**
+**Drobnosti mimo Postgres nalezené cestou** (první dvě opraveny ve fázi 0):
 - `app/domain/tenant/repository.go` má zastaralý komentář „Name is not unique", přestože unikátní index existuje.
 - `docs/framework/configuration.md` uvádí default `APP_SEED_ADMIN_TENANT` jako `Tenant 1`, v kódu je `Default`.
 - `GOOSE_VERSION` v Makefile je v3.27.1, v go.mod v3.27.0.
@@ -647,7 +647,7 @@ Pořadí je zvolené tak, aby **fáze 1 a 2 byly čisté refaktory bez změny ch
 
 | Fáze | Obsah | Hotovo, když |
 |---|---|---|
-| **0 — bugfix** | Oprava N1 (pool cap po migracích) a regresní test. Drobnosti z konce sekce 2. | `MaxOpenConnections` po `RunUp` = nastavený cap |
+| **0 — bugfix** ✅ | Oprava N1 (pool cap po migracích) a regresní test. Drobnosti z konce sekce 2. | ✅ hotovo: `MaxOpenConnections` po `RunUp` = nastavený cap, idle limit taky |
 | **1 — švy (jen SQLite)** | `database.Driver`, port `Migrator`, goose Provider API; `migrations/sqlite/` a embed podle dialektu. `SqliteManager` se přesune do `infrastructure/sqlite`. `persistence.Store` + `Open`, Wire přes `FieldsOf`, cleanup zavírá pool. Providery berou `shared.Transactor`, `NewApplication` bere `Migrator`. Seeder se přesune do `infrastructure/seeder`. Porty `shared.Locker` a `Transactor.BeginReadTx` (na SQLite no-op). Úprava `.go-arch-lint.yml`. | `make lint test` zelené; `*database.SqliteManager` mimo `sqlite` a `persistence` neexistuje |
 | **1b — české řazení a UUIDv7 (jen SQLite, `feat`)** | SQLite manager přes `driver.Open` + init callback: `unicode.Register`, collation `app_sort` (`cs-CZ`), SQL funkce `uuidv7()`. Sort whitelisty s `COLLATE app_sort`, escapování `LIKE`. `refresh_tokens` a `audit_log` id na v7. Zlatý korpus řazení + kontraktní test. Úprava `list_pages_test`. | Gridy řadí česky na SQLite; zlatý test zelený |
 | **2 — testy nezávislé na backendu (ještě SQLite)** | Codemod `testfx.New(t)`; `fx.Tx`, helpery ze 7.5, `SystemCtx`/`TenantCtx`; UUID testová data. Kontraktní testy do `internal/repotest`; SQLite-only testy označit (`RequireDriver` + build tag). Gate `zz_nosqlite` a guard proti prázdnému výsledku v `zz_tenant`/`zz_sqltime`. `NewJwt` bez DB. | Mimo `infrastructure/sqlite/**` není v testech ani řádek SQLite SQL; `go test -tags nosqlite ./...` se **zkompiluje** (bez PG zatím s chybou „driver not built") |
