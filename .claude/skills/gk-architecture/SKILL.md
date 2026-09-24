@@ -111,7 +111,7 @@ kontexty jsou vyjmenované ručně.
 2. V `.go-arch-lint.yml`: přidej komponentu `domain_order` (`in: domain/order/**`),
    přidej `infrastructure/sqlite/order/**` do `sqlite_repos`.
 3. Povol `domain_order` v `mayDependOn` u každého konzumenta (`application`,
-   `sqlite_repos`, `testfx`, případně `handler`, `worker`).
+   `sqlite_repos`, `testfx`, `repotest`, případně `handler`, `worker`).
 4. `make arch-check` ověří, že nikdo kontext neimportuje načerno.
 
 ## Invariants & pitfalls
