@@ -99,11 +99,12 @@ func NewSqliteManager(config *config.Config) (*SqliteManager, error) {
 	return m, nil
 }
 
-// applyPoolLimits (re)applies the resolved pool cap to both the open and the idle
-// limit. It is the single place the cap is set, so code that temporarily narrows
-// the pool (MigrationManager pins it to one connection) restores it through here —
-// database/sql has no "restore": SetMaxOpenConns(0) means UNLIMITED, and narrowing
-// the open limit silently lowers the idle limit too.
+// applyPoolLimits applies the resolved pool cap to both the open and the idle
+// limit — the single place the cap is set. Nothing may narrow the pool afterwards
+// and "restore" it by hand: database/sql has no restore (SetMaxOpenConns(0) means
+// UNLIMITED) and narrowing the open limit silently lowers the idle limit too. That
+// trap is how startup migrations once left every process with an unbounded pool;
+// the migrator now pins a single *sql.Conn instead of touching the pool.
 func (m *SqliteManager) applyPoolLimits() {
 	m.db.SetMaxOpenConns(m.maxConns)
 	m.db.SetMaxIdleConns(m.maxConns)

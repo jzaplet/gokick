@@ -7,9 +7,6 @@ import (
 	"testing"
 
 	"gokick/app/infrastructure/database"
-	"gokick/migrations"
-
-	"github.com/pressly/goose/v3"
 )
 
 // indexExists reports whether an index with the given name exists in
@@ -73,7 +70,7 @@ func TestMigrationManager_InitSchemaCreatesRefreshTokenIndexes(t *testing.T) {
 // TestMigrationDown_RollsBackLastMigration pins that a single goose down step
 // rolls back exactly the most recent migration (claim overview-102, mirroring
 // `make migrate-down`). It applies every embedded migration up via the
-// production MigrationManager.RunUp(), then runs goose.DownContext once exactly
+// production MigrationManager.RunUp(), then runs one goose Down step exactly
 // as the Makefile target does. It asserts the generic round-trip property rather
 // than a specific migration's artifact (so adding a migration doesn't break it):
 // the version drops, an early table (users) survives the single step, and
@@ -90,25 +87,23 @@ func TestMigrationDown_RollsBackLastMigration(t *testing.T) {
 	}
 
 	// Mirror the Makefile's `goose ... down` invocation: same dialect, same
-	// embedded FS, one step down. RunUp() already configured goose's global
-	// dialect/baseFS, but set them explicitly so this test does not depend on
-	// call ordering with other tests in the package.
-	goose.SetLogger(goose.NopLogger())
-	goose.SetBaseFS(migrations.FS)
-	if err := goose.SetDialect("sqlite3"); err != nil {
-		t.Fatalf("set dialect: %v", err)
+	// embedded SQLite migration set, one step down — through the SAME provider
+	// constructor RunUp uses, so the test exercises the production goose setup.
+	provider, err := database.NewSQLiteMigrationProvider(mgr.DB().DB)
+	if err != nil {
+		t.Fatalf("goose provider: %v", err)
 	}
 
-	before, err := goose.GetDBVersion(mgr.DB().DB)
+	before, err := provider.GetDBVersion(ctx)
 	if err != nil {
 		t.Fatalf("get version before down: %v", err)
 	}
 
-	if err := goose.DownContext(ctx, mgr.DB().DB, "."); err != nil {
+	if _, err := provider.Down(ctx); err != nil {
 		t.Fatalf("migrate down: %v", err)
 	}
 
-	after, err := goose.GetDBVersion(mgr.DB().DB)
+	after, err := provider.GetDBVersion(ctx)
 	if err != nil {
 		t.Fatalf("get version after down: %v", err)
 	}
@@ -135,7 +130,7 @@ func TestMigrationDown_RollsBackLastMigration(t *testing.T) {
 	if err := database.NewMigrationManager(mgr, logger).RunUp(); err != nil {
 		t.Fatalf("re-up after down: %v", err)
 	}
-	restored, err := goose.GetDBVersion(mgr.DB().DB)
+	restored, err := provider.GetDBVersion(ctx)
 	if err != nil {
 		t.Fatalf("get version after re-up: %v", err)
 	}

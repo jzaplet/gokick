@@ -25,7 +25,7 @@ Celá aplikace je **jeden spustitelný soubor**: Go binárka s embedovaným Vue 
 Představ si, že místo „nahraj na server frontend, backend, databázové skripty a popros admina, ať to spustí ve správném pořadí" dostaneš **jeden soubor**. Ten soubor v sobě nese:
 
 - **frontend** (zkompilovaný Vue web — `public/embed.go`, `//go:embed *`),
-- **databázové migrace** (SQL soubory — `migrations/embed.go`, `//go:embed *.sql`),
+- **databázové migrace** (SQL soubory — `migrations/embed.go`, `//go:embed sqlite/*.sql`),
 - a samotný server.
 
 Když ho spustíš (`./app serve`), nejdřív si **sám doženě databázi** (aplikuje chybějící migrace), pak nastartuje web. Nasazení je „zkopíruj jeden soubor a spusť ho". Docker image je jen tenká slupka kolem té binárky, abys ji mohl pustit kdekoli stejně.
@@ -37,7 +37,7 @@ Proč to tak je: nic se nemůže rozejít. Frontend vždy odpovídá backendu (j
 ### Single binary (embed)
 
 - `public/embed.go` embeduje výsledek Vite buildu (`//go:embed *` → `embed.FS`), server ho obsluhuje jako SPA.
-- `migrations/embed.go` embeduje SQL migrace (`//go:embed *.sql`).
+- `migrations/embed.go` embeduje SQL migrace (`//go:embed sqlite/*.sql`, adresář na dialekt).
 - Migrace se aplikují **automaticky při startu** přes `database.MigrationManager` (`app/application.go`) — a to **před každým** subcommandem (`serve`, `worker`, `seed`, `create-user`, `create-superadmin`, `create-tenant`), ne jen při `serve`. Detail: `/gk-migrations`.
 
 ### CLI příkazy (`app/presentation/console/`)
