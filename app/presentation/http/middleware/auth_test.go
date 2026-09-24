@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"gokick/app/domain/shared"
-	"gokick/app/internal/testfx"
+	"gokick/app/internal/testfx/jwtfx"
 )
 
 // captureHandler records the claims that AuthMiddleware put into the request context.
@@ -22,7 +22,7 @@ func (h *captureHandler) ServeHTTP(_ http.ResponseWriter, r *http.Request) {
 }
 
 func TestAuthMiddleware_ValidTokenSetsClaims(t *testing.T) {
-	jwt := testfx.NewJwt(t, 15*time.Minute)
+	jwt := jwtfx.New(t, 15*time.Minute)
 	token, _, err := jwt.GenerateAccessToken(&shared.AuthClaims{
 		UserID: "u-1", Role: "admin", Nickname: "alice",
 	})
@@ -55,7 +55,7 @@ func TestAuthMiddleware_ValidTokenSetsClaims(t *testing.T) {
 }
 
 func TestAuthMiddleware_NoHeaderPassesThroughWithoutClaims(t *testing.T) {
-	jwt := testfx.NewJwt(t, 15*time.Minute)
+	jwt := jwtfx.New(t, 15*time.Minute)
 
 	capture := &captureHandler{}
 	mw := AuthMiddleware(jwt, testResponder())(capture)
@@ -77,7 +77,7 @@ func TestAuthMiddleware_NoHeaderPassesThroughWithoutClaims(t *testing.T) {
 }
 
 func TestAuthMiddleware_MissingBearerPrefixReturns401(t *testing.T) {
-	jwt := testfx.NewJwt(t, 15*time.Minute)
+	jwt := jwtfx.New(t, 15*time.Minute)
 
 	capture := &captureHandler{}
 	mw := AuthMiddleware(jwt, testResponder())(capture)
@@ -97,7 +97,7 @@ func TestAuthMiddleware_MissingBearerPrefixReturns401(t *testing.T) {
 }
 
 func TestAuthMiddleware_InvalidTokenReturns401(t *testing.T) {
-	jwt := testfx.NewJwt(t, 15*time.Minute)
+	jwt := jwtfx.New(t, 15*time.Minute)
 
 	capture := &captureHandler{}
 	mw := AuthMiddleware(jwt, testResponder())(capture)
@@ -118,7 +118,7 @@ func TestAuthMiddleware_InvalidTokenReturns401(t *testing.T) {
 
 func TestAuthMiddleware_ExpiredTokenReturns401(t *testing.T) {
 	// Negative access expiration → token is already expired on issue.
-	jwt := testfx.NewJwt(t, -1*time.Second)
+	jwt := jwtfx.New(t, -1*time.Second)
 	token, _, err := jwt.GenerateAccessToken(&shared.AuthClaims{UserID: "u-1"})
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -139,7 +139,7 @@ func TestAuthMiddleware_ExpiredTokenReturns401(t *testing.T) {
 }
 
 func TestAuthMiddleware_EmptyBearerValueReturns401(t *testing.T) {
-	jwt := testfx.NewJwt(t, 15*time.Minute)
+	jwt := jwtfx.New(t, 15*time.Minute)
 
 	capture := &captureHandler{}
 	mw := AuthMiddleware(jwt, testResponder())(capture)

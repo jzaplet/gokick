@@ -2,16 +2,12 @@ package app
 
 import (
 	"context"
-	"io"
-	"log/slog"
+	"errors"
 	"os"
-	"path/filepath"
+	"slices"
 	"testing"
 
 	"gokick/app/application/bus"
-	busmw "gokick/app/application/bus/middleware"
-	"gokick/app/infrastructure/config"
-	"gokick/app/infrastructure/sqlite"
 	"gokick/app/presentation/console"
 )
 
@@ -22,89 +18,56 @@ import (
 //	presentation-02 — migrations are applied BEFORE the subcommand runs, so the
 //	                  subcommand already sees the migrated schema.
 //
-// Both are pinned by one test: Run() is driven against a fresh, *un-migrated*
-// temp SQLite DB with a `seed` subcommand whose seeder probes for the `users`
-// table. If the probe finds the table, RunUp must have executed before the
-// subcommand body ran — which is exactly the ordering application.go promises
-// (RunUp -> rootCmd.Execute). Reorder or delete the RunUp call and the probe
-// runs against an empty DB and the test fails.
+// Both are pinned by one test: Run() is driven with a `seed` subcommand whose
+// seeder and the migrator write into one shared call log. If the log reads
+// [migrate seed], RunUp executed before the subcommand body ran — which is
+// exactly the ordering application.go promises (RunUp -> rootCmd.Execute).
+// Reorder or delete the RunUp call and the log comes out wrong.
 //
-// Deliberately does NOT use testfx.New: that fixture migrates the DB itself,
-// which would make a "Run migrated it" assertion vacuous. Here the manager is
-// built raw and Run() is responsible for the first (and only) RunUp.
+// The migrator is a stand-in on purpose: what is under test is Run's ordering,
+// not the migration set (every testfx fixture applies that on the active
+// adapter), and a stand-in keeps this test independent of any database.
 // ---------------------------------------------------------------------------
 
-// migrationProbeSeeder stands in for the real seeder. It runs as the body of
-// the `seed` subcommand and records whether the `users` table (created by the
-// init migration) is present at the moment the subcommand executes.
-type migrationProbeSeeder struct {
-	db                   *sqlite.Manager
-	called               bool
-	usersTablePresent    bool
-	usersTableQueryError error
+// callLog records the order in which the migrator and the subcommand ran.
+type callLog []string
+
+// recordingMigrator stands in for the adapter's migrator: it logs the call and
+// returns err.
+type recordingMigrator struct {
+	log *callLog
+	err error
 }
 
-func (s *migrationProbeSeeder) Seed(ctx context.Context) error {
-	s.called = true
-	var n int
-	// sqlite_master lists every table; the init migration creates `users`.
-	s.usersTableQueryError = s.db.DB().GetContext(
-		ctx, &n,
-		"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='users'",
-	)
-	s.usersTablePresent = n == 1
+func (m recordingMigrator) RunUp() error {
+	*m.log = append(*m.log, "migrate")
+	return m.err
+}
+
+// probeSeeder stands in for the real seeder and runs as the body of the `seed`
+// subcommand.
+type probeSeeder struct{ log *callLog }
+
+func (s probeSeeder) Seed(context.Context) error {
+	*s.log = append(*s.log, "seed")
 	return nil
 }
 
-func TestApplicationRun_MigratesBeforeSubcommand(t *testing.T) {
-	// No t.Parallel: this test mutates the process-global os.Args (so cobra
-	// parses our args instead of the test binary's flags), which is racy in
-	// parallel.
-
-	dbPath := filepath.Join(t.TempDir(), "app-lifecycle.db")
-	manager, err := sqlite.NewManager(&config.Config{DBPath: dbPath})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = manager.Close() })
-
-	// Sanity: the freshly opened DB must NOT have the schema yet. If it did,
-	// the post-Run assertion below would pass even if RunUp never ran, making
-	// the test a tautology. Prove the precondition explicitly.
-	var before int
-	if err := manager.DB().GetContext(
-		context.Background(), &before,
-		"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='users'",
-	); err != nil {
-		t.Fatalf("precondition query: %v", err)
-	}
-	if before != 0 {
-		t.Fatalf(
-			"precondition: users table already exists before Run (got %d), test would be vacuous",
-			before,
-		)
-	}
-
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	migrations := sqlite.NewMigrator(manager, logger)
-
-	probe := &migrationProbeSeeder{db: manager}
-	// seed now dispatches through the SystemCommandBus; a minimal one (just
-	// TransactionMiddleware) suffices to run the probe inside a unit of work for
-	// this migration-ordering test. The others are nil because .Command() builds
-	// the cobra tree without dereferencing their deps (mirrors
-	// TestRootCommand_RegistersSubcommands in console).
-	sysBus := bus.NewSystemCommandBus(busmw.TransactionMiddleware(manager))
+// newSeedApplication builds an Application whose only live subcommand is `seed`
+// and points os.Args at it. The other commands are nil-wired: .Command() builds
+// the cobra tree without dereferencing their deps (mirrors
+// TestRootCommand_RegistersSubcommands in console).
+func newSeedApplication(t *testing.T, log *callLog, migrateErr error) *Application {
+	t.Helper()
 	rootCmd := console.NewRootCommand(
 		console.NewServeCommand(nil, nil, nil),
-		console.NewSeedCommand(probe, sysBus),
+		// seed dispatches through the SystemCommandBus; a bare one runs the probe.
+		console.NewSeedCommand(probeSeeder{log: log}, bus.NewSystemCommandBus()),
 		console.NewCreateUserCommand(nil, nil, nil, nil, nil),
 		console.NewCreateSuperAdminCommand(nil, nil),
 		console.NewCreateTenantCommand(nil, nil),
 		console.NewWorkerCommand(nil),
 	)
-
-	application := NewApplication(rootCmd, migrations)
 
 	// RootCommand.Execute -> cobra ExecuteContext, which (lacking SetArgs on the
 	// unexported cmd) falls back to os.Args. Point it at the seed subcommand so
@@ -113,74 +76,44 @@ func TestApplicationRun_MigratesBeforeSubcommand(t *testing.T) {
 	os.Args = []string{"app", "seed"}
 	t.Cleanup(func() { os.Args = origArgs })
 
+	return NewApplication(rootCmd, recordingMigrator{log: log, err: migrateErr})
+}
+
+func TestApplicationRun_MigratesBeforeSubcommand(t *testing.T) {
+	// No t.Parallel: this test mutates the process-global os.Args (so cobra
+	// parses our args instead of the test binary's flags), which is racy in
+	// parallel.
+	var log callLog
+	application := newSeedApplication(t, &log, nil)
+
 	if err := application.Run(context.Background()); err != nil {
 		t.Fatalf("Application.Run: %v", err)
 	}
 
-	// presentation-02: the subcommand actually ran (Run reached Execute after
-	// RunUp returned nil).
-	if !probe.called {
-		t.Fatal("seed subcommand did not run; Run did not reach rootCmd.Execute")
-	}
-	if probe.usersTableQueryError != nil {
-		t.Fatalf("probe query inside subcommand failed: %v", probe.usersTableQueryError)
-	}
-	// overview-09 + presentation-02: migrations had already created the schema
-	// at the moment the subcommand body executed.
-	if !probe.usersTablePresent {
-		t.Fatal(
-			"users table absent when subcommand ran: Run did not apply migrations before the subcommand",
-		)
+	// overview-09 + presentation-02: migrations ran, then the subcommand ran.
+	if want := (callLog{"migrate", "seed"}); !slices.Equal(log, want) {
+		t.Fatalf("call order: got %v want %v — Run must migrate before the subcommand", log, want)
 	}
 }
 
-// TestApplicationRun_PropagatesMigrationFailure pins the ordering from the other
+// TestApplicationRun_StopsWhenMigrationFails pins the ordering from the other
 // side: when RunUp fails, Run must return that error and must NOT proceed to the
-// subcommand. A DSN with an invalid journal mode makes the migrator's
-// RunUp target a manager whose pool errors — but more robustly, we force RunUp
-// to fail by closing the underlying DB before Run, then assert the subcommand
-// never executed. This is the `if err := RunUp(); err != nil { return err }`
-// guard at application.go:25-27.
+// subcommand. This is the `if err := RunUp(); err != nil { return err }` guard in
+// application.go.
 func TestApplicationRun_StopsWhenMigrationFails(t *testing.T) {
 	// No t.Parallel — os.Args (see test above).
-
-	dbPath := filepath.Join(t.TempDir(), "app-fail.db")
-	manager, err := sqlite.NewManager(&config.Config{DBPath: dbPath})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	migrations := sqlite.NewMigrator(manager, logger)
-
-	probe := &migrationProbeSeeder{db: manager}
-	rootCmd := console.NewRootCommand(
-		console.NewServeCommand(nil, nil, nil),
-		console.NewSeedCommand(probe, nil), // seed never runs (migration fails first)
-		console.NewCreateUserCommand(nil, nil, nil, nil, nil),
-		console.NewCreateSuperAdminCommand(nil, nil),
-		console.NewCreateTenantCommand(nil, nil),
-		console.NewWorkerCommand(nil),
-	)
-	application := NewApplication(rootCmd, migrations)
-
-	origArgs := os.Args
-	os.Args = []string{"app", "seed"}
-	t.Cleanup(func() { os.Args = origArgs })
-
-	// Close the pool so goose's RunUp errors out. Run must surface that error
-	// and skip the subcommand.
-	if err := manager.Close(); err != nil {
-		t.Fatalf("close: %v", err)
-	}
+	migrateErr := errors.New("migrations failed")
+	var log callLog
+	application := newSeedApplication(t, &log, migrateErr)
 
 	runErr := application.Run(context.Background())
-	if runErr == nil {
-		t.Fatal(
-			"Run returned nil even though migrations could not run; the RunUp error guard is missing",
+	if !errors.Is(runErr, migrateErr) {
+		t.Fatalf(
+			"Run returned %v, want the migration error; the RunUp error guard is missing",
+			runErr,
 		)
 	}
-	if probe.called {
+	if slices.Contains(log, "seed") {
 		t.Fatal(
 			"subcommand ran despite a migration failure; Run did not short-circuit on RunUp error",
 		)

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -21,7 +20,7 @@ import (
 // APP_COOKIE_SECURE -> cookie.Secure mapping in both directions.
 func newAuthHandlerSecure(t *testing.T, secure bool) (*AuthHandler, *testfx.Fixture) {
 	t.Helper()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "auth_secure_http.db"))
+	fx := testfx.New(t)
 	cmdBus, _, _ := fx.NewBuses()
 
 	registry := shared.NewPermissionsRegistry([]shared.Permissioned{
@@ -42,7 +41,7 @@ func newAuthHandlerSecure(t *testing.T, secure bool) (*AuthHandler, *testfx.Fixt
 
 func newAdminUsersHandler(t *testing.T) (*AdminUsersHandler, *testfx.Fixture) {
 	t.Helper()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "admin_users_http.db"))
+	fx := testfx.New(t)
 	cmdBus, qryBus, _ := fx.NewBuses()
 
 	h := NewAdminUsersHandler(testResponder(),

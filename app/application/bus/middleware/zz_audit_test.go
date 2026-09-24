@@ -4,7 +4,7 @@
 // itself imports gokick/app/application/bus/middleware — importing testfx from
 // an in-package (white-box) test file would create an import cycle. An external
 // test package breaks the cycle while still exercising the exported middleware
-// against a real SQLite database. Helpers that the in-package tests keep
+// against a real database. Helpers that the in-package tests keep
 // unexported (silent logger, audit stubs, marker commands) are redeclared here
 // with test-local names.
 package middleware_test
@@ -25,7 +25,6 @@ import (
 	mw "gokick/app/application/bus/middleware"
 	"gokick/app/domain/shared"
 	"gokick/app/domain/user"
-	sqliteaudit "gokick/app/infrastructure/sqlite/audit"
 	"gokick/app/internal/testfx"
 )
 
@@ -47,21 +46,19 @@ type plainCmd struct{}
 //
 // The existing TestAuditMiddleware_FlushesEvenOnHandlerError proves the
 // middleware DRAINS on error, but it uses a stub AuditLogger and no real DB,
-// so it cannot prove the audit row actually lands in SQLite while the business
-// write is rolled back. This wires the REAL production ordering —
-// AuditMiddleware(outer) -> TransactionMiddleware(inner) -> handler — against a
-// real sqlite.Manager, and asserts the business row is gone but the audit_log
+// so it cannot prove the audit row actually lands in the database while the
+// business write is rolled back. This wires the REAL production ordering —
+// AuditMiddleware(outer) -> TransactionMiddleware(inner) -> handler — against the
+// fixture's real Transactor and AuditLogger, and asserts the business row is gone but the audit_log
 // row is physically present.
 // ---------------------------------------------------------------------------
 func TestAuditMiddleware_PersistsAcrossBusinessRollback(t *testing.T) {
 	// Not t.Parallel: testfx-backed tests are kept serial by convention for now. (The original reason — goose's process-global
 	// state — is gone since migrations run through a goose Provider; enabling
-	// t.Parallel for DB tests is a separate step of the Postgres plan, phase 2.)
-	fx := testfx.New(t, t.TempDir()+"/audit_rollback.db")
-	auditRepo := sqliteaudit.NewRepository(fx.DB) // real raw-pool AuditLogger
-
-	audit := mw.AuditMiddleware(quietLogger(), auditRepo)
-	txmw := mw.TransactionMiddleware(fx.DB)
+	// t.Parallel for DB tests is an optional later step of the Postgres plan.)
+	fx := testfx.New(t)
+	audit := mw.AuditMiddleware(quietLogger(), fx.Audit) // real raw-pool AuditLogger
+	txmw := mw.TransactionMiddleware(fx.Tx)
 
 	const action = "auth.login.failed"
 	const nickname = "rollbackvictim"
@@ -85,12 +82,12 @@ func TestAuditMiddleware_PersistsAcrossBusinessRollback(t *testing.T) {
 	}
 
 	// Business row rolled back.
-	if got := countRows(t, fx, `SELECT COUNT(*) FROM users WHERE nickname = ?`, nickname); got != 0 {
+	if got := fx.Count(t, "users", "nickname = ?", nickname); got != 0 {
 		t.Fatalf("business row must have rolled back, found %d users named %q", got, nickname)
 	}
 
 	// Audit row survived the rollback (raw pool, outside the tx).
-	if got := countRows(t, fx, `SELECT COUNT(*) FROM audit_log WHERE action = ?`, action); got != 1 {
+	if got := fx.Count(t, "audit_log", "action = ?", action); got != 1 {
 		t.Fatalf(
 			"audit row must survive business rollback, found %d rows for action %q",
 			got,
@@ -248,7 +245,7 @@ func TestAuditMiddleware_FlushUsesDetachedContext(t *testing.T) {
 // ---------------------------------------------------------------------------
 func TestDispatchEventsMiddleware_AfterCommitSideEffectWithRealDB(t *testing.T) {
 	// Not t.Parallel — see note in TestAuditMiddleware_PersistsAcrossBusinessRollback.
-	fx := testfx.New(t, t.TempDir()+"/events_commit.db")
+	fx := testfx.New(t)
 	logger := quietLogger()
 
 	run := func(t *testing.T, nickname string, handlerErr error) (fired bool, rowVisible bool) {
@@ -263,7 +260,7 @@ func TestDispatchEventsMiddleware_AfterCommitSideEffectWithRealDB(t *testing.T) 
 		})
 
 		dispatch := mw.DispatchEventsMiddleware(logger, eventBus)
-		txmw := mw.TransactionMiddleware(fx.DB)
+		txmw := mw.TransactionMiddleware(fx.Tx)
 
 		_, _ = dispatch(
 			context.Background(),
@@ -278,7 +275,7 @@ func TestDispatchEventsMiddleware_AfterCommitSideEffectWithRealDB(t *testing.T) 
 			},
 		)
 
-		visible := countRows(t, fx, `SELECT COUNT(*) FROM users WHERE nickname = ?`, nickname) == 1
+		visible := fx.Count(t, "users", "nickname = ?", nickname) == 1
 		return dispatched, visible
 	}
 
@@ -330,15 +327,6 @@ func seedUserInTx(t *testing.T, fx *testfx.Fixture, ctx context.Context, nicknam
 	if err := fx.Users.Save(ctx, user.NewUser(nn, hash, em, r, shared.DefaultTenantID)); err != nil {
 		t.Fatalf("save user in tx: %v", err)
 	}
-}
-
-func countRows(t *testing.T, fx *testfx.Fixture, query string, args ...any) int {
-	t.Helper()
-	var n int
-	if err := fx.DB.DB().GetContext(context.Background(), &n, query, args...); err != nil {
-		t.Fatalf("count query %q: %v", query, err)
-	}
-	return n
 }
 
 // collatingAudit records per-TargetID counts plus a mismatch tally (records

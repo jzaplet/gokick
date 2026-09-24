@@ -3,7 +3,6 @@ package command
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -27,7 +26,7 @@ import (
 // (the 5th no longer locks).
 func TestLoginHandler_LocksOnFifthNotFourthFailure(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "zz_lock_boundary.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "tess", "correct-pw", "user")
 
 	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
@@ -91,7 +90,7 @@ func TestLoginHandler_LockedAndWrongPasswordReturnIdenticalError(t *testing.T) {
 
 	// --- Branch A: known user, WRONG password (account not locked). ---
 	wrongPwMsg := func() string {
-		fx := testfx.New(t, filepath.Join(t.TempDir(), "zz_oracle_wrongpw.db"))
+		fx := testfx.New(t)
 		fx.SeedUser(t, "ulla", "correct-pw", "user")
 		handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
 
@@ -105,7 +104,7 @@ func TestLoginHandler_LockedAndWrongPasswordReturnIdenticalError(t *testing.T) {
 
 	// --- Branch B: known user, CORRECT password, but account is LOCKED. ---
 	lockedMsg := func() string {
-		fx := testfx.New(t, filepath.Join(t.TempDir(), "zz_oracle_locked.db"))
+		fx := testfx.New(t)
 		fx.SeedUser(t, "ulla", "correct-pw", "user")
 		handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
 

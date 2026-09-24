@@ -2,7 +2,6 @@ package user_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -16,7 +15,7 @@ import (
 // then be able to read a tenant-B user by id — the cross-tenant leak the finding
 // exists to close.
 func TestUserRepository_FindScopedByID_IsTenantScoped(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "read_one_scoped.db"))
+	fx := testfx.New(t)
 
 	tenantA := fx.SeedTenant(t, "Acme")
 	tenantB := fx.SeedTenant(t, "Globex")
@@ -49,7 +48,7 @@ func TestUserRepository_FindScopedByID_IsTenantScoped(t *testing.T) {
 // tenant — the same escalation guard FindAll/Update/Delete carry (role !=
 // 'superadmin'). A tenant admin must never load a platform account by id.
 func TestUserRepository_FindScopedByID_ExcludesSuperadmin(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "read_one_superadmin.db"))
+	fx := testfx.New(t)
 
 	super := fx.SeedUserInTenant(t, "root", "superadmin", shared.DefaultTenantID)
 	alice := fx.SeedUserInTenant(t, "alice", "admin", shared.DefaultTenantID)
@@ -74,7 +73,7 @@ func TestUserRepository_FindScopedByID_ExcludesSuperadmin(t *testing.T) {
 // Not-found is (nil, nil) — the repository idiom the application handler turns
 // into a 400. An unknown id must not error.
 func TestUserRepository_FindScopedByID_NotFoundIsNilNil(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "read_one_missing.db"))
+	fx := testfx.New(t)
 	ctx := shared.ContextWithTenantID(context.Background(), shared.DefaultTenantID)
 
 	got, err := fx.Users.FindScopedByID(ctx, "01931234-0000-0000-0000-000000000000")
@@ -90,7 +89,7 @@ func TestUserRepository_FindScopedByID_NotFoundIsNilNil(t *testing.T) {
 // INVERSE — FindByIDAcrossTenants reads a user in ANY tenant, joined to its
 // tenant name, regardless of the tenant in context.
 func TestUserRepository_FindByIDAcrossTenants_ReadsAnyTenant(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "read_one_platform.db"))
+	fx := testfx.New(t)
 
 	tenantA := fx.SeedTenant(t, "Acme")
 	tenantB := fx.SeedTenant(t, "Globex")

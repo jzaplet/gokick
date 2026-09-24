@@ -3,7 +3,6 @@ package user_test
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -18,7 +17,7 @@ import (
 // neither SEE, MODIFY, nor DELETE a superadmin, even one sharing its tenant.
 func TestUserRepository_AdminCannotTouchSuperadminInSameTenant(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "superadmin_guard.db"))
+	fx := testfx.New(t)
 
 	// A superadmin and a regular admin, both in the default tenant.
 	super := fx.SeedUserInTenant(t, "root", "superadmin", shared.DefaultTenantID)

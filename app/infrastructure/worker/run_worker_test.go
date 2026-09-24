@@ -74,10 +74,7 @@ func findW(t *testing.T, fx *testfx.Fixture, id string) *run.Run {
 
 func forceExpireW(t *testing.T, fx *testfx.Fixture, id string) {
 	t.Helper()
-	if _, err := fx.DB.DB().ExecContext(context.Background(),
-		`UPDATE runs SET locked_until = strftime('%Y-%m-%d %H:%M:%f','now','-1 hour') WHERE id = ?`, id); err != nil {
-		t.Fatalf("force-expire: %v", err)
-	}
+	fx.ForceExpireLease(t, id)
 }
 
 // stealLeaseW atomically reassigns a run's lease to newOwner with a fresh future
@@ -87,11 +84,7 @@ func forceExpireW(t *testing.T, fx *testfx.Fixture, id string) {
 // next owner-checked write then matches zero rows (locked_by no longer matches).
 func stealLeaseW(t *testing.T, fx *testfx.Fixture, id, newOwner string) {
 	t.Helper()
-	if _, err := fx.DB.DB().ExecContext(context.Background(),
-		`UPDATE runs SET locked_by = ?, locked_until = strftime('%Y-%m-%d %H:%M:%f','now','+1 hour') WHERE id = ?`,
-		newOwner, id); err != nil {
-		t.Fatalf("steal lease: %v", err)
-	}
+	fx.StealLease(t, id, newOwner)
 }
 
 // startWorker runs w in the background and returns a stop func that cancels it
@@ -119,7 +112,7 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 // ─── Happy path ───────────────────────────────────────────────────────────────
 
 func TestRunWorker_Success_CompletesAndCheckpoints(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_success.db")
+	fx := testfx.New(t)
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		return ck.Save(ctx, []byte(`{"done":true}`))
 	}
@@ -147,7 +140,7 @@ func TestRunWorker_Success_CompletesAndCheckpoints(t *testing.T) {
 }
 
 func TestRunWorker_ResumesFromCheckpoint(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_resume.db")
+	fx := testfx.New(t)
 	var seen atomic.Value
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		seen.Store(string(r.State))
@@ -180,7 +173,7 @@ func TestRunWorker_ResumesFromCheckpoint(t *testing.T) {
 // ─── Failure / retry ──────────────────────────────────────────────────────────
 
 func TestRunWorker_Failure_NoRetries_MarksFailed(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_fail.db")
+	fx := testfx.New(t)
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		return errors.New("boom")
 	}
@@ -208,7 +201,7 @@ func TestRunWorker_Failure_NoRetries_MarksFailed(t *testing.T) {
 }
 
 func TestRunWorker_Failure_WithRetries_Reschedules(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_retry.db")
+	fx := testfx.New(t)
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		return errors.New("transient")
 	}
@@ -244,7 +237,7 @@ func TestRunWorker_Failure_WithRetries_Reschedules(t *testing.T) {
 // ─── Cancel ───────────────────────────────────────────────────────────────────
 
 func TestRunWorker_CancelAtClaim_MarksCancelled(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_cancel_claim.db")
+	fx := testfx.New(t)
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		<-ctx.Done() // ctx-aware: stop when cancelled
 		return ctx.Err()
@@ -276,7 +269,7 @@ func TestRunWorker_CancelAtClaim_MarksCancelled(t *testing.T) {
 }
 
 func TestRunWorker_CancelDuringRun_MarksCancelled(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_cancel_run.db")
+	fx := testfx.New(t)
 	started := make(chan struct{})
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		close(started)
@@ -306,7 +299,7 @@ func TestRunWorker_CancelDuringRun_MarksCancelled(t *testing.T) {
 // ─── Poison / reclaim ─────────────────────────────────────────────────────────
 
 func TestRunWorker_PoisonReclaim_FailsWithoutRunningHandler(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_poison.db")
+	fx := testfx.New(t)
 	var ran atomic.Bool
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		ran.Store(true)
@@ -321,10 +314,7 @@ func TestRunWorker_PoisonReclaim_FailsWithoutRunningHandler(t *testing.T) {
 	)
 	r := enqueueRunW(t, fx, "agent", 3)
 	// Simulate a poison run: it has already been reclaimed past the cap.
-	if _, err := fx.DB.DB().ExecContext(context.Background(),
-		`UPDATE runs SET reclaims = ? WHERE id = ?`, cfg.MaxReclaims+1, r.ID); err != nil {
-		t.Fatalf("set reclaims: %v", err)
-	}
+	fx.SetRunReclaims(t, r.ID, cfg.MaxReclaims+1)
 
 	stop := startWorker(w)
 	defer stop()
@@ -343,7 +333,7 @@ func TestRunWorker_PoisonReclaim_FailsWithoutRunningHandler(t *testing.T) {
 // ─── Lease loss ───────────────────────────────────────────────────────────────
 
 func TestRunWorker_LeaseLost_Abandons(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_leaselost.db")
+	fx := testfx.New(t)
 	started := make(chan struct{})
 	returned := make(chan struct{})
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
@@ -387,7 +377,7 @@ func TestRunWorker_LeaseLost_Abandons(t *testing.T) {
 // ─── Backpressure ─────────────────────────────────────────────────────────────
 
 func TestRunWorker_Backpressure_CapsInFlight(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_backpressure.db")
+	fx := testfx.New(t)
 	var inFlight, peak atomic.Int32
 	release := make(chan struct{})
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
@@ -431,7 +421,7 @@ func TestRunWorker_Backpressure_CapsInFlight(t *testing.T) {
 // ─── Graceful shutdown ────────────────────────────────────────────────────────
 
 func TestRunWorker_Shutdown_AbandonsInFlightForReclaim(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_shutdown.db")
+	fx := testfx.New(t)
 	started := make(chan struct{})
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		close(started)
@@ -465,7 +455,7 @@ func TestRunWorker_Shutdown_AbandonsInFlightForReclaim(t *testing.T) {
 // ─── Panic ────────────────────────────────────────────────────────────────────
 
 func TestRunWorker_HandlerPanic_DoesNotCrashPool_FailsRun(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_panic.db")
+	fx := testfx.New(t)
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		panic("kaboom")
 	}
@@ -496,7 +486,7 @@ func TestRunWorker_HandlerPanic_DoesNotCrashPool_FailsRun(t *testing.T) {
 // with checkpointed state is discarded just because an old binary (no handler)
 // claimed it. The park budget (minUnknownKindParks) is independent of max_retries.
 func TestRunWorker_UnknownKind_RunOnce_ParksNotFailed(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_unknown_park.db")
+	fx := testfx.New(t)
 	// Registry has "known" but the enqueued run is "ghost".
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error { return nil }
 	w, _ := newRunWorker(
@@ -525,7 +515,7 @@ func TestRunWorker_UnknownKind_RunOnce_ParksNotFailed(t *testing.T) {
 // terminally. Pre-setting attempts to the budget exercises the terminal path
 // without waiting out minUnknownKindParks exponential backoffs.
 func TestRunWorker_UnknownKind_ExhaustedBudget_Fails(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_unknown_fail.db")
+	fx := testfx.New(t)
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error { return nil }
 	w, _ := newRunWorker(
 		t,
@@ -534,10 +524,7 @@ func TestRunWorker_UnknownKind_ExhaustedBudget_Fails(t *testing.T) {
 		fastCfg(),
 	)
 	r := enqueueRunW(t, fx, "ghost", 0)
-	if _, err := fx.DB.DB().ExecContext(context.Background(),
-		`UPDATE runs SET parks = ? WHERE id = ?`, minUnknownKindParks, r.ID); err != nil {
-		t.Fatalf("pre-bump parks: %v", err)
-	}
+	fx.SetRunParks(t, r.ID, minUnknownKindParks)
 
 	stop := startWorker(w)
 	defer stop()
@@ -553,7 +540,7 @@ func TestRunWorker_UnknownKind_ExhaustedBudget_Fails(t *testing.T) {
 // once a handler-bearing binary runs it, still get its full max_retries — its first
 // failure reschedules, it is not terminal-failed.
 func TestRunWorker_ParkingDoesNotConsumeRetryBudget(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_park_budget.db")
+	fx := testfx.New(t)
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		return errors.New("transient")
 	}
@@ -564,10 +551,7 @@ func TestRunWorker_ParkingDoesNotConsumeRetryBudget(t *testing.T) {
 		fastCfg(),
 	)
 	r := enqueueRunW(t, fx, "agent", 2) // 2 logic retries
-	if _, err := fx.DB.DB().ExecContext(context.Background(),
-		`UPDATE runs SET parks = ? WHERE id = ?`, minUnknownKindParks, r.ID); err != nil {
-		t.Fatalf("pre-set parks: %v", err)
-	}
+	fx.SetRunParks(t, r.ID, minUnknownKindParks)
 
 	stop := startWorker(w)
 	defer stop()
@@ -590,7 +574,7 @@ func TestRunWorker_ParkingDoesNotConsumeRetryBudget(t *testing.T) {
 // returns the silent no-op and the enqueue vanishes. Here a parent handler enqueues a
 // child run and we prove the child row actually lands and runs.
 func TestRunWorker_HandlerCanEnqueueChildRun(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_enqueue_child.db")
+	fx := testfx.New(t)
 	childRan := make(chan struct{}, 1)
 	parent := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		return shared.RunDispatcherFromContext(ctx).
@@ -635,7 +619,7 @@ func TestRunWorker_HandlerCanEnqueueChildRun(t *testing.T) {
 // saw the wrong tenant would query another tenant's data (the multitenant-agent
 // correctness this whole engine exists for).
 func TestRunWorker_RestoresRunTenantIntoHandlerContext(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_tenant.db")
+	fx := testfx.New(t)
 	seenCh := make(chan string, 1) // channel receive → happens-before the read (race-safe)
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		seenCh <- shared.TenantIDFromContext(ctx)
@@ -648,19 +632,20 @@ func TestRunWorker_RestoresRunTenantIntoHandlerContext(t *testing.T) {
 		fastCfg(),
 	)
 
+	tenantID := fx.SeedTenant(t, "acme").ID
 	r, _ := run.NewRun("agent", []byte(`{}`), 0)
-	r.TenantID = "tenant-A"
+	r.TenantID = tenantID
 	if err := fx.Runs.Enqueue(context.Background(), r); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 
 	stop := startWorker(w)
 	defer stop()
-	if seen := <-seenCh; seen != "tenant-A" {
+	if seen := <-seenCh; seen != tenantID {
 		t.Fatalf(
 			"handler ctx tenant = %q, want %q — the run worker must restore the run's tenant",
 			seen,
-			"tenant-A",
+			tenantID,
 		)
 	}
 }
@@ -670,10 +655,10 @@ func TestRunWorker_RestoresRunTenantIntoHandlerContext(t *testing.T) {
 // transaction would hold the global SQLite write lock for the run's lifetime and
 // freeze every other write. End-to-end proof the marker reaches the handler ctx.
 func TestRunWorker_HandlerCannotOpenTransaction(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_notx.db")
+	fx := testfx.New(t)
 	beginErr := make(chan error, 1)
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
-		_, err := fx.DB.BeginTx(ctx) // fx.DB is the sqlite.Manager (shared.Transactor)
+		_, err := fx.Tx.BeginTx(ctx)
 		beginErr <- err
 		return nil
 	}
@@ -700,7 +685,7 @@ func TestRunWorker_HandlerCannotOpenTransaction(t *testing.T) {
 // them through a real reclaim — the claim -> poison-check -> re-lease -> resume ->
 // complete path on a run with Reclaims>=1, which no other test drives to completion.
 func TestRunWorker_ResumesAfterReclaim_Completes(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_resume_reclaim.db")
+	fx := testfx.New(t)
 	ctx := context.Background()
 
 	// Simulate a prior worker: claim (reclaims stays 0, lease was NULL), checkpoint

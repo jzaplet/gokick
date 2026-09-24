@@ -3,7 +3,6 @@ package command
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -20,7 +19,7 @@ import (
 // locked_until back from SQLite proves the constant flows through to the DB.
 func TestLoginHandler_LockDurationIs15Minutes(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "zz_lock_duration.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "zoe", "correct-pw", "user")
 
 	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
@@ -90,7 +89,7 @@ func TestLoginHandler_AlwaysVerifiesOnUnknownAndLockedBranches(t *testing.T) {
 
 	// --- Unknown user (u == nil) ---
 	t.Run("unknown user", func(t *testing.T) {
-		fx := testfx.New(t, filepath.Join(t.TempDir(), "zz_verify_unknown.db"))
+		fx := testfx.New(t)
 		spy := &countingHasher{verifyErr: errors.New("mismatch")}
 		handler := NewLoginHandler(fx.Users, fx.Tokens, spy, fx.Jwt)
 
@@ -106,7 +105,7 @@ func TestLoginHandler_AlwaysVerifiesOnUnknownAndLockedBranches(t *testing.T) {
 
 	// --- Locked account, correct password ---
 	t.Run("locked account", func(t *testing.T) {
-		fx := testfx.New(t, filepath.Join(t.TempDir(), "zz_verify_locked.db"))
+		fx := testfx.New(t)
 		u := fx.SeedUser(t, "lara", "correct-pw", "user")
 
 		// Lock the account directly via the repository (the handler under
@@ -149,7 +148,7 @@ func TestLoginHandler_AlwaysVerifiesOnUnknownAndLockedBranches(t *testing.T) {
 // is the specific gap this test fills.
 func TestLoginHandler_BlockedWhileLockedHasNoMetadata(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "zz_blocked_no_meta.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "quinn", "correct-pw", "user")
 
 	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
@@ -186,7 +185,7 @@ func TestLoginHandler_BlockedWhileLockedHasNoMetadata(t *testing.T) {
 // event (== 1) and never inspects the locked_until metadata payload.
 func TestLoginHandler_AccountLockedEventCarriesLockedUntilMetadata(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "zz_locked_meta.db"))
+	fx := testfx.New(t)
 	fx.SeedUser(t, "rosa", "correct-pw", "user")
 
 	auditCtx, collector := shared.ContextWithAuditCollector(ctx)
@@ -266,7 +265,7 @@ func (r *raceTokenRepo) DeleteExpired(context.Context) error { return nil }
 // so MarkUsed deterministically reports the race.
 func TestRefreshTokenHandler_ConcurrentRotationRaceRecordsTheftAudit(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "zz_race_theft.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "sven", "pwd", "user")
 
 	// A token that is unused (UsedAt == nil) and unexpired so the handler

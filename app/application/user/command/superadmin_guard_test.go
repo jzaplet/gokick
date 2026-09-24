@@ -3,7 +3,6 @@ package command
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -18,7 +17,7 @@ import (
 // tests: it guards the role-ASSIGNMENT surface, not the role-CHECK surface.
 
 func TestCreateUserHandler_RejectsSuperadminRole(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_super.db"))
+	fx := testfx.New(t)
 	ctx, _ := shared.ContextWithEventCollector(context.Background())
 
 	h := NewCreateUserHandler(fx.Users, fx.Hasher, false)
@@ -45,7 +44,7 @@ func TestUpdateUserHandler_RejectsPromotionToSuperadmin(t *testing.T) {
 		context.Background(),
 		&shared.AuthClaims{UserID: "admin-actor", Role: "admin"},
 	)
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "update_super.db"))
+	fx := testfx.New(t)
 
 	victim := fx.SeedUser(t, "bob", "password12", "user")
 

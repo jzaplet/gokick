@@ -2,7 +2,6 @@ package tenant_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -16,7 +15,7 @@ import (
 // shape the product reuses to SUM the tenant_usage ledger.
 func TestTenantRepository_OverviewPage_CountsAcrossTenants(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_overview.db"))
+	fx := testfx.New(t)
 
 	tenantA := fx.SeedTenant(t, "Acme")
 	tenantB := fx.SeedTenant(t, "Globex")

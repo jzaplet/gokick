@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"gokick/app/domain/shared"
-	"gokick/app/internal/testfx"
+	"gokick/app/internal/testfx/jwtfx"
 )
 
 func TestResolveRequestLang(t *testing.T) {
@@ -132,7 +132,7 @@ func TestLangMiddlewareStampsContext(t *testing.T) {
 // keep pinning the full recovered path, with a users.lang claim AND an
 // explicit header in play.
 func TestPanicBodyIsStaticKey(t *testing.T) {
-	jwt := testfx.NewJwt(t, 15*time.Minute)
+	jwt := jwtfx.New(t, 15*time.Minute)
 	token, _, err := jwt.GenerateAccessToken(&shared.AuthClaims{
 		UserID: "u-1", Role: "user", Nickname: "alice", Lang: "cs",
 	})

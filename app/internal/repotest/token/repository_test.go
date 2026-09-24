@@ -2,7 +2,6 @@ package token_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -17,7 +16,7 @@ import (
 // and the handler revokes the session.
 func TestMarkUsed_AtomicallyMarksTokenUsedOnce(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "mark_used_guard.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "pwd", "user")
 	raw := fx.SeedRefreshToken(t, u.ID, time.Now().Add(time.Hour))
 	hash := fx.HashToken(raw)
@@ -41,7 +40,7 @@ func TestMarkUsed_AtomicallyMarksTokenUsedOnce(t *testing.T) {
 
 func TestMarkUsed_UnknownHashReturnsFalse(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "mark_used_unknown.db"))
+	fx := testfx.New(t)
 
 	marked, err := fx.Tokens.MarkUsed(ctx, "not-a-real-hash")
 	if err != nil {

@@ -22,9 +22,6 @@ excludeFiles:
   # External `_test` package self-imports the production package for
   # NewSeeder / SeedAdminPassword — arch-lint flags this as a cycle.
   - infrastructure/seeder/seeder_test.go
-  # Same self-import quirk: audit/repository_test.go is `package audit_test`
-  # importing the audit package to construct *Repository directly.
-  - infrastructure/sqlite/audit/repository_test.go
   # Same self-import quirk: manager_test.go is `package sqlite_test` importing
   # the sqlite package to drive *sqlite.Manager from a black-box test.
   - infrastructure/sqlite/manager_test.go
@@ -90,6 +87,10 @@ components:
   # Fixtures may wire real infrastructure — production code can import them from *_test.go files only.
   testfx:
     in: '**/testfx/**'
+  # Repository contract tests: written once against the domain ports, run on
+  # whichever adapter the test run targets (APP_DB_DRIVER). Test files only.
+  repotest:
+    in: internal/repotest/**
 
   # Layer 3: Infrastructure
   config:
@@ -147,7 +148,6 @@ deps:
       - bus
       - database
       - security
-      - sqlite_base
       - console
 
   # Domain — pure core. Each bounded context may use domain_shared (common)
@@ -194,13 +194,23 @@ deps:
       - database
       - security
       - config
+      - persistence
       - sqlite_base
-      - sqlite_repos
       - domain_user
       - domain_token
       - domain_tenant
       - domain_run
     anyVendorDeps: true
+
+  # Repository contract tests — only the ports and the fixture, never an adapter.
+  repotest:
+    mayDependOn:
+      - testfx
+      - database
+      - domain_user
+      - domain_token
+      - domain_tenant
+      - domain_run
 
   # Infrastructure — depends on domain
   config:
@@ -217,11 +227,11 @@ deps:
       - database
       - config
       - migrations
+      - testfx
   sqlite_repos:
     mayDependOn:
       - sqlite_base
       - database
-      - testfx
       - domain_user
       - domain_token
       - domain_tenant

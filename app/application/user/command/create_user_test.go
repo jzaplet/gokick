@@ -3,7 +3,6 @@ package command
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -16,7 +15,7 @@ import (
 // default tenant. Through the bus, TenantMiddleware always supplies the tenant, so
 // this only fires on a genuine bug.
 func TestCreateUserHandler_Multitenant_NoTenantInCtx_FailsClosed(t *testing.T) {
-	fx := testfx.NewMultitenant(t, filepath.Join(t.TempDir(), "create_mt_notenant.db"))
+	fx := testfx.NewMultitenant(t)
 	h := NewCreateUserHandler(fx.Users, fx.Hasher, true)
 
 	err := h.Handle(context.Background(), CreateUserCommand{
@@ -30,17 +29,13 @@ func TestCreateUserHandler_Multitenant_NoTenantInCtx_FailsClosed(t *testing.T) {
 
 	// Nothing persisted (the resolve fails before NewUser/Save). Raw count — a
 	// tenant-scoped read would panic without a tenant in ctx.
-	var n int
-	if e := fx.DB.DB().Get(&n, `SELECT COUNT(*) FROM users WHERE nickname = 'alice'`); e != nil {
-		t.Fatalf("count: %v", e)
-	}
-	if n != 0 {
+	if n := fx.Count(t, "users", "nickname = ?", "alice"); n != 0 {
 		t.Fatalf("no user must be persisted on fail-closed, got %d", n)
 	}
 }
 
 func TestCreateUserHandler_Success(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_success.db"))
+	fx := testfx.New(t)
 	ctx, collector := shared.ContextWithEventCollector(context.Background())
 
 	h := NewCreateUserHandler(fx.Users, fx.Hasher, false)
@@ -87,7 +82,7 @@ func TestCreateUserHandler_Success(t *testing.T) {
 }
 
 func TestCreateUserHandler_DuplicateNickname(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_dup.db"))
+	fx := testfx.New(t)
 	fx.SeedUser(t, "alice", "existing", "user")
 
 	ctx, collector := shared.ContextWithEventCollector(context.Background())
@@ -113,7 +108,7 @@ func TestCreateUserHandler_DuplicateNickname(t *testing.T) {
 }
 
 func TestCreateUserHandler_EmptyNickname(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_empty_nick.db"))
+	fx := testfx.New(t)
 
 	h := NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	err := h.Handle(context.Background(), CreateUserCommand{
@@ -133,7 +128,7 @@ func TestCreateUserHandler_EmptyNickname(t *testing.T) {
 }
 
 func TestCreateUserHandler_InvalidRole(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_invalid_role.db"))
+	fx := testfx.New(t)
 
 	h := NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	err := h.Handle(context.Background(), CreateUserCommand{
@@ -153,7 +148,7 @@ func TestCreateUserHandler_InvalidRole(t *testing.T) {
 }
 
 func TestCreateUserHandler_EmptyPassword(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_empty_pwd.db"))
+	fx := testfx.New(t)
 
 	h := NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	err := h.Handle(context.Background(), CreateUserCommand{
@@ -174,7 +169,7 @@ func TestCreateUserHandler_EmptyPassword(t *testing.T) {
 
 func TestCreateUserHandler_OptionalEmail(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_optional_email.db"))
+	fx := testfx.New(t)
 
 	h := NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	err := h.Handle(ctx, CreateUserCommand{
@@ -200,7 +195,7 @@ func TestCreateUserHandler_OptionalEmail(t *testing.T) {
 }
 
 func TestCreateUserHandler_InvalidEmail(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_invalid_email.db"))
+	fx := testfx.New(t)
 
 	h := NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	err := h.Handle(context.Background(), CreateUserCommand{
@@ -230,7 +225,7 @@ func TestCreateUserCommand_RequiredPermission(t *testing.T) {
 // not always the default. Without the stamp, every admin-created user would land
 // in the default tenant, a cross-tenant isolation gap once provisioning exists.
 func TestCreateUserHandler_StampsCallerTenant(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_caller_tenant.db"))
+	fx := testfx.New(t)
 	tenantB := fx.SeedTenant(t, "Beta")
 
 	ctx, _ := shared.ContextWithEventCollector(context.Background())
@@ -265,7 +260,7 @@ func TestCreateUserHandler_StampsCallerTenant(t *testing.T) {
 // Invoked outside the bus (the CLI create-user), there is no tenant in ctx; the
 // user must fall back to the default tenant, not an empty (FK-violating) value.
 func TestCreateUserHandler_DefaultsTenantWithoutContext(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_default_tenant.db"))
+	fx := testfx.New(t)
 
 	ctx, _ := shared.ContextWithEventCollector(context.Background())
 

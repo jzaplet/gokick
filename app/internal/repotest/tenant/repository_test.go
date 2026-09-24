@@ -2,7 +2,6 @@ package tenant_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -11,7 +10,7 @@ import (
 
 func TestTenantRepository_SaveAndFindByID(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_repo.db"))
+	fx := testfx.New(t)
 
 	tn := fx.SeedTenant(t, "Acme")
 
@@ -25,7 +24,7 @@ func TestTenantRepository_SaveAndFindByID(t *testing.T) {
 }
 
 func TestTenantRepository_FindByID_NotFound_ReturnsNilNil(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_notfound.db"))
+	fx := testfx.New(t)
 
 	got, err := fx.Tenants.FindByID(context.Background(), "does-not-exist")
 	if err != nil {
@@ -39,7 +38,7 @@ func TestTenantRepository_FindByID_NotFound_ReturnsNilNil(t *testing.T) {
 // The bootstrap "Default" tenant created by migration is findable via the repo;
 // its id is shared.DefaultTenantID.
 func TestTenantRepository_BootstrapDefaultFound(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_bootstrap.db"))
+	fx := testfx.New(t)
 
 	got, err := fx.Tenants.FindByID(context.Background(), shared.DefaultTenantID)
 	if err != nil {

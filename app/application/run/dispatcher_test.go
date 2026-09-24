@@ -2,7 +2,6 @@ package run
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -30,7 +29,7 @@ func newRegistry(t *testing.T, kinds ...string) *HandlerRegistry {
 }
 
 func TestDispatcher_EnqueueRegisteredKind(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "run_dispatch_ok.db"))
+	fx := testfx.New(t)
 	d := NewDispatcher(fx.Runs, newRegistry(t, "agent:summarize"))
 
 	payload := map[string]any{"doc_id": "d1", "lang": "cs"}
@@ -51,7 +50,7 @@ func TestDispatcher_EnqueueRegisteredKind(t *testing.T) {
 }
 
 func TestDispatcher_EnqueueUnknownKindFails(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "run_dispatch_unknown.db"))
+	fx := testfx.New(t)
 	d := NewDispatcher(fx.Runs, newRegistry(t, "known:kind"))
 
 	err := d.Enqueue(context.Background(), "unknown:kind", 0, nil)
@@ -75,7 +74,7 @@ func TestDispatcher_EnqueueUnknownKindFails(t *testing.T) {
 // maxRetries must be >= 0 — callers cannot rely on a default, and negative values
 // would mean "skip even the first attempt", which is nonsensical.
 func TestDispatcher_EnqueueRejectsNegativeMaxRetries(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "run_dispatch_negative.db"))
+	fx := testfx.New(t)
 	d := NewDispatcher(fx.Runs, newRegistry(t, "any:kind"))
 
 	for _, n := range []int{-1, -100} {
@@ -97,7 +96,7 @@ func TestDispatcher_EnqueueRejectsNegativeMaxRetries(t *testing.T) {
 // WithDelay sets RunAt in the future — claim must return nil immediately and only
 // pick the run up after the delay elapses.
 func TestDispatcher_WithDelay_NotClaimableBeforeRunAt(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "run_dispatch_delay.db"))
+	fx := testfx.New(t)
 	d := NewDispatcher(fx.Runs, newRegistry(t, "delayed:kind"))
 
 	if err := d.Enqueue(context.Background(), "delayed:kind", 0, nil, shared.WithDelay(800*time.Millisecond)); err != nil {
@@ -132,11 +131,12 @@ func TestDispatcher_WithDelay_NotClaimableBeforeRunAt(t *testing.T) {
 // explicit tenant must land on the row; a context with none falls back to the
 // default tenant (never an empty string, which would override the column DEFAULT).
 func TestDispatcher_StampsTenantFromContext(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "run_dispatch_tenant.db"))
+	fx := testfx.New(t)
 	d := NewDispatcher(fx.Runs, newRegistry(t, "scoped:kind", "unscoped:kind"))
 
 	// Explicit tenant in ctx → stamped onto the run.
-	tenantCtx := shared.ContextWithTenantID(context.Background(), "tenant-x")
+	tenantID := fx.SeedTenant(t, "acme").ID
+	tenantCtx := shared.ContextWithTenantID(context.Background(), tenantID)
 	if err := d.Enqueue(tenantCtx, "scoped:kind", 0, nil); err != nil {
 		t.Fatalf("enqueue scoped: %v", err)
 	}
@@ -144,8 +144,8 @@ func TestDispatcher_StampsTenantFromContext(t *testing.T) {
 	if err != nil || got == nil {
 		t.Fatalf("expected scoped run, got %v err=%v", got, err)
 	}
-	if got.TenantID != "tenant-x" {
-		t.Fatalf("tenant: got %q want tenant-x", got.TenantID)
+	if got.TenantID != tenantID {
+		t.Fatalf("tenant: got %q want %q", got.TenantID, tenantID)
 	}
 
 	// No tenant in ctx → falls back to the default tenant, not "".
@@ -218,7 +218,7 @@ func TestRegistry_RejectsImplausiblySmallKindLease(t *testing.T) {
 // wrapped "marshal payload" error AND persist no row — the validation between a
 // caller and a corrupt/empty run.
 func TestDispatcher_EnqueueMarshalErrorFails(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "run_dispatch_marshal.db"))
+	fx := testfx.New(t)
 	d := NewDispatcher(fx.Runs, newRegistry(t, "agent"))
 
 	err := d.Enqueue(context.Background(), "agent", 0, make(chan int))

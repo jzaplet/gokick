@@ -3,7 +3,6 @@ package user_test
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -14,7 +13,7 @@ import (
 // scoped to tenant A returns ONLY tenant A's users, never B's. Uses arbitrary
 // tenants (not the default) so it proves real isolation rather than a tautology.
 func TestUserRepository_FindAll_IsolatesByTenant(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_isolation.db"))
+	fx := testfx.New(t)
 
 	tenantA := fx.SeedTenant(t, "Acme")
 	tenantB := fx.SeedTenant(t, "Globex")
@@ -51,7 +50,7 @@ func TestUserRepository_FindAll_IsolatesByTenant(t *testing.T) {
 // Without this, a regressed Update/Delete (WHERE id only) would leak silently.
 func TestUserRepository_UpdateDelete_IsolateByTenant(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "write_isolation.db"))
+	fx := testfx.New(t)
 
 	tenantA := fx.SeedTenant(t, "Acme")
 	tenantB := fx.SeedTenant(t, "Globex")
@@ -84,7 +83,7 @@ func TestUserRepository_UpdateDelete_IsolateByTenant(t *testing.T) {
 // panics rather than silently scoping to the default tenant (a cross-tenant
 // leak). This is the guard the APP_MULTITENANCY flag exists for.
 func TestUserRepository_FailsClosedOnMissingTenant(t *testing.T) {
-	fx := testfx.NewMultitenant(t, filepath.Join(t.TempDir(), "fail_closed.db"))
+	fx := testfx.NewMultitenant(t)
 
 	defer func() {
 		if recover() == nil {
@@ -98,7 +97,7 @@ func TestUserRepository_FailsClosedOnMissingTenant(t *testing.T) {
 // falls back to the default tenant — no panic — so a single-tenant deployment
 // runs unchanged.
 func TestUserRepository_FailsOpenToDefaultTenant(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "fail_open.db"))
+	fx := testfx.New(t)
 	fx.SeedUserInTenant(t, "solo", "admin", shared.DefaultTenantID)
 
 	users, err := fx.Users.FindAll(context.Background())

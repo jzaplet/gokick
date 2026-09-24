@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -78,8 +77,8 @@ func TestCreateUserCommand_FlagSpec(t *testing.T) {
 func TestCreateUserCommand_MissingRequiredFlagErrors(t *testing.T) {
 	// No t.Parallel: testfx-backed tests are kept serial by convention for now. (The original reason — goose's process-global
 	// state — is gone since migrations run through a goose Provider; enabling
-	// t.Parallel for DB tests is a separate step of the Postgres plan, phase 2.)
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "console.db"))
+	// t.Parallel for DB tests is an optional later step of the Postgres plan.)
+	fx := testfx.New(t)
 	handler := usercmd.NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	cmd := NewCreateUserCommand(handler, nil, nil, &config.Config{}, fx.NewSystemBus()).Command()
 	cmd.SilenceUsage = true
@@ -103,7 +102,7 @@ func TestCreateUserCommand_MissingRequiredFlagErrors(t *testing.T) {
 
 func TestCreateUserCommand_DefaultsRoleToAdmin(t *testing.T) {
 	// No t.Parallel — see TestCreateUserCommand_MissingRequiredFlagErrors.
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "console.db"))
+	fx := testfx.New(t)
 	handler := usercmd.NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	cmd := NewCreateUserCommand(handler, nil, nil, &config.Config{}, fx.NewSystemBus()).Command()
 	cmd.SilenceUsage = true
@@ -128,7 +127,7 @@ func TestCreateUserCommand_DefaultsRoleToAdmin(t *testing.T) {
 
 func TestCreateUserCommand_RoleFlagCreatesUserRole(t *testing.T) {
 	// No t.Parallel — see TestCreateUserCommand_MissingRequiredFlagErrors.
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "console.db"))
+	fx := testfx.New(t)
 	handler := usercmd.NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	cmd := NewCreateUserCommand(handler, nil, nil, &config.Config{}, fx.NewSystemBus()).Command()
 	cmd.SilenceUsage = true
@@ -208,7 +207,7 @@ func (s *recordingSeeder) Seed(ctx context.Context) error {
 func TestSeedCommand_DelegatesToSeederWithContext(t *testing.T) {
 	// No t.Parallel — see TestCreateUserCommand_MissingRequiredFlagErrors. The
 	// system bus's TransactionMiddleware needs a real DB to BeginTx.
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "seed_delegate.db"))
+	fx := testfx.New(t)
 
 	seeder := &recordingSeeder{}
 	cmd := NewSeedCommand(seeder, fx.NewSystemBus()).Command()
@@ -256,7 +255,7 @@ func newTestRunWorker(t *testing.T, fx *testfx.Fixture) *worker.RunWorker {
 
 func TestWorkerCommand_RunDrainsOnContextCancel(t *testing.T) {
 	// No t.Parallel — see TestCreateUserCommand_MissingRequiredFlagErrors.
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "console.db"))
+	fx := testfx.New(t)
 	cmd := NewWorkerCommand(newTestRunWorker(t, fx)).Command()
 	cmd.SilenceUsage = true
 

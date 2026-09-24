@@ -8,8 +8,9 @@ package domain_test
 // Why a hand-rolled parser walk rather than leaning on go-arch-lint: the
 // presentation layer is *allowed* to depend on infrastructure in the matrix
 // (presentation -> infrastructure is a legal edge), so arch-lint does NOT block
-// a handler from reaching directly into infrastructure/sqlite or
-// infrastructure/security. And the only application "event" package lives at
+// a handler from reaching directly into a database adapter
+// (infrastructure/sqlite, infrastructure/postgres, or infrastructure/persistence,
+// which opens them) or infrastructure/security. And the only application "event" package lives at
 // application/user/event, which is covered by the application/** glob the
 // handler may already use — so arch-lint does not catch a handler importing it
 // either (closing that hole would require adding a dedicated `event` component,
@@ -40,10 +41,22 @@ import (
 // are the packages whose presence in a handler import set means the presentation
 // layer has bypassed the bus / domain-interface contract.
 const (
-	infraSqliteRoot   = "gokick/app/infrastructure/sqlite"
 	infraSecurityRoot = "gokick/app/infrastructure/security"
 	applicationPrefix = "gokick/app/application/"
 )
+
+// infraDatabaseRoots are the database adapters and the package that opens them —
+// every one a concrete implementation behind the repository ports.
+var infraDatabaseRoots = []string{
+	"gokick/app/infrastructure/sqlite",
+	"gokick/app/infrastructure/postgres",
+	"gokick/app/infrastructure/persistence",
+}
+
+// underRoot reports whether importPath is root or a package beneath it.
+func underRoot(importPath, root string) bool {
+	return importPath == root || strings.HasPrefix(importPath, root+"/")
+}
 
 // handlerDir resolves the absolute path to app/presentation/http/handler from
 // this test file's location (app/domain/), independent of the working
@@ -83,15 +96,18 @@ func isEventPackage(importPath string) bool {
 }
 
 // forbiddenHandlerImport encodes the overview-41 rule: a handler import is
-// forbidden iff it targets the sqlite repository root, the security
-// (crypto/JWT) root, or an application event package. Everything else
+// forbidden iff it targets a database adapter (or the persistence package that
+// opens one), the security (crypto/JWT) root, or an application event package. Everything else
 // (application command/query packages, the bus, domain packages, the response
 // and request presentation packages, stdlib) is permitted.
 func forbiddenHandlerImport(importPath string) bool {
+	for _, root := range infraDatabaseRoots {
+		if underRoot(importPath, root) {
+			return true
+		}
+	}
 	switch {
-	case importPath == infraSqliteRoot || strings.HasPrefix(importPath, infraSqliteRoot+"/"):
-		return true
-	case importPath == infraSecurityRoot || strings.HasPrefix(importPath, infraSecurityRoot+"/"):
+	case underRoot(importPath, infraSecurityRoot):
 		return true
 	case isEventPackage(importPath):
 		return true
@@ -136,7 +152,8 @@ func collectHandlerImports(t *testing.T) map[string][]string {
 }
 
 // TestHandlersDoNotImportSqliteSecurityOrEvent is the core guard for
-// overview-41: no handler source file may import infrastructure/sqlite,
+// overview-41: no handler source file may import a database adapter
+// (infrastructure/sqlite, infrastructure/postgres, infrastructure/persistence),
 // infrastructure/security, or an application/**/event/** package.
 //
 // It includes two anti-vacuity controls so a broken walk cannot pass green
@@ -176,7 +193,7 @@ func TestHandlersDoNotImportSqliteSecurityOrEvent(t *testing.T) {
 		for _, imp := range imps {
 			if forbiddenHandlerImport(imp) {
 				t.Errorf(
-					"handler file %s imports forbidden package %q: HTTP handlers must not reach into sqlite, security, or application event packages — go through the bus / domain interfaces instead",
+					"handler file %s imports forbidden package %q: HTTP handlers must not reach into a database adapter, security, or application event packages — go through the bus / domain interfaces instead",
 					file,
 					imp,
 				)
@@ -201,6 +218,9 @@ func TestForbiddenHandlerImportClassification(t *testing.T) {
 		{"gokick/app/infrastructure/sqlite", true},
 		{"gokick/app/infrastructure/sqlite/user", true},
 		{"gokick/app/infrastructure/sqlite/audit", true},
+		{"gokick/app/infrastructure/postgres", true},
+		{"gokick/app/infrastructure/postgres/run", true},
+		{"gokick/app/infrastructure/persistence", true},
 		{"gokick/app/infrastructure/security", true},
 		{"gokick/app/application/user/event", true},
 		// Allowed: application command/query, the bus, domain, presentation helpers, stdlib.

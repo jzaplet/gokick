@@ -3,7 +3,6 @@ package command
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -12,7 +11,7 @@ import (
 
 func TestChangePasswordHandler_Success(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "pwd_success.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "old-password", "user")
 
 	authCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{
@@ -50,7 +49,7 @@ func TestChangePasswordHandler_Success(t *testing.T) {
 // self-scoped UpdatePassword (WHERE id=?, no role filter) makes it work.
 func TestChangePasswordHandler_SuperadminCanChangeOwnPassword(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "pwd_superadmin.db"))
+	fx := testfx.New(t)
 	su := fx.SeedUser(t, "root", "old-password", "superadmin")
 
 	authCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{
@@ -79,7 +78,7 @@ func TestChangePasswordHandler_SuperadminCanChangeOwnPassword(t *testing.T) {
 
 func TestChangePasswordHandler_WrongOldPassword(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "pwd_wrong_old.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "real-password", "user")
 	originalHash := u.PasswordHash
 
@@ -107,7 +106,7 @@ func TestChangePasswordHandler_WrongOldPassword(t *testing.T) {
 
 func TestChangePasswordHandler_WithoutClaimsReturnsAuthError(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "pwd_noauth.db"))
+	fx := testfx.New(t)
 
 	handler := NewChangePasswordHandler(fx.Users, fx.Hasher)
 	err := handler.Handle(ctx, ChangePasswordCommand{OldPassword: "x", NewPassword: "y"})
@@ -121,7 +120,7 @@ func TestChangePasswordHandler_WithoutClaimsReturnsAuthError(t *testing.T) {
 func TestChangePasswordHandler_UnknownUser(t *testing.T) {
 	// Claims reference a user ID that doesn't exist in DB (e.g. user deleted after token issued).
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "pwd_unknown.db"))
+	fx := testfx.New(t)
 
 	authCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{
 		UserID: "00000000-0000-0000-0000-000000000000", Role: "user", Nickname: "ghost",
@@ -138,7 +137,7 @@ func TestChangePasswordHandler_UnknownUser(t *testing.T) {
 
 func TestChangePasswordHandler_InvalidNewPassword(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "pwd_invalid_new.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "old-password", "user")
 	originalHash := u.PasswordHash
 

@@ -1,9 +1,6 @@
 package token_test
 
 import (
-	"context"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -18,21 +15,20 @@ import (
 // duplicate token_hash would let two sessions collide on the same lookup key
 // (FindByHash keys on token_hash). This test pins both constraints
 // BEHAVIOURALLY against the real migrated refresh_tokens table — a direct
-// INSERT that violates either must be rejected by SQLite.
+// INSERT that violates either must be rejected by the database.
 //
-// Why behavioural (raw INSERT) rather than scraping PRAGMA table_info: a
-// PRAGMA string-match would merely restate the DDL (a change-detector). An
+// Why behavioural (raw INSERT) rather than scraping the catalog: a schema
+// string-match would merely restate the DDL (a change-detector). An
 // INSERT that the engine actually refuses proves the constraint is enforced,
 // and falsifies the exact mutation that would weaken it:
 //   - drop NOT NULL on user_id  -> the NULL-user_id INSERT would succeed.
 //   - drop UNIQUE on token_hash -> the duplicate-hash INSERT would succeed.
 //
 // The cascade half of infra-db-security-11 (and infra-db-security-13) is
-// already pinned by TestManager_RefreshTokensCascadeOnUserDelete in
-// app/infrastructure/database; it is deliberately not duplicated here.
+// already pinned by TestRefreshTokens_CascadeOnUserDelete (cascade_test.go); it
+// is deliberately not duplicated here.
 func TestRefreshTokensSchema_EnforcesUserIDNotNullAndHashUnique(t *testing.T) {
-	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "refresh_tokens_constraints.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "pwd", "user")
 
 	const insert = `INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, created_at)
@@ -44,7 +40,7 @@ func TestRefreshTokensSchema_EnforcesUserIDNotNullAndHashUnique(t *testing.T) {
 	// broken (bad column, missing table), the "rejected" assertions would be
 	// satisfied spuriously. A green baseline proves the only thing failing the
 	// negative cases is the constraint under test.
-	if _, err := fx.DB.DB().ExecContext(ctx, insert,
+	if _, err := fx.RawExec(insert,
 		uuid.New().String(), u.ID, "baseline-hash", future, time.Now()); err != nil {
 		t.Fatalf("baseline well-formed insert must succeed: %v", err)
 	}
@@ -53,31 +49,31 @@ func TestRefreshTokensSchema_EnforcesUserIDNotNullAndHashUnique(t *testing.T) {
 		name      string
 		userID    any    // any so we can pass a real nil for the NULL case
 		tokenHash string // "baseline-hash" re-used triggers the UNIQUE clash
-		wantErr   string // substring expected (upper-cased) in the constraint error
+		want      testfx.Constraint
 	}{
 		{
 			name:      "user_id NULL is rejected (NOT NULL)",
 			userID:    nil,
 			tokenHash: "null-user-hash",
-			wantErr:   "NOT NULL",
+			want:      testfx.NotNull,
 		},
 		{
 			name:      "duplicate token_hash is rejected (UNIQUE)",
 			userID:    u.ID,
 			tokenHash: "baseline-hash", // same hash as the baseline row above
-			wantErr:   "UNIQUE",
+			want:      testfx.Unique,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := fx.DB.DB().ExecContext(ctx, insert,
+			_, err := fx.RawExec(insert,
 				uuid.New().String(), tc.userID, tc.tokenHash, future, time.Now())
 			if err == nil {
-				t.Fatalf("expected %s constraint violation, got nil error", tc.wantErr)
+				t.Fatalf("expected %s constraint violation, got nil error", tc.want)
 			}
-			if !strings.Contains(strings.ToUpper(err.Error()), tc.wantErr) {
-				t.Fatalf("expected %s constraint error, got: %v", tc.wantErr, err)
+			if got := fx.Violated(err); got != tc.want {
+				t.Fatalf("expected %s constraint error, got %q: %v", tc.want, got, err)
 			}
 		})
 	}

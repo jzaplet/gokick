@@ -3,7 +3,6 @@ package query
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -12,7 +11,7 @@ import (
 
 func TestGetProfileHandler_Success(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "profile_success.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "pwd", "user")
 
 	authCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{
@@ -38,7 +37,7 @@ func TestGetProfileHandler_Success(t *testing.T) {
 
 func TestGetProfileHandler_WithoutClaimsReturnsAuthError(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "profile_noauth.db"))
+	fx := testfx.New(t)
 
 	handler := NewGetProfileHandler(fx.Users)
 	_, err := handler.Handle(ctx, GetProfileQuery{})
@@ -55,7 +54,7 @@ func TestGetProfileHandler_UnknownUser(t *testing.T) {
 	// subject to AuthError → 401 (client clears its session and re-logs), instead
 	// of the pre-F-011 bogus 400 {"id":"user not found"} shown to a valid JWT.
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "profile_unknown.db"))
+	fx := testfx.New(t)
 
 	authCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{
 		UserID: "00000000-0000-0000-0000-000000000000", Role: "user", Nickname: "ghost",

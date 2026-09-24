@@ -3,7 +3,6 @@ package command
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -16,7 +15,7 @@ import (
 // would get wrong.
 func TestCreatePlatformUser_CreatesInTheChosenTenant(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.NewMultitenant(t, filepath.Join(t.TempDir(), "pcreate_chosen.db"))
+	fx := testfx.NewMultitenant(t)
 
 	target := fx.SeedTenant(t, "Beta")
 
@@ -51,7 +50,7 @@ func TestCreatePlatformUser_CreatesInTheChosenTenant(t *testing.T) {
 // violation would produce (users.tenant_id REFERENCES tenants(id)).
 func TestCreatePlatformUser_UnknownTenantIsAFieldError(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.NewMultitenant(t, filepath.Join(t.TempDir(), "pcreate_badtenant.db"))
+	fx := testfx.NewMultitenant(t)
 
 	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher)
 	err := h.Handle(ctx, CreatePlatformUserCommand{
@@ -87,14 +86,14 @@ func TestCreatePlatformUser_UnknownTenantIsAFieldError(t *testing.T) {
 func TestCreatePlatformUser_RequiresATenantInEitherMode(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		fx   func(*testing.T, string) *testfx.Fixture
+		fx   func(*testing.T) *testfx.Fixture
 	}{
 		{"multitenant", testfx.NewMultitenant},
 		{"single-tenant", testfx.New},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			fx := tc.fx(t, filepath.Join(t.TempDir(), "pcreate_notenant.db"))
+			fx := tc.fx(t)
 
 			h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher)
 			err := h.Handle(ctx, CreatePlatformUserCommand{
@@ -123,7 +122,7 @@ func TestCreatePlatformUser_RequiresATenantInEitherMode(t *testing.T) {
 // seeder are the only paths, by design.
 func TestCreatePlatformUser_RefusesTheSuperadminRole(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "pcreate_super.db"))
+	fx := testfx.New(t)
 
 	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher)
 	err := h.Handle(ctx, CreatePlatformUserCommand{
@@ -156,7 +155,7 @@ func TestCreatePlatformUser_RefusesTheSuperadminRole(t *testing.T) {
 // which is why the handler-level tests all passed while the feature was broken.
 func TestCreatePlatformUser_ThroughTheBus_WritesIntoAnotherTenant(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.NewMultitenant(t, filepath.Join(t.TempDir(), "pcreate_bus.db"))
+	fx := testfx.NewMultitenant(t)
 	cmdBus, _, _ := fx.NewBuses()
 
 	target := fx.SeedTenant(t, "Stark")
@@ -207,7 +206,7 @@ func TestCreatePlatformUser_ThroughTheBus_WritesIntoAnotherTenant(t *testing.T) 
 // silently, past the point any request error could surface it. The field is what
 // makes ctx the wrong place to look.
 func TestCreatePlatformUser_EventCarriesTheChosenTenant(t *testing.T) {
-	fx := testfx.NewMultitenant(t, filepath.Join(t.TempDir(), "pcreate_event.db"))
+	fx := testfx.NewMultitenant(t)
 
 	target := fx.SeedTenant(t, "Stark")
 
@@ -249,7 +248,7 @@ func TestCreatePlatformUser_EventCarriesTheChosenTenant(t *testing.T) {
 // widen Save for everyone.
 func TestCreateUser_AdminPlane_StillCannotCrossTenants(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.NewMultitenant(t, filepath.Join(t.TempDir(), "acreate_cross.db"))
+	fx := testfx.NewMultitenant(t)
 
 	other := fx.SeedTenant(t, "Victim Corp")
 
@@ -273,7 +272,7 @@ func TestCreateUser_AdminPlane_StillCannotCrossTenants(t *testing.T) {
 // deliberately unscoped identity lookup.
 func TestCreatePlatformUser_NicknameCollidesAcrossTenants(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.NewMultitenant(t, filepath.Join(t.TempDir(), "pcreate_collide.db"))
+	fx := testfx.NewMultitenant(t)
 
 	tenantA := fx.SeedTenant(t, "Alpha")
 	tenantB := fx.SeedTenant(t, "Beta")

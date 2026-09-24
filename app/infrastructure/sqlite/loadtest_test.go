@@ -1,4 +1,4 @@
-//go:build loadtest
+//go:build loadtest && !nosqlite
 
 // This file is gated behind the `loadtest` build tag, so it is EXCLUDED from
 // `make test`, `make lint` and arch-lint (none pass that tag). It is a kept,

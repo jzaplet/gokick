@@ -1,17 +1,15 @@
+//go:build !nosqlite
+
 package sqlite_test
 
 import (
 	"context"
-	"io"
-	"log/slog"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"gokick/app/infrastructure/config"
 	"gokick/app/infrastructure/sqlite"
-
-	"github.com/google/uuid"
 )
 
 // newManagerWithMode opens a sqlite.Manager with an explicit journal mode.
@@ -102,57 +100,6 @@ func TestManager_ForeignKeysEnabledPerConnection(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToUpper(err.Error()), "FOREIGN KEY") {
 		t.Fatalf("expected FOREIGN KEY constraint error, got: %v", err)
-	}
-}
-
-// TestManager_RefreshTokensCascadeOnUserDelete pins the migration's
-// ON DELETE CASCADE on refresh_tokens.user_id (claim infra-db-security-13).
-// It runs the real migrations, inserts a user + a refresh token referencing
-// it, deletes the user, and asserts the refresh_tokens row was cascade
-// deleted. Without ON DELETE CASCADE (or with FKs off) the orphan row would
-// survive and the count would be 1.
-func TestManager_RefreshTokensCascadeOnUserDelete(t *testing.T) {
-	mgr := newTestManager(t)
-	ctx := context.Background()
-
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	if err := sqlite.NewMigrator(mgr, logger).RunUp(); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-
-	userID := uuid.New().String()
-	if _, err := mgr.DB().ExecContext(ctx,
-		`INSERT INTO users (id, nickname, password_hash, role, tenant_id) VALUES (?, ?, ?, ?, ?)`,
-		userID, "cascadeuser", "hash", "user", "00000000-0000-0000-0000-000000000000",
-	); err != nil {
-		t.Fatalf("insert user: %v", err)
-	}
-
-	if _, err := mgr.DB().ExecContext(ctx,
-		`INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at) VALUES (?, ?, ?, datetime('now', '+1 hour'))`,
-		uuid.New().String(), userID, "tokenhash",
-	); err != nil {
-		t.Fatalf("insert refresh token: %v", err)
-	}
-
-	var before int
-	if err := mgr.DB().GetContext(ctx, &before, `SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ?`, userID); err != nil {
-		t.Fatalf("count before: %v", err)
-	}
-	if before != 1 {
-		t.Fatalf("precondition: expected 1 refresh token before delete, got %d", before)
-	}
-
-	if _, err := mgr.DB().ExecContext(ctx, `DELETE FROM users WHERE id = ?`, userID); err != nil {
-		t.Fatalf("delete user: %v", err)
-	}
-
-	var after int
-	if err := mgr.DB().GetContext(ctx, &after, `SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ?`, userID); err != nil {
-		t.Fatalf("count after: %v", err)
-	}
-	if after != 0 {
-		t.Fatalf("expected refresh_tokens cascade-deleted, got %d remaining", after)
 	}
 }
 

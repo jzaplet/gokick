@@ -3,7 +3,6 @@ package query
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -18,7 +17,7 @@ import (
 //   - an ADMIN identity is DENIED at the bus (PermissionError) — the handler
 //     never runs, so a tenant admin can never reach the cross-tenant view.
 func TestListAllUsers_SuperadminSeesAllTenants_AdminDenied(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "platform_users.db"))
+	fx := testfx.New(t)
 
 	tenantA := fx.SeedTenant(t, "Acme")
 	tenantB := fx.SeedTenant(t, "Globex")
@@ -69,7 +68,7 @@ func TestListAllUsers_SuperadminSeesAllTenants_AdminDenied(t *testing.T) {
 // tenants (and matches what the platform user list shows).
 func TestGetStats_CountsTenantsAndUsers(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "platform_stats.db"))
+	fx := testfx.New(t)
 
 	// Bootstrap "Default" tenant exists from migration; add two more → 3 tenants.
 	fx.SeedTenant(t, "Acme")

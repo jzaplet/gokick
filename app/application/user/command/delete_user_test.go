@@ -3,7 +3,6 @@ package command
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -18,7 +17,7 @@ func authedCtx(userID, role string) context.Context {
 }
 
 func TestDeleteUserHandler_Success(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "delete_success.db"))
+	fx := testfx.New(t)
 	admin := fx.SeedUser(t, "admin", "secret12", "admin")
 	target := fx.SeedUser(t, "bob", "secret12", "user")
 
@@ -38,7 +37,7 @@ func TestDeleteUserHandler_Success(t *testing.T) {
 }
 
 func TestDeleteUserHandler_CannotDeleteSelf(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "delete_self.db"))
+	fx := testfx.New(t)
 	admin := fx.SeedUser(t, "admin", "secret12", "admin")
 
 	ctx := authedCtx(admin.ID, "admin")
@@ -60,7 +59,7 @@ func TestDeleteUserHandler_CannotDeleteSelf(t *testing.T) {
 }
 
 func TestDeleteUserHandler_NotFound(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "delete_notfound.db"))
+	fx := testfx.New(t)
 	admin := fx.SeedUser(t, "admin", "secret12", "admin")
 
 	ctx := authedCtx(admin.ID, "admin")
@@ -81,7 +80,7 @@ func TestDeleteUserHandler_NotFound(t *testing.T) {
 // that was a silent 0-row no-op with a phantom user.deleted audit. The handler
 // now refuses up front with a PermissionError and the row survives.
 func TestDeleteUserHandler_RejectsSuperadminTarget(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "delete_superadmin_target.db"))
+	fx := testfx.New(t)
 	admin := fx.SeedUser(t, "admin", "secret12", "admin")
 	su := fx.SeedUser(t, "root", "secret12", "superadmin")
 
@@ -104,7 +103,7 @@ func TestDeleteUserHandler_RejectsSuperadminTarget(t *testing.T) {
 }
 
 func TestDeleteUserHandler_RequiresAuth(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "delete_noauth.db"))
+	fx := testfx.New(t)
 	target := fx.SeedUser(t, "bob", "secret12", "user")
 
 	h := NewDeleteUserHandler(fx.Users)

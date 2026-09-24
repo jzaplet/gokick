@@ -3,7 +3,6 @@ package command
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -19,7 +18,7 @@ func actorCtx(id string) context.Context {
 // Bulk delete by explicit ids removes the targets but NEVER the actor — the
 // single-delete self-protection, generalized to the bulk path.
 func TestBulkDeleteUsers_ByIDsExcludesActor(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "bulk_delete.db"))
+	fx := testfx.New(t)
 	root := fx.SeedUser(t, "root", "pwd", "admin")
 	alice := fx.SeedUser(t, "alice", "pwd", "user")
 	bob := fx.SeedUser(t, "bob", "pwd", "user")
@@ -44,7 +43,7 @@ func TestBulkDeleteUsers_ByIDsExcludesActor(t *testing.T) {
 // All-filtered mode deletes exactly what the filter set matches (and still
 // spares the actor even when the filters match them).
 func TestBulkDeleteUsers_AllFilteredHonorsFilters(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "bulk_delete_filtered.db"))
+	fx := testfx.New(t)
 	root := fx.SeedUser(t, "root", "pwd", "admin")
 	fx.SeedUser(t, "alice", "pwd", "user")
 	carol := fx.SeedUser(t, "carol", "pwd", "admin")
@@ -73,7 +72,7 @@ func TestBulkDeleteUsers_AllFilteredHonorsFilters(t *testing.T) {
 }
 
 func TestBulkDeleteUsers_EmptySelectionIsValidationError(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "bulk_delete_empty.db"))
+	fx := testfx.New(t)
 	root := fx.SeedUser(t, "root", "pwd", "admin")
 
 	h := NewBulkDeleteUsersHandler(fx.Users)
@@ -88,12 +87,10 @@ func TestBulkDeleteUsers_EmptySelectionIsValidationError(t *testing.T) {
 // Activate does NOT exclude the actor — activating yourself is safe, and
 // excluding the actor would make a self-activate a silent no-op.
 func TestBulkSetUsersActive_ActivateIncludesActor(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "bulk_self_activate.db"))
+	fx := testfx.New(t)
 	root := fx.SeedUser(t, "root", "pwd", "admin")
 
-	if _, err := fx.DB.DB().Exec(`UPDATE users SET active = 0 WHERE id = ?`, root.ID); err != nil {
-		t.Fatalf("deactivate root: %v", err)
-	}
+	fx.SetUserActive(t, root.ID, false)
 
 	h := NewBulkSetUsersActiveHandler(fx.Users)
 	affected, err := h.Handle(actorCtx(root.ID), BulkSetUsersActiveCommand{
@@ -119,7 +116,7 @@ func TestBulkSetUsersActive_ActivateIncludesActor(t *testing.T) {
 // An unrecognized active filter value on the destructive bulk path is a hard
 // error — otherwise a dropped condition silently widens the operation.
 func TestBulkDeleteUsers_InvalidActiveFilterIsRejected(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "bulk_invalid_active.db"))
+	fx := testfx.New(t)
 	root := fx.SeedUser(t, "root", "pwd", "admin")
 	fx.SeedUser(t, "alice", "pwd", "user")
 
@@ -146,7 +143,7 @@ func TestBulkDeleteUsers_InvalidActiveFilterIsRejected(t *testing.T) {
 // Deactivate by ids flips active only for the targets; the actor stays
 // untouched even when listed.
 func TestBulkSetUsersActive_DeactivatesTargetsNotActor(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "bulk_active.db"))
+	fx := testfx.New(t)
 	root := fx.SeedUser(t, "root", "pwd", "admin")
 	alice := fx.SeedUser(t, "alice", "pwd", "user")
 

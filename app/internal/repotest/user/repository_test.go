@@ -2,7 +2,6 @@ package user_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -15,15 +14,11 @@ import (
 // auth.account.locked audit. This fails against the old `RETURNING locked_until`.
 func TestRecordFailedLogin_ExpiredLockDoesNotReturnStale(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "lock_stale.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "secret12", "user")
 
 	// A lock that has since expired: locked_until in the past.
-	past := time.Now().Add(-time.Hour)
-	if _, err := fx.DB.DB().ExecContext(ctx,
-		`UPDATE users SET locked_until = ? WHERE id = ?`, past, u.ID); err != nil {
-		t.Fatalf("seed expired lock: %v", err)
-	}
+	fx.SetUserLockedUntil(t, u.ID, time.Now().Add(-time.Hour))
 
 	// One below-threshold failure → does NOT lock → must return nil, not the stale past.
 	locked, err := fx.Users.RecordFailedLogin(ctx, u.ID, 5, time.Minute, time.Hour)
@@ -40,7 +35,7 @@ func TestRecordFailedLogin_ExpiredLockDoesNotReturnStale(t *testing.T) {
 
 func TestRecordFailedLogin_IncrementsBelowThreshold(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "lock_inc.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "secret12", "user")
 
 	locked, err := fx.Users.RecordFailedLogin(ctx, u.ID, 5, time.Minute, time.Hour)
@@ -61,7 +56,7 @@ func TestRecordFailedLogin_IncrementsBelowThreshold(t *testing.T) {
 
 func TestRecordFailedLogin_LocksAtThreshold(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "lock_threshold.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "secret12", "user")
 
 	threshold := 3
@@ -97,7 +92,7 @@ func TestRecordFailedLogin_LocksAtThreshold(t *testing.T) {
 
 func TestRecordFailedLogin_ResetsCounterOutsideWindow(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "lock_window.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "secret12", "user")
 
 	// First failure with a tiny window so the next failure is "outside" it.
@@ -118,7 +113,7 @@ func TestRecordFailedLogin_ResetsCounterOutsideWindow(t *testing.T) {
 
 func TestResetFailedLogin_ClearsCounterAndLock(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "lock_reset.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "secret12", "user")
 
 	// Push to threshold so both counter and lock are populated, then reset.

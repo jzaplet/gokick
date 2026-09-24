@@ -3,7 +3,6 @@ package userwrite
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -56,7 +55,7 @@ func spec(t *testing.T, nickname, password, role string) CreateSpec {
 // pass with this guard deleted.
 func TestCreate_RefusesTheSuperAdminRole(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_superadmin_refused.db"))
+	fx := testfx.New(t)
 
 	u, err := Create(
 		ctx,
@@ -92,7 +91,7 @@ func TestCreate_RefusesTheSuperAdminRole(t *testing.T) {
 // already exists" and the two paths would disagree.
 func TestCreate_RefusesSuperAdminBeforeTheUniquenessLookup(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_superadmin_order.db"))
+	fx := testfx.New(t)
 
 	fx.SeedUser(t, "taken", "password123", "user")
 
@@ -120,7 +119,7 @@ func TestCreate_RefusesSuperAdminBeforeTheUniquenessLookup(t *testing.T) {
 // superadmin. This is how create_superadmin.go calls it.
 func TestCreateSuperAdmin_MintsDespiteCreatesRefusal(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_superadmin_minted.db"))
+	fx := testfx.New(t)
 
 	u, err := CreateSuperAdmin(
 		ctx,
@@ -155,7 +154,7 @@ func TestCreateSuperAdmin_MintsDespiteCreatesRefusal(t *testing.T) {
 // split exists to make unforgettable.
 func TestCreateSuperAdmin_RefusesASpecAskingForAnotherRole(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_superadmin_conflict.db"))
+	fx := testfx.New(t)
 
 	_, err := CreateSuperAdmin(
 		ctx,
@@ -184,7 +183,7 @@ func TestCreateSuperAdmin_RefusesASpecAskingForAnotherRole(t *testing.T) {
 // accepted — the refusal above is about a CONFLICT, not about mentioning the role.
 func TestCreateSuperAdmin_AcceptsAnExplicitSuperAdminRole(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_superadmin_explicit.db"))
+	fx := testfx.New(t)
 
 	u, err := CreateSuperAdmin(
 		ctx,

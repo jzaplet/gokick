@@ -2,7 +2,6 @@ package query
 
 import (
 	"context"
-	"path/filepath"
 	"slices"
 	"testing"
 
@@ -27,7 +26,7 @@ func superCtx() context.Context {
 // this test previously kept asserting a tenant-name fallback that no longer
 // existed: it passed either way and pinned nothing.
 func TestListAllUsers_GridCriteria(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "platform_users_grid.db"))
+	fx := testfx.New(t)
 	tenantA := fx.SeedTenant(t, "acme")
 	tenantB := fx.SeedTenant(t, "beta")
 	fx.SeedUserInTenant(t, "zoe", "admin", tenantA.ID)
@@ -64,7 +63,7 @@ func TestListAllUsers_GridCriteria(t *testing.T) {
 
 // The platform tenants grid: name filter + user-count sort + paging.
 func TestListTenants_GridCriteria(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "platform_tenants_grid.db"))
+	fx := testfx.New(t)
 	tenantA := fx.SeedTenant(t, "acme")
 	fx.SeedTenant(t, "beta")
 	fx.SeedUserInTenant(t, "alice", "admin", tenantA.ID)
@@ -89,21 +88,6 @@ func TestListTenants_GridCriteria(t *testing.T) {
 		t.Fatalf("name filter: got %+v", page.Items)
 	}
 
-	// Plan filter is an exact match — flip acme to a paid tier and expect only
-	// acme back (page AND total).
-	if _, err = fx.DB.DB().Exec(
-		`UPDATE tenants SET plan = 'pro' WHERE id = ?`, tenantA.ID,
-	); err != nil {
-		t.Fatalf("flip plan: %v", err)
-	}
-	page, err = h.Handle(superCtx(), ListTenantsQuery{Plan: "pro"})
-	if err != nil {
-		t.Fatalf("plan filter: %v", err)
-	}
-	if page.Total != 1 || page.Items[0].Name != "acme" || page.Items[0].Plan != "pro" {
-		t.Fatalf("plan filter: got %+v", page.Items)
-	}
-
 	// Name ASC sorts alphabetically in Czech collation, case-insensitively at
 	// the primary level: acme, beta, Default — NOT byte order, which would put
 	// the capital-D "Default" first. Page 2 of size 1 is therefore beta.
@@ -124,5 +108,16 @@ func TestListTenants_GridCriteria(t *testing.T) {
 	}
 	if page.Total != 3 || len(page.Items) != 1 || page.Items[0].Name != "beta" {
 		t.Fatalf("paging: got %+v", page.Items)
+	}
+
+	// Plan filter is an exact match — a paid-tier tenant beside the free ones, and
+	// only it comes back (page AND total).
+	fx.SeedTenantWithPlan(t, "gamma", "pro")
+	page, err = h.Handle(superCtx(), ListTenantsQuery{Plan: "pro"})
+	if err != nil {
+		t.Fatalf("plan filter: %v", err)
+	}
+	if page.Total != 1 || page.Items[0].Name != "gamma" || page.Items[0].Plan != "pro" {
+		t.Fatalf("plan filter: got %+v", page.Items)
 	}
 }

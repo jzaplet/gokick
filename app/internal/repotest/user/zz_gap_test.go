@@ -1,11 +1,10 @@
 package user_test
 
 import (
-	"context"
-	"path/filepath"
-	"strings"
 	"testing"
+	"time"
 
+	"gokick/app/domain/shared"
 	"gokick/app/internal/testfx"
 
 	"github.com/google/uuid"
@@ -25,8 +24,18 @@ import (
 func rawInsertUser(t *testing.T, fx *testfx.Fixture, nickname, role string) error {
 	t.Helper()
 	const q = `INSERT INTO users (id, nickname, password_hash, email, role, tenant_id, active, created_at, updated_at)
-		VALUES (?, ?, 'hash', 'e@example.com', ?, '00000000-0000-0000-0000-000000000000', 1, datetime('now'), datetime('now'))`
-	_, err := fx.DB.DB().ExecContext(context.Background(), q, uuid.New().String(), nickname, role)
+		VALUES (?, ?, 'hash', 'e@example.com', ?, ?, ?, ?, ?)`
+	now := time.Now().UTC()
+	_, err := fx.RawExec(
+		q,
+		uuid.NewString(),
+		nickname,
+		role,
+		shared.DefaultTenantID,
+		true,
+		now,
+		now,
+	)
 	return err
 }
 
@@ -37,7 +46,7 @@ func rawInsertUser(t *testing.T, fx *testfx.Fixture, nickname, role string) erro
 // and fail the test.
 func TestUsersTableConstraints(t *testing.T) {
 	t.Run("role CHECK rejects an unknown role", func(t *testing.T) {
-		fx := testfx.New(t, filepath.Join(t.TempDir(), "users_role_check.db"))
+		fx := testfx.New(t)
 
 		// Sanity: valid roles insert fine through the same path, so a failure
 		// below is the CHECK firing, not a broken INSERT. 'superadmin' is asserted
@@ -54,13 +63,13 @@ func TestUsersTableConstraints(t *testing.T) {
 		if err == nil {
 			t.Fatal("role CHECK must reject role='superhero'")
 		}
-		if !strings.Contains(strings.ToLower(err.Error()), "constraint") {
-			t.Fatalf("expected a constraint violation, got: %v", err)
+		if got := fx.Violated(err); got != testfx.Check {
+			t.Fatalf("expected a CHECK violation, got %q: %v", got, err)
 		}
 	})
 
 	t.Run("nickname UNIQUE rejects a duplicate", func(t *testing.T) {
-		fx := testfx.New(t, filepath.Join(t.TempDir(), "users_nick_unique.db"))
+		fx := testfx.New(t)
 
 		if err := rawInsertUser(t, fx, "dup", "user"); err != nil {
 			t.Fatalf("first insert should succeed: %v", err)
@@ -69,8 +78,8 @@ func TestUsersTableConstraints(t *testing.T) {
 		if err == nil {
 			t.Fatal("nickname UNIQUE must reject a duplicate nickname")
 		}
-		if !strings.Contains(strings.ToLower(err.Error()), "unique") {
-			t.Fatalf("expected a UNIQUE constraint violation, got: %v", err)
+		if got := fx.Violated(err); got != testfx.Unique {
+			t.Fatalf("expected a UNIQUE constraint violation, got %q: %v", got, err)
 		}
 	})
 }
