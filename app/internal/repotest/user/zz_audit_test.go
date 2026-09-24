@@ -2,7 +2,6 @@ package user_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -12,17 +11,18 @@ import (
 
 // These tests pin the raw-connection-pool behaviour of RecordFailedLogin and
 // ResetFailedLogin (claims app-events-audit-29, guide-auth-perm-37, roadmap-71):
-// both methods use r.DB.DB() (the pool) rather than r.Conn(ctx) (the tx-aware
-// connection), so their writes autocommit on a separate connection and SURVIVE
-// a rollback of whatever business transaction is in the caller's context.
+// both methods write on the pool rather than on the tx-aware connection, so their
+// writes autocommit on a separate connection and SURVIVE a rollback of whatever
+// business transaction is in the caller's context.
 //
-// The discriminator is cross-connection contention. With _txlock=immediate, an
-// open outer tx holds the write lock on connection A. The method, using the raw
-// pool, checks out connection B and contends for that lock — a synchronous call
-// blocks for the full 5s busy_timeout and fails with "database is locked"
-// (verified separately). So the only way to observe the write completing is to
-// run it concurrently and release the outer lock (via rollback) while it is
-// pending; the raw-pool write then autocommits independently of that rollback.
+// The discriminator is cross-connection contention. The open outer tx writes the
+// user row on connection A and so holds a lock the method's write needs — on
+// SQLite the database write lock (BEGIN IMMEDIATE), on Postgres the row lock. The
+// method, using the raw pool, checks out connection B and waits for that lock (a
+// synchronous call would wait out the lock timeout and fail). So the only way to
+// observe the write completing is to run it concurrently and release the outer
+// lock (via rollback) while it is pending; the raw-pool write then autocommits
+// independently of that rollback.
 //
 // If either method regressed to r.Conn(ctx) it would instead join the outer tx
 // and the write would vanish with the rollback (counter unchanged), failing
@@ -30,18 +30,18 @@ import (
 // raw-pool and tx-aware behave identically without a tx — which is why these
 // tests deliberately pass the tx-carrying context into the method under test.
 
-// beginWriteLockedTx opens a real transaction and forces its BEGIN IMMEDIATE
-// write lock to be held by issuing one write through the tx-aware connection.
-// Returns the tx-carrying context. Any goroutine that subsequently writes via
-// the raw pool will block on this lock until the tx is committed or rolled back.
+// beginWriteLockedTx opens a real transaction and makes it hold the lock on the
+// user row by writing that row through the tx-aware connection. Returns the
+// tx-carrying context. Any goroutine that subsequently writes the row via the raw
+// pool will block on this lock until the tx is committed or rolled back.
 func beginWriteLockedTx(t *testing.T, fx *testfx.Fixture, userID string) context.Context {
 	t.Helper()
-	txCtx, err := fx.DB.BeginTx(context.Background())
+	txCtx, err := fx.Tx.BeginTx(context.Background())
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	// Touch the row through the tx so the IMMEDIATE write lock is unambiguously
-	// held by THIS connection (and so we exercise the same row the method writes).
+	// Touch the row through the tx so the lock is unambiguously held by THIS
+	// connection (and so we exercise the same row the method writes).
 	if err := fx.Users.Update(txCtx, mustFindByID(t, fx, userID)); err != nil {
 		t.Fatalf("write inside tx to take lock: %v", err)
 	}
@@ -61,7 +61,7 @@ func mustFindByID(t *testing.T, fx *testfx.Fixture, userID string) *user.User {
 // on the raw pool: invoked with a tx-carrying context whose outer tx is then
 // rolled back, the incremented counter still persists.
 func TestRecordFailedLogin_SurvivesOuterTxRollback(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "raw_record_rollback.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "secret12", "user")
 
 	// Outer tx takes the write lock.
@@ -84,7 +84,7 @@ func TestRecordFailedLogin_SurvivesOuterTxRollback(t *testing.T) {
 	// rolling the outer tx back. The pending raw-pool write now proceeds and
 	// autocommits on its own connection.
 	time.Sleep(150 * time.Millisecond)
-	if err := fx.DB.Rollback(txCtx); err != nil {
+	if err := fx.Tx.Rollback(txCtx); err != nil {
 		t.Fatalf("rollback outer tx: %v", err)
 	}
 
@@ -93,7 +93,7 @@ func TestRecordFailedLogin_SurvivesOuterTxRollback(t *testing.T) {
 	case res = <-done:
 	case <-time.After(8 * time.Second):
 		t.Fatal(
-			"RecordFailedLogin did not complete after outer tx rollback (busy_timeout would be ~5s)",
+			"RecordFailedLogin did not complete after outer tx rollback (the lock wait would be ~5s)",
 		)
 	}
 	if res.err != nil {
@@ -115,7 +115,7 @@ func TestRecordFailedLogin_SurvivesOuterTxRollback(t *testing.T) {
 // writes on the raw pool: with a non-zero counter seeded, calling it inside a
 // tx-carrying context whose tx is rolled back still leaves the counter cleared.
 func TestResetFailedLogin_SurvivesOuterTxRollback(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "raw_reset_rollback.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "secret12", "user")
 
 	// Seed a non-zero counter via a plain-ctx call (no tx → ordinary raw write).
@@ -135,7 +135,7 @@ func TestResetFailedLogin_SurvivesOuterTxRollback(t *testing.T) {
 	}()
 
 	time.Sleep(150 * time.Millisecond)
-	if err := fx.DB.Rollback(txCtx); err != nil {
+	if err := fx.Tx.Rollback(txCtx); err != nil {
 		t.Fatalf("rollback outer tx: %v", err)
 	}
 

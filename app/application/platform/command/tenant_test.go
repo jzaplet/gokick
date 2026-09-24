@@ -3,7 +3,6 @@ package command
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -17,7 +16,7 @@ import (
 // holds.
 func TestDeleteTenant_RefusesTenantWithUsers(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_delete_busy.db"))
+	fx := testfx.New(t)
 
 	busy := fx.SeedTenant(t, "Beta")
 	fx.SeedUserInTenant(t, "bob", "user", busy.ID)
@@ -53,7 +52,7 @@ func TestDeleteTenant_RefusesTenantWithUsers(t *testing.T) {
 // that strands its runs.
 func TestDeleteTenant_RefusesTenantWithUnfinishedRuns(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_delete_runs.db"))
+	fx := testfx.New(t)
 
 	busy := fx.SeedTenant(t, "Exporting")
 	fx.SeedRunInTenant(t, "e2e:noop", busy.ID)
@@ -82,7 +81,7 @@ func TestDeleteTenant_RefusesTenantWithUnfinishedRuns(t *testing.T) {
 // resume under a dead tenant and must not pin the tenant forever.
 func TestDeleteTenant_TerminalRunsDoNotPinTheTenant(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_delete_runs_done.db"))
+	fx := testfx.New(t)
 
 	done := fx.SeedTenant(t, "Finished")
 	r := fx.SeedRunInTenant(t, "e2e:noop", done.ID)
@@ -104,7 +103,7 @@ func TestDeleteTenant_TerminalRunsDoNotPinTheTenant(t *testing.T) {
 
 func TestDeleteTenant_DeletesEmptyTenant(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_delete_empty.db"))
+	fx := testfx.New(t)
 
 	empty := fx.SeedTenant(t, "Ghost")
 
@@ -137,7 +136,7 @@ func TestDeleteTenant_DeletesEmptyTenant(t *testing.T) {
 // reason is this one's.
 func TestDeleteTenant_RefusesDefaultTenantEvenWhenEmpty(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_delete_default.db"))
+	fx := testfx.New(t)
 
 	// No users, no runs: the default tenant owns nothing here, so the emptiness
 	// rule would happily let it go — only identity refuses it.
@@ -170,7 +169,7 @@ func TestDeleteTenant_RefusesDefaultTenantEvenWhenEmpty(t *testing.T) {
 // Fieldless goes to `general`, which the toast reads.
 func TestDeleteTenant_UnknownTenantIsNotFound(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_delete_404.db"))
+	fx := testfx.New(t)
 
 	h := NewDeleteTenantHandler(fx.PlatformTenants)
 	err := h.Handle(ctx, DeleteTenantCommand{ID: "01920000-0000-7000-8000-000000000000"})
@@ -198,7 +197,7 @@ func TestDeleteTenant_UnknownTenantIsNotFound(t *testing.T) {
 // imports that package — an internal test there would be an import cycle.
 func TestDeleteIfEmptyAcrossTenants_RefusesTheDefaultTenantInSQL(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_repo_default.db"))
+	fx := testfx.New(t)
 
 	// No users seeded, so the emptiness condition would happily let this through:
 	// the identity floor is the only thing that can refuse it here.
@@ -224,7 +223,7 @@ func TestDeleteIfEmptyAcrossTenants_RefusesTheDefaultTenantInSQL(t *testing.T) {
 // selection mixing both must not be all-or-nothing in either direction.
 func TestBulkDeleteTenants_DeletesOnlyTheEmptyOnes(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_bulk_mixed.db"))
+	fx := testfx.New(t)
 
 	empty1 := fx.SeedTenant(t, "Ghost One")
 	empty2 := fx.SeedTenant(t, "Ghost Two")
@@ -258,7 +257,7 @@ func TestBulkDeleteTenants_DeletesOnlyTheEmptyOnes(t *testing.T) {
 // broad selection and the tenant the whole single-tenant mode rests on.
 func TestBulkDeleteTenants_SparesDefaultTenantWhenAllFiltered(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_bulk_default.db"))
+	fx := testfx.New(t)
 
 	victim := fx.SeedTenant(t, "Ghost")
 
@@ -284,7 +283,7 @@ func TestBulkDeleteTenants_SparesDefaultTenantWhenAllFiltered(t *testing.T) {
 // silently widens the blast radius.
 func TestBulkDeleteTenants_AllFilteredHonoursTheNameFilter(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_bulk_filter.db"))
+	fx := testfx.New(t)
 
 	matching := fx.SeedTenant(t, "Ghost One")
 	other := fx.SeedTenant(t, "Keep Me")
@@ -317,7 +316,7 @@ func TestBulkDeleteTenants_AllFilteredHonoursTheNameFilter(t *testing.T) {
 // this is a path a superadmin can actually take.
 func TestBulkDeleteTenants_AllFilteredHonoursThePlanFilter(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_bulk_plan.db"))
+	fx := testfx.New(t)
 
 	free := fx.SeedTenant(t, "Free One")
 	paid := fx.SeedTenantWithPlan(t, "Paid One", "pro")
@@ -344,7 +343,7 @@ func TestBulkDeleteTenants_AllFilteredHonoursThePlanFilter(t *testing.T) {
 
 func TestBulkDeleteTenants_EmptySelectionIsRefused(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_bulk_none.db"))
+	fx := testfx.New(t)
 
 	h := NewBulkDeleteTenantsHandler(fx.PlatformTenants)
 	_, err := h.Handle(ctx, BulkDeleteTenantsCommand{})

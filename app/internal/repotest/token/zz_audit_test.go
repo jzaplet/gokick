@@ -2,24 +2,24 @@ package token_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"gokick/app/internal/testfx"
 )
 
-// DeleteExpired once had a TZ-format bug (Go's time.Time serialises with a
-// zone offset that doesn't lex-compare to SQLite's UTC clock format),
-// making the F2 cleanup a silent no-op. The fix wraps expires_at in
-// julianday(...) so the comparison normalises encodings. The load-bearing
+// DeleteExpired once had a TZ-format bug in the SQLite repository (Go's
+// time.Time serialises with a zone offset that doesn't lex-compare to SQLite's
+// UTC clock format), making the F2 cleanup a silent no-op; the fix there
+// compares through the adapter's datetime idiom. The contract holds for every
+// adapter: expired tokens go, live ones stay. The load-bearing
 // assertion here is that the past-dated row is actually GONE (count drops
 // 2 -> 1): under the old no-op bug nothing would be deleted and the count
 // would stay at 2. The survivor-identity check additionally guards against
 // deleting the wrong row.
 func TestDeleteExpired_RemovesPastDatedTokensKeepsFuture(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "delete_expired_basic.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "pwd", "user")
 
 	expiredRaw := fx.SeedRefreshToken(t, u.ID, time.Now().Add(-1*time.Hour))
@@ -62,7 +62,7 @@ func TestDeleteExpired_RemovesPastDatedTokensKeepsFuture(t *testing.T) {
 // BEFORE the cleanup runs — otherwise we'd merely be re-proving roadmap-43.
 func TestDeleteExpired_KeepsUsedButUnexpiredToken(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "delete_expired_used.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "bob", "pwd", "user")
 
 	expiredRaw := fx.SeedRefreshToken(t, u.ID, time.Now().Add(-1*time.Hour))

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -194,7 +193,7 @@ func TestServer_SPAFallbackServesIndexForUnknownPath(t *testing.T) {
 func boundServer(t *testing.T) (*Server, *testfx.Fixture) {
 	t.Helper()
 
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "server_bind.db"))
+	fx := testfx.New(t)
 	cmdBus, qryBus, _ := fx.NewBuses()
 	logger := silentLogger()
 	extract := middleware.NewIPExtractor(false)

@@ -1,3 +1,5 @@
+//go:build !nosqlite
+
 package sqlite_test
 
 import (
@@ -82,6 +84,7 @@ func datetimeComparisonViolations(s string) []string {
 // or datetime()-wrapped comparison fails here.
 func TestSqlTimeConformance_ComparisonsUseJulianday(t *testing.T) {
 	var violations []string
+	blessed := 0 // julianday(col) uses seen — zero means the scan saw no queries at all
 	err := filepath.WalkDir(sqliteDir(), func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -90,6 +93,7 @@ func TestSqlTimeConformance_ComparisonsUseJulianday(t *testing.T) {
 			return nil
 		}
 		for _, s := range sqlStringsInGoSource(t, path, nil) {
+			blessed += len(dtJulianWrapRe.FindAllString(stripSQLComments(s), -1))
 			for _, vio := range datetimeComparisonViolations(s) {
 				violations = append(violations, fmt.Sprintf("%s: %s", filepath.Base(path), vio))
 			}
@@ -98,6 +102,9 @@ func TestSqlTimeConformance_ComparisonsUseJulianday(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("walk repos: %v", err)
+	}
+	if blessed == 0 {
+		t.Fatal("found no julianday(col) comparison in the repositories — the scan went blind")
 	}
 	if len(violations) > 0 {
 		sort.Strings(violations)

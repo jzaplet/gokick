@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -14,7 +13,7 @@ import (
 )
 
 func TestCheckpoint_PersistsAndReadBack(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "ck_persist.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	owner := newOwner("wA")
@@ -34,7 +33,7 @@ func TestCheckpoint_PersistsAndReadBack(t *testing.T) {
 }
 
 func TestCheckpoint_BumpsUpdatedAt(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "ck_updated.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	owner := newOwner("wA")
@@ -57,7 +56,7 @@ func TestCheckpoint_BumpsUpdatedAt(t *testing.T) {
 }
 
 func TestCheckpoint_RepeatedOverwrites_LastWriteWins(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "ck_overwrite.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	owner := newOwner("wA")
@@ -78,7 +77,7 @@ func TestCheckpoint_RepeatedOverwrites_LastWriteWins(t *testing.T) {
 }
 
 func TestCheckpoint_ManyRepeatsConverge(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "ck_many.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	owner := newOwner("wA")
@@ -102,7 +101,7 @@ func TestCheckpoint_ManyRepeatsConverge(t *testing.T) {
 }
 
 func TestCheckpoint_LargeBlobRoundTrips(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "ck_large.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	owner := newOwner("wA")
@@ -126,7 +125,7 @@ func TestCheckpoint_LargeBlobRoundTrips(t *testing.T) {
 }
 
 func TestCheckpoint_BinaryWithNUL_RoundTrips(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "ck_binary.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	owner := newOwner("wA")
@@ -143,7 +142,7 @@ func TestCheckpoint_BinaryWithNUL_RoundTrips(t *testing.T) {
 }
 
 func TestCheckpoint_EmptyState_AllowedAndRenews(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "ck_empty.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	owner := newOwner("wA")
@@ -165,7 +164,7 @@ func TestCheckpoint_EmptyState_AllowedAndRenews(t *testing.T) {
 }
 
 func TestCheckpoint_AfterMarkComplete_NoOp(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "ck_after_complete.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	owner := newOwner("wA")
@@ -193,7 +192,7 @@ func TestCheckpoint_AfterMarkComplete_NoOp(t *testing.T) {
 }
 
 func TestCheckpoint_AfterMarkFailed_NoOp(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "ck_after_failed.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	owner := newOwner("wA")
@@ -217,9 +216,10 @@ func TestCheckpoint_AfterMarkFailed_NoOp(t *testing.T) {
 }
 
 func TestCheckpoint_DoesNotMutateImmutableFields(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "ck_immutable.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
-	r := enqueueRunInTenant(t, fx, "tnt-7")
+	tenantID := fx.SeedTenant(t, "acme").ID
+	r := enqueueRunInTenant(t, fx, tenantID)
 	owner := newOwner("wA")
 	claimAs(t, fx, owner)
 
@@ -231,16 +231,17 @@ func TestCheckpoint_DoesNotMutateImmutableFields(t *testing.T) {
 	if string(got.Payload) != `{}` {
 		t.Fatalf("payload must be immutable: got %q", got.Payload)
 	}
-	if got.Kind != "agent" || got.TenantID != "tnt-7" || got.MaxRetries != 3 || got.Attempts != 0 {
+	if got.Kind != "agent" || got.TenantID != tenantID || got.MaxRetries != 3 || got.Attempts != 0 {
 		t.Fatalf("checkpoint mutated an immutable field: %+v", got)
 	}
 }
 
-// Many concurrent checkpoints from the rightful owner must all succeed (SQLite
-// serializes the autocommit writes; busy_timeout absorbs contention) with no
-// lost-update error; the final state is one of the written values (last-writer-wins).
+// Many concurrent checkpoints from the rightful owner must all succeed (the
+// database serializes the conflicting autocommit writes — SQLite the whole write,
+// Postgres the row — and waits the contention out) with no lost-update error; the
+// final state is one of the written values (last-writer-wins).
 func TestCheckpoint_ConcurrentSameOwner_NoErrorNoLostUpdate(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "ck_concurrent.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	owner := newOwner("wA")

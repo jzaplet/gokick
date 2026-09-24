@@ -2,7 +2,6 @@ package query
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/internal/testfx"
@@ -12,16 +11,12 @@ import (
 // every non-superadmin user in the tenant, active only the non-deactivated
 // ones. Flipping one user inactive must move exactly the active count.
 func TestGetAdminDashboard_UserStats(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "admin_dashboard.db"))
+	fx := testfx.New(t)
 	fx.SeedUser(t, "root", "pwd", "admin")
 	alice := fx.SeedUser(t, "alice", "pwd", "user")
 	fx.SeedUser(t, "bob", "pwd", "user")
 
-	if _, err := fx.DB.DB().Exec(
-		`UPDATE users SET active = 0 WHERE id = ?`, alice.ID,
-	); err != nil {
-		t.Fatalf("deactivate alice: %v", err)
-	}
+	fx.SetUserActive(t, alice.ID, false)
 
 	h := NewGetAdminDashboardHandler(fx.Users)
 

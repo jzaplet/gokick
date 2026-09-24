@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -18,7 +17,7 @@ import (
 
 func newProfileHandler(t *testing.T) (*ProfileHandler, *testfx.Fixture) {
 	t.Helper()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "profile_http.db"))
+	fx := testfx.New(t)
 	cmdBus, qryBus, _ := fx.NewBuses()
 
 	registry := shared.NewPermissionsRegistry([]shared.Permissioned{

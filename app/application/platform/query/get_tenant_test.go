@@ -2,7 +2,6 @@ package query
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/internal/testfx"
@@ -10,7 +9,7 @@ import (
 
 func TestGetTenantHandler_FindsAndMisses(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "get_tenant.db"))
+	fx := testfx.New(t)
 	tn := fx.SeedTenant(t, "Acme")
 
 	h := NewGetTenantHandler(fx.Tenants)

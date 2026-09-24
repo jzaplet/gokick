@@ -2,7 +2,6 @@ package run_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/run"
@@ -13,7 +12,7 @@ import (
 // fail-closed in multitenant mode — it must never silently land in the default
 // tenant — but still defaults in single-tenant mode (unchanged behavior).
 func TestEnqueue_TenantFailClosed(t *testing.T) {
-	mt := testfx.NewMultitenant(t, filepath.Join(t.TempDir(), "run_enq_mt.db"))
+	mt := testfx.NewMultitenant(t)
 	r, _ := run.NewRun("agent", []byte(`{}`), 0)
 	if r.TenantID != "" {
 		t.Fatalf("precondition: NewRun leaves TenantID empty, got %q", r.TenantID)
@@ -22,7 +21,7 @@ func TestEnqueue_TenantFailClosed(t *testing.T) {
 		t.Fatal("multitenant enqueue with no tenant must fail closed")
 	}
 
-	st := testfx.New(t, filepath.Join(t.TempDir(), "run_enq_st.db"))
+	st := testfx.New(t)
 	rn, _ := run.NewRun("agent", []byte(`{}`), 0)
 	if err := st.Runs.Enqueue(context.Background(), rn); err != nil {
 		t.Fatalf("single-tenant enqueue with no tenant must default (not error), got %v", err)

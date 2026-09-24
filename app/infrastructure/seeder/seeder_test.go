@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -66,7 +65,7 @@ func newSeederMT(
 }
 
 func TestSeeder_RejectsEmptyPassword(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "seed_empty.db"))
+	fx := testfx.New(t)
 	err := newSeeder(t, fx, "").Seed(context.Background())
 	if err == nil {
 		t.Fatal("empty APP_SEED_ADMIN_PASSWORD must reject seed")
@@ -77,7 +76,7 @@ func TestSeeder_RejectsEmptyPassword(t *testing.T) {
 }
 
 func TestSeeder_RejectsTooShortPassword(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "seed_short.db"))
+	fx := testfx.New(t)
 	err := newSeeder(t, fx, "short").Seed(context.Background())
 	if err == nil {
 		t.Fatal("password shorter than NewPassword's policy must be rejected")
@@ -86,7 +85,7 @@ func TestSeeder_RejectsTooShortPassword(t *testing.T) {
 
 func TestSeeder_CreatesAdminWithValidPassword(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "seed_ok.db"))
+	fx := testfx.New(t)
 
 	if err := newSeeder(t, fx, "valid-password-12").Seed(ctx); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -106,7 +105,7 @@ func TestSeeder_CreatesAdminWithValidPassword(t *testing.T) {
 // once the admin already exists.
 func TestSeeder_IdempotentWhenAdminExists(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "seed_repeat.db"))
+	fx := testfx.New(t)
 
 	if err := newSeeder(t, fx, "valid-password-12").Seed(ctx); err != nil {
 		t.Fatalf("first seed: %v", err)
@@ -121,7 +120,7 @@ func TestSeeder_IdempotentWhenAdminExists(t *testing.T) {
 // (the platform plane is opt-in), and must NOT error — the admin still seeds.
 func TestSeeder_SkipsSuperAdminWhenPasswordEmpty(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "seed_no_super.db"))
+	fx := testfx.New(t)
 
 	if err := newSeederSuper(t, fx, "valid-password-12", "").Seed(ctx); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -139,7 +138,7 @@ func TestSeeder_SkipsSuperAdminWhenPasswordEmpty(t *testing.T) {
 // re-running the seed is idempotent.
 func TestSeeder_SeedsSuperAdminWhenPasswordSet(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "seed_super.db"))
+	fx := testfx.New(t)
 
 	if err := newSeederSuper(t, fx, "valid-password-12", "super-password-12").Seed(ctx); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -162,7 +161,7 @@ func TestSeeder_SeedsSuperAdminWhenPasswordSet(t *testing.T) {
 // A set-but-invalid superadmin password is rejected, naming the env var.
 func TestSeeder_RejectsInvalidSuperAdminPassword(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "seed_super_bad.db"))
+	fx := testfx.New(t)
 
 	err := newSeederSuper(t, fx, "valid-password-12", "short").Seed(ctx)
 	if err == nil {
@@ -177,7 +176,7 @@ func TestSeeder_RejectsInvalidSuperAdminPassword(t *testing.T) {
 // — the deployment behaves as if tenants did not exist.
 func TestSeeder_SingleTenant_AdminInDefaultTenant(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "seed_single_tenant.db"))
+	fx := testfx.New(t)
 
 	if err := newSeeder(t, fx, "valid-password-12").Seed(ctx); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -197,7 +196,7 @@ func TestSeeder_SingleTenant_AdminInDefaultTenant(t *testing.T) {
 // second tenant, no error).
 func TestSeeder_Multitenant_AdminGetsOwnTenant(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "seed_multitenant.db"))
+	fx := testfx.New(t)
 
 	if err := newSeederMT(t, fx, "valid-password-12", "super-password-12", "Acme").Seed(ctx); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -229,12 +228,7 @@ func TestSeeder_Multitenant_AdminGetsOwnTenant(t *testing.T) {
 	if err := newSeederMT(t, fx, "valid-password-12", "super-password-12", "Acme").Seed(ctx); err != nil {
 		t.Fatalf("second seed: %v", err)
 	}
-	var acmeCount int
-	if err := fx.DB.DB().GetContext(ctx, &acmeCount,
-		`SELECT COUNT(*) FROM tenants WHERE name='Acme'`); err != nil {
-		t.Fatalf("count tenants: %v", err)
-	}
-	if acmeCount != 1 {
+	if acmeCount := fx.Count(t, "tenants", "name = ?", "Acme"); acmeCount != 1 {
 		t.Fatalf("re-seed must not duplicate the admin tenant, got %d 'Acme' tenants", acmeCount)
 	}
 }
@@ -244,7 +238,7 @@ func TestSeeder_Multitenant_AdminGetsOwnTenant(t *testing.T) {
 // superadmin → two user.created (admin, superadmin) and one tenant.created (the
 // admin's own tenant). Outside the bus (the other tests) the collector is a no-op.
 func TestSeeder_AuditTrailThroughSystemBus(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "seed_audit.db"))
+	fx := testfx.New(t)
 	s := newSeederMT(t, fx, "valid-password-12", "super-password-12", "Acme")
 
 	err := bus.SystemDispatchVoid(context.Background(), fx.NewSystemBus(), "Seed", struct{}{},
@@ -259,12 +253,7 @@ func TestSeeder_AuditTrailThroughSystemBus(t *testing.T) {
 
 func assertAuditCount(t *testing.T, fx *testfx.Fixture, action string, want int) {
 	t.Helper()
-	var n int
-	if err := fx.DB.DB().GetContext(context.Background(), &n,
-		`SELECT COUNT(*) FROM audit_log WHERE action=?`, action); err != nil {
-		t.Fatalf("audit count %q: %v", action, err)
-	}
-	if n != want {
+	if n := fx.Count(t, "audit_log", "action = ?", action); n != want {
 		t.Fatalf("audit_log %q: got %d want %d", action, n, want)
 	}
 }

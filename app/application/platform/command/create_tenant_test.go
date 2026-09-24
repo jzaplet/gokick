@@ -3,7 +3,6 @@ package command
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -13,7 +12,7 @@ import (
 
 func TestCreateTenantHandler_CreatesTenant(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_tenant.db"))
+	fx := testfx.New(t)
 
 	h := NewCreateTenantHandler(fx.Tenants)
 	tn, err := h.Handle(ctx, CreateTenantCommand{Name: "Acme"})
@@ -35,7 +34,7 @@ func TestCreateTenantHandler_CreatesTenant(t *testing.T) {
 
 func TestCreateTenantHandler_RejectsBlankName(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_tenant_blank.db"))
+	fx := testfx.New(t)
 
 	h := NewCreateTenantHandler(fx.Tenants)
 	if _, err := h.Handle(ctx, CreateTenantCommand{Name: "   "}); err == nil {
@@ -55,7 +54,7 @@ func TestCreateTenantHandler_RejectsBlankName(t *testing.T) {
 // field error, and the row does not exist afterwards.
 func TestCreateTenantHandler_RejectsADuplicateName(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_tenant_dup.db"))
+	fx := testfx.New(t)
 
 	h := NewCreateTenantHandler(fx.Tenants)
 	if _, err := h.Handle(ctx, CreateTenantCommand{Name: "Acme"}); err != nil {
@@ -77,7 +76,7 @@ func TestCreateTenantHandler_RejectsADuplicateName(t *testing.T) {
 // it and the UNIQUE index turns a 400 into a 500.
 func TestCreateTenantHandler_RejectsADuplicateNameAfterTrimming(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_tenant_dup_trim.db"))
+	fx := testfx.New(t)
 
 	h := NewCreateTenantHandler(fx.Tenants)
 	if _, err := h.Handle(ctx, CreateTenantCommand{Name: "Acme"}); err != nil {
@@ -99,7 +98,7 @@ func TestCreateTenantHandler_RejectsADuplicateNameAfterTrimming(t *testing.T) {
 // loser, and it must be there even when no handler is involved.
 func TestTenants_UniqueNameIsEnforcedBySchema(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_unique_schema.db"))
+	fx := testfx.New(t)
 
 	first := fx.SeedTenant(t, "Acme")
 
@@ -125,7 +124,7 @@ func TestTenants_UniqueNameIsEnforcedBySchema(t *testing.T) {
 // other test here stays green.
 func TestCreateTenantCommand_AdminDeniedAtBus(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_create_authz.db"))
+	fx := testfx.New(t)
 	cmdBus, _, _ := fx.NewBuses()
 
 	adminCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{UserID: "a1", Role: "admin"})
@@ -152,7 +151,7 @@ func TestCreateTenantCommand_AdminDeniedAtBus(t *testing.T) {
 // denies everyone.
 func TestCreateTenantCommand_SuperadminAllowedAtBus(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_create_ok.db"))
+	fx := testfx.New(t)
 	cmdBus, _, _ := fx.NewBuses()
 
 	superCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{UserID: "s1", Role: "superadmin"})

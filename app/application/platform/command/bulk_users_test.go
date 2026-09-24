@@ -3,7 +3,6 @@ package command
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -36,7 +35,7 @@ func allPlatformRows(t *testing.T, fx *testfx.Fixture) []user.PlatformRow {
 // Cross-tenant bulk delete by the tenant-name filter: only the matching
 // tenant's users go; superadmin rows survive even when the filters match.
 func TestBulkDeletePlatformUsers_AllFilteredByTenant(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "platform_bulk.db"))
+	fx := testfx.New(t)
 	tenantA := fx.SeedTenant(t, "acme")
 	tenantB := fx.SeedTenant(t, "beta")
 	fx.SeedUserInTenant(t, "alice", "user", tenantA.ID)
@@ -66,7 +65,7 @@ func TestBulkDeletePlatformUsers_AllFilteredByTenant(t *testing.T) {
 }
 
 func TestBulkSetPlatformUsersActive_ByIDs(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "platform_bulk_active.db"))
+	fx := testfx.New(t)
 	tenantA := fx.SeedTenant(t, "acme")
 	alice := fx.SeedUserInTenant(t, "alice", "user", tenantA.ID)
 	root := fx.SeedUser(t, "root", "pwd", "superadmin")
@@ -98,7 +97,7 @@ func TestBulkSetPlatformUsersActive_ByIDs(t *testing.T) {
 }
 
 func TestBulkDeletePlatformUsers_EmptySelectionIsValidationError(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "platform_bulk_empty.db"))
+	fx := testfx.New(t)
 	root := fx.SeedUser(t, "root", "pwd", "superadmin")
 
 	h := NewBulkDeletePlatformUsersHandler(fx.PlatformUsers)

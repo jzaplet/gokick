@@ -1,6 +1,9 @@
 // Package testfx provides shared test fixtures for application-layer handlers.
-// Spins up a real SQLite database with migrations and wires real implementations
-// of all common dependencies (password hasher, JWT, repositories).
+// Every fixture gets its own freshly migrated database on the adapter the run
+// targets (APP_DB_DRIVER — see ActiveDriver), wired through the same
+// persistence Store as production, plus real implementations of the common
+// dependencies (password hasher, JWT, repositories). Nothing in a test names the
+// database: the same test runs unchanged on every adapter.
 package testfx
 
 import (
@@ -18,60 +21,75 @@ import (
 	"gokick/app/domain/token"
 	"gokick/app/domain/user"
 	"gokick/app/infrastructure/config"
+	"gokick/app/infrastructure/database"
+	"gokick/app/infrastructure/persistence"
 	"gokick/app/infrastructure/security"
-	"gokick/app/infrastructure/sqlite"
-	sqliteaudit "gokick/app/infrastructure/sqlite/audit"
-	sqliterun "gokick/app/infrastructure/sqlite/run"
-	sqlitetenant "gokick/app/infrastructure/sqlite/tenant"
-	sqlitetoken "gokick/app/infrastructure/sqlite/token"
-	sqliteuser "gokick/app/infrastructure/sqlite/user"
+	"gokick/app/internal/testfx/jwtfx"
+
+	"github.com/jmoiron/sqlx"
 )
 
 type Fixture struct {
-	DB              *sqlite.Manager
+	// Tx opens and ends transactions on the fixture database — the same
+	// shared.Transactor the bus TransactionMiddleware uses.
+	Tx              shared.Transactor
 	Users           user.Repository
 	PlatformUsers   user.PlatformRepository // same concrete repo; the cross-tenant port for platform handler tests
 	Tokens          token.Repository
 	Runs            run.Repository
 	Tenants         tenant.Repository
 	PlatformTenants tenant.PlatformRepository // same concrete repo; cross-tenant port for platform tests
-	Hasher          *security.PasswordHasher
-	Jwt             *security.JwtService
+	// Audit is the real AuditLogger (raw pool — survives a business rollback).
+	Audit  shared.AuditLogger
+	Hasher *security.PasswordHasher
+	Jwt    *security.JwtService
+
+	backend
 }
 
-// New spins up an isolated SQLite database at dbPath, runs migrations and wires
-// real implementations of all auth dependencies. The DB is closed automatically
-// when the test completes.
-// New builds a single-tenant fixture (APP_MULTITENANCY off — the default).
-func New(t *testing.T, dbPath string) *Fixture { return newFixture(t, dbPath, false) }
+// backend is what an adapter's fixture opener hands back: the production Store
+// plus the handle and dialect bits the fixture helpers in raw.go need.
+type backend struct {
+	store *persistence.Store
+	// db is the fixture handle for writes that reach past the repositories.
+	db *sqlx.DB
+	// nowPlus is a SQL expression for the database clock shifted by ? seconds,
+	// in the adapter's timestamp encoding.
+	nowPlus string
+	// violation classifies a driver error by the constraint it broke.
+	violation func(error) Constraint
+}
+
+// New builds a single-tenant fixture (APP_MULTITENANCY off — the default). The
+// database is dropped automatically when the test completes.
+func New(t *testing.T) *Fixture { return newFixture(t, false) }
 
 // NewMultitenant builds a fixture with multitenant enforcement ON (fail-closed):
 // a query whose context carries no tenant panics instead of falling back to the
 // default tenant. Use it to assert the fail-closed guard.
-func NewMultitenant(t *testing.T, dbPath string) *Fixture {
-	return newFixture(t, dbPath, true)
-}
+func NewMultitenant(t *testing.T) *Fixture { return newFixture(t, true) }
 
-func newFixture(t *testing.T, dbPath string, multitenant bool) *Fixture {
+func newFixture(t *testing.T, multitenant bool) *Fixture {
 	t.Helper()
 
 	cfg := &config.Config{
-		DBPath:               dbPath,
-		JWTSecret:            "test-secret-32-chars-long-enough",
+		DBDriver:             ActiveDriver(),
+		JWTSecret:            jwtfx.Secret,
 		JWTAccessExpiration:  15 * time.Minute,
 		JWTRefreshExpiration: 7 * 24 * time.Hour,
 		Multitenancy:         multitenant,
 	}
-
-	db, err := sqlite.NewManager(cfg)
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	if err := sqlite.NewMigrator(db, logger).RunUp(); err != nil {
-		t.Fatalf("migrate: %v", err)
+
+	var b backend
+	switch cfg.DBDriver {
+	case database.DriverSQLite:
+		b = openSQLite(t, cfg, logger)
+	default:
+		t.Fatalf("testfx: no fixture backend for APP_DB_DRIVER=%s in this build", cfg.DBDriver)
+	}
+	if err := b.store.Migrator.RunUp(); err != nil {
+		t.Fatalf("testfx: migrate: %v", err)
 	}
 
 	jwt, err := security.NewJwtService(cfg)
@@ -79,19 +97,18 @@ func newFixture(t *testing.T, dbPath string, multitenant bool) *Fixture {
 		t.Fatalf("jwt: %v", err)
 	}
 
-	usersRepo := sqliteuser.NewRepository(db)
-	tenantsRepo := sqlitetenant.NewRepository(db)
-
 	return &Fixture{
-		DB:              db,
-		Users:           usersRepo,
-		PlatformUsers:   usersRepo,
-		Tokens:          sqlitetoken.NewRepository(db),
-		Runs:            sqliterun.NewRepository(db),
-		Tenants:         tenantsRepo,
-		PlatformTenants: tenantsRepo,
+		Tx:              b.store.Tx,
+		Users:           b.store.Users,
+		PlatformUsers:   b.store.PlatformUsers,
+		Tokens:          b.store.Tokens,
+		Runs:            b.store.Runs,
+		Tenants:         b.store.Tenants,
+		PlatformTenants: b.store.PlatformTenants,
+		Audit:           b.store.Audit,
 		Hasher:          security.NewPasswordHasher(),
 		Jwt:             jwt,
+		backend:         b,
 	}
 }
 
@@ -120,7 +137,6 @@ func (f *Fixture) NewBuses() (*bus.CommandBus, *bus.QueryBus, *bus.EventBus) {
 	// application/run dispatcher here would cycle (its test imports testfx). The chain
 	// stays faithful via CommandChain.
 	runDispatcher := shared.RunDispatcherFromContext(context.Background())
-	audit := sqliteaudit.NewRepository(f.DB)
 
 	// Same chain as provideCommandBus (busmw.CommandChain is the single source),
 	// so the test CommandBus can't drift from production — incl. Audit + RunDispatcher.
@@ -130,10 +146,10 @@ func (f *Fixture) NewBuses() (*bus.CommandBus, *bus.QueryBus, *bus.EventBus) {
 				checker,
 				reporter,
 				resolver,
-				audit,
+				f.Audit,
 				runDispatcher,
 				eventBus,
-				f.DB,
+				f.Tx,
 			)...,
 		),
 		bus.NewQueryBus(busmw.BaseChain(logger, checker, reporter, resolver)...),
@@ -161,7 +177,7 @@ func (f *Fixture) NewSystemBus() *bus.SystemCommandBus {
 
 	return bus.NewSystemCommandBus(
 		busmw.SystemChain(
-			logger, f.DB, eventBus, sqliteaudit.NewRepository(f.DB), runDispatcher, reporter,
+			logger, f.Tx, eventBus, f.Audit, runDispatcher, reporter,
 		)...,
 	)
 }
@@ -197,41 +213,12 @@ func ExecQuery[R any](
 	return bus.Query(ctx, queryBus, name, q, handlerFn)
 }
 
-// NewJwt returns a JwtService configured with the given access expiration.
-// Use when a test needs only JWT (no DB) or a non-default access expiry
-// (e.g. negative duration for expired-token scenarios).
-func NewJwt(t *testing.T, accessExp time.Duration) *security.JwtService {
-	t.Helper()
-	svc, err := security.NewJwtService(&config.Config{
-		JWTSecret:            "test-secret-32-chars-long-enough",
-		JWTAccessExpiration:  accessExp,
-		JWTRefreshExpiration: 7 * 24 * time.Hour,
-	})
-	if err != nil {
-		t.Fatalf("jwt: %v", err)
-	}
-
-	return svc
-}
-
 // AssertTokenCount fails the test if the refresh_tokens row count differs from want.
 func (f *Fixture) AssertTokenCount(t *testing.T, want int) {
 	t.Helper()
-	var got int
-	if err := f.DB.DB().GetContext(context.Background(), &got, `SELECT COUNT(*) FROM refresh_tokens`); err != nil {
-		t.Fatalf("count tokens: %v", err)
-	}
-	if got != want {
+	if got := f.Count(t, "refresh_tokens", ""); got != want {
 		t.Fatalf("refresh_tokens count: got %d want %d", got, want)
 	}
-}
-
-// NewAuditLogger returns a real AuditLogger backed by this fixture's DB, for tests
-// that need the run worker (or any non-bus path) to actually persist audit rows.
-// Keeps the sqlite/audit import in testfx so consumer test packages don't take an
-// infrastructure→infrastructure dependency of their own.
-func (f *Fixture) NewAuditLogger() shared.AuditLogger {
-	return sqliteaudit.NewRepository(f.DB)
 }
 
 // SeedUser persists a user with the given nickname/password/role and returns the entity.
@@ -283,10 +270,7 @@ func (f *Fixture) SeedTenantWithPlan(t *testing.T, name, plan string) *tenant.Te
 	t.Helper()
 	tn := f.SeedTenant(t, name)
 	tn.Plan = plan
-	if _, err := f.DB.DB().ExecContext(context.Background(),
-		`UPDATE tenants SET plan=? WHERE id=?`, plan, tn.ID); err != nil {
-		t.Fatalf("set tenant plan: %v", err)
-	}
+	f.setTenantPlan(t, tn.ID, plan)
 	return tn
 }
 

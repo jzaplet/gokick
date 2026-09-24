@@ -2,7 +2,6 @@ package command
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -14,7 +13,7 @@ import (
 // "user.password_changed", target type "user", the user's ID, and no metadata.
 func TestChangePasswordHandler_RecordsAuditEvent(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "pwd_audit.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "old-password", "user")
 
 	// Both injections are required: claims so the handler reaches the success

@@ -3,7 +3,6 @@ package command
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -16,7 +15,7 @@ import (
 // flag, so the command must not deactivate the user — the advisor's regression).
 func TestUpdatePlatformUser_CrossTenant_PreservesActiveAndTenant(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "platform_update.db"))
+	fx := testfx.New(t)
 
 	tenantB := fx.SeedTenant(t, "Beta")
 	victim := fx.SeedUserInTenant(t, "bob", "user", tenantB.ID) // active=true
@@ -50,7 +49,7 @@ func TestUpdatePlatformUser_CrossTenant_PreservesActiveAndTenant(t *testing.T) {
 // Editing a SUPERADMIN target is rejected (it is managed out-of-band only).
 func TestUpdatePlatformUser_RejectsSuperadminTarget(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "platform_update_super.db"))
+	fx := testfx.New(t)
 
 	super := fx.SeedUserInTenant(t, "root", "superadmin", shared.DefaultTenantID)
 
@@ -78,7 +77,7 @@ func TestUpdatePlatformUser_RejectsSuperadminTarget(t *testing.T) {
 // Promoting anyone to superadmin via the platform edit is rejected.
 func TestUpdatePlatformUser_RejectsPromotionToSuperadmin(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "platform_update_promote.db"))
+	fx := testfx.New(t)
 
 	victim := fx.SeedUserInTenant(t, "bob", "user", shared.DefaultTenantID)
 
@@ -101,7 +100,7 @@ func TestUpdatePlatformUser_RejectsPromotionToSuperadmin(t *testing.T) {
 // Cross-tenant delete lands for a regular user; a superadmin target is rejected.
 func TestDeletePlatformUser_CrossTenantAndSuperadminGuard(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "platform_delete.db"))
+	fx := testfx.New(t)
 
 	tenantB := fx.SeedTenant(t, "Beta")
 	victim := fx.SeedUserInTenant(t, "bob", "user", tenantB.ID)
@@ -138,7 +137,7 @@ func TestDeletePlatformUser_CrossTenantAndSuperadminGuard(t *testing.T) {
 // still green. (The inverse-direction guard for the write path.)
 func TestPlatformWriteCommands_AdminDeniedAtBus(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "platform_write_authz.db"))
+	fx := testfx.New(t)
 	victim := fx.SeedUserInTenant(t, "bob", "user", shared.DefaultTenantID)
 	cmdBus, _, _ := fx.NewBuses()
 
@@ -190,7 +189,7 @@ func TestPlatformWriteCommands_AdminDeniedAtBus(t *testing.T) {
 // bus's Authorize is now the only thing gating it on the HTTP path.
 func TestPlatformTenantCommands_AdminDeniedAtBus(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "platform_tenant_authz.db"))
+	fx := testfx.New(t)
 	victim := fx.SeedTenant(t, "Ghost")
 	cmdBus, _, _ := fx.NewBuses()
 
@@ -229,7 +228,7 @@ func assertPermissionDenied(t *testing.T, label string, err error) {
 // sanctioned way to add one (the admin API refuses the role).
 func TestCreateSuperAdminHandler_CreatesSuperAdmin(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_superadmin.db"))
+	fx := testfx.New(t)
 
 	h := NewCreateSuperAdminHandler(fx.Users, fx.Hasher)
 	if err := h.Handle(ctx, CreateSuperAdminCommand{
@@ -263,7 +262,7 @@ func TestCreateSuperAdminHandler_CreatesSuperAdmin(t *testing.T) {
 // it can't silently skip the event again (it used to).
 func TestCreateSuperAdminHandler_EmitsUserCreatedEvent(t *testing.T) {
 	ctx, collector := shared.ContextWithEventCollector(context.Background())
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_superadmin_event.db"))
+	fx := testfx.New(t)
 
 	h := NewCreateSuperAdminHandler(fx.Users, fx.Hasher)
 	if err := h.Handle(ctx, CreateSuperAdminCommand{
@@ -289,7 +288,7 @@ func TestCreateSuperAdminHandler_EmitsUserCreatedEvent(t *testing.T) {
 
 func TestCreateSuperAdminHandler_RejectsDuplicateNickname(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_superadmin_dup.db"))
+	fx := testfx.New(t)
 	fx.SeedUserInTenant(t, "root", "user", shared.DefaultTenantID)
 
 	h := NewCreateSuperAdminHandler(fx.Users, fx.Hasher)
@@ -305,7 +304,7 @@ func TestCreateSuperAdminHandler_RejectsDuplicateNickname(t *testing.T) {
 
 func TestCreateSuperAdminHandler_RejectsShortPassword(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "create_superadmin_pw.db"))
+	fx := testfx.New(t)
 
 	h := NewCreateSuperAdminHandler(fx.Users, fx.Hasher)
 	if err := h.Handle(ctx, CreateSuperAdminCommand{Nickname: "root", Password: "short"}); err == nil {
@@ -319,7 +318,7 @@ func TestCreateSuperAdminHandler_RejectsShortPassword(t *testing.T) {
 // FindByIDAcrossTenants' (nil, nil) not-found contract feeds.
 func TestUpdatePlatformUser_NotFound(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "platform_update_nf.db"))
+	fx := testfx.New(t)
 
 	h := NewUpdatePlatformUserHandler(fx.PlatformUsers, fx.Hasher)
 	err := h.Handle(ctx, UpdatePlatformUserCommand{
@@ -340,7 +339,7 @@ func TestUpdatePlatformUser_NotFound(t *testing.T) {
 
 func TestDeletePlatformUser_NotFound(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "platform_delete_nf.db"))
+	fx := testfx.New(t)
 
 	callerCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{
 		UserID: "caller-super", Role: "superadmin",

@@ -2,7 +2,6 @@ package user_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -14,7 +13,7 @@ import (
 // persist a user into a tenant other than its active scope (a cross-tenant write).
 // A system/seed path with no active scope is trusted (it stamps the tenant itself).
 func TestSave_CrossTenantWrite_Rejected(t *testing.T) {
-	fx := testfx.NewMultitenant(t, filepath.Join(t.TempDir(), "save_xtenant.db"))
+	fx := testfx.NewMultitenant(t)
 	tenantA := fx.SeedTenant(t, "Acme")
 	tenantB := fx.SeedTenant(t, "Globex")
 	ctxA := shared.ContextWithTenantID(context.Background(), tenantA.ID)

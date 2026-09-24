@@ -2,7 +2,6 @@ package user_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -13,16 +12,14 @@ import (
 // tenant to reference (and the FK has a target).
 func TestMigration_BootstrapDefaultTenantExists(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "bootstrap_tenant.db"))
+	fx := testfx.New(t)
 
-	var name string
-	err := fx.DB.DB().GetContext(ctx, &name,
-		`SELECT name FROM tenants WHERE id = ?`, shared.DefaultTenantID)
-	if err != nil {
-		t.Fatalf("bootstrap tenant must exist: %v", err)
+	tn, err := fx.Tenants.FindByID(ctx, shared.DefaultTenantID)
+	if err != nil || tn == nil {
+		t.Fatalf("bootstrap tenant must exist: %v / %v", tn, err)
 	}
-	if name != "Default" {
-		t.Fatalf("bootstrap tenant name = %q, want %q", name, "Default")
+	if tn.Name != "Default" {
+		t.Fatalf("bootstrap tenant name = %q, want %q", tn.Name, "Default")
 	}
 }
 
@@ -31,7 +28,7 @@ func TestMigration_BootstrapDefaultTenantExists(t *testing.T) {
 // single-tenant users all belong to the bootstrap tenant.
 func TestUserSave_StampsDefaultTenant(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "user_tenant_stamp.db"))
+	fx := testfx.New(t)
 
 	u := fx.SeedUser(t, "alice", "secret12", "user")
 

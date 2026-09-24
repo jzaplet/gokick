@@ -2,7 +2,6 @@ package seeder_test
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -19,7 +18,7 @@ import (
 // uses "short") because it pins the exact credential the docs promised.
 func TestSeeder_RejectsLiteralAdminPassword(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "seed_admin_literal.db"))
+	fx := testfx.New(t)
 
 	err := newSeeder(t, fx, "admin").Seed(ctx)
 	if err == nil {
@@ -47,7 +46,7 @@ func TestSeeder_RejectsLiteralAdminPassword(t *testing.T) {
 // which is the substance behind "creates a default admin user".
 func TestSeeder_SeededAdminPasswordVerifies(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "seed_admin_verify.db"))
+	fx := testfx.New(t)
 
 	const pw = "valid-password-12"
 	if err := newSeeder(t, fx, pw).Seed(ctx); err != nil {

@@ -2,7 +2,6 @@ package run_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -84,7 +83,7 @@ var ownerCheckedCalls = []ownerCheckedCall{
 func TestFence_AllMethods_WrongOwner_FalseNotError(t *testing.T) {
 	for _, c := range ownerCheckedCalls {
 		t.Run(c.name, func(t *testing.T) {
-			fx := testfx.New(t, filepath.Join(t.TempDir(), "fence_wrong_"+c.name+".db"))
+			fx := testfx.New(t)
 			r := enqueueRun(t, fx, "agent")
 			claimAs(t, fx, newOwner("wA")) // owned by A
 			ok, err := c.call(context.Background(), fx, r.ID, newOwner("wWrong"))
@@ -102,7 +101,7 @@ func TestFence_AllMethods_WrongOwner_FalseNotError(t *testing.T) {
 func TestFence_AllMethods_NonexistentID_False(t *testing.T) {
 	for _, c := range ownerCheckedCalls {
 		t.Run(c.name, func(t *testing.T) {
-			fx := testfx.New(t, filepath.Join(t.TempDir(), "fence_missing_"+c.name+".db"))
+			fx := testfx.New(t)
 			ok, err := c.call(context.Background(), fx, uuid.NewString(), newOwner("w"))
 			if err != nil || ok {
 				t.Fatalf("%s on missing id: ok=%v err=%v want false,nil", c.name, ok, err)
@@ -115,7 +114,7 @@ func TestFence_AllMethods_NonexistentID_False(t *testing.T) {
 func TestFence_AllMethods_RightfulOwner_True(t *testing.T) {
 	for _, c := range ownerCheckedCalls {
 		t.Run(c.name, func(t *testing.T) {
-			fx := testfx.New(t, filepath.Join(t.TempDir(), "fence_owner_"+c.name+".db"))
+			fx := testfx.New(t)
 			r := enqueueRun(t, fx, "agent")
 			owner := newOwner("wA")
 			claimAs(t, fx, owner)
@@ -132,7 +131,7 @@ func TestFence_AllMethods_RightfulOwner_True(t *testing.T) {
 func TestFence_AllMethods_NeverClaimed_False(t *testing.T) {
 	for _, c := range ownerCheckedCalls {
 		t.Run(c.name, func(t *testing.T) {
-			fx := testfx.New(t, filepath.Join(t.TempDir(), "fence_pending_"+c.name+".db"))
+			fx := testfx.New(t)
 			r := enqueueRun(t, fx, "agent") // never claimed → locked_by IS NULL
 			ok, err := c.call(context.Background(), fx, r.ID, newOwner("w"))
 			if err != nil || ok {
@@ -148,7 +147,7 @@ func TestFence_AllMethods_NeverClaimed_False(t *testing.T) {
 
 // NULL = ” is also NULL, so an empty owner can never match a lease.
 func TestFence_EmptyOwner_Checkpoint_False(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "fence_empty_owner.db"))
+	fx := testfx.New(t)
 	r := enqueueRun(t, fx, "agent")
 	claimAs(t, fx, newOwner("wA"))
 	ok, err := fx.Runs.Checkpoint(context.Background(), r.ID, "", []byte(`{"x":1}`), testLease)
@@ -160,7 +159,7 @@ func TestFence_EmptyOwner_Checkpoint_False(t *testing.T) {
 // ─── Reclaim & resume — the stalled worker (A) is fenced after B reclaims ──────
 
 func TestReclaim_CarriesLastCheckpointState(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "reclaim_state.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	ownerA := newOwner("wA")
@@ -184,7 +183,7 @@ func TestReclaim_CarriesLastCheckpointState(t *testing.T) {
 }
 
 func TestReclaim_FromEmptyState_ResumesFromScratch_PayloadImmutable(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "reclaim_scratch.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRunPayload(t, fx, `{"in":"P"}`)
 	ownerA := newOwner("wA")
@@ -204,7 +203,7 @@ func TestReclaim_FromEmptyState_ResumesFromScratch_PayloadImmutable(t *testing.T
 }
 
 func TestFence_StaleCheckpoint_RejectedAndStateUnchanged(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "stale_ckpt.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	id, ownerA, ownerB := reclaimedByB(t, fx)
 
@@ -223,7 +222,7 @@ func TestFence_StaleCheckpoint_RejectedAndStateUnchanged(t *testing.T) {
 }
 
 func TestFence_StaleMarkComplete_RejectedAndNotCompleted(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "stale_complete.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	id, ownerA, ownerB := reclaimedByB(t, fx)
 
@@ -241,7 +240,7 @@ func TestFence_StaleMarkComplete_RejectedAndNotCompleted(t *testing.T) {
 }
 
 func TestFence_StaleRenewLease_RejectedAndLeaseUntouched(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "stale_renew.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	id, ownerA, ownerB := reclaimedByB(t, fx)
 	before := mustFind(t, fx, id) // B's lease
@@ -260,7 +259,7 @@ func TestFence_StaleRenewLease_RejectedAndLeaseUntouched(t *testing.T) {
 }
 
 func TestFence_StaleReschedule_RejectedAndRunUntouched(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "stale_resched.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	id, ownerA, ownerB := reclaimedByB(t, fx)
 	before := mustFind(t, fx, id)
@@ -282,7 +281,7 @@ func TestFence_StaleReschedule_RejectedAndRunUntouched(t *testing.T) {
 }
 
 func TestFence_StaleMarkFailed_RejectedAndNotFailed(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "stale_failed.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	id, ownerA, ownerB := reclaimedByB(t, fx)
 
@@ -306,7 +305,7 @@ func TestFence_StaleMarkFailed_RejectedAndNotFailed(t *testing.T) {
 // Per-claim tokens let a worker fence against its OWN earlier abandoned attempt:
 // a stable per-worker id would equal the new token and wrongly pass.
 func TestFence_SelfReclaim_FencesOwnEarlierToken(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "self_reclaim.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	tok1 := newOwner("wSAME")
@@ -325,24 +324,25 @@ func TestFence_SelfReclaim_FencesOwnEarlierToken(t *testing.T) {
 }
 
 func TestReclaim_TenantPreserved(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "reclaim_tenant.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
-	r := enqueueRunInTenant(t, fx, "tnt-123")
+	tenantID := fx.SeedTenant(t, "acme").ID
+	r := enqueueRunInTenant(t, fx, tenantID)
 	claimAs(t, fx, newOwner("wA"))
 	forceExpire(t, fx, r.ID)
 	b, err := fx.Runs.ClaimDue(ctx, newOwner("wB"), testLease)
 	if err != nil || b == nil {
 		t.Fatalf("reclaim: %v / %v", b, err)
 	}
-	if b.TenantID != "tnt-123" {
-		t.Fatalf("tenant must survive reclaim: got %q want tnt-123", b.TenantID)
+	if b.TenantID != tenantID {
+		t.Fatalf("tenant must survive reclaim: got %q want %q", b.TenantID, tenantID)
 	}
 }
 
 // Terminal guard: once completed (lock cleared), an owner-checked write that only
 // keyed on locked_by could still match a NULL — the completed/failed guard closes it.
 func TestTerminal_CompleteThenRescheduleRejected(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "terminal_guard.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	owner := newOwner("wA")

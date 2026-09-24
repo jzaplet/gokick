@@ -2,14 +2,13 @@ package run_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/internal/testfx"
 )
 
 func TestRequestCancel_SetsFlag_OnClaimedRun_NoOwnerNeeded(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "cancel_set.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	claimAs(t, fx, newOwner("wA")) // owned by A; operator cancels without an owner token
@@ -23,7 +22,7 @@ func TestRequestCancel_SetsFlag_OnClaimedRun_NoOwnerNeeded(t *testing.T) {
 }
 
 func TestRequestCancel_Idempotent(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "cancel_idem.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	for i := 0; i < 3; i++ {
@@ -37,7 +36,7 @@ func TestRequestCancel_Idempotent(t *testing.T) {
 }
 
 func TestRequestCancel_OnCompleted_NoOp(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "cancel_completed.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	owner := newOwner("wA")
@@ -62,7 +61,7 @@ func TestRequestCancel_OnCompleted_NoOp(t *testing.T) {
 // cancel_requested does NOT make a run unclaimable (only cancelled_at does), and
 // the signal rides on the row — a worker reclaiming a crashed run honors it.
 func TestCancelRequested_StillClaimable_SurvivesReclaim(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "cancel_reclaim.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	claimAs(t, fx, newOwner("wA"))
@@ -81,7 +80,7 @@ func TestCancelRequested_StillClaimable_SurvivesReclaim(t *testing.T) {
 }
 
 func TestMarkCancelled_SetsCancelledClearsLock_PreservesState(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "cancel_mark.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	owner := newOwner("wA")
@@ -111,7 +110,7 @@ func TestMarkCancelled_SetsCancelledClearsLock_PreservesState(t *testing.T) {
 }
 
 func TestMarkCancelled_WrongOwner_False(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "cancel_wrong.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	claimAs(t, fx, newOwner("wA"))
@@ -126,7 +125,7 @@ func TestMarkCancelled_WrongOwner_False(t *testing.T) {
 }
 
 func TestMarkCancelled_AfterReclaim_StaleFenced(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "cancel_stale.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	id, ownerA, ownerB := reclaimedByB(t, fx)
 
@@ -145,7 +144,7 @@ func TestMarkCancelled_AfterReclaim_StaleFenced(t *testing.T) {
 
 // A cancelled run is terminal: not claimable, and every owner-checked write fails.
 func TestCancelled_IsTerminal_GuardsAndClaim(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "cancel_terminal.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	owner := newOwner("wA")
@@ -178,7 +177,7 @@ func TestCancelled_IsTerminal_GuardsAndClaim(t *testing.T) {
 // ownership is lost — so a vanished/reclaimed row reads as "no live cancel" and the
 // renew loop abandons instead of breaking.
 func TestRenewLease_ReportsCancelFlag(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "renew_cancelflag.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	enqueueRun(t, fx, "agent")
 	owner := newOwner("wA")

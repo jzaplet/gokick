@@ -11,7 +11,7 @@ import (
 
 	"gokick/app/domain/shared"
 	"gokick/app/infrastructure/config"
-	"gokick/app/internal/testfx"
+	"gokick/app/internal/testfx/jwtfx"
 	"gokick/app/presentation/http/handler"
 	"gokick/app/presentation/http/middleware"
 	"gokick/app/presentation/http/response"
@@ -144,7 +144,7 @@ func TestBuildMiddlewareChain_HSTSGatedByCookieSecure(t *testing.T) {
 func routingServer(t *testing.T) *Server {
 	t.Helper()
 
-	jwt := testfx.NewJwt(t, 15*time.Minute)
+	jwt := jwtfx.New(t, 15*time.Minute)
 	logger := silentLogger()
 	extract := middleware.NewIPExtractor(false)
 

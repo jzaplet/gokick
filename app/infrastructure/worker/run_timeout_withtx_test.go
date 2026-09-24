@@ -14,18 +14,13 @@ import (
 
 func countRunsByKind(t *testing.T, fx *testfx.Fixture, kind string) int {
 	t.Helper()
-	var n int
-	if err := fx.DB.DB().GetContext(context.Background(), &n,
-		`SELECT COUNT(*) FROM runs WHERE kind = ?`, kind); err != nil {
-		t.Fatalf("count runs %q: %v", kind, err)
-	}
-	return n
+	return fx.Count(t, "runs", "kind = ?", kind)
 }
 
 // A per-attempt timeout: a handler that blows its deadline is a RETRYABLE failure
 // (rescheduled with backoff), not a completion — even though it returns ctx.Err().
 func TestRunWorker_Timeout_ReschedulesAsFailure(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_timeout.db")
+	fx := testfx.New(t)
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		<-ctx.Done() // honor the deadline
 		return ctx.Err()
@@ -53,7 +48,7 @@ func TestRunWorker_Timeout_ReschedulesAsFailure(t *testing.T) {
 // A handler can make several writes atomically via shared.WithTx (short transaction
 // it scopes itself). On a clean return the writes commit.
 func TestRunWorker_HandlerWithTx_CommitsChildWrite(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_withtx_commit.db")
+	fx := testfx.New(t)
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		return shared.WithTx(ctx, func(txCtx context.Context) error {
 			child, _ := run.NewRun("withtx.child", []byte(`{}`), 0)
@@ -69,8 +64,8 @@ func TestRunWorker_HandlerWithTx_CommitsChildWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("registry: %v", err)
 	}
-	// transactor = fx.DB (implements shared.Transactor) → WithTx works.
-	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, fx.DB, nil, fastCfg())
+	// transactor = fx.Tx → WithTx works.
+	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, fx.Tx, nil, fastCfg())
 	enqueueRunW(t, fx, "withtx.parent", 0)
 
 	stop := startWorker(w)
@@ -83,7 +78,7 @@ func TestRunWorker_HandlerWithTx_CommitsChildWrite(t *testing.T) {
 // If the WithTx block returns an error, the whole short transaction rolls back —
 // the writes it made do not persist (all-or-nothing).
 func TestRunWorker_HandlerWithTx_RollsBackOnError(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_withtx_rollback.db")
+	fx := testfx.New(t)
 	boom := errors.New("fail after the write")
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		return shared.WithTx(ctx, func(txCtx context.Context) error {
@@ -100,7 +95,7 @@ func TestRunWorker_HandlerWithTx_RollsBackOnError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("registry: %v", err)
 	}
-	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, fx.DB, nil, fastCfg())
+	w := NewRunWorker(silentLogger(), &countingReporter{}, fx.Runs, reg, nil, fx.Tx, nil, fastCfg())
 	r := enqueueRunW(t, fx, "withtx.rbparent", 0) // run-once → first failure is terminal
 
 	stop := startWorker(w)
@@ -120,7 +115,7 @@ func TestRunWorker_HandlerWithTx_RollsBackOnError(t *testing.T) {
 // handleFailure via the `default` case even if the timedOut flag were broken — this
 // one returns nil, so only correct timedOut detection + ranking keeps it off Complete.
 func TestRunWorker_Timeout_NilReturn_NotCompleted(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_timeout_nil.db")
+	fx := testfx.New(t)
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		<-ctx.Done() // deadline fires
 		return nil   // clean-stop nil, NOT ctx.Err()
@@ -154,7 +149,7 @@ func TestRunWorker_Timeout_NilReturn_NotCompleted(t *testing.T) {
 // lease so the grace (cancelGraceLeaseMultiple*lease) is small. The handler ignores
 // ctx on purpose and leaks until release is closed at test end.
 func TestRunWorker_Timeout_NonCtxAwareHandler_AbandonsForReclaim(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_timeout_stuck.db")
+	fx := testfx.New(t)
 	release := make(chan struct{})
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		<-release // IGNORES ctx — only the test can free it

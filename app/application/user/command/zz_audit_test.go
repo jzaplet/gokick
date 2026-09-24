@@ -3,7 +3,6 @@ package command
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -25,7 +24,7 @@ func auditEventsByAction(events []shared.AuditEvent, action string) []shared.Aud
 // app-events-audit-41: CreateUserHandler emits audit action user.created with
 // metadata {role}.
 func TestCreateUserHandler_RecordsUserCreatedAudit(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "audit_user_created.db"))
+	fx := testfx.New(t)
 
 	// EventCollector is also needed: Handle calls EventCollectorFromContext too,
 	// but it returns a throwaway when absent, so only the audit collector is wired.
@@ -68,7 +67,7 @@ func TestCreateUserHandler_RecordsUserCreatedAudit(t *testing.T) {
 // app-events-audit-42 (role changed half): UpdateUserHandler emits
 // user.role_changed with metadata {new_role} when the role actually changes.
 func TestUpdateUserHandler_RecordsRoleChangedAudit(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "audit_role_changed.db"))
+	fx := testfx.New(t)
 	target := fx.SeedUser(t, "bob", "secret12", "user")
 
 	ctx, collector := shared.ContextWithAuditCollector(authedCtx("admin-actor", "admin"))
@@ -102,7 +101,7 @@ func TestUpdateUserHandler_RecordsRoleChangedAudit(t *testing.T) {
 // app-events-audit-42 (unchanged-role half): no user.role_changed event when
 // the role is identical, even though the update otherwise succeeds.
 func TestUpdateUserHandler_NoRoleChangedAuditWhenRoleUnchanged(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "audit_role_same.db"))
+	fx := testfx.New(t)
 	target := fx.SeedUser(t, "bob", "secret12", "user")
 
 	ctx, collector := shared.ContextWithAuditCollector(authedCtx("admin-actor", "admin"))
@@ -137,7 +136,7 @@ func TestUpdateUserHandler_NoRoleChangedAuditWhenRoleUnchanged(t *testing.T) {
 // change that never persisted. The up-front superadmin guard now returns a
 // PermissionError before any audit is recorded.
 func TestUpdateUserHandler_NoPhantomRoleChangedOnSuperadminTarget(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "audit_superadmin_phantom.db"))
+	fx := testfx.New(t)
 	su := fx.SeedUser(t, "root", "secret12", "superadmin")
 
 	ctx, collector := shared.ContextWithAuditCollector(authedCtx("admin-actor", "admin"))
@@ -160,7 +159,7 @@ func TestUpdateUserHandler_NoPhantomRoleChangedOnSuperadminTarget(t *testing.T) 
 
 // app-events-audit-43: DeleteUserHandler emits user.deleted (no metadata).
 func TestDeleteUserHandler_RecordsUserDeletedAudit(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "audit_user_deleted.db"))
+	fx := testfx.New(t)
 	admin := fx.SeedUser(t, "admin", "secret12", "admin")
 	target := fx.SeedUser(t, "bob", "secret12", "user")
 
@@ -191,7 +190,7 @@ func TestDeleteUserHandler_RecordsUserDeletedAudit(t *testing.T) {
 // ValidationError wins. With both an invalid nickname AND an invalid role,
 // NewNickname runs before NewRole, so the nickname error must be returned.
 func TestCreateUserHandler_FirstValidationErrorWins(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "audit_first_error.db"))
+	fx := testfx.New(t)
 
 	h := NewCreateUserHandler(fx.Users, fx.Hasher, false)
 	err := h.Handle(context.Background(), CreateUserCommand{
@@ -214,7 +213,7 @@ func TestCreateUserHandler_FirstValidationErrorWins(t *testing.T) {
 // Field="nickname" AND the exact message. (Existing TestCreateUserHandler_
 // DuplicateNickname checks the Field but not the Message.)
 func TestCreateUserHandler_DuplicateNicknameMessage(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "audit_dup_msg.db"))
+	fx := testfx.New(t)
 	fx.SeedUser(t, "alice", "secret12", "user")
 
 	h := NewCreateUserHandler(fx.Users, fx.Hasher, false)

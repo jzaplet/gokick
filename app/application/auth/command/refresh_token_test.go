@@ -3,7 +3,6 @@ package command
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -55,7 +54,7 @@ func (s stubDeleteFailsTokens) DeleteByUserID(context.Context, string) error {
 
 func TestRefreshTokenHandler_Success(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "refresh_success.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "pwd", "user")
 	raw := fx.SeedRefreshToken(t, u.ID, time.Now().Add(24*time.Hour))
 
@@ -99,13 +98,11 @@ func TestRefreshTokenHandler_Success(t *testing.T) {
 // active flag is enforced on the rotation path, ending the session.
 func TestRefreshTokenHandler_InactiveUserCannotRefresh(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "refresh_inactive.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "pwd", "user")
 	raw := fx.SeedRefreshToken(t, u.ID, time.Now().Add(24*time.Hour))
 
-	if _, err := fx.DB.DB().Exec(`UPDATE users SET active = 0 WHERE id = ?`, u.ID); err != nil {
-		t.Fatalf("deactivate: %v", err)
-	}
+	fx.SetUserActive(t, u.ID, false)
 
 	handler := NewRefreshTokenHandler(fx.Users, fx.Tokens, fx.Jwt)
 
@@ -118,7 +115,7 @@ func TestRefreshTokenHandler_InactiveUserCannotRefresh(t *testing.T) {
 
 func TestRefreshTokenHandler_Expired(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "refresh_expired.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "pwd", "user")
 	raw := fx.SeedRefreshToken(t, u.ID, time.Now().Add(-1*time.Hour))
 
@@ -135,7 +132,7 @@ func TestRefreshTokenHandler_Expired(t *testing.T) {
 
 func TestRefreshTokenHandler_UnknownToken(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "refresh_unknown.db"))
+	fx := testfx.New(t)
 
 	handler := NewRefreshTokenHandler(fx.Users, fx.Tokens, fx.Jwt)
 
@@ -149,7 +146,7 @@ func TestRefreshTokenHandler_UnknownToken(t *testing.T) {
 
 func TestRefreshTokenHandler_UserDeletedAfterIssue(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "refresh_user_gone.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "pwd", "user")
 	raw := fx.SeedRefreshToken(t, u.ID, time.Now().Add(24*time.Hour))
 
@@ -174,7 +171,7 @@ func TestRefreshTokenHandler_UserDeletedAfterIssue(t *testing.T) {
 // that path exits at FindByHash. Here the stub returns (nil, nil) with err == nil.
 func TestRefreshTokenHandler_UserVanishedNilNilReturnsAuthError(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "refresh_user_vanished.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "pwd", "user")
 	raw := fx.SeedRefreshToken(t, u.ID, time.Now().Add(24*time.Hour))
 
@@ -197,7 +194,7 @@ func TestRefreshTokenHandler_UserVanishedNilNilReturnsAuthError(t *testing.T) {
 // still-valid session on a momentary blip — the regression this changeset fixes.
 func TestRefreshTokenHandler_TransientFindByIDErrorIsNotAuthError(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "refresh_transient.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "pwd", "user")
 	raw := fx.SeedRefreshToken(t, u.ID, time.Now().Add(24*time.Hour))
 
@@ -232,7 +229,7 @@ func TestRefreshTokenHandler_TransientFindByIDErrorIsNotAuthError(t *testing.T) 
 // force-log-out a legitimate client. This test pins the order that prevents that.
 func TestRefreshTokenHandler_SaveFailureLeavesOldTokenUnconsumed(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "refresh_save_fail.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "pwd", "user")
 	raw := fx.SeedRefreshToken(t, u.ID, time.Now().Add(24*time.Hour))
 
@@ -264,7 +261,7 @@ func TestRefreshTokenHandler_SaveFailureLeavesOldTokenUnconsumed(t *testing.T) {
 func TestRefreshTokenHandler_ReuseTriggersForceLogout(t *testing.T) {
 	// Using an already-rotated refresh token signals theft: drop all tokens for that user.
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "refresh_theft.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "pwd", "user")
 	raw := fx.SeedRefreshToken(t, u.ID, time.Now().Add(24*time.Hour))
 
@@ -300,7 +297,7 @@ func TestRefreshTokenHandler_ReuseTriggersForceLogout(t *testing.T) {
 // if SkipTransaction() is ever removed or renamed.
 func TestRefreshTokenHandler_TheftForceLogoutPersistsThroughBusTx(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "refresh_theft_bus.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "pwd", "user")
 	raw := fx.SeedRefreshToken(t, u.ID, time.Now().Add(24*time.Hour))
 
@@ -336,7 +333,7 @@ func TestRefreshTokenHandler_TheftForceLogoutPersistsThroughBusTx(t *testing.T) 
 // force-logout; this proves the security event operators rely on to SEE it.
 func TestRefreshTokenHandler_ReuseRecordsTheftAudit(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "refresh_theft_audit.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "pwd", "user")
 	raw := fx.SeedRefreshToken(t, u.ID, time.Now().Add(24*time.Hour))
 
@@ -384,7 +381,7 @@ func TestRefreshTokenHandler_ReuseRecordsTheftAudit(t *testing.T) {
 // error and the gate would stay green.
 func TestRefreshTokenHandler_TheftDeleteFailureSurfacesErrorAndStillAudits(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "refresh_theft_delete_fail.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "pwd", "user")
 	raw := fx.SeedRefreshToken(t, u.ID, time.Now().Add(24*time.Hour))
 

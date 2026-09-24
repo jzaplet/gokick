@@ -97,7 +97,7 @@ func newRunWorkerWithRepo(
 // #1 — the headline invariant for the handler shape that can violate it: a
 // cancelled handler that returns nil must be MarkCancelled, never MarkComplete.
 func TestRunWorker_CancelNilReturn_MarksCancelledNotCompleted(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rwr_cancel_nil.db")
+	fx := testfx.New(t)
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		<-ctx.Done()
 		return nil // clean stop — NOT ctx.Err()
@@ -129,7 +129,7 @@ func TestRunWorker_CancelNilReturn_MarksCancelledNotCompleted(t *testing.T) {
 // BEFORE start (caught at claim time); this exercises the mid-run cancel-read path —
 // the cancel flag folded into the heartbeat's RenewLease.
 func TestRunWorker_MidRunCancel_Observed(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rwr_midcancel.db")
+	fx := testfx.New(t)
 	started := make(chan struct{})
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		close(started)
@@ -161,7 +161,7 @@ func TestRunWorker_MidRunCancel_Observed(t *testing.T) {
 
 // #2 — unknown kind with retries available is PARKED (rescheduled), not killed.
 func TestRunWorker_UnknownKind_WithRetries_Parks(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rwr_unknown_park.db")
+	fx := testfx.New(t)
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error { return nil }
 	w, _ := newRunWorker(
 		t,
@@ -195,7 +195,7 @@ func TestRunWorker_UnknownKind_WithRetries_Parks(t *testing.T) {
 // #5 — retry then exhaustion: a run that keeps failing reschedules until the
 // budget is spent, then fails terminally (reported exactly once).
 func TestRunWorker_RetryThenExhaust_Fails(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rwr_exhaust.db")
+	fx := testfx.New(t)
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		return errors.New("always")
 	}
@@ -214,10 +214,7 @@ func TestRunWorker_RetryThenExhaust_Fails(t *testing.T) {
 		return g != nil && g.Attempts == 1 && g.FailedAt == nil
 	})
 	// Clear the backoff so the retry is due immediately.
-	if _, err := fx.DB.DB().ExecContext(context.Background(),
-		`UPDATE runs SET run_at = strftime('%Y-%m-%d %H:%M:%f','now','-1 second') WHERE id = ?`, r.ID); err != nil {
-		t.Fatalf("clear backoff: %v", err)
-	}
+	fx.MakeRunDue(t, r.ID)
 	waitFor(t, "exhausted → failed", func() bool {
 		g := findW(t, fx, r.ID)
 		return g != nil && g.FailedAt != nil
@@ -230,7 +227,7 @@ func TestRunWorker_RetryThenExhaust_Fails(t *testing.T) {
 // #6 — a lease lost exactly at finalize (MarkComplete returns false) must abandon
 // the run (no terminal write, no retry loop), not crash or double-finalize.
 func TestRunWorker_LeaseLostAtComplete_Abandons(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rwr_lostfinalize.db")
+	fx := testfx.New(t)
 	repo := &flakyRepo{Repository: fx.Runs}
 	repo.failComplete.Store(true)
 	done := make(chan struct{})
@@ -263,7 +260,7 @@ func TestRunWorker_LeaseLostAtComplete_Abandons(t *testing.T) {
 // #7 — the drain is bounded: an uncooperative handler that ignores ctx cannot
 // block Run() past DrainTimeout.
 func TestRunWorker_UncooperativeHandler_DrainBounded(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rwr_drain.db")
+	fx := testfx.New(t)
 	block := make(chan struct{})
 	started := make(chan struct{})
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
@@ -293,7 +290,7 @@ func TestRunWorker_UncooperativeHandler_DrainBounded(t *testing.T) {
 // #11 — the heartbeat keeps a run alive past its (short) lease, so another worker
 // cannot reclaim a still-running long run.
 func TestRunWorker_Heartbeat_KeepsLongRunAlive(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rwr_hb_alive.db")
+	fx := testfx.New(t)
 	started := make(chan struct{})
 	release := make(chan struct{})
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
@@ -339,7 +336,7 @@ func TestRunWorker_Heartbeat_KeepsLongRunAlive(t *testing.T) {
 // #12 — the per-kind lease is applied right after claim (an explicit Registration
 // lease, far larger than DefaultLease, shows up on locked_until).
 func TestRunWorker_PerKindLease_AppliedAfterClaim(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rwr_perkind.db")
+	fx := testfx.New(t)
 	started := make(chan struct{})
 	release := make(chan struct{})
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
@@ -374,7 +371,7 @@ func TestRunWorker_PerKindLease_AppliedAfterClaim(t *testing.T) {
 // execution). Sibling of #11, which only covers the safe direction (kindLease >>
 // heartbeat). Fails on the pre-fix code where the ticker uses cfg.HeartbeatInterval.
 func TestRunWorker_PerKindLeaseShorterThanHeartbeat_StaysAlive(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rwr_shortlease.db")
+	fx := testfx.New(t)
 	started := make(chan struct{})
 	release := make(chan struct{})
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
@@ -417,7 +414,7 @@ func TestRunWorker_PerKindLeaseShorterThanHeartbeat_StaysAlive(t *testing.T) {
 // #13 — the heartbeat abandons after maxHeartbeatErrors consecutive RenewLease
 // errors (the initial re-lease is allowed to succeed).
 func TestRunWorker_HeartbeatErrors_Abandon(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rwr_hb_errors.db")
+	fx := testfx.New(t)
 	repo := &flakyRepo{Repository: fx.Runs}
 	repo.failRenewAfter.Store(1) // call 1 (the initial re-lease) succeeds; heartbeat renews fail
 	started := make(chan struct{})
@@ -450,7 +447,7 @@ func TestRunWorker_HeartbeatErrors_Abandon(t *testing.T) {
 // #14 — Checkpointer.Save surfaces ErrLeaseLost to the handler when ownership was
 // lost (Checkpoint returns false).
 func TestRunWorker_Checkpoint_SurfacesErrLeaseLost(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rwr_errleaselost.db")
+	fx := testfx.New(t)
 	repo := &flakyRepo{Repository: fx.Runs}
 	repo.failCheckpoint.Store(true)
 	saveErr := make(chan error, 1)
@@ -477,7 +474,7 @@ func TestRunWorker_Checkpoint_SurfacesErrLeaseLost(t *testing.T) {
 // #15 — the backpressure slot is released after a failure, so a single-slot pool
 // keeps draining a queue of failing runs.
 func TestRunWorker_SlotReleasedAfterFailure(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rwr_slot.db")
+	fx := testfx.New(t)
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
 		return errors.New("fail")
 	}
@@ -506,7 +503,7 @@ func TestRunWorker_SlotReleasedAfterFailure(t *testing.T) {
 // WITHOUT finalizing (the run is left for lease-lapse reclaim). This is the
 // claim-gap guard that exists to stop double execution under a short DefaultLease.
 func TestRunWorker_InitialReleaseError_AbandonsWithoutRunningHandler(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rwr_initrelease_err.db")
+	fx := testfx.New(t)
 	repo := &flakyRepo{Repository: fx.Runs}
 	repo.failRenewFrom.Store(1) // call #1 (the initial re-lease) errors
 	var handlerRan atomic.Bool
@@ -541,7 +538,7 @@ func TestRunWorker_InitialReleaseError_AbandonsWithoutRunningHandler(t *testing.
 // in the claim gap; run_worker.go:220): same contract — abandon without running
 // the handler or finalizing.
 func TestRunWorker_InitialReleaseLost_AbandonsWithoutRunningHandler(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rwr_initrelease_lost.db")
+	fx := testfx.New(t)
 	repo := &flakyRepo{Repository: fx.Runs}
 	repo.renewOkFalse.Store(true) // the initial re-lease reports the lease already lost
 	var handlerRan atomic.Bool
@@ -575,7 +572,7 @@ func TestRunWorker_InitialReleaseLost_AbandonsWithoutRunningHandler(t *testing.T
 // must NOT crash the pool: a second healthy run on a single-slot pool still
 // completes, proving the panic recovered AND the backpressure slot was released.
 func TestRunWorker_HeartbeatPanic_DoesNotCrashPool(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rwr_hbpanic.db")
+	fx := testfx.New(t)
 	repo := &flakyRepo{Repository: fx.Runs}
 	repo.panicRenewFrom.Store(2) // heartbeat renew panics; 2 skips the initial re-lease
 	blocking := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {
@@ -611,7 +608,7 @@ func TestRunWorker_HeartbeatPanic_DoesNotCrashPool(t *testing.T) {
 // recovered at the process() top (run_worker.go:181) and must NOT crash the pool:
 // a second healthy run on a single-slot pool still completes (recover + slot release).
 func TestRunWorker_FinalizePanic_DoesNotCrashPool(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rwr_finalizepanic.db")
+	fx := testfx.New(t)
 	repo := &flakyRepo{Repository: fx.Runs}
 	repo.panicComplete.Store(true) // MarkComplete (finalize) panics
 	succeeds := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error { return nil }

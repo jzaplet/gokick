@@ -3,7 +3,6 @@ package command
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,7 +12,7 @@ import (
 
 func TestLogoutHandler_DeletesAllUserTokens(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "logout_all.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "pwd", "user")
 
 	// Simulate several active sessions (e.g. phone, laptop, tablet).
@@ -36,7 +35,7 @@ func TestLogoutHandler_DeletesAllUserTokens(t *testing.T) {
 
 func TestLogoutHandler_DoesNotTouchOtherUsers(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "logout_scope.db"))
+	fx := testfx.New(t)
 	alice := fx.SeedUser(t, "alice", "pwd", "user")
 	bob := fx.SeedUser(t, "bob", "pwd", "user")
 
@@ -59,7 +58,7 @@ func TestLogoutHandler_DoesNotTouchOtherUsers(t *testing.T) {
 
 func TestLogoutHandler_WithoutClaimsReturnsAuthError(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "logout_noauth.db"))
+	fx := testfx.New(t)
 
 	handler := NewLogoutHandler(fx.Tokens)
 	err := handler.Handle(ctx, LogoutCommand{})
@@ -72,7 +71,7 @@ func TestLogoutHandler_WithoutClaimsReturnsAuthError(t *testing.T) {
 
 func TestLogoutHandler_RecordsAuditEvent(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "logout_audit.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "pwd", "user")
 	fx.SeedRefreshToken(t, u.ID, time.Now().Add(24*time.Hour))
 

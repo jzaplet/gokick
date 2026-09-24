@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 	"gokick/app/domain/run"
 	"gokick/app/domain/shared"
 	"gokick/app/infrastructure/security"
-	sqliteaudit "gokick/app/infrastructure/sqlite/audit"
 	"gokick/app/internal/testfx"
 )
 
@@ -50,14 +48,13 @@ func newProductionCommandBus(
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	checker := security.NewPermissionChecker()
 	eventBus := provideEventBus(logger, provideEventHandlers(), shared.NopReporter{})
-	audit := sqliteaudit.NewRepository(fx.DB)
 	return provideCommandBus(
 		logger,
-		fx.DB,
+		fx.Tx,
 		checker,
 		eventBus,
 		runDispatcher,
-		audit,
+		fx.Audit,
 		shared.NopReporter{},
 		security.NewDefaultTenantResolver(),
 	)
@@ -71,7 +68,7 @@ func newProductionCommandBus(
 // untested app-events-audit-26/27.
 func TestCommandBus_AuditSurvivesBusinessRollback(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "audit_rollback.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "victim", "password123", "user")
 
 	cmdBus := newProductionCommandBus(t, fx, noopDispatcher{})
@@ -112,12 +109,8 @@ func TestCommandBus_AuditSurvivesBusinessRollback(t *testing.T) {
 	}
 
 	// ...but the audit row survived it.
-	var auditCount int
-	if e := fx.DB.DB().GetContext(ctx, &auditCount,
-		`SELECT COUNT(*) FROM audit_log WHERE action='user.role_changed' AND target_id=?`, u.ID); e != nil {
-		t.Fatalf("count audit rows: %v", e)
-	}
-	if auditCount != 1 {
+	if auditCount := fx.Count(t, "audit_log", "action = ? AND target_id = ?",
+		"user.role_changed", u.ID); auditCount != 1 {
 		t.Fatalf("audit row must survive the business rollback, got %d", auditCount)
 	}
 }
@@ -131,7 +124,7 @@ func TestCommandBus_AuditSurvivesBusinessRollback(t *testing.T) {
 // noop run dispatcher (as the other tests use) the guarantee would be untested.
 func TestCommandBus_RunEnqueueJoinsBusinessTransaction(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "run_tx.db"))
+	fx := testfx.New(t)
 
 	registry, err := runapp.NewHandlerRegistry(map[string]runapp.Registration{
 		"test.run": {
@@ -144,13 +137,7 @@ func TestCommandBus_RunEnqueueJoinsBusinessTransaction(t *testing.T) {
 	dispatcher := runapp.NewDispatcher(fx.Runs, registry)
 	cmdBus := newProductionCommandBus(t, fx, dispatcher)
 
-	runCount := func() int {
-		var n int
-		if e := fx.DB.DB().GetContext(ctx, &n, `SELECT COUNT(*) FROM runs`); e != nil {
-			t.Fatalf("count runs: %v", e)
-		}
-		return n
-	}
+	runCount := func() int { return fx.Count(t, "runs", "") }
 
 	// Rollback case: enqueue a run then fail → the run row must NOT persist,
 	// proving the enqueue joined the rolled-back business tx.
@@ -189,7 +176,7 @@ func TestCommandBus_RunEnqueueJoinsBusinessTransaction(t *testing.T) {
 // fires: the event must fire once on commit and never on rollback.
 func TestCommandBus_EventsDispatchOnCommitNotRollback(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "events_order.db"))
+	fx := testfx.New(t)
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	fired := 0
@@ -201,11 +188,11 @@ func TestCommandBus_EventsDispatchOnCommitNotRollback(t *testing.T) {
 	}, shared.NopReporter{})
 	cmdBus := provideCommandBus(
 		logger,
-		fx.DB,
+		fx.Tx,
 		security.NewPermissionChecker(),
 		eventBus,
 		noopDispatcher{},
-		sqliteaudit.NewRepository(fx.DB),
+		fx.Audit,
 		shared.NopReporter{},
 		security.NewDefaultTenantResolver(),
 	)
@@ -247,7 +234,7 @@ func TestCommandBus_EventsDispatchOnCommitNotRollback(t *testing.T) {
 // returns the no-op and this run vanishes — the count stays 0 and this fails.
 func TestSystemCommandBus_RunEnqueueIsDurable(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "system_enqueue.db"))
+	fx := testfx.New(t)
 
 	registry, err := runapp.NewHandlerRegistry(map[string]runapp.Registration{
 		"test.run": {
@@ -263,9 +250,9 @@ func TestSystemCommandBus_RunEnqueueIsDurable(t *testing.T) {
 	eventBus := provideEventBus(logger, provideEventHandlers(), shared.NopReporter{})
 	sysBus := provideSystemCommandBus(
 		logger,
-		fx.DB,
+		fx.Tx,
 		eventBus,
-		sqliteaudit.NewRepository(fx.DB),
+		fx.Audit,
 		dispatcher,
 		shared.NopReporter{},
 	)
@@ -276,11 +263,7 @@ func TestSystemCommandBus_RunEnqueueIsDurable(t *testing.T) {
 		t.Fatalf("system enqueue: %v", e)
 	}
 
-	var n int
-	if e := fx.DB.DB().GetContext(ctx, &n, `SELECT COUNT(*) FROM runs`); e != nil {
-		t.Fatalf("count runs: %v", e)
-	}
-	if n != 1 {
+	if n := fx.Count(t, "runs", ""); n != 1 {
 		t.Fatalf("run enqueued via the system bus must persist durably, got %d run rows", n)
 	}
 }
@@ -291,7 +274,7 @@ func TestSystemCommandBus_RunEnqueueIsDurable(t *testing.T) {
 // tenant. Closes the gap a hand-assembled chain would miss.
 func TestCommandBus_InjectsTenantIntoHandlerContext(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_ctx.db"))
+	fx := testfx.New(t)
 	cmdBus := newProductionCommandBus(t, fx, noopDispatcher{})
 
 	var seen string

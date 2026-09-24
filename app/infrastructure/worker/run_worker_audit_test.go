@@ -19,7 +19,7 @@ import (
 // stamps completed_at, so once the run reads completed the row must already be
 // there; without the drain it never lands and this fails.
 func TestRunWorker_HandlerAuditEventIsPersisted(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/rw_audit.db")
+	fx := testfx.New(t)
 
 	handler := func(ctx context.Context, r *run.Run, _ runapp.Checkpointer) error {
 		shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
@@ -38,7 +38,7 @@ func TestRunWorker_HandlerAuditEventIsPersisted(t *testing.T) {
 	}
 	w := NewRunWorker(
 		silentLogger(), &countingReporter{}, fx.Runs, reg,
-		nil, nil, fx.NewAuditLogger(), fastCfg(),
+		nil, nil, fx.Audit, fastCfg(),
 	)
 
 	r := enqueueRunW(t, fx, "audited", 0)
@@ -51,12 +51,7 @@ func TestRunWorker_HandlerAuditEventIsPersisted(t *testing.T) {
 	})
 
 	// The drain runs before completed_at is stamped, so the row is already written.
-	var n int
-	if e := fx.DB.DB().GetContext(context.Background(), &n,
-		`SELECT COUNT(*) FROM audit_log WHERE action='run.did.thing' AND target_id=?`, r.ID); e != nil {
-		t.Fatalf("count audit rows: %v", e)
-	}
-	if n != 1 {
+	if n := fx.Count(t, "audit_log", "action = ? AND target_id = ?", "run.did.thing", r.ID); n != 1 {
 		t.Fatalf("run handler's audit event must be persisted by the worker drain, got %d rows", n)
 	}
 }

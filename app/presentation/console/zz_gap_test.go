@@ -3,7 +3,6 @@ package console
 import (
 	"context"
 	"log/slog"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -152,8 +151,8 @@ func serveTestRunWorker(
 func TestServeCommand_SchedulerDoneGatesReturnAndSharesCtx(t *testing.T) {
 	// No t.Parallel: testfx-backed tests are kept serial by convention for now. (The original reason — goose's process-global
 	// state — is gone since migrations run through a goose Provider; enabling
-	// t.Parallel for DB tests is a separate step of the Postgres plan, phase 2.)
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "serve.db"))
+	// t.Parallel for DB tests is an optional later step of the Postgres plan.)
+	fx := testfx.New(t)
 
 	logger, snapshot := newCaptureLogger()
 
@@ -246,7 +245,7 @@ func TestServeCommand_SchedulerDoneGatesReturnAndSharesCtx(t *testing.T) {
 // also enforces the required flags before RunE runs.
 func TestCreateSuperAdminCommand_CreatesSuperAdmin(t *testing.T) {
 	// No t.Parallel — see the other testfx-backed tests in this package.
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "console_superadmin.db"))
+	fx := testfx.New(t)
 	handler := platformcmd.NewCreateSuperAdminHandler(fx.Users, fx.Hasher)
 
 	cmd := NewCreateSuperAdminCommand(handler, fx.NewSystemBus()).Command()
@@ -265,18 +264,13 @@ func TestCreateSuperAdminCommand_CreatesSuperAdmin(t *testing.T) {
 	}
 
 	// The SystemCommandBus's AuditMiddleware persisted the user.created trail.
-	var n int
-	if err := fx.DB.DB().GetContext(context.Background(), &n,
-		`SELECT COUNT(*) FROM audit_log WHERE action='user.created' AND target_id=?`, got.ID); err != nil {
-		t.Fatalf("audit query: %v", err)
-	}
-	if n != 1 {
+	if n := fx.Count(t, "audit_log", "action = ? AND target_id = ?", "user.created", got.ID); n != 1 {
 		t.Fatalf("create-superadmin must write a user.created audit record, got %d", n)
 	}
 }
 
 func TestCreateSuperAdminCommand_MissingPasswordErrors(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "console_superadmin_missing.db"))
+	fx := testfx.New(t)
 	handler := platformcmd.NewCreateSuperAdminHandler(fx.Users, fx.Hasher)
 
 	cmd := NewCreateSuperAdminCommand(handler, fx.NewSystemBus()).Command()
@@ -317,7 +311,7 @@ func newCreateUserCmd(fx *testfx.Fixture, multitenant bool) *cobra.Command {
 // Multitenancy on, no tenant flag → error AND no user persisted.
 func TestCreateUserCommand_MultitenantRequiresTenantFlag(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "cu_mt_required.db"))
+	fx := testfx.New(t)
 
 	cmd := newCreateUserCmd(fx, true)
 	cmd.SetArgs([]string{"-n", "alice", "-p", "secret12"})
@@ -336,7 +330,7 @@ func TestCreateUserCommand_MultitenantRequiresTenantFlag(t *testing.T) {
 // Multitenancy on + --tenant-name → creates the tenant and the user in it.
 func TestCreateUserCommand_MultitenantCreatesTenantByName(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "cu_mt_name.db"))
+	fx := testfx.New(t)
 
 	cmd := newCreateUserCmd(fx, true)
 	cmd.SetArgs([]string{"-n", "alice", "-p", "secret12", "-r", "user", "--tenant-name", "Acme"})
@@ -357,7 +351,7 @@ func TestCreateUserCommand_MultitenantCreatesTenantByName(t *testing.T) {
 // Multitenancy on + --tenant-id to an existing tenant → the user lands in it.
 func TestCreateUserCommand_MultitenantUsesExistingTenantId(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "cu_mt_id.db"))
+	fx := testfx.New(t)
 	tn := fx.SeedTenant(t, "Beta")
 
 	cmd := newCreateUserCmd(fx, true)
@@ -375,7 +369,7 @@ func TestCreateUserCommand_MultitenantUsesExistingTenantId(t *testing.T) {
 // Unknown --tenant-id → clean "not found", no user, no orphan tenant.
 func TestCreateUserCommand_MultitenantUnknownTenantIdErrors(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "cu_mt_badid.db"))
+	fx := testfx.New(t)
 
 	cmd := newCreateUserCmd(fx, true)
 	cmd.SetArgs([]string{"-n", "alice", "-p", "secret12", "--tenant-id", "no-such-id"})
@@ -394,7 +388,7 @@ func TestCreateUserCommand_MultitenantUnknownTenantIdErrors(t *testing.T) {
 // Multitenancy off + a tenant flag → error (the flags are not applicable).
 func TestCreateUserCommand_SingleTenantRejectsTenantFlag(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "cu_single_flag.db"))
+	fx := testfx.New(t)
 
 	cmd := newCreateUserCmd(fx, false)
 	cmd.SetArgs([]string{"-n", "alice", "-p", "secret12", "--tenant-name", "Acme"})
@@ -410,7 +404,7 @@ func TestCreateUserCommand_SingleTenantRejectsTenantFlag(t *testing.T) {
 // create-tenant prints the new tenant and persists it.
 func TestCreateTenantCommand_CreatesTenant(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "ct_create.db"))
+	fx := testfx.New(t)
 
 	cmd := NewCreateTenantCommand(
 		platformcmd.NewCreateTenantHandler(fx.Tenants),
@@ -428,12 +422,7 @@ func TestCreateTenantCommand_CreatesTenant(t *testing.T) {
 	}
 
 	// The SystemCommandBus's AuditMiddleware persisted the tenant.created trail.
-	var n int
-	if err := fx.DB.DB().GetContext(ctx, &n,
-		`SELECT COUNT(*) FROM audit_log WHERE action='tenant.created' AND target_id=?`, tn.ID); err != nil {
-		t.Fatalf("audit query: %v", err)
-	}
-	if n != 1 {
+	if n := fx.Count(t, "audit_log", "action = ? AND target_id = ?", "tenant.created", tn.ID); n != 1 {
 		t.Fatalf("create-tenant must write a tenant.created audit record, got %d", n)
 	}
 }
@@ -444,7 +433,7 @@ func TestCreateTenantCommand_CreatesTenant(t *testing.T) {
 // TransactionMiddleware wraps tenant resolution + user creation in one tx.
 func TestCreateUserCommand_TenantNameRolledBackWhenUserFails(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "cu_rollback.db"))
+	fx := testfx.New(t)
 
 	// A user named "alice" already exists → create-user with the same nickname fails.
 	fx.SeedUserInTenant(t, "alice", "user", shared.DefaultTenantID)

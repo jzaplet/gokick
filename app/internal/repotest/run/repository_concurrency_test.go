@@ -2,7 +2,6 @@ package run_test
 
 import (
 	"context"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -15,7 +14,7 @@ import (
 // ─── Terminal / retry ─────────────────────────────────────────────────────────
 
 func TestMarkComplete_SetsCompletedClearsLock_NotClaimable(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "term_complete.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	owner := newOwner("wA")
@@ -37,7 +36,7 @@ func TestMarkComplete_SetsCompletedClearsLock_NotClaimable(t *testing.T) {
 }
 
 func TestReschedule_ClaimableAgain_BumpsAttempts_ResumesFromCheckpoint(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "term_resched.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	ownerA := newOwner("wA")
@@ -78,7 +77,7 @@ func TestReschedule_ClaimableAgain_BumpsAttempts_ResumesFromCheckpoint(t *testin
 }
 
 func TestReschedule_FutureNotClaimable(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "term_resched_future.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	owner := newOwner("wA")
@@ -92,7 +91,7 @@ func TestReschedule_FutureNotClaimable(t *testing.T) {
 }
 
 func TestMarkFailed_Terminal_PreservesState_NotClaimable(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "term_failed.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	owner := newOwner("wA")
@@ -123,22 +122,24 @@ func TestMarkFailed_Terminal_PreservesState_NotClaimable(t *testing.T) {
 // ─── Tenant ───────────────────────────────────────────────────────────────────
 
 func TestTenant_PropagatesEnqueueToClaim(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_propagate.db"))
-	enqueueRunInTenant(t, fx, "tnt-abc")
+	fx := testfx.New(t)
+	tenantID := fx.SeedTenant(t, "acme").ID
+	enqueueRunInTenant(t, fx, tenantID)
 	claimed := claimAs(t, fx, newOwner("wA"))
-	if claimed == nil || claimed.TenantID != "tnt-abc" {
+	if claimed == nil || claimed.TenantID != tenantID {
 		t.Fatalf("tenant must ride on the claimed row: got %v", claimed)
 	}
 }
 
 func TestTenant_ClaimDueGlobalDrainAcrossTenants(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "tenant_drain.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	// Two runs in distinct tenants, distinct run_at so order is deterministic.
+	t1, t2 := fx.SeedTenant(t, "acme").ID, fx.SeedTenant(t, "beta").ID
 	r1, _ := run.NewRun("agent", []byte(`{}`), 0)
-	r1.TenantID, r1.RunAt = "T1", time.Now().Add(-2*time.Second)
+	r1.TenantID, r1.RunAt = t1, time.Now().Add(-2*time.Second)
 	r2, _ := run.NewRun("agent", []byte(`{}`), 0)
-	r2.TenantID, r2.RunAt = "T2", time.Now().Add(-1*time.Second)
+	r2.TenantID, r2.RunAt = t2, time.Now().Add(-1*time.Second)
 	for _, r := range []*run.Run{r1, r2} {
 		if err := fx.Runs.Enqueue(ctx, r); err != nil {
 			t.Fatalf("enqueue: %v", err)
@@ -151,7 +152,7 @@ func TestTenant_ClaimDueGlobalDrainAcrossTenants(t *testing.T) {
 		t.Fatal("ClaimDue must drain across tenants (no tenant filter)")
 	}
 	got := map[string]bool{c1.TenantID: true, c2.TenantID: true}
-	if !got["T1"] || !got["T2"] {
+	if !got[t1] || !got[t2] {
 		t.Fatalf("global drain must claim both tenants' runs: got %v", got)
 	}
 }
@@ -161,7 +162,7 @@ func TestTenant_ClaimDueGlobalDrainAcrossTenants(t *testing.T) {
 // N workers draining M runs: every run claimed by exactly one worker — no loss,
 // no duplication, no SQLITE_BUSY (busy_timeout absorbs writer serialization).
 func TestConcurrency_NWorkersVsMRuns_NoDoubleClaim(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "conc_drain.db"))
+	fx := testfx.New(t)
 	const total = 20
 	for i := 0; i < total; i++ {
 		enqueueRun(t, fx, "agent")
@@ -209,7 +210,7 @@ func TestConcurrency_NWorkersVsMRuns_NoDoubleClaim(t *testing.T) {
 // reclaims counter is bumped exactly once (the loser's SELECT re-evaluates after
 // the winner commits and sees a future locked_until).
 func TestConcurrency_TwoOwnersRaceExpiredReclaim_OneWins_ReclaimsOnce(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "conc_reclaim_race.db"))
+	fx := testfx.New(t)
 	r := enqueueRun(t, fx, "agent")
 	claimAs(t, fx, newOwner("wA"))
 	forceExpire(t, fx, r.ID)
@@ -240,8 +241,8 @@ func TestConcurrency_TwoOwnersRaceExpiredReclaim_OneWins_ReclaimsOnce(t *testing
 }
 
 // Every mutating method must bump updated_at: the entity + migration document it,
-// and SQLite's DEFAULT CURRENT_TIMESTAMP fires only on INSERT, so each UPDATE must
-// set it explicitly.
+// and a column DEFAULT fires only on INSERT (in every database), so each UPDATE
+// must set it explicitly.
 func TestMutators_AllBumpUpdatedAt(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -297,7 +298,7 @@ func TestMutators_AllBumpUpdatedAt(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			fx := testfx.New(t, filepath.Join(t.TempDir(), "upd.db"))
+			fx := testfx.New(t)
 			r := enqueueRun(t, fx, "agent")
 			owner := newOwner("wA")
 			claimAs(t, fx, owner)
@@ -318,7 +319,7 @@ func TestMutators_AllBumpUpdatedAt(t *testing.T) {
 }
 
 func TestConcurrency_TwoOwnersRaceOneRun_OneWins(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "conc_race.db"))
+	fx := testfx.New(t)
 	r := enqueueRun(t, fx, "agent")
 
 	var wins int32
@@ -349,7 +350,7 @@ func TestConcurrency_TwoOwnersRaceOneRun_OneWins(t *testing.T) {
 // ─── Edge ─────────────────────────────────────────────────────────────────────
 
 func TestEdge_EmptyPayload_PersistsAndClaims(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "edge_empty_payload.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r, _ := run.NewRun("agent", []byte{}, 0)
 	if err := fx.Runs.Enqueue(ctx, r); err != nil {
@@ -365,7 +366,7 @@ func TestEdge_EmptyPayload_PersistsAndClaims(t *testing.T) {
 }
 
 func TestEdge_Reschedule_RunAtMsPrecisionRoundTrips(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "edge_resched_ms.db"))
+	fx := testfx.New(t)
 	ctx := context.Background()
 	r := enqueueRun(t, fx, "agent")
 	owner := newOwner("wA")

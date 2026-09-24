@@ -3,7 +3,6 @@ package command
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -22,7 +21,7 @@ func (saveFailsTokenRepo) Save(context.Context, *token.RefreshToken) error {
 
 func TestLoginHandler_Success(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_success.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "alice", "super-secret", "user")
 
 	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
@@ -62,7 +61,7 @@ func TestLoginHandler_Success(t *testing.T) {
 
 func TestLoginHandler_WrongPassword(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_wrong_pwd.db"))
+	fx := testfx.New(t)
 	fx.SeedUser(t, "bob", "correct-password", "user")
 
 	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
@@ -78,12 +77,10 @@ func TestLoginHandler_WrongPassword(t *testing.T) {
 // active flag is enforced AFTER Verify, and the error stays neutral.
 func TestLoginHandler_InactiveUserCannotLogIn(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_inactive.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "carol", "super-secret", "user")
 
-	if _, err := fx.DB.DB().Exec(`UPDATE users SET active = 0 WHERE id = ?`, u.ID); err != nil {
-		t.Fatalf("deactivate: %v", err)
-	}
+	fx.SetUserActive(t, u.ID, false)
 
 	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
 
@@ -98,7 +95,7 @@ func TestLoginHandler_InactiveUserCannotLogIn(t *testing.T) {
 
 func TestLoginHandler_UnknownUser(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_unknown.db"))
+	fx := testfx.New(t)
 
 	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
 
@@ -111,7 +108,7 @@ func TestLoginHandler_UnknownUser(t *testing.T) {
 
 func TestLoginHandler_NoRefreshTokenOnFailure(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_no_token_on_fail.db"))
+	fx := testfx.New(t)
 	fx.SeedUser(t, "charlie", "right", "user")
 
 	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
@@ -125,7 +122,7 @@ func TestLoginHandler_NoRefreshTokenOnFailure(t *testing.T) {
 // returns a neutral AuthError so the response shape gives nothing away.
 func TestLoginHandler_FailedLoginIncrementsCounter(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_inc.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "dora", "correct-pw", "user")
 
 	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
@@ -142,7 +139,7 @@ func TestLoginHandler_FailedLoginIncrementsCounter(t *testing.T) {
 // the same neutral error.
 func TestLoginHandler_LocksAfterFiveFailures(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_lockout.db"))
+	fx := testfx.New(t)
 	fx.SeedUser(t, "evan", "correct-pw", "user")
 
 	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
@@ -167,7 +164,7 @@ func TestLoginHandler_LocksAfterFiveFailures(t *testing.T) {
 // integration with bus middleware is the only remaining wiring concern.
 func TestLoginHandler_RecordsSuccessfulLogin(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_audit_ok.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "gina", "correct-pw", "user")
 
 	ctx, collector := shared.ContextWithAuditCollector(ctx)
@@ -186,7 +183,7 @@ func TestLoginHandler_RecordsSuccessfulLogin(t *testing.T) {
 
 func TestLoginHandler_RecordsFailedLoginWithNickname(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_audit_fail.db"))
+	fx := testfx.New(t)
 	fx.SeedUser(t, "henry", "correct-pw", "user")
 
 	ctx, collector := shared.ContextWithAuditCollector(ctx)
@@ -205,7 +202,7 @@ func TestLoginHandler_RecordsFailedLoginWithNickname(t *testing.T) {
 
 func TestLoginHandler_RecordsAccountLockedWhenThresholdReached(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_audit_lock.db"))
+	fx := testfx.New(t)
 	fx.SeedUser(t, "ivan", "correct-pw", "user")
 
 	ctx, collector := shared.ContextWithAuditCollector(ctx)
@@ -234,7 +231,7 @@ func TestLoginHandler_RecordsAccountLockedWhenThresholdReached(t *testing.T) {
 // this test fails (deadline) if that opt-out is ever removed.
 func TestLoginHandler_DoesNotDeadlockUnderCommandBus(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_deadlock.db"))
+	fx := testfx.New(t)
 	fx.SeedUser(t, "jana", "secret123", "user")
 
 	cmdBus, _, _ := fx.NewBuses()
@@ -264,7 +261,7 @@ func TestLoginHandler_DoesNotDeadlockUnderCommandBus(t *testing.T) {
 // starts fresh.
 func TestLoginHandler_SuccessResetsCounter(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_reset.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "frank", "correct-pw", "user")
 
 	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
@@ -292,7 +289,7 @@ func TestLoginHandler_SuccessResetsCounter(t *testing.T) {
 // guide-auth-perm-36). Without this test the event has zero coverage.
 func TestLoginHandler_BlockedWhileLockedEmitsAudit(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_blocked_audit.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "mona", "correct-pw", "user")
 
 	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
@@ -324,7 +321,7 @@ func TestLoginHandler_BlockedWhileLockedEmitsAudit(t *testing.T) {
 // test is the only guard that the short-circuit stays.
 func TestLoginHandler_WrongPasswordWhileLockedDoesNotExtendLock(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_locked_noextend.db"))
+	fx := testfx.New(t)
 	u := fx.SeedUser(t, "nina", "correct-pw", "user")
 
 	handler := NewLoginHandler(fx.Users, fx.Tokens, fx.Hasher, fx.Jwt)
@@ -367,7 +364,7 @@ func TestLoginHandler_WrongPasswordWhileLockedDoesNotExtendLock(t *testing.T) {
 // trail for a login that returned 500 and granted nothing.
 func TestLoginHandler_NoSuccessAuditWhenTokenSaveFails(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "login_save_fails.db"))
+	fx := testfx.New(t)
 	fx.SeedUser(t, "olga", "correct-pw", "user")
 
 	ctx, collector := shared.ContextWithAuditCollector(ctx)

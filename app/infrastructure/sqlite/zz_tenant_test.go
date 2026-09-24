@@ -1,3 +1,5 @@
+//go:build !nosqlite
+
 package sqlite_test
 
 import (
@@ -134,14 +136,27 @@ func sqliteDir() string {
 // unclassified table. An unscoped admin read or a new product table fails here.
 func TestTenantConformance_RepoQueriesScopedOrExempt(t *testing.T) {
 	var violations []string
+	// queriesPerPkg guards against a vacuous pass: every repository package exists
+	// to issue SQL, so one in which the scan found none means the scan went blind
+	// (a moved directory, a changed query idiom) — not that the code is clean.
+	queriesPerPkg := map[string]int{}
 	err := filepath.WalkDir(sqliteDir(), func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+		if d.IsDir() {
+			if path != sqliteDir() {
+				queriesPerPkg[filepath.Base(path)] += 0
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
 		for _, s := range sqlStringsInGoSource(t, path, nil) {
+			if len(tablesInSQL(s)) > 0 {
+				queriesPerPkg[filepath.Base(filepath.Dir(path))]++
+			}
 			for _, vio := range violationsInSQL(s) {
 				violations = append(violations, fmt.Sprintf("%s: %s", filepath.Base(path), vio))
 			}
@@ -150,6 +165,15 @@ func TestTenantConformance_RepoQueriesScopedOrExempt(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("walk repos: %v", err)
+	}
+	if len(queriesPerPkg) == 0 {
+		t.Fatalf("found no repository packages under %s — the scan is looking in the wrong place",
+			sqliteDir())
+	}
+	for pkg, n := range queriesPerPkg {
+		if n == 0 {
+			t.Errorf("repository package %q yielded no SQL to check — the scan went blind", pkg)
+		}
 	}
 	if len(violations) > 0 {
 		sort.Strings(violations)
@@ -347,12 +371,18 @@ func tenantWriteViolations(t *testing.T, name string, src any) []string {
 // tenant-owned write that forgets RequireTenant/AssertTenantScope fails here.
 func TestTenantConformance_TenantWritesGuarded(t *testing.T) {
 	var violations []string
+	stamping := 0 // tenant_id-stamping INSERTs seen — zero means the gate checked nothing
 	err := filepath.WalkDir(sqliteDir(), func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
+		}
+		for _, s := range sqlStringsInGoSource(t, path, nil) {
+			if stampsTenantID(s) {
+				stamping++
+			}
 		}
 		for _, v := range tenantWriteViolations(t, path, nil) {
 			violations = append(violations, fmt.Sprintf("%s: %s", filepath.Base(path), v))
@@ -361,6 +391,11 @@ func TestTenantConformance_TenantWritesGuarded(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("walk repos: %v", err)
+	}
+	if stamping == 0 {
+		t.Fatal(
+			"found no tenant_id-stamping INSERT (users.Save, runs.Enqueue) — the scan went blind",
+		)
 	}
 	if len(violations) > 0 {
 		sort.Strings(violations)

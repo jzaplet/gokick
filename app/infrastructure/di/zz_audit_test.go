@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -19,7 +18,6 @@ import (
 	"gokick/app/infrastructure/config"
 	"gokick/app/infrastructure/scheduler"
 	"gokick/app/infrastructure/security"
-	sqliteaudit "gokick/app/infrastructure/sqlite/audit"
 	"gokick/app/internal/testfx"
 	httpmw "gokick/app/presentation/http/middleware"
 	"gokick/app/presentation/http/response"
@@ -46,7 +44,7 @@ func (rowVisibleEvent) OccurredAt() time.Time { return time.Now() }
 // Dispatched through the real provideCommandBus chain (not a hand-rolled one),
 // so removing AuthorizeMiddleware from the production wiring flips this test.
 func TestCommandBus_AuthorizeBlocksDeniedCommand(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "authz_cmd.db"))
+	fx := testfx.New(t)
 	cmdBus := newProductionCommandBus(t, fx, noopDispatcher{})
 
 	// Authenticated but non-admin caller: the checker reaches the role gate and
@@ -90,7 +88,7 @@ func TestCommandBus_AuthorizeBlocksDeniedCommand(t *testing.T) {
 // can't tell the two apart, so the visibility check is the real proof.
 func TestCommandBus_EventsDispatchAfterCommit(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "events_after_commit.db"))
+	fx := testfx.New(t)
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	checker := security.NewPermissionChecker()
@@ -113,11 +111,11 @@ func TestCommandBus_EventsDispatchAfterCommit(t *testing.T) {
 
 	cmdBus := provideCommandBus(
 		logger,
-		fx.DB,
+		fx.Tx,
 		checker,
 		eventBus,
 		noopDispatcher{},
-		sqliteaudit.NewRepository(fx.DB),
+		fx.Audit,
 		shared.NopReporter{},
 		security.NewDefaultTenantResolver(),
 	)
@@ -169,7 +167,7 @@ func TestCommandBus_EventsDispatchAfterCommit(t *testing.T) {
 // success-path test above to pin the commit-gated event flow end to end.
 func TestCommandBus_EventsDiscardedOnRollback(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "events_rollback.db"))
+	fx := testfx.New(t)
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	checker := security.NewPermissionChecker()
@@ -183,11 +181,11 @@ func TestCommandBus_EventsDiscardedOnRollback(t *testing.T) {
 
 	cmdBus := provideCommandBus(
 		logger,
-		fx.DB,
+		fx.Tx,
 		checker,
 		eventBus,
 		noopDispatcher{},
-		sqliteaudit.NewRepository(fx.DB),
+		fx.Audit,
 		shared.NopReporter{},
 		security.NewDefaultTenantResolver(),
 	)

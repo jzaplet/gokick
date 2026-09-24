@@ -1,4 +1,4 @@
-.PHONY: install build serve dev di install-tools go-deps hooks setup-github lint format format-check test arch-check \
+.PHONY: install build serve dev di install-tools go-deps hooks setup-github lint format format-check test arch-check nosqlite-check \
         ts-gen ts-check boundary-check errfields-check docpaths-check \
         e2e e2e-crash-recovery e2e-at-least-once e2e-sigterm-drain e2e-terminal-failure \
         fe-deps fe-dev fe-build fe-clean \
@@ -99,6 +99,7 @@ lint:
 	yarn knip
 	$(GOLANGCI_LINT) run ./app/... ./cmd/...
 	$(MAKE) arch-check
+	$(MAKE) nosqlite-check
 	$(MAKE) format-check
 	$(MAKE) ts-check
 	$(MAKE) boundary-check
@@ -106,6 +107,19 @@ lint:
 	$(MAKE) i18n-check
 	$(MAKE) docpaths-check
 	$(MAKE) documan-lint
+
+# The adapter switch, compile half: built with -tags nosqlite, neither the app
+# nor any test links SQLite (the adapter or the ncruces driver), yet every
+# package still compiles and lints clean. The static half is
+# app/zz_nosqlite_test.go.
+nosqlite-check:
+	$(GOLANGCI_LINT) run --build-tags nosqlite ./app/... ./cmd/...
+	@linked="$$(go list -tags nosqlite -test -deps ./app/... ./cmd/... | grep -E 'ncruces|gokick/app/infrastructure/sqlite' || true)"; \
+	if [ -n "$$linked" ]; then \
+		echo "nosqlite-check: a -tags nosqlite build still links SQLite:"; \
+		echo "$$linked"; \
+		exit 1; \
+	fi
 
 # Fail if any Go file is not golines-formatted. golines is not covered by
 # golangci-lint, so without this gate `make format` drift slips in unnoticed

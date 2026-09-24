@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -17,7 +16,7 @@ import (
 
 func newAuthHandler(t *testing.T) (*AuthHandler, *testfx.Fixture) {
 	t.Helper()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "auth_http.db"))
+	fx := testfx.New(t)
 	cmdBus, _, _ := fx.NewBuses()
 
 	registry := shared.NewPermissionsRegistry([]shared.Permissioned{

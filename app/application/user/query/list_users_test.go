@@ -2,7 +2,6 @@ package query
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/internal/testfx"
@@ -10,7 +9,7 @@ import (
 
 func TestListUsersHandler_ReturnsAll(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "list_users.db"))
+	fx := testfx.New(t)
 	fx.SeedUser(t, "alice", "secret12", "user")
 	fx.SeedUser(t, "bob", "secret12", "user")
 	fx.SeedUser(t, "carol", "secret12", "admin")
@@ -34,7 +33,7 @@ func TestListUsersHandler_ReturnsAll(t *testing.T) {
 
 func TestListUsersHandler_Empty(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "list_users_empty.db"))
+	fx := testfx.New(t)
 
 	h := NewListUsersHandler(fx.Users)
 	page, err := h.Handle(ctx, ListUsersQuery{})
@@ -51,7 +50,7 @@ func TestListUsersHandler_Empty(t *testing.T) {
 // page and the total.
 func TestListUsersHandler_PagingSortingFiltering(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "list_users_grid.db"))
+	fx := testfx.New(t)
 	fx.SeedUser(t, "alice", "secret12", "user")
 	fx.SeedUser(t, "bob", "secret12", "user")
 	fx.SeedUser(t, "carol", "secret12", "admin")

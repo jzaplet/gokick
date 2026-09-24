@@ -3,7 +3,6 @@ package command
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -15,7 +14,7 @@ func TestUpdateUserHandler_Success(t *testing.T) {
 		context.Background(),
 		&shared.AuthClaims{UserID: "admin-actor", Role: "admin"},
 	)
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "update_success.db"))
+	fx := testfx.New(t)
 	target := fx.SeedUser(t, "bob", "oldpass12", "user")
 
 	h := NewUpdateUserHandler(fx.Users, fx.Hasher)
@@ -53,7 +52,7 @@ func TestUpdateUserHandler_EmptyPasswordPreservesHash(t *testing.T) {
 		context.Background(),
 		&shared.AuthClaims{UserID: "admin-actor", Role: "admin"},
 	)
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "update_keep_pwd.db"))
+	fx := testfx.New(t)
 	target := fx.SeedUser(t, "bob", "originalpw", "user")
 	originalHash := target.PasswordHash
 
@@ -86,7 +85,7 @@ func TestUpdateUserHandler_DuplicateNickname(t *testing.T) {
 		context.Background(),
 		&shared.AuthClaims{UserID: "admin-actor", Role: "admin"},
 	)
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "update_dup_nick.db"))
+	fx := testfx.New(t)
 	fx.SeedUser(t, "alice", "secret12", "user")
 	target := fx.SeedUser(t, "bob", "secret12", "user")
 
@@ -112,7 +111,7 @@ func TestUpdateUserHandler_KeepingOwnNickname(t *testing.T) {
 		context.Background(),
 		&shared.AuthClaims{UserID: "admin-actor", Role: "admin"},
 	)
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "update_keep_nick.db"))
+	fx := testfx.New(t)
 	target := fx.SeedUser(t, "bob", "secret12", "user")
 
 	h := NewUpdateUserHandler(fx.Users, fx.Hasher)
@@ -132,7 +131,7 @@ func TestUpdateUserHandler_NotFound(t *testing.T) {
 		context.Background(),
 		&shared.AuthClaims{UserID: "admin-actor", Role: "admin"},
 	)
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "update_notfound.db"))
+	fx := testfx.New(t)
 
 	h := NewUpdateUserHandler(fx.Users, fx.Hasher)
 	err := h.Handle(ctx, UpdateUserCommand{
@@ -166,7 +165,7 @@ func TestUpdateUserHandler_RejectsSuperadminTarget(t *testing.T) {
 		context.Background(),
 		&shared.AuthClaims{UserID: "admin-actor", Role: "admin"},
 	)
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "update_superadmin_target.db"))
+	fx := testfx.New(t)
 	su := fx.SeedUser(t, "root", "secret12", "superadmin")
 
 	h := NewUpdateUserHandler(fx.Users, fx.Hasher)
@@ -200,7 +199,7 @@ func TestUpdateUserHandler_BlocksSelfDemote(t *testing.T) {
 		context.Background(),
 		&shared.AuthClaims{UserID: "admin-actor", Role: "admin"},
 	)
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "update_self_demote.db"))
+	fx := testfx.New(t)
 	admin := fx.SeedUser(t, "boss", "secret12", "admin")
 
 	authedCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{
@@ -231,7 +230,7 @@ func TestUpdateUserHandler_SelfUpdateKeepingRoleIsAllowed(t *testing.T) {
 		context.Background(),
 		&shared.AuthClaims{UserID: "admin-actor", Role: "admin"},
 	)
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "update_self_keep.db"))
+	fx := testfx.New(t)
 	admin := fx.SeedUser(t, "boss", "secret12", "admin")
 
 	authedCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{

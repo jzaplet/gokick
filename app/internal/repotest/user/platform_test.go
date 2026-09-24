@@ -2,7 +2,6 @@ package user_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -15,7 +14,7 @@ import (
 // FindPage hides other tenants; this proves the platform read deliberately
 // doesn't, and joins the tenant NAME onto each row.
 func TestUserRepository_FindPageAcrossTenants_SeesAllTenants(t *testing.T) {
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "platform_all_users.db"))
+	fx := testfx.New(t)
 
 	tenantA := fx.SeedTenant(t, "Acme")
 	tenantB := fx.SeedTenant(t, "Globex")
@@ -49,7 +48,7 @@ func TestUserRepository_FindPageAcrossTenants_SeesAllTenants(t *testing.T) {
 // relies on this for the platform overview, so prove the write lands.
 func TestUserRepository_RecordLogin_StampsLastLoginAt(t *testing.T) {
 	ctx := context.Background()
-	fx := testfx.New(t, filepath.Join(t.TempDir(), "record_login.db"))
+	fx := testfx.New(t)
 
 	u := fx.SeedUserInTenant(t, "carol", "user", shared.DefaultTenantID)
 

@@ -15,7 +15,7 @@ import (
 // returns an id and persists a pending run, Get projects it, a missing id is 404,
 // and Cancel sets the operator signal on the row.
 func TestDebugRunHandler_EnqueueGetCancel(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/debugrun.db")
+	fx := testfx.New(t)
 	h := NewDebugRunHandler(testResponder(), fx.Runs)
 
 	// --- Enqueue ---
@@ -86,7 +86,7 @@ func TestDebugRunHandler_EnqueueGetCancel(t *testing.T) {
 
 // max_retries must be a non-negative integer.
 func TestDebugRunHandler_Enqueue_RejectsBadMaxRetries(t *testing.T) {
-	fx := testfx.New(t, t.TempDir()+"/debugrun_bad.db")
+	fx := testfx.New(t)
 	h := NewDebugRunHandler(testResponder(), fx.Runs)
 	req := httptest.NewRequest(http.MethodPost, "/debug/runs/e2e:succeed?max_retries=-1", nil)
 	req.SetPathValue("kind", "e2e:succeed")
