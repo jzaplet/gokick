@@ -20,6 +20,7 @@ var txKey = txKeyType{}
 type SqliteManager struct {
 	db          *sqlx.DB
 	multitenant bool
+	maxConns    int // the resolved pool cap; see applyPoolLimits
 }
 
 // Multitenant reports the configured enforcement mode (APP_MULTITENANCY). When
@@ -92,10 +93,20 @@ func NewSqliteManager(config *config.Config) (*SqliteManager, error) {
 	if maxConns <= 0 {
 		maxConns = autoMaxConns()
 	}
-	db.SetMaxOpenConns(maxConns)
-	db.SetMaxIdleConns(maxConns)
+	m := &SqliteManager{db: db, multitenant: config.Multitenancy, maxConns: maxConns}
+	m.applyPoolLimits()
 
-	return &SqliteManager{db: db, multitenant: config.Multitenancy}, nil
+	return m, nil
+}
+
+// applyPoolLimits (re)applies the resolved pool cap to both the open and the idle
+// limit. It is the single place the cap is set, so code that temporarily narrows
+// the pool (MigrationManager pins it to one connection) restores it through here —
+// database/sql has no "restore": SetMaxOpenConns(0) means UNLIMITED, and narrowing
+// the open limit silently lowers the idle limit too.
+func (m *SqliteManager) applyPoolLimits() {
+	m.db.SetMaxOpenConns(m.maxConns)
+	m.db.SetMaxIdleConns(m.maxConns)
 }
 
 // dbMaxConnsFloor / dbMaxConnsCeil bound the auto pool cap. The floor keeps a
