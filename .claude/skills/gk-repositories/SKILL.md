@@ -67,8 +67,16 @@ file:<path>?_txlock=immediate&_pragma=busy_timeout(5000)&_pragma=foreign_keys(on
 
 `journal_mode` jde od F-052 **taky přes DSN** (`_pragma=journal_mode(...)`) — je per-connection stejně jako `foreign_keys`: WAL/DELETE se sice persistují v hlavičce souboru, ale `MEMORY` je čistě per-connection, takže jednorázový `PRAGMA` exec by ho nastavil jen jedné konexi v poolu. Default je `WAL`, povolené hodnoty `WAL|DELETE|MEMORY` (whitelist přes `APP_DB_JOURNAL_MODE` — chrání proti SQL injection z misconfigurace).
 
+### Řazení a vyhledávání — česky a stejně na obou DB
+Každé nové spojení v poolu projde `registerConnFuncs` (`app/infrastructure/sqlite/conninit.go`, init callback driveru), který zaregistruje:
+- **collation `app_sort`** (`database.SortCollation`, locale `database.SortLocale` = `cs-CZ`) — textové `ORDER BY` píšeš `"nickname" + sqlite.CollateSort`. Jen v dotazech, **nikdy ve schématu/indexech**: rovnost a UNIQUE zůstávají binární a SQLite soubor jde dál otevřít v GUI nástroji bez registrované collation.
+- **Unicode `LIKE`** (ncruces `ext/unicode`) — case-insensitive i pro Č/Ř/Ž. Uživatelský vstup vždy přes `sqlite.LikeContains(s)` + `LIKE ?` + `sqlite.LikeEscape`, aby `%`/`_` nebyly wildcardy.
+- **SQL funkci `uuidv7()`** — stejné jméno jako v Postgresu 18, pro přenositelné SQL seedy.
+
+Registrace musí být v init callbacku, ne jednorázová: funkce/collation zaregistrovaná na jednom spojení by na dalším spojení z poolu chyběla. Zlatý test `app/infrastructure/sqlite/collation_test.go` porovnává řazení i vyhledávání se soubory v `app/infrastructure/database/testdata/sort_cs/`, jejichž očekávání vyrobil Postgres (ICU `cs-CZ`) — hlídá, že obě DB řadí stejně.
+
 ### Aktuální repozitáře
-`sqlite/user/` (`user.Repository`), `sqlite/token/` (`token.Repository`), `sqlite/run/` (`run.Repository`), `sqlite/tenant/` (`tenant.Repository`), `sqlite/audit/` (`shared.AuditLogger`), `sqlite/seeder/` (`shared.Seeder`).
+`sqlite/user/` (`user.Repository`), `sqlite/token/` (`token.Repository`), `sqlite/run/` (`run.Repository`), `sqlite/tenant/` (`tenant.Repository`), `sqlite/audit/` (`shared.AuditLogger`). Seeder (`shared.Seeder`) žije mimo adaptér v `infrastructure/seeder/` — mluví jen s porty repozitářů. Všechny porty sestaví `persistence.Open`.
 
 ## Recipe: nový repozitář
 1. Vytvoř `app/infrastructure/sqlite/<context>/repository.go` se `type Repository struct { sqlite.BaseRepository }`.

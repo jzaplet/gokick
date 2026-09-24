@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gokick/app/domain/user"
+	"gokick/app/infrastructure/sqlite"
 )
 
 // The grid reads and bulk writes live in their own file: repository.go holds
@@ -16,26 +17,29 @@ import (
 // listSortSQL maps the whitelisted sort columns onto SQL. The map (not string
 // interpolation of the wire value) IS the injection guard — an unknown column
 // cannot reach the query because SortColumnFrom already collapsed it.
+//
+// Text columns sort through the Czech collation (sqlite.CollateSort) — the same
+// order the Postgres adapter produces.
 var listSortSQL = map[user.SortColumn]string{
-	user.SortByNickname: "nickname",
-	user.SortByEmail:    "email",
-	user.SortByRole:     "role",
+	user.SortByNickname: "nickname" + sqlite.CollateSort,
+	user.SortByEmail:    "email" + sqlite.CollateSort,
+	user.SortByRole:     "role" + sqlite.CollateSort,
 }
 
 // listFilterWhere renders the optional filter conditions appended to the
-// tenant-scoped base query. LIKE matches are substring, case-insensitive for
-// ASCII (SQLite default); % and _ typed by the user act as wildcards — an
-// accepted quirk, not worth an ESCAPE dance for an admin search box.
+// tenant-scoped base query. Text filters are case-insensitive substring matches
+// (Unicode-aware, so Č finds č); what the user typed is matched literally — a %
+// or _ is searched for, not treated as a wildcard (sqlite.LikeContains).
 func listFilterWhere(f user.ListFilters) (string, []any) {
 	where := ""
 	args := []any{}
 	if f.Nickname != "" {
-		where += ` AND nickname LIKE ?`
-		args = append(args, "%"+f.Nickname+"%")
+		where += ` AND nickname LIKE ?` + sqlite.LikeEscape
+		args = append(args, sqlite.LikeContains(f.Nickname))
 	}
 	if f.Email != "" {
-		where += ` AND email LIKE ?`
-		args = append(args, "%"+f.Email+"%")
+		where += ` AND email LIKE ?` + sqlite.LikeEscape
+		args = append(args, sqlite.LikeContains(f.Email))
 	}
 	if f.Role != "" {
 		where += ` AND role = ?`
@@ -66,7 +70,7 @@ func (r *Repository) FindPage(ctx context.Context, c user.ListCriteria) (user.Li
 	col, ok := listSortSQL[c.Sort]
 	if !ok {
 		// Unreachable via SortColumnFrom; belt against a future raw criteria.
-		col = "nickname"
+		col = "nickname" + sqlite.CollateSort
 	}
 	// Secondary id sort is the tie-break anchor: without it, rows equal on the
 	// primary column (role, email…) have an unspecified order across the
@@ -78,14 +82,15 @@ func (r *Repository) FindPage(ctx context.Context, c user.ListCriteria) (user.Li
 	return page, err
 }
 
-// platformSortSQL is the platform grid's whitelist→SQL map. last_login sorts
-// through julianday() — the repo-wide datetime comparison discipline (TEXT
-// timestamps compare wrong lexically; the sqltime gate enforces this).
+// platformSortSQL is the platform grid's whitelist→SQL map. Text columns sort
+// through the Czech collation (sqlite.CollateSort); last_login sorts through
+// julianday() — the repo-wide datetime comparison discipline (TEXT timestamps
+// compare wrong lexically; the sqltime gate enforces this).
 var platformSortSQL = map[user.SortColumn]string{
-	user.SortByTenant:    "t.name",
-	user.SortByNickname:  "u.nickname",
-	user.SortByEmail:     "u.email",
-	user.SortByRole:      "u.role",
+	user.SortByTenant:    "t.name" + sqlite.CollateSort,
+	user.SortByNickname:  "u.nickname" + sqlite.CollateSort,
+	user.SortByEmail:     "u.email" + sqlite.CollateSort,
+	user.SortByRole:      "u.role" + sqlite.CollateSort,
 	user.SortByLastLogin: "julianday(u.last_login_at)",
 }
 
@@ -93,12 +98,12 @@ func platformFilterWhere(f user.PlatformListFilters) (string, []any) {
 	where := ""
 	args := []any{}
 	if f.Nickname != "" {
-		where += ` AND u.nickname LIKE ?`
-		args = append(args, "%"+f.Nickname+"%")
+		where += ` AND u.nickname LIKE ?` + sqlite.LikeEscape
+		args = append(args, sqlite.LikeContains(f.Nickname))
 	}
 	if f.Email != "" {
-		where += ` AND u.email LIKE ?`
-		args = append(args, "%"+f.Email+"%")
+		where += ` AND u.email LIKE ?` + sqlite.LikeEscape
+		args = append(args, sqlite.LikeContains(f.Email))
 	}
 	if f.Role != "" {
 		where += ` AND u.role = ?`
@@ -109,8 +114,8 @@ func platformFilterWhere(f user.PlatformListFilters) (string, []any) {
 		args = append(args, f.Active == "1")
 	}
 	if f.Tenant != "" {
-		where += ` AND t.name LIKE ?`
-		args = append(args, "%"+f.Tenant+"%")
+		where += ` AND t.name LIKE ?` + sqlite.LikeEscape
+		args = append(args, sqlite.LikeContains(f.Tenant))
 	}
 	return where, args
 }
@@ -142,9 +147,9 @@ func (r *Repository) FindPageAcrossTenants(
 		// Normalize to make their criteria safe lands here, and a belt that picks
 		// a different column than the whitelist's default would quietly hand them
 		// tenant-ordered rows under a "Nickname" header.
-		col = "u.nickname"
+		col = "u.nickname" + sqlite.CollateSort
 	}
-	orderBy := fmt.Sprintf(` ORDER BY %s %s, u.nickname ASC`, col, c.SortDir)
+	orderBy := fmt.Sprintf(` ORDER BY %s %s, u.nickname%s ASC`, col, c.SortDir, sqlite.CollateSort)
 	err := r.Conn(ctx).SelectContext(ctx, &page.Items,
 		`SELECT u.id, u.nickname, u.email, u.role, u.active, u.tenant_id,
 		        t.name AS tenant_name, u.last_login_at `+base+where+orderBy+` LIMIT ? OFFSET ?`,
@@ -212,8 +217,8 @@ func (r *Repository) BulkSetActive(
 func platformBulkFilterWhere(f user.PlatformListFilters) (string, []any) {
 	where, args := listFilterWhere(f.ListFilters)
 	if f.Tenant != "" {
-		where += ` AND tenant_id IN (SELECT t.id FROM tenants t WHERE t.name LIKE ?)`
-		args = append(args, "%"+f.Tenant+"%")
+		where += ` AND tenant_id IN (SELECT t.id FROM tenants t WHERE t.name LIKE ?` + sqlite.LikeEscape + `)`
+		args = append(args, sqlite.LikeContains(f.Tenant))
 	}
 	return where, args
 }

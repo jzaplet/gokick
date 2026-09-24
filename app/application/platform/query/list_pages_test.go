@@ -3,6 +3,7 @@ package query
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"gokick/app/domain/shared"
@@ -103,13 +104,25 @@ func TestListTenants_GridCriteria(t *testing.T) {
 		t.Fatalf("plan filter: got %+v", page.Items)
 	}
 
-	// Name ASC orders Default (capital D) before acme and beta — page 2 of
-	// size 1 is therefore acme.
+	// Name ASC sorts alphabetically in Czech collation, case-insensitively at
+	// the primary level: acme, beta, Default — NOT byte order, which would put
+	// the capital-D "Default" first. Page 2 of size 1 is therefore beta.
+	page, err = h.Handle(superCtx(), ListTenantsQuery{PerPage: 3})
+	if err != nil {
+		t.Fatalf("full page: %v", err)
+	}
+	var names []string
+	for _, it := range page.Items {
+		names = append(names, it.Name)
+	}
+	if want := []string{"acme", "beta", "Default"}; !slices.Equal(names, want) {
+		t.Fatalf("name order: got %v want %v", names, want)
+	}
 	page, err = h.Handle(superCtx(), ListTenantsQuery{Page: 2, PerPage: 1})
 	if err != nil {
 		t.Fatalf("paging: %v", err)
 	}
-	if page.Total != 3 || len(page.Items) != 1 || page.Items[0].Name != "acme" {
+	if page.Total != 3 || len(page.Items) != 1 || page.Items[0].Name != "beta" {
 		t.Fatalf("paging: got %+v", page.Items)
 	}
 }

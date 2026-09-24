@@ -28,6 +28,9 @@ excludeFiles:
   # Same self-import quirk: manager_test.go is `package sqlite_test` importing
   # the sqlite package to drive *sqlite.Manager from a black-box test.
   - infrastructure/sqlite/manager_test.go
+  # Same quirk: collation_test.go pins the Czech sort/search contract against the
+  # golden files by driving *sqlite.Manager directly.
+  - infrastructure/sqlite/collation_test.go
   # Same quirk: loadtest_test.go (build-tag `loadtest`) is `package sqlite_test`
   # self-importing to characterize the driver under write load.
   - infrastructure/sqlite/loadtest_test.go
