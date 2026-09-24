@@ -67,7 +67,7 @@ func writeRecord(
 	now time.Time,
 ) error {
 	rec := &shared.AuditRecord{
-		ID:        uuid.New().String(),
+		ID:        uuid.Must(uuid.NewV7()).String(),
 		Action:    evt.Action,
 		CreatedAt: now,
 	}
