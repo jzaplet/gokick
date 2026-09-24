@@ -72,11 +72,13 @@ func TestMigrator_InitSchemaCreatesRefreshTokenIndexes(t *testing.T) {
 // `make migrate-down`). It applies every embedded migration up via the
 // production Migrator.RunUp(), then runs one goose Down step exactly
 // as the Makefile target does. It asserts the generic round-trip property rather
-// than a specific migration's artifact (so adding a migration doesn't break it):
-// the version drops, an early table (users) survives the single step, and
-// re-running up restores the version — proving the last migration's Down ran and
-// is the inverse of its Up. If down were a no-op (or the +goose Down block were
-// dropped), the version would not decrease — failing here.
+// than a specific migration's artifact, so it holds both for gokick's single
+// squashed init AND for a project that adds migrations after it: the version
+// drops, the step removes exactly the last migration (the whole schema when the
+// init is all there is, only the newest step otherwise — init's users table then
+// survives), and re-running up restores the version — proving the last
+// migration's Down ran and is the inverse of its Up. If down were a no-op (or the
+// +goose Down block were dropped), the version would not decrease — failing here.
 func TestMigrationDown_RollsBackLastMigration(t *testing.T) {
 	mgr := newTestManager(t)
 	ctx := context.Background()
@@ -111,16 +113,19 @@ func TestMigrationDown_RollsBackLastMigration(t *testing.T) {
 		t.Fatalf("expected version to decrease after down: before=%d after=%d", before, after)
 	}
 
-	// One down step rolls back the LAST migration only, so a table created by an
-	// EARLIER one must survive it — that is the property `make migrate-down`
-	// promises an operator, and the reason a down step is safe to reach for.
-	//
-	// This assertion was inverted while the squashed init migration was the only
-	// one in the tree: one step was then the whole stack, and "the schema is gone"
-	// was the only observable. The doc above always described the incremental
-	// property, and it came back the moment a second migration landed — as that
-	// comment predicted it would.
-	if !tableExists(t, ctx, mgr, "users") {
+	// One down step rolls back the LAST migration only — the property `make
+	// migrate-down` promises an operator. With the squashed init as the only
+	// migration that step IS the whole stack, so the observable is "the schema is
+	// gone"; once a project adds a migration after init, init's users table must
+	// survive the step instead.
+	if len(provider.ListSources()) == 1 {
+		if after != 0 {
+			t.Fatalf("rolling back the only migration must leave version 0, got %d", after)
+		}
+		if tableExists(t, ctx, mgr, "users") {
+			t.Fatal("rolling back the only (init) migration must drop its tables; users survived")
+		}
+	} else if !tableExists(t, ctx, mgr, "users") {
 		t.Fatal("one down step must roll back only the last migration; users should have survived")
 	}
 

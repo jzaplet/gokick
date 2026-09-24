@@ -40,7 +40,7 @@ Goose si značí, u kterého kroku jsi skončil, a dorazí jen ty zbývající.
 
 ## How it works
 Migrace žijí v adresáři dialektu — dnes `migrations/sqlite/` — jako `YYYYMMDDHHMMSS_<name>.sql` (Goose SQL formát). Adresář na dialekt je příprava na Postgres adaptér: SQL se mezi enginy liší, ale **verze musí zůstat v lock-stepu**, aby obě DB došly ke stejnému logickému schématu (viz [Plán: PostgreSQL 18 adaptér](/framework/postgres-adapter-plan)).
-Aktuální sada = **jediný squashed init** `20260327000001_init_schema.sql` (tabulky `tenants` + seed Default tenantu, `users`, `refresh_tokens`, `audit_log`, `runs` + všechny indexy) — jako boilerplate gokick dodává finální schéma jedním krokem; inkrementální historie (12 kroků vč. vzniku a dropu tabulky `jobs`) byla 2026-07-15 squashnuta. Nasazení, která starou historii už aplikovala, mají verzi zapsanou a soubor přeskočí. Projektové migrace přidávej jako NOVÉ soubory za init (`make migrate-create`); vyšší timestamp = běží později.
+Aktuální sada = **jediný squashed init** `20260327000001_init_schema.sql` (tabulky `tenants` + unikátní index jména + seed Default tenantu, `users` vč. `lang`, `refresh_tokens`, `audit_log`, `runs` vč. `lang` + všechny indexy) — jako boilerplate gokick dodává aktuální schéma jedním krokem. Historie se squashovala dvakrát: 2026-07-15 (12 kroků vč. vzniku a dropu tabulky `jobs`) a 2026-09-24 (unikátní jméno tenantu, `users.lang`, `runs.lang`). Soubor si drží **první číslo verze**, takže nasazení, která starou historii už aplikovala, mají verzi zapsanou a soubor přeskočí (historické záznamy v `goose_db_version` goose ignoruje). **Pravidlo upgradu:** platí to jen pro nasazení, které prošlo CELOU starou historií — instalace na verzi starší než v1.4.0 musí nejdřív nastartovat některé vydání v1.4.0–v1.4.2 (ta doaplikují zbylé kroky) a teprve pak binárku se squashnutým initem. Projektové migrace přidávej jako NOVÉ soubory za init (`make migrate-create`); vyšší timestamp = běží později.
 
 Existují **dvě oddělené cesty**, jak se migrace spustí:
 
@@ -86,7 +86,7 @@ Existují **dvě oddělené cesty**, jak se migrace spustí:
    ALTER TABLE users DROP COLUMN locked_until;
    ```
 3. Lokálně ověř: `make migrate-up` (aplikuj) → `make migrate-status` (zkontroluj),
-   případně `make migrate-down` (rollback poslední) při ladění.
+   případně `make migrate-down` (rollback poslední) při ladění. Pozor: dokud je v adresáři jen init, rollback poslední migrace = **smazání celého schématu**.
 4. Protože je SQL embedovaná do binárky **při kompilaci**, znovu binárku přelož
    (`make dev`) a teprve pak spusť (`make serve`) — auto-up novou migraci dožene
    sám. Bez přeložení běží stará binárka, která novou migraci ještě nemá zapečenou.
