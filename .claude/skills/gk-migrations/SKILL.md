@@ -39,22 +39,26 @@ Analogie: migrace jsou jako verze nábytkového návodu — krok po kroku, očí
 Goose si značí, u kterého kroku jsi skončil, a dorazí jen ty zbývající.
 
 ## How it works
-Migrace žijí v `migrations/` jako `YYYYMMDDHHMMSS_<name>.sql` (Goose SQL formát).
+Migrace žijí v adresáři dialektu — dnes `migrations/sqlite/` — jako `YYYYMMDDHHMMSS_<name>.sql` (Goose SQL formát). Adresář na dialekt je příprava na Postgres adaptér: SQL se mezi enginy liší, ale **verze musí zůstat v lock-stepu**, aby obě DB došly ke stejnému logickému schématu (viz [Plán: PostgreSQL 18 adaptér](/framework/postgres-adapter-plan)).
 Aktuální sada = **jediný squashed init** `20260327000001_init_schema.sql` (tabulky `tenants` + seed Default tenantu, `users`, `refresh_tokens`, `audit_log`, `runs` + všechny indexy) — jako boilerplate gokick dodává finální schéma jedním krokem; inkrementální historie (12 kroků vč. vzniku a dropu tabulky `jobs`) byla 2026-07-15 squashnuta. Nasazení, která starou historii už aplikovala, mají verzi zapsanou a soubor přeskočí. Projektové migrace přidávej jako NOVÉ soubory za init (`make migrate-create`); vyšší timestamp = běží později.
 
 Existují **dvě oddělené cesty**, jak se migrace spustí:
 
 **1) Embedded auto-up při startu (produkční cesta).**
-- `migrations/embed.go` zapéká všechny `*.sql` do binárky přes `//go:embed *.sql`
-  (`var FS embed.FS`) — runtime nepotřebuje žádné soubory na disku.
+- `migrations/embed.go` zapéká `*.sql` do binárky přes `//go:embed sqlite/*.sql`
+  a vystaví je jako `migrations.SQLite` (`fs.FS` zakořeněný v adresáři dialektu) —
+  runtime nepotřebuje žádné soubory na disku.
 - `Application.Run` (`app/application.go:24-28`) volá `migrations.RunUp()`
   **před** `rootCmd.Execute(ctx)`. Takže auto-up proběhne při **každém**
   subcommandu — `serve`, `worker`, `seed`, `create-user`, `create-superadmin`,
   `create-tenant` — ne jen u `serve`.
 - `MigrationManager.RunUp()` (`app/infrastructure/database/migration_manager.go`)
-  spustí `goose.UpContext` na embedded FS. **Jen směr Up** — automaticky se nikdy
-  nic nerolluje zpět.
-- Goose má vlastní logger umlčený (`goose.SetLogger(goose.NopLogger())`); stav se
+  spustí `Up` goose **Provideru** (`NewSQLiteMigrationProvider`) na embedded FS. **Jen
+  směr Up** — automaticky se nikdy nic nerolluje zpět. Provider nemá žádný globální
+  goose stav a celý běh pouští na **jednom** `*sql.Conn` — i `-- +goose NO
+  TRANSACTION` migrace, takže `PRAGMA foreign_keys=off` při table-rebuildu platí po
+  celou dobu přestavby. Connection pool se nezužuje, jeho limit (F-047) zůstává.
+- Goose má vlastní logger umlčený (`goose.WithLogger(goose.NopLogger())`); stav se
   hlásí přes aplikační `*slog.Logger`: `migrations: applied {from,to}`,
   `migrations: up to date {version}`, a když po úspěšném Up selže čtení goose
   verze, warn `migrations: applied, but version read failed` — migrace samotné
@@ -63,7 +67,7 @@ Existují **dvě oddělené cesty**, jak se migrace spustí:
 **2) Ruční `make migrate-*` (jen vývoj).**
 - `make migrate-create / migrate-up / migrate-down / migrate-status` (viz
   `Makefile`) volají **externí `goose` binárku** (`make install` ji nainstaluje)
-  proti DB souboru z `APP_DB_PATH` v `.env`.
+  nad `migrations/sqlite/` proti DB souboru z `APP_DB_PATH` v `.env`.
 - Tady žijí `down` a `status` — aplikace je sama nikdy nepouští.
 - Obě cesty sdílí stejnou DB i Goose tabulku `goose_db_version`, takže verze
   zůstávají konzistentní (auto-up dožene to, co `make` nepustil).
@@ -106,6 +110,6 @@ Existují **dvě oddělené cesty**, jak se migrace spustí:
 - Sousední skills: `/gk-entities` (entita ↔ sloupce tabulky, `db:` tagy),
   `/gk-repositories` (čtení/zápis do migrované tabulky, transakce),
   `/gk-feature` (přidání featury end-to-end — migrace je její součást).
-- Kód: `migrations/` (SQL + `embed.go`),
+- Kód: `migrations/sqlite/` (SQL), `migrations/embed.go`,
   `app/infrastructure/database/migration_manager.go` (`RunUp`),
   `app/application.go` (auto-up při startu), `Makefile` (`migrate-*` targety).

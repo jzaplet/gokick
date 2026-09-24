@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"gokick/app/domain/shared"
 	"gokick/migrations"
@@ -20,49 +21,53 @@ const (
 )
 
 type MigrationManager struct {
-	manager *SqliteManager
-	db      *sqlx.DB
-	logger  *slog.Logger
+	db     *sqlx.DB
+	logger *slog.Logger
 }
 
 func NewMigrationManager(manager *SqliteManager, logger *slog.Logger) *MigrationManager {
 	return &MigrationManager{
-		manager: manager,
-		db:      manager.DB(),
-		logger:  logger,
+		db:     manager.DB(),
+		logger: logger,
 	}
 }
 
+// NewSQLiteMigrationProvider builds the goose provider for the SQLite migration
+// set. A Provider carries its own state (no package-level goose globals), so two
+// migrators — or two tests — never share a dialect/FS setting. The global Go
+// migration registry is disabled: this project ships SQL migrations only.
+//
+// A Provider runs every SQL migration of a run on ONE pinned *sql.Conn, including
+// `-- +goose NO TRANSACTION` ones. That is what SQLite table-rebuild migrations
+// need: they toggle the per-connection PRAGMA foreign_keys (so dropping a
+// referenced table does not cascade-delete through ON DELETE CASCADE), and the
+// PRAGMA must hold for the whole rebuild. The pool itself is never narrowed, so
+// its cap (F-047) is untouched.
+func NewSQLiteMigrationProvider(db *sql.DB) (*goose.Provider, error) {
+	return goose.NewProvider(goose.DialectSQLite3, db, migrations.SQLite,
+		goose.WithDisableGlobalRegistry(true),
+		goose.WithLogger(goose.NopLogger()),
+	)
+}
+
 func (m *MigrationManager) RunUp() error {
-	goose.SetLogger(goose.NopLogger())
-	goose.SetBaseFS(migrations.FS)
-
-	if err := goose.SetDialect("sqlite3"); err != nil {
+	ctx := context.Background()
+	provider, err := NewSQLiteMigrationProvider(m.db.DB)
+	if err != nil {
 		return err
 	}
 
-	// Pin migrations to a single connection. SQLite table-rebuild migrations use
-	// `-- +goose NO TRANSACTION` so they can toggle PRAGMA foreign_keys (needed
-	// so a DROP of a referenced table doesn't cascade-delete via ON DELETE
-	// CASCADE) — but PRAGMA is per-connection, and goose runs NO TRANSACTION
-	// statements on the *sql.DB pool, where the next statement may land on a
-	// different connection. One connection makes the PRAGMA hold across the whole
-	// rebuild. Migrations run once at startup, serially, so this costs nothing;
-	// restore the configured pool cap afterward (open AND idle — F-047).
-	m.db.SetMaxOpenConns(1)
-	defer m.manager.applyPoolLimits()
+	before, errBefore := provider.GetDBVersion(ctx)
 
-	before, errBefore := goose.GetDBVersion(m.db.DB)
-
-	if err := goose.UpContext(context.Background(), m.db.DB, "."); err != nil {
+	if _, err := provider.Up(ctx); err != nil {
 		return err
 	}
 
-	after, errAfter := goose.GetDBVersion(m.db.DB)
+	after, errAfter := provider.GetDBVersion(ctx)
 
 	switch {
 	case errBefore != nil || errAfter != nil:
-		// A version read failed. The migrations themselves succeeded (UpContext
+		// A version read failed. The migrations themselves succeeded (Up
 		// returned nil), so this is a reporting-only degradation — but don't
 		// fabricate an applied-range from a swallowed 0 (that would log a phantom
 		// "0 -> N" or "up to date version 0"). Surface the read failure instead.

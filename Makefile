@@ -175,16 +175,16 @@ docpaths-check:
 
 # Migrations
 migrate-create:
-	$(GOOSE) -dir migrations create $(NAME) sql
+	$(GOOSE) -dir migrations/sqlite create $(NAME) sql
 
 migrate-up:
-	$(GOOSE) -dir migrations sqlite3 $(shell grep APP_DB_PATH .env | cut -d= -f2) up
+	$(GOOSE) -dir migrations/sqlite sqlite3 $(shell grep APP_DB_PATH .env | cut -d= -f2) up
 
 migrate-down:
-	$(GOOSE) -dir migrations sqlite3 $(shell grep APP_DB_PATH .env | cut -d= -f2) down
+	$(GOOSE) -dir migrations/sqlite sqlite3 $(shell grep APP_DB_PATH .env | cut -d= -f2) down
 
 migrate-status:
-	$(GOOSE) -dir migrations sqlite3 $(shell grep APP_DB_PATH .env | cut -d= -f2) status
+	$(GOOSE) -dir migrations/sqlite sqlite3 $(shell grep APP_DB_PATH .env | cut -d= -f2) status
 
 # Frontend
 fe-deps:

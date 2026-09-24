@@ -34,7 +34,7 @@ make migrate-status                     # Show migration status
 make migrate-create NAME=create_x_table # Create new migration file
 ```
 
-Migrations live in `migrations/` (Goose SQL format, embedded into binary). Migrations run automatically on app startup.
+Migrations live in `migrations/sqlite/` — one directory per dialect, versions kept in lock-step (Goose SQL format, embedded into binary via `migrations.SQLite`). Migrations run automatically on app startup through a goose Provider (no global goose state).
 
 ### Quality
 
