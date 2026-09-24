@@ -21,7 +21,7 @@ type RefreshToken struct {
 // factories — so the ID generator is one place to change, not three.
 func NewRefreshToken(userID, tokenHash string, expiresAt time.Time) *RefreshToken {
 	return &RefreshToken{
-		ID:        uuid.New().String(),
+		ID:        uuid.Must(uuid.NewV7()).String(),
 		UserID:    userID,
 		TokenHash: tokenHash,
 		ExpiresAt: expiresAt,

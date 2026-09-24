@@ -46,7 +46,7 @@ func (w *RunWorker) drainAudit(ctx context.Context, log *slog.Logger, runCtx con
 // untouched. Marshaling the metadata is the only failure mode.
 func buildAuditRecord(evt shared.AuditEvent, now time.Time) (*shared.AuditRecord, error) {
 	rec := &shared.AuditRecord{
-		ID:        uuid.NewString(),
+		ID:        uuid.Must(uuid.NewV7()).String(),
 		Action:    evt.Action,
 		CreatedAt: now,
 	}
