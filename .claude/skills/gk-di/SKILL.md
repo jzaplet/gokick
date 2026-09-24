@@ -40,7 +40,7 @@ wire_gen.go             # vygenerovaný kód (//go:build !wireinject) — NIKDY 
 
 **Tři druhy záznamů ve `wire.Build(...)`:**
 
-1. **Holé konstruktory** — `sqliteuser.NewRepository`, `security.NewJwtService`, `handler.NewAuthHandler`. Wire si z jejich parametrů sám odvodí, co potřebují.
+1. **Holé konstruktory** — `security.NewJwtService`, `handler.NewAuthHandler`, `seeder.NewSeeder`. Wire si z jejich parametrů sám odvodí, co potřebují.
 2. **`provideX` funkce** — adaptér, když constructor vrací konkrétní typ, ale graf potřebuje interface, nebo když je třeba z configu vyrobit typovanou hodnotu:
    ```go
    func providePasswordHasher() shared.PasswordHasher { return security.NewPasswordHasher() }
@@ -48,10 +48,14 @@ wire_gen.go             # vygenerovaný kód (//go:build !wireinject) — NIKDY 
    ```
 3. **`wire.Bind(new(Iface), new(*Concrete))`** — řekne Wire „kdykoli někdo chce `Iface`, dej mu `*Concrete`". Bez toho Wire interface nepropojí.
    ```go
-   wire.Bind(new(user.Repository), new(*sqliteuser.Repository))
-   wire.Bind(new(token.Repository), new(*sqlitetoken.Repository))
-   wire.Bind(new(shared.AuditLogger), new(*sqliteaudit.Repository))
+   wire.Bind(new(shared.TokenService), new(*security.JwtService))
+   wire.Bind(new(shared.Seeder), new(*seeder.Seeder))
    ```
+4. **`wire.FieldsOf(new(*persistence.Store), ...)`** — porty databáze (repozitáře,
+   `Tx` = `shared.Transactor`, `Audit`, `Migrator`). `persistence.Open`
+   (`app/infrastructure/persistence/persistence.go`) otevře adaptér a vrátí `Store` +
+   cleanup (zavře pool při ukončení); Wire z něj vytáhne jednotlivá pole. DI tak nikde
+   nejmenuje konkrétní repozitář — je to jediné místo, které ví, jaký adaptér za porty stojí.
 
 **Registry-style providery (single source of truth):** některé `provideX` vrací seznam, který je jediným místem registrace dané věci — `providePermissionsRegistry` (seznam command/query s permission), `provideSchedulerJobs` (periodické úlohy), `provideEventHandlers` a `provideRunHandlerRegistry`. Nový záznam přidáš sem, zbytek grafu zůstane beze změny.
 

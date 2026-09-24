@@ -82,11 +82,14 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	application, err := di.CreateApplication(logger, reporter)
+	application, cleanup, err := di.CreateApplication(logger, reporter)
 	if err != nil {
 		logger.Error("failed to create application", "error", err)
 		return 1
 	}
+	// Release what the graph opened (the database pool) once the command is done.
+	// Registered after the Sentry-flush defer, so it runs first.
+	defer cleanup()
 
 	if err := application.Run(ctx); err != nil {
 		logger.Error("application error", "error", err)
