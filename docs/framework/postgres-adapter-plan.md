@@ -13,7 +13,7 @@ description: 'Analýza vazeb na SQLite a plán refaktoringu na přepínatelný S
 
 Stačí nastavit `APP_DB_DRIVER=postgres` v env a aplikace **i celá Go test suite** poběží na PostgreSQL 18 se stejným chováním, aniž by se kdekoli otevřela SQLite. Postgres zároveň nahradí globální write-lock zámky na úrovni řádků a přinese multitenancy vynucenou přímo databází (Row-Level Security). Tahle stránka je analýza dnešních vazeb na SQLite a fázovaný plán refaktoringu k tomu cíli.
 
-**Status:** 🟡 draft — 1. kolo rozhodnutí zapracováno (D1, D2, D6, D8, D9 potvrzeny; D3, D4, D5, D7 čekají) · **Roadmap:** [Roadmap (GoKick) → Škálovatelnost](/framework/gokick-roadmap) · **Analýza:** 2026-09-24
+**Status:** 🟢 plán schválen — všechna rozhodnutí D1–D10 potvrzena · **Roadmap:** [Roadmap (GoKick) → Škálovatelnost](/framework/gokick-roadmap) · **Analýza:** 2026-09-24
 
 > **Konvence cest:** existující soubory cituju plnou cestou (`app/…`), aby je hlídal
 > `make docpaths-check`. **Nové** balíčky, které teprve vzniknou, píšu relativně k `app/`
@@ -207,7 +207,96 @@ func providePersistence(cfg *config.Config, log *slog.Logger) (*persistence.Stor
   Tím odpadne i pinning na jedno spojení, a s ním bug N1.
 - **Gate:** množiny verzí v obou adresářích musí být identické. Zachytí zapomenuté dvojče.
 - **`make migrate-*`** budou respektovat driver. `make migrate-create NAME=x` založí oba soubory se stejným timestampem. Parsování `.env` přes `grep | cut` nahradí `goose -env` nebo malý `gk` subcommand, protože DSN obsahuje `=`.
-- **Role** jsou objekty clusteru, ne databáze, proto nepatří do migrací. Zakládá je bootstrap skript (`docker/postgres/init-roles.sql`), který použije docker-compose, CI i testovací harness. Migrace dělají jen `GRANT` a RLS politiky; jména rolí jsou pevná (`gokick_app`, `gokick_system`) s možností přepsat je přes goose `ENVSUB`.
+- **Role** jsou objekty clusteru, ne databáze, proto nepatří do migrací. Zakládá je init skript Postgres image (`docker/postgres/initdb/01-roles.sh`, sekce 3.4), který použije lokální DB, testovací DB i CI. Migrace dělají jen `GRANT` a RLS politiky; jména rolí jsou pevná (`gokick_app`, `gokick_system`) s možností přepsat je přes goose `ENVSUB`.
+
+
+### 3.4 Lokální Postgres: Docker + OrbStack, bez portů (rozhodnutí D10 ✅)
+
+**Požadavek:**
+- Vývojář dál spouští jen `make build && make serve`.
+- Když je v `.env` `APP_DB_DRIVER=postgres`, Postgres v Dockeru se nahodí sám.
+- Žádný kontejner nepublikuje port. Port má jen gokick binárka.
+
+**`docker/postgres/Dockerfile`** — jeden image pro vývoj, testy i CI:
+
+```dockerfile
+FROM postgres:18                 # Debian varianta: ICU (collation cs-CZ, 4.2) je součástí
+COPY docker/postgres/initdb/ /docker-entrypoint-initdb.d/
+HEALTHCHECK --interval=2s --timeout=3s --retries=30 \
+  CMD pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+```
+
+`docker/postgres/initdb/01-roles.sh` se spustí jen při prvním startu, tedy nad prázdným volume:
+- založí role `gokick_owner` (vlastník schématu, migrace), `gokick_app` (NOBYPASSRLS) a `gokick_system` (BYPASSRLS) s hesly z env (sekce 6);
+- založí databázi `gokick`, kterou vlastní `gokick_owner`.
+
+Je to **jediná definice rolí**: použije ji lokální DB, testovací DB i CI. Samostatný `init-roles.sql` zmíněný v 3.3 tím odpadá.
+
+**`docker-compose.yml`** (v rootu, vedle `app` a `documan`), dvě služby ze stejného Dockerfile:
+
+```yaml
+  db:
+    build: { context: ., dockerfile: ./docker/postgres/Dockerfile }
+    env_file: [.env]
+    labels:
+      - "dev.orbstack.domains=db.${APP_DOMAIN:-gokick.local}"
+    volumes:
+      - pgdata:/var/lib/postgresql          # image PG 18 má data pod /var/lib/postgresql
+
+  db-test:
+    build: { context: ., dockerfile: ./docker/postgres/Dockerfile }
+    env_file: [.env]
+    command: ["postgres", "-c", "fsync=off", "-c", "full_page_writes=off", "-c", "synchronous_commit=off"]
+    tmpfs: [/var/lib/postgresql]            # jen v RAM, po zastavení zmizí
+    labels:
+      - "dev.orbstack.domains=db-test.${APP_DOMAIN:-gokick.local}"
+    profiles: [test]                         # holé `docker compose up` ho nespouští
+
+volumes:
+  pgdata:
+```
+
+**Jak se aplikace připojí:**
+- **Nikde není `ports:`.** OrbStack směruje doménu přímo na IP kontejneru, takže `make serve` na hostu se připojí na `db.gokick.local:5432`. Je to stejná konvence jako `docs.gokick.local` u documanu a mění se jednou proměnnou `APP_DOMAIN`.
+- **Služba `app` v compose** se připojí interně přes hostname `db`: `APP_DB_URL` přepíše v `environment` stejně, jako dnes přepisuje `APP_DB_PATH`.
+
+**`.env.example`** (hesla slouží jen pro lokální vývoj; godotenv rozbalí `${APP_DOMAIN}`):
+
+```
+APP_DB_DRIVER=sqlite     # postgres → Docker služba db se nahodí sama při make build / make serve
+APP_DB_URL=postgres://gokick_app:gokick_app@db.${APP_DOMAIN}:5432/gokick?sslmode=disable
+APP_DB_SYSTEM_URL=postgres://gokick_system:gokick_system@db.${APP_DOMAIN}:5432/gokick?sslmode=disable
+APP_DB_MIGRATE_URL=postgres://gokick_owner:gokick_owner@db.${APP_DOMAIN}:5432/gokick?sslmode=disable
+```
+
+**Makefile:**
+
+```make
+DB_DRIVER := $(shell sed -n 's/^APP_DB_DRIVER=//p' .env 2>/dev/null)
+
+db-up:   ## Postgres nahoru, když APP_DB_DRIVER=postgres (idempotentní; pro sqlite no-op)
+ifeq ($(DB_DRIVER),postgres)
+	@docker compose up -d --wait db
+endif
+
+build: db-up di fe-build
+	go build …
+serve: db-up
+	./bin/app serve
+```
+
+- **`docker compose up -d --wait db` je idempotentní.** Když kontejner běží, vrátí se za zlomek sekundy. Jinak ho (napoprvé i sestaví) spustí a počká na healthcheck. Migrace pak jako dnes pustí aplikace při startu.
+- **V CI** `make build` nemá `.env`, takže driver je prázdný a `db-up` nic nedělá. CI si databázi řídí samo.
+- **Pohodlné cíle navíc:**
+  - `make db-down`;
+  - `make db-reset` (smaže volume `pgdata`);
+  - `make db-psql` = `docker compose exec db psql -U gokick_owner gokick`, tedy konzole bez portu.
+
+**Testy a CI:**
+- `make test` spustí `docker compose up -d --wait db-test` a `APP_TEST_DB_URL` sestaví z **IP kontejneru** (`docker inspect`).
+- IP z hostu funguje na OrbStacku i na Linuxu, kde je bridge síť dosažitelná přímo. Port se tak nepublikuje ani v CI (7.1, 7.7).
+
+**Předpoklad:** lokálně se používá OrbStack, stejně jako dnes pro `app` a `documan`. Docker Desktop IP kontejnerů z hostu nezpřístupňuje. Kdo ho používá, potřebuje nepovinný, necommitovaný `docker-compose.override.yml` s portem.
 
 
 ## 4. Postgres schéma
@@ -402,7 +491,7 @@ CREATE POLICY tenant_isolation ON users
 
 1. **Testy běží vždy proti oběma databázím** (rozhodnutí D9 ✅), lokálně i v pipeline:
    - **`make test` = SQLite + Postgres, paralelně.**
-     - Nejdřív `docker compose up -d --wait postgres-test`: Postgres 18 na tmpfs s `fsync=off`. Kontejner se nechá běžet a další `make test` ho znovu použije.
+     - Nejdřív `docker compose up -d --wait db-test` (sekce 3.4): Postgres 18 na tmpfs s `fsync=off`, bez publikovaného portu. Kontejner se nechá běžet a další `make test` ho znovu použije.
      - Pak se paralelně spustí dva `go test` procesy: `APP_DB_DRIVER=sqlite` a `APP_DB_DRIVER=postgres -tags nosqlite`. Výstupy se prefixují `[sqlite]` a `[postgres]`.
      - Selhání kterékoli z nich = selhání `make test`.
    - **Bez běžícího Dockeru** `make test` **selže** se srozumitelnou hláškou a nabídne `make test-sqlite`. Druhá DB se tedy nikdy tiše nepřeskočí.
@@ -514,7 +603,7 @@ Rozpis po souborech je v **příloze A**.
 **CI** (`.github/workflows/validate.yml`), rozhodnutí D7:
 - **Dva paralelní joby, oba povinné:**
   - `validate` zůstává jako dnes: lint, testy na SQLite, build;
-  - nový `test-postgres` spustí Postgres 18 jako `docker run … postgres:18 -c fsync=off -c full_page_writes=off -c synchronous_commit=off` na tmpfs a pak `go test -tags nosqlite` s `APP_DB_DRIVER=postgres`.
+  - nový `test-postgres` spustí `docker compose up -d --wait db-test`, tedy **stejný** `docker/postgres/Dockerfile` a init skript jako lokálně. `APP_TEST_DB_URL` sestaví z IP kontejneru (na Linux runneru je dosažitelná přímo, bez publikovaného portu) a pak pustí `go test -tags nosqlite` s `APP_DB_DRIVER=postgres`.
 
   Protože joby běží souběžně, pipeline se neprodlouží. Lint poběží pro obě sady build tagů.
 - **Kde to běží a kolik to stojí:**
@@ -562,29 +651,30 @@ Pořadí je zvolené tak, aby **fáze 1 a 2 byly čisté refaktory bez změny ch
 | **1 — švy (jen SQLite)** | `database.Driver`, port `Migrator`, goose Provider API; `migrations/sqlite/` a embed podle dialektu. `SqliteManager` se přesune do `infrastructure/sqlite`. `persistence.Store` + `Open`, Wire přes `FieldsOf`, cleanup zavírá pool. Providery berou `shared.Transactor`, `NewApplication` bere `Migrator`. Seeder se přesune do `infrastructure/seeder`. Porty `shared.Locker` a `Transactor.BeginReadTx` (na SQLite no-op). Úprava `.go-arch-lint.yml`. | `make lint test` zelené; `*database.SqliteManager` mimo `sqlite` a `persistence` neexistuje |
 | **1b — české řazení a UUIDv7 (jen SQLite, `feat`)** | SQLite manager přes `driver.Open` + init callback: `unicode.Register`, collation `app_sort` (`cs-CZ`), SQL funkce `uuidv7()`. Sort whitelisty s `COLLATE app_sort`, escapování `LIKE`. `refresh_tokens` a `audit_log` id na v7. Zlatý korpus řazení + kontraktní test. Úprava `list_pages_test`. | Gridy řadí česky na SQLite; zlatý test zelený |
 | **2 — testy nezávislé na backendu (ještě SQLite)** | Codemod `testfx.New(t)`; `fx.Tx`, helpery ze 7.5, `SystemCtx`/`TenantCtx`; UUID testová data. Kontraktní testy do `internal/repotest`; SQLite-only testy označit (`RequireDriver` + build tag). Gate `zz_nosqlite` a guard proti prázdnému výsledku v `zz_tenant`/`zz_sqltime`. `NewJwt` bez DB. | Mimo `infrastructure/sqlite/**` není v testech ani řádek SQLite SQL; `go test -tags nosqlite ./...` se **zkompiluje** (bez PG zatím s chybou „driver not built") |
-| **3 — PG základ** | Config (sekce 3.2), `pgx`, `postgres.Manager` se dvěma pooly, rovinami a GUC, kontrola rolí při startu. `PlaneMiddleware` a `ReadTxMiddleware` (na SQLite no-op). `migrations/postgres/` init s typy, FK, RLS a granty; bootstrap rolí. Profil `postgres` v docker-compose (PG 18). PG harness v `testfx`, `make test-pg`. | Na PG proběhnou migrace a `testfx` fixture; RLS sada (6.3) zelená |
+| **3 — PG základ** | Config (sekce 3.2), `pgx`, `postgres.Manager` se dvěma pooly, rovinami a GUC, kontrola rolí při startu. `PlaneMiddleware` a `ReadTxMiddleware` (na SQLite no-op). `migrations/postgres/` init s typy, FK, RLS a granty. `docker/postgres/Dockerfile` + `initdb/01-roles.sh`, služby `db` a `db-test` v `docker-compose.yml` (OrbStack domény, bez portů), `make db-up` v `build`/`serve` + `db-down`/`db-reset`/`db-psql`, `.env.example` (sekce 3.4). PG harness v `testfx`, `make test-pg`. | Na PG proběhnou migrace a `testfx` fixture; RLS sada (6.3) zelená |
 | **4 — PG repozitáře** | `user`, `tenant`, `token`, `run`, `audit` v `$n` SQL; `ClaimDue` se `SKIP LOCKED`; časy přes `statement_timestamp()`; `ILIKE` s escapováním; `NULLS FIRST/LAST`; parse UUID; mapování chyb (23505, 23503, 42501, 40001, 40P01, 55P03, 22P02). `zz_tenant` pro PG. | **Celá suite zelená na obou backendech**; `make test-pg` s `-tags nosqlite` |
 | **5 — zámky** | Advisory `Locker` pro scheduler, locker migrací, timeouty (sekce 3.2), zamykání „kotvy" u invariantů, deterministické pořadí u bulk operací, volitelný `RequiresSerializable` + retry. PG testy souběhu (N workerů × M runů exactly-once, dvě instance scheduleru, souběžné migrace). Úprava `TestScheduler_TwoInstancesTickIndependently`. | Testy souběhu zelené na PG a opakovaně (`-count=20`) |
-| **6 — CI a pojistky** | Paralelní joby `validate` (SQLite) a `test-postgres` (Postgres 18 přes `docker run` s fsync flagy) v `validate.yml`; `make test` = obě DB paralelně (`docker compose` služba `postgres-test`, bez Dockeru selže s nabídkou `make test-sqlite`). Lint pro obě sady tagů, kontrola artefaktů `*.db` a `go list -deps`, e2e na PG + multi-process fencing. | Oba joby povinné v branch rulesetu; `make test` pouští obě DB |
+| **6 — CI a pojistky** | Paralelní joby `validate` (SQLite) a `test-postgres` (stejná služba `db-test` jako lokálně, IP kontejneru místo portu) v `validate.yml`; `make test` = obě DB paralelně (služba `db-test`, bez Dockeru selže s nabídkou `make test-sqlite`). Lint pro obě sady tagů, kontrola artefaktů `*.db` a `go list -deps`, e2e na PG + multi-process fencing. | Oba joby povinné v branch rulesetu; `make test` pouští obě DB |
 | **7 — dokumentace** | Příloha B: CLAUDE.md, skilly, framework docs, README, roadmapa (zapsat rozhodnutí D1–D9). | `make docpaths-check` + `documan-lint` zelené |
 | volitelně | `LISTEN/NOTIFY` wake-up workeru; produkční build `-tags nosqlite`; sdílený stav rate-limiteru; `t.Parallel()` v DB testech; self-hosted runner pro privátní projekty ze šablony. | — |
 
 
 ## 10. Rozhodnutí
 
-Stav k 2026-09-24: ✅ potvrzeno · 🟡 doporučení čeká na potvrzení.
+Stav k 2026-09-24: všechna rozhodnutí potvrzena ✅.
 
 | # | Otázka | Stav | Rozhodnutí / doporučení |
 |---|---|---|---|
 | D1 | Identifikátory | ✅ | **UUIDv7 všude.** V Postgresu typ `uuid`, v SQLite `TEXT`; `uuidv7()` jako SQL funkce v obou (4.1). |
 | D2 | Řazení | ✅ | **Česky, identicky v obou DB.** Collation `app_sort` = `cs-CZ` (4.2, ověřeno V18/V19). |
-| D3 | Fronta na background práci: vlastní engine, nebo River | 🟡 | **Vlastní engine + `SKIP LOCKED`**, viz vysvětlení níže. |
-| D4 | Jak se k datům dostane „systémová" část aplikace | 🟡 | **Dvě DB role (dva účty)**, viz níže. |
-| D5 | RLS i v režimu bez multitenancy | 🟡 | **Zapnuté**, viz níže. |
+| D3 | Fronta na background práci: vlastní engine, nebo River | ✅ | **Vlastní engine + `SKIP LOCKED`**, viz vysvětlení níže. |
+| D4 | Jak se k datům dostane „systémová" část aplikace | ✅ | **Dvě DB role (dva účty)**, viz níže. |
+| D5 | RLS i v režimu bez multitenancy | ✅ | **Zapnuté**, viz níže. |
 | D6 | Výchozí driver | ✅ | **`sqlite`** |
-| D7 | Kde běží Postgres pro testy | 🟡 | **Lokálně Docker (`make test`), v CI GitHub-hosted runner** — pro veřejný repo zdarma, bez vlastního serveru (7.7). Self-hosted runner jen volitelně pro privátní projekty. |
+| D7 | Kde běží Postgres pro testy | ✅ | **Lokálně Docker (`make test`), v CI GitHub-hosted runner** — pro veřejný repo zdarma, bez vlastního serveru (7.7). Self-hosted runner jen volitelně pro privátní projekty. |
 | D8 | Převod dat mezi DB | ✅ | **Nepotřeba** — adaptér se volí při založení projektu; seedy musí dávat stejná data na obou (4.3). |
 | D9 | Testy na obou DB | ✅ | **Vždy obě:** `make test` pouští obě paralelně, v CI dva povinné joby (7.1, 7.7). |
+| D10 | Jak se spouští Postgres | ✅ | **`docker/postgres/Dockerfile` + služby `db`/`db-test` v `docker-compose.yml`, OrbStack domény, žádné porty; `make build`/`make serve` DB nahodí samy** (3.4). |
 
 ### D3 — vlastní fronta, nebo River
 
@@ -598,7 +688,7 @@ Stav k 2026-09-24: ✅ potvrzeno · 🟡 doporučení čeká na potvrzení.
 | Hotové „navíc" (webové UI fronty, priority, unikátní joby, periodické joby, dávky) | ❌ když budou potřeba, dopíšou se | ✅ |
 | Kdo to udržuje | my | komunita / autoři Riveru |
 
-**Doporučení:** vlastní engine. River dává smysl až ve chvíli, kdy by se SQLite úplně opustila, nebo když bude potřeba jeho UI či pokročilé funkce. Roadmapu (bod „Durable fronta na Postgresu → River") pak upravit.
+**Rozhodnuto: vlastní engine.** River by dával smysl až ve chvíli, kdy by se SQLite úplně opustila, nebo když bude potřeba jeho UI či pokročilé funkce. Roadmapu (bod „Durable fronta na Postgresu → River") pak upravit.
 
 ### D4 — dvě DB role, nebo jedna s přepínáním
 
@@ -611,13 +701,13 @@ RLS znamená, že databáze sama pustí aplikaci jen k řádkům aktivního tena
 | Spojení na DB | dva pooly, tedy o něco víc spojení | jeden pool |
 | Ověřeno | — | V12 funguje |
 
-**Doporučení:** A. Cena je jedna proměnná navíc, přínos je, že izolaci tenantů nejde obejít ani chybou v aplikaci.
+**Rozhodnuto: A (dva účty).** Cena je jedna proměnná navíc, přínos je, že izolaci tenantů nejde obejít ani chybou v aplikaci.
 
 ### D5 — RLS i bez multitenancy
 
 gokick má ve výchozím stavu multitenancy vypnutou (`APP_MULTITENANCY=false`). Všechna data pak patří jednomu tenantovi „Default" a uživatel žádné tenanty nevidí. Otázka zní, jestli má Postgres RLS kontrolovat i v tomto režimu.
 
-- **Zapnuté** (doporučení):
+- **Zapnuté** (rozhodnuto):
   - aplikace do DB vždy pošle tenanta „Default", takže uživatel nepozná žádný rozdíl;
   - běží jedna a tatáž cesta kódu v obou režimech;
   - testy ověřují RLS pořád;
