@@ -170,7 +170,7 @@ Tyto proměnné běžící HTTP server **nepoužívá** — patří CLI příkaz
 |---|---|---|
 | `APP_SEED_ADMIN_PASSWORD` | (žádný) | Heslo admin uživatele pro `./bin/app seed` (min. 8 znaků, max. 128 bajtů). Vyžaduje ho jen seed příkaz; v prostředích, kde se seed nikdy nespouští, nech prázdné. Wire ho injektuje jako distinct typ do seederu. |
 | `APP_SEED_SUPERADMIN_PASSWORD` | (prázdné) | Heslo platformního **superadmina** pro `./bin/app seed`. Prázdné = superadmin se neseeduje (platformní rovina zůstává nedostupná). Wire distinct typ. |
-| `APP_SEED_ADMIN_TENANT` | `Tenant 1` | Jméno tenantu, do kterého seed založí admina, **když je multitenancy zapnutá** (find-or-create). Single-tenant ho ignoruje (admin zůstává v default tenantu). Wire distinct typ. |
+| `APP_SEED_ADMIN_TENANT` | `Default` | Jméno tenantu, do kterého seed založí admina, **když je multitenancy zapnutá** (find-or-create). Single-tenant ho ignoruje (admin zůstává v default tenantu). Wire distinct typ. |
 | `VITE_SENTRY_DSN`, `VITE_SENTRY_ENVIRONMENT` | (prázdné) | Frontend Sentry config **jen pro Vite dev server** (`yarn dev`), kde se `index.html` doručuje přímo bez Go injekce. Když SPA obsluhuje Go server v produkci, tyto `VITE_*` se **nepoužijí** — přednost má injekce `APP_SENTRY_*`. |
 | `VITE_SENTRY_RELEASE` | (git tag z buildu) | Frontend release, zapečený při buildu (viz Sentry výše). Normálně se nenastavuje. |
 | `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT` | (žádné) | **Build-time** secrety pro upload frontend source maps. Patří do CI / Docker buildu, **ne** do runtime `.env`. Bez nich build neshipuje žádné mapy. Viz skill `/gk-sentry`. |
