@@ -17,22 +17,17 @@ import (
 	query4 "gokick/app/application/platform/query"
 	command2 "gokick/app/application/profile/command"
 	"gokick/app/application/profile/query"
-	run2 "gokick/app/application/run"
+	"gokick/app/application/run"
 	command3 "gokick/app/application/user/command"
 	query2 "gokick/app/application/user/query"
-	run3 "gokick/app/domain/run"
+	run2 "gokick/app/domain/run"
 	"gokick/app/domain/shared"
-	token2 "gokick/app/domain/token"
+	"gokick/app/domain/token"
 	"gokick/app/infrastructure/config"
+	"gokick/app/infrastructure/persistence"
 	"gokick/app/infrastructure/scheduler"
 	"gokick/app/infrastructure/security"
 	"gokick/app/infrastructure/seeder"
-	"gokick/app/infrastructure/sqlite"
-	"gokick/app/infrastructure/sqlite/audit"
-	"gokick/app/infrastructure/sqlite/run"
-	"gokick/app/infrastructure/sqlite/tenant"
-	"gokick/app/infrastructure/sqlite/token"
-	"gokick/app/infrastructure/sqlite/user"
 	"gokick/app/infrastructure/worker"
 	"gokick/app/presentation/console"
 	"gokick/app/presentation/http/handler"
@@ -47,44 +42,49 @@ import (
 
 // Injectors from container_provider.go:
 
-func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app.Application, error) {
+// CreateApplication builds the whole object graph. The returned cleanup releases
+// what the graph opened (the database pool) — call it once the application has
+// finished running.
+func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app.Application, func(), error) {
 	configConfig, err := config.LoadConfig()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	jwtService, err := security.NewJwtService(configConfig)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	responder := response.NewResponder(logger)
 	ipExtractor := provideIPExtractor(configConfig)
 	rateLimiters, err := provideRateLimiters(configConfig, ipExtractor, logger, responder)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	healthHandler := handler.NewHealthHandler(responder)
 	fs := providePublicFS()
 	spaConfig := provideSPAConfig(configConfig)
 	spaHandler := handler.NewSPAHandler(responder, logger, fs, spaConfig)
 	cookieSecure := provideCookieSecure(configConfig)
-	manager, err := sqlite.NewManager(configConfig)
+	store, cleanup, err := persistence.Open(configConfig, logger)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	transactor := store.Tx
 	permissionChecker := providePermissionChecker()
 	v := provideEventHandlers()
 	eventBus := provideEventBus(logger, v, reporter)
-	repository := run.NewRepository(manager)
+	repository := store.Runs
 	handlerRegistry, err := provideRunHandlerRegistry(configConfig)
 	if err != nil {
-		return nil, err
+		cleanup()
+		return nil, nil, err
 	}
 	runDispatcher := provideRunDispatcher(repository, handlerRegistry)
-	auditRepository := audit.NewRepository(manager)
+	auditLogger := store.Audit
 	tenantResolver := provideTenantResolver()
-	commandBus := provideCommandBus(logger, manager, permissionChecker, eventBus, runDispatcher, auditRepository, reporter, tenantResolver)
-	userRepository := user.NewRepository(manager)
-	tokenRepository := token.NewRepository(manager)
+	commandBus := provideCommandBus(logger, transactor, permissionChecker, eventBus, runDispatcher, auditLogger, reporter, tenantResolver)
+	userRepository := store.Users
+	tokenRepository := store.Tokens
 	passwordHasher := providePasswordHasher()
 	loginHandler := command.NewLoginHandler(userRepository, tokenRepository, passwordHasher, jwtService)
 	refreshTokenHandler := command.NewRefreshTokenHandler(userRepository, tokenRepository, jwtService)
@@ -108,35 +108,38 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	getUserDashboardHandler := query3.NewGetUserDashboardHandler()
 	getAdminDashboardHandler := query3.NewGetAdminDashboardHandler(userRepository)
 	dashboardHandler := handler.NewDashboardHandler(responder, queryBus, getUserDashboardHandler, getAdminDashboardHandler)
-	tenantRepository := tenant.NewRepository(manager)
-	getStatsHandler := query4.NewGetStatsHandler(tenantRepository, userRepository)
-	listAllUsersHandler := query4.NewListAllUsersHandler(userRepository)
-	queryGetUserHandler := query4.NewGetUserHandler(userRepository)
-	listTenantsHandler := query4.NewListTenantsHandler(tenantRepository)
-	createPlatformUserHandler := command4.NewCreatePlatformUserHandler(userRepository, tenantRepository, passwordHasher)
-	updatePlatformUserHandler := command4.NewUpdatePlatformUserHandler(userRepository, passwordHasher)
-	deletePlatformUserHandler := command4.NewDeletePlatformUserHandler(userRepository)
-	bulkDeletePlatformUsersHandler := command4.NewBulkDeletePlatformUsersHandler(userRepository)
-	bulkSetPlatformUsersActiveHandler := command4.NewBulkSetPlatformUsersActiveHandler(userRepository)
+	platformRepository := store.PlatformTenants
+	userPlatformRepository := store.PlatformUsers
+	getStatsHandler := query4.NewGetStatsHandler(platformRepository, userPlatformRepository)
+	listAllUsersHandler := query4.NewListAllUsersHandler(userPlatformRepository)
+	queryGetUserHandler := query4.NewGetUserHandler(userPlatformRepository)
+	listTenantsHandler := query4.NewListTenantsHandler(platformRepository)
+	tenantRepository := store.Tenants
+	createPlatformUserHandler := command4.NewCreatePlatformUserHandler(userPlatformRepository, tenantRepository, passwordHasher)
+	updatePlatformUserHandler := command4.NewUpdatePlatformUserHandler(userPlatformRepository, passwordHasher)
+	deletePlatformUserHandler := command4.NewDeletePlatformUserHandler(userPlatformRepository)
+	bulkDeletePlatformUsersHandler := command4.NewBulkDeletePlatformUsersHandler(userPlatformRepository)
+	bulkSetPlatformUsersActiveHandler := command4.NewBulkSetPlatformUsersActiveHandler(userPlatformRepository)
 	createTenantHandler := command4.NewCreateTenantHandler(tenantRepository)
-	deleteTenantHandler := command4.NewDeleteTenantHandler(tenantRepository)
-	bulkDeleteTenantsHandler := command4.NewBulkDeleteTenantsHandler(tenantRepository)
+	deleteTenantHandler := command4.NewDeleteTenantHandler(platformRepository)
+	bulkDeleteTenantsHandler := command4.NewBulkDeleteTenantsHandler(platformRepository)
 	platformHandler := handler.NewPlatformHandler(responder, queryBus, commandBus, getStatsHandler, listAllUsersHandler, queryGetUserHandler, listTenantsHandler, createPlatformUserHandler, updatePlatformUserHandler, deletePlatformUserHandler, bulkDeletePlatformUsersHandler, bulkSetPlatformUsersActiveHandler, createTenantHandler, deleteTenantHandler, bulkDeleteTenantsHandler)
 	debugRunHandler := handler.NewDebugRunHandler(responder, repository)
 	serverServer := server.NewServer(configConfig, logger, reporter, jwtService, responder, rateLimiters, ipExtractor, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler, platformHandler, debugRunHandler)
 	v2 := provideSchedulerJobs(tokenRepository)
 	scheduler, err := provideScheduler(logger, v2)
 	if err != nil {
-		return nil, err
+		cleanup()
+		return nil, nil, err
 	}
-	runWorker := provideRunWorker(logger, reporter, repository, handlerRegistry, runDispatcher, manager, auditRepository, configConfig)
+	runWorker := provideRunWorker(logger, reporter, repository, handlerRegistry, runDispatcher, transactor, auditLogger, configConfig)
 	serveCommand := console.NewServeCommand(serverServer, scheduler, runWorker)
 	seedAdminPassword := provideSeedAdminPassword(configConfig)
 	seedSuperAdminPassword := provideSeedSuperAdminPassword(configConfig)
 	seedAdminTenant := provideSeedAdminTenant(configConfig)
 	multitenant := provideMultitenant(configConfig)
 	seederSeeder := seeder.NewSeeder(userRepository, tenantRepository, passwordHasher, seedAdminPassword, seedSuperAdminPassword, seedAdminTenant, multitenant, logger)
-	systemCommandBus := provideSystemCommandBus(logger, manager, eventBus, auditRepository, runDispatcher, reporter)
+	systemCommandBus := provideSystemCommandBus(logger, transactor, eventBus, auditLogger, runDispatcher, reporter)
 	seedCommand := console.NewSeedCommand(seederSeeder, systemCommandBus)
 	getTenantHandler := query4.NewGetTenantHandler(tenantRepository)
 	createUserCommand := console.NewCreateUserCommand(createUserHandler, createTenantHandler, getTenantHandler, configConfig, systemCommandBus)
@@ -145,9 +148,11 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	createTenantCommand := console.NewCreateTenantCommand(createTenantHandler, systemCommandBus)
 	workerCommand := console.NewWorkerCommand(runWorker)
 	rootCommand := console.NewRootCommand(serveCommand, seedCommand, createUserCommand, createSuperAdminCommand, createTenantCommand, workerCommand)
-	migrator := sqlite.NewMigrator(manager, logger)
+	migrator := store.Migrator
 	application := app.NewApplication(rootCommand, migrator)
-	return application, nil
+	return application, func() {
+		cleanup()
+	}, nil
 }
 
 // container_provider.go:
@@ -174,8 +179,8 @@ func provideCommandBus(
 	tx shared.Transactor,
 	checker shared.PermissionChecker,
 	eventBus *bus.EventBus,
-	runDispatcher shared.RunDispatcher, audit2 shared.AuditLogger,
-
+	runDispatcher shared.RunDispatcher,
+	audit shared.AuditLogger,
 	reporter shared.ErrorReporter,
 	tenantResolver shared.TenantResolver,
 ) *bus.CommandBus {
@@ -183,7 +188,9 @@ func provideCommandBus(
 		logger,
 		checker,
 		reporter,
-		tenantResolver, audit2, runDispatcher,
+		tenantResolver,
+		audit,
+		runDispatcher,
 		eventBus,
 		tx,
 	)...,
@@ -199,12 +206,12 @@ func provideCommandBus(
 func provideSystemCommandBus(
 	logger *slog.Logger,
 	tx shared.Transactor,
-	eventBus *bus.EventBus, audit2 shared.AuditLogger,
-
+	eventBus *bus.EventBus,
+	audit shared.AuditLogger,
 	runDispatcher shared.RunDispatcher,
 	reporter shared.ErrorReporter,
 ) *bus.SystemCommandBus {
-	return bus.NewSystemCommandBus(middleware.SystemChain(logger, tx, eventBus, audit2, runDispatcher, reporter)...,
+	return bus.NewSystemCommandBus(middleware.SystemChain(logger, tx, eventBus, audit, runDispatcher, reporter)...,
 	)
 }
 
@@ -323,7 +330,7 @@ func provideMultitenancy(cfg *config.Config) shared.Multitenancy {
 // a tenant-owned table (r.Tenant(ctx)) panics on every tick, log-only, forever.
 // Tenant-scoped work belongs in a run (tenant stamped at enqueue) or must
 // resolve tenants explicitly.
-func provideSchedulerJobs(tokens token2.Repository) []scheduler.Job {
+func provideSchedulerJobs(tokens token.Repository) []scheduler.Job {
 	return []scheduler.Job{
 		{
 			Name:     "cleanup:expired-refresh-tokens",
@@ -342,23 +349,23 @@ func provideScheduler(logger *slog.Logger, jobs []scheduler.Job) (*scheduler.Sch
 // is on it also registers the e2e:* debug kinds (the crash-recovery / drain
 // harness) — never in production. The default lease comes from config so an unset
 // per-kind lease stays consistent.
-func provideRunHandlerRegistry(cfg *config.Config) (*run2.HandlerRegistry, error) {
-	kinds := map[string]run2.Registration{}
+func provideRunHandlerRegistry(cfg *config.Config) (*run.HandlerRegistry, error) {
+	kinds := map[string]run.Registration{}
 	if cfg.RunDebug {
-		for kind, reg := range run2.E2EDebugRegistrations() {
+		for kind, reg := range run.E2EDebugRegistrations() {
 			kinds[kind] = reg
 		}
 	}
-	return run2.NewHandlerRegistry(kinds, cfg.RunWorkerLease)
+	return run.NewHandlerRegistry(kinds, cfg.RunWorkerLease)
 }
 
 // provideRunDispatcher returns the durable-run dispatcher as a domain interface so
 // command/event handlers depend on shared.RunDispatcher, not the concrete type.
 func provideRunDispatcher(
-	repo run3.Repository,
-	registry *run2.HandlerRegistry,
+	repo run2.Repository,
+	registry *run.HandlerRegistry,
 ) shared.RunDispatcher {
-	return run2.NewDispatcher(repo, registry)
+	return run.NewDispatcher(repo, registry)
 }
 
 // provideRunWorker wires the durable run worker (the one background-work engine) from
@@ -369,11 +376,11 @@ func provideRunDispatcher(
 func provideRunWorker(
 	logger *slog.Logger,
 	reporter shared.ErrorReporter,
-	repo run3.Repository,
-	registry *run2.HandlerRegistry,
+	repo run2.Repository,
+	registry *run.HandlerRegistry,
 	runDispatcher shared.RunDispatcher,
-	tx shared.Transactor, audit2 shared.AuditLogger,
-
+	tx shared.Transactor,
+	audit shared.AuditLogger,
 	cfg *config.Config,
 ) *worker.RunWorker {
 	return worker.NewRunWorker(
@@ -382,7 +389,8 @@ func provideRunWorker(
 		repo,
 		registry,
 		runDispatcher,
-		tx, audit2, worker.RunWorkerConfig{
+		tx,
+		audit, worker.RunWorkerConfig{
 			DefaultLease:      cfg.RunWorkerLease,
 			HeartbeatInterval: cfg.RunWorkerHeartbeat,
 			PollInterval:      cfg.RunWorkerPoll,

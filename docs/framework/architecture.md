@@ -39,12 +39,11 @@ cmd/main.go
   -> signal.NotifyContext(SIGINT, SIGTERM)  Root ctx s signal handlingem
   -> di.CreateApplication(logger, reporter)  Wire DI vytvoří vše
     -> config.LoadConfig()                 Načtení .env
-    -> sqlite.NewManager()                 Připojení k SQLite
-    -> sqlite.NewMigrator()                Vytvoření migrátoru (database.Migrator)
+    -> persistence.Open()                  Připojení k DB (sqlite.Manager) + porty (Store: repozitáře, Tx, Migrator)
     -> bus.NewCommandBus/NewQueryBus/NewEventBus/NewSystemCommandBus  CQRS busy s middleware chain
     -> server.NewServer(config, handlers, ...)  HTTP server
     -> console.NewRootCommand()            Cobra CLI
-  -> application.Run(ctx)
+  -> application.Run(ctx)                  (po skončení cleanup() zavře DB pool)
     -> database.Migrator.RunUp()           Automatické migrace
     -> rootCmd.Execute(ctx)                Cobra parsuje "serve" (ExecuteContext)
       -> server.Start(cmd.Context())       Naslouchá na portu, drainuje při ctx.Done()

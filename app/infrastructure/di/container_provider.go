@@ -18,20 +18,12 @@ import (
 	userqry "gokick/app/application/user/query"
 	"gokick/app/domain/run"
 	"gokick/app/domain/shared"
-	"gokick/app/domain/tenant"
 	"gokick/app/domain/token"
-	"gokick/app/domain/user"
 	"gokick/app/infrastructure/config"
-	"gokick/app/infrastructure/database"
+	"gokick/app/infrastructure/persistence"
 	"gokick/app/infrastructure/scheduler"
 	"gokick/app/infrastructure/security"
 	"gokick/app/infrastructure/seeder"
-	"gokick/app/infrastructure/sqlite"
-	sqliteaudit "gokick/app/infrastructure/sqlite/audit"
-	sqliterun "gokick/app/infrastructure/sqlite/run"
-	sqlitetenant "gokick/app/infrastructure/sqlite/tenant"
-	sqlitetoken "gokick/app/infrastructure/sqlite/token"
-	sqliteuser "gokick/app/infrastructure/sqlite/user"
 	"gokick/app/infrastructure/worker"
 	"gokick/app/presentation/console"
 	"gokick/app/presentation/http/handler"
@@ -338,16 +330,22 @@ func providePermissionsRegistry() *shared.PermissionsRegistry {
 	})
 }
 
+// CreateApplication builds the whole object graph. The returned cleanup releases
+// what the graph opened (the database pool) — call it once the application has
+// finished running.
 func CreateApplication(
 	logger *slog.Logger,
 	reporter shared.ErrorReporter,
-) (*app.Application, error) {
+) (*app.Application, func(), error) {
 	wire.Build(
 		config.LoadConfig,
-		sqlite.NewManager,
-		sqlite.NewMigrator,
-		wire.Bind(new(shared.Transactor), new(*sqlite.Manager)),
-		wire.Bind(new(database.Migrator), new(*sqlite.Migrator)),
+		// The database adapter and every port it serves — persistence.Open is the
+		// only place that knows which adapter backs them (see its package doc).
+		persistence.Open,
+		wire.FieldsOf(new(*persistence.Store),
+			"Users", "PlatformUsers", "Tokens", "Runs", "Tenants", "PlatformTenants",
+			"Audit", "Tx", "Migrator",
+		),
 		providePasswordHasher,
 		providePermissionChecker,
 		provideTenantResolver,
@@ -372,20 +370,8 @@ func CreateApplication(
 		providePermissionsRegistry,
 		security.NewJwtService,
 		wire.Bind(new(shared.TokenService), new(*security.JwtService)),
-		wire.Bind(new(user.Repository), new(*sqliteuser.Repository)),
-		wire.Bind(new(user.PlatformRepository), new(*sqliteuser.Repository)),
-		wire.Bind(new(token.Repository), new(*sqlitetoken.Repository)),
-		wire.Bind(new(run.Repository), new(*sqliterun.Repository)),
-		wire.Bind(new(tenant.Repository), new(*sqlitetenant.Repository)),
-		wire.Bind(new(tenant.PlatformRepository), new(*sqlitetenant.Repository)),
 		wire.Bind(new(shared.Seeder), new(*seeder.Seeder)),
-		wire.Bind(new(shared.AuditLogger), new(*sqliteaudit.Repository)),
-		sqliteuser.NewRepository,
-		sqlitetoken.NewRepository,
-		sqliterun.NewRepository,
-		sqlitetenant.NewRepository,
 		seeder.NewSeeder,
-		sqliteaudit.NewRepository,
 		authcmd.NewLoginHandler,
 		authcmd.NewRefreshTokenHandler,
 		authcmd.NewLogoutHandler,
@@ -436,5 +422,5 @@ func CreateApplication(
 		console.NewRootCommand,
 		app.NewApplication,
 	)
-	return nil, nil
+	return nil, nil, nil
 }

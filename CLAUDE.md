@@ -177,6 +177,7 @@ Taking `*CommandBus`/`*QueryBus` makes the bus↔operation pairing compile-check
 | `sqlite/audit/` | `shared.AuditLogger` implementation (raw-pool — survives business rollback) |
 | `seeder/` | `shared.Seeder` impl (DB-neutral — seeds through the repository ports) — admin (+ optional superadmin) seeding; `SeedAdminPassword` / `SeedSuperAdminPassword` / `SeedAdminTenant` / `Multitenant` Wire-distinct types |
 | `security/` | `JwtService` (HS256 access + crypto/rand refresh), `PasswordHasher` (SHA-256 prehash + bcrypt), `PermissionChecker` |
+| `persistence/` | `Open(cfg)` → `Store` (every database port: repositories, `Tx` Transactor, `Audit`, `Migrator`) + cleanup that closes the pool — the single place that knows which adapter backs the ports |
 | `di/` | Wire compile-time DI. `container_provider.go` (wireinject tag) + generated `wire_gen.go` |
 
 **Repository pattern:**
@@ -188,11 +189,13 @@ func (r *Repository) Save(ctx context.Context, u *user.User) error {
 }
 ```
 
-**Wire binding for interfaces:**
+**Wiring repositories:** `infrastructure/persistence` opens the adapter and exposes every
+port on a `Store`; Wire pulls them out by field, so DI never names a concrete repository:
 ```go
-wire.Bind(new(user.Repository), new(*sqliteuser.Repository))
-wire.Bind(new(token.Repository), new(*sqlitetoken.Repository))
-wire.Bind(new(shared.Seeder), new(*sqliteseeder.Seeder))
+persistence.Open,  // (*Store, cleanup, error) — the ONE place that knows the adapter
+wire.FieldsOf(new(*persistence.Store), "Users", "PlatformUsers", "Tokens", "Runs",
+    "Tenants", "PlatformTenants", "Audit", "Tx", "Migrator"),
+wire.Bind(new(shared.Seeder), new(*seeder.Seeder)),  // non-repository ports still bind as usual
 ```
 
 ### Presentation Layer (`app/presentation/`)
@@ -333,14 +336,14 @@ version or changelog. Full guide: `CONTRIBUTING.md`; release mechanics: `/gk-dep
 3. **`application/<ctx>/command/`** or **`application/<ctx>/query/`** — handler with `Permissioned` or `SkipPermission`
 4. **`presentation/http/handler/`** — HTTP handler dispatching via bus
 5. **`presentation/http/server/`** — register route
-6. **`infrastructure/di/container_provider.go`** — add Wire providers + `wire.Bind` for interfaces
+6. **`infrastructure/di/container_provider.go`** — add Wire providers + `wire.Bind` for interfaces. A new **repository** goes on `persistence.Store` instead: a field typed as its domain port, built in `persistence.Open`, and listed in the `wire.FieldsOf(...)` call
 7. **`make di && make arch-check`** — regenerate DI + verify layer rules
 
 Broad-glob components auto-cover new sub-packages: a new `application/<ctx>/command/` matches `application/**`, a new handler matches `presentation/http/handler/**`. But the **bounded-context** components are enumerated, not wildcarded — `domain` is split per context (`domain_user`, `domain_token`, `domain_run`, `domain_tenant`) and `sqlite_repos` lists each repo dir — exactly so a cross-context import is caught. So adding a new context (`domain/order/`, `infrastructure/sqlite/order/`) **does** require editing `.go-arch-lint.yml`: add a `domain_order` component, grant it in each consumer's `mayDependOn` (`application`, `sqlite_repos`, `testfx`, …), and add `infrastructure/sqlite/order/**` to `sqlite_repos`. That ~6-line edit is the price of enforcing cross-context isolation in the linter.
 
 ## Key Invariants
 
-- **Domain interfaces only.** Command/query handlers, seeders, and CLI commands depend on domain interfaces (`user.Repository`, `shared.Seeder`), never on concrete infrastructure types (`*sqliteuser.Repository`, `*sqliteseeder.Seeder`).
+- **Domain interfaces only.** Command/query handlers, seeders, and CLI commands depend on domain interfaces (`user.Repository`, `shared.Seeder`), never on concrete infrastructure types (`*sqliteuser.Repository`, `*seeder.Seeder`).
 - **Bus dispatch required.** All commands/queries go through a bus — HTTP handlers never call application handlers directly (they use the `CommandBus`/`QueryBus`); the CLI create/seed commands use the `SystemCommandBus` (the CommandBus chain minus Authorize/Tenant). The bus provides recovery, logging, authorization (HTTP), transactions, audit, and event dispatch.
 - **`r.Conn(ctx)` in repositories.** Always use `r.Conn(ctx)` (from embedded `BaseRepository`), never `r.DB.DB()` directly. This ensures transparent transaction participation. **Exception:** writes that MUST commit independently of any bus tx — `user.Repository.RecordFailedLogin/ResetFailedLogin/RecordLogin` (login is `SkipTransaction`, so these single-statement writes auto-commit; the raw pool also future-proofs against an in-tx caller) and `audit.Repository.Save` (must survive the business rollback) — use `r.DB.DB()` on purpose. These are the only legitimate raw-pool callers; document the reason in the method comment.
 - **Tenant scoping (multitenancy).** Every SQL query on a tenant-owned table (`users`, …) must scope by `tenant_id` (from `r.Tenant(ctx)`) OR carry an inline `/* tenant-scope-exempt: <reason> */` marker — the `zz_tenant_test.go` conformance gate fails CI otherwise (an unclassified table also fails). The resolver supplies the tenant, the repo applies it (no transparent `WHERE` injection); `r.Tenant(ctx)` panics on a missing tenant in multitenant mode (fail-closed). Cross-tenant platform reads carry `tenant-scope-exempt: platform superadmin`. See `/gk-multitenancy`.

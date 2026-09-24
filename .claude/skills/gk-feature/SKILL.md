@@ -102,8 +102,9 @@ Přidání nové akce nad **existující** entitou (např. další command):
    - **permissioned command/query přidej do `providePermissionsRegistry()`**
      (aby se permission vystavila frontendu; autorizace funguje i bez toho,
      protože `AuthorizeMiddleware` čte permission přímo z `RequiredPermission()`);
-   - nový repo = `wire.Bind(new(<ctx>.Repository), new(*sqlite<ctx>.Repository))`
-     + `sqlite<ctx>.NewRepository` do `wire.Build`.
+   - nový repo = pole na `persistence.Store` (typ = doménový port), konstrukce
+     v `persistence.Open` a jméno pole do `wire.FieldsOf(...)` — žádný `wire.Bind`
+     na konkrétní repozitář.
 6. **`make di && make arch-check`** — vygeneruje `wire_gen.go` a ověří, že
    žádný import neporušil pravidla vrstev. Pak `make lint && make test`.
 

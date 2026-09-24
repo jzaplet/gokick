@@ -75,7 +75,7 @@ file:<path>?_txlock=immediate&_pragma=busy_timeout(5000)&_pragma=foreign_keys(on
 2. Constructor: `NewRepository(db *sqlite.Manager) *Repository { return &Repository{BaseRepository: sqlite.BaseRepository{DB: db}} }`.
 3. Implementuj metody doménového interface (`<context>.Repository` z `app/domain/<context>/`). SQL vždy přes `r.Conn(ctx)`.
 4. Konvence not-found: lookupy vracejí `nil, nil` — bez výjimky (od F-011 to platí i pro `user.Repository.FindByID`): nil entita je signál not-found, ne-nil error je skutečné selhání.
-5. Wire binding v `app/infrastructure/di/container_provider.go`: `wire.Bind(new(<context>.Repository), new(*sqlite<context>.Repository))`, pak `make di`.
+5. Zapoj ho do `persistence.Store` (`app/infrastructure/persistence/persistence.go`): pole typované doménovým portem, konstrukce v `Open`, a jméno pole do `wire.FieldsOf(...)` v `app/infrastructure/di/container_provider.go`; pak `make di`.
 6. Pokud je to **nový bounded context**, přidej adresář do `sqlite_repos` v `.go-arch-lint.yml` a spusť `make arch-check` (viz `/gk-feature`).
 
 ## Invariants & pitfalls

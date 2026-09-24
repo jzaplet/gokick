@@ -114,6 +114,10 @@ components:
   # DB-neutral: seeds through the repository ports, so it serves every adapter.
   seeder:
     in: infrastructure/seeder/**
+  # Opens the database adapter and exposes its ports (Store) — the single place
+  # that knows which adapter backs the repositories.
+  persistence:
+    in: infrastructure/persistence/**
   scheduler:
     in: infrastructure/scheduler/**
   worker:
@@ -222,6 +226,16 @@ deps:
       - testfx
       - domain_user
       - domain_tenant
+  persistence:
+    mayDependOn:
+      - config
+      - database
+      - sqlite_base
+      - sqlite_repos
+      - domain_user
+      - domain_token
+      - domain_tenant
+      - domain_run
   scheduler:
     anyVendorDeps: true
   worker:
