@@ -1,6 +1,4 @@
-//go:build !nosqlite
-
-package sqlite_test
+package app_test
 
 import (
 	"fmt"
@@ -10,16 +8,16 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
 )
 
-// Tenant conformance gate (per-query).
+// Tenant conformance gate (per-query), for every database adapter.
 //
-// Every SQL query in a SQLite repository is checked:
+// Every SQL query in an adapter's source (app/infrastructure/<adapter>/**) is
+// checked:
 //   - a query touching a TENANT-OWNED table must scope by tenant_id, OR carry an
 //     inline /* tenant-scope-exempt: reason */ marker (auth/identity queries that
 //     legitimately run before/without a tenant);
@@ -29,7 +27,30 @@ import (
 //
 // users is tenant-owned: admin reads/writes scope by tenant_id; the login /
 // identity queries carry the exempt marker. Resolution is data-driven (the JWT
-// carries the tenant); this gate enforces that the queries actually use it.
+// carries the tenant); this gate enforces that the queries actually use it. On
+// Postgres, row-level security filters the tenant plane on top — the explicit
+// scope stays (defense in depth, the planner's index, and the platform and system
+// planes bypass the policies), so the same gate holds there.
+//
+// It reads source only, so it runs on every test run, whichever database the run
+// targets.
+
+// tenantGateAdapters are the adapters whose SQL the gate checks, with the tables
+// each may touch besides the application schema.
+var tenantGateAdapters = []struct {
+	name        string
+	extraExempt map[string]bool
+}{
+	{name: "sqlite"},
+	// The startup role check (VerifyRoles) reads the system catalogs.
+	{name: "postgres", extraExempt: map[string]bool{
+		"pg_roles": true, "pg_class": true, "pg_namespace": true,
+	}},
+}
+
+func adapterDir(name string) string {
+	return filepath.Join(repoRoot(), "app", "infrastructure", name)
+}
 
 const exemptMarker = "tenant-scope-exempt"
 
@@ -40,19 +61,27 @@ var tenantOwnedTables = map[string]bool{
 
 // exemptTables — control-plane / global, never tenant-scoped.
 var exemptTables = map[string]bool{
-	"refresh_tokens":   true, // keyed by token hash (a secret); refresh runs without an access token.
-	"audit_log":        true, // control-plane, raw pool; append-only security trail, deliberately not tenant-partitioned.
-	"runs":             true, // durable tasks: ClaimDue is a global drain; tenant rides on the row, not the claim.
-	"tenants":          true, // the tenant registry itself.
-	"sqlite_master":    true, // SQLite internals.
-	"sqlite_sequence":  true,
-	"goose_db_version": true,
+	"refresh_tokens": true, // keyed by token hash (a secret); refresh runs without an access token.
+	"audit_log":      true, // control-plane, raw pool; append-only security trail, deliberately not tenant-partitioned.
+	"runs":           true, // durable tasks: ClaimDue is a global drain; tenant rides on the row, not the claim.
+	"tenants":        true, // the tenant registry itself.
 }
 
 var (
 	sqlVerbRe    = regexp.MustCompile(`(?i)\b(?:select|insert|update|delete)\b`)
 	sqlCommentRe = regexp.MustCompile(`(?s)/\*.*?\*/|--[^\n]*`)
 	tableRe      = regexp.MustCompile(`(?i)\b(?:from|into|update|join)\s+([a-zA-Z_][a-zA-Z0-9_]*)`)
+	// Clauses that put a table keyword in front of something that is no table:
+	// a row-lock clause (FOR UPDATE SKIP LOCKED, FOR NO KEY UPDATE, FOR SHARE) and
+	// an upsert's DO UPDATE SET.
+	notATableRe = regexp.MustCompile(
+		`(?i)\bfor\s+(?:no\s+key\s+)?(?:update|share)\b|\bdo\s+update\b`,
+	)
+	// cteNameRe captures the names a WITH clause defines: a query reading FROM its
+	// own CTE reads no table.
+	cteNameRe = regexp.MustCompile(
+		`(?i)(?:\bwith(?:\s+recursive)?|,)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s+as\s*\(`,
+	)
 )
 
 func stripSQLComments(s string) string { return sqlCommentRe.ReplaceAllString(s, " ") }
@@ -64,10 +93,16 @@ func tablesInSQL(s string) []string {
 	if !sqlVerbRe.MatchString(s) {
 		return nil
 	}
-	stripped := stripSQLComments(s)
+	stripped := notATableRe.ReplaceAllString(stripSQLComments(s), " ")
+	ctes := map[string]bool{}
+	for _, m := range cteNameRe.FindAllStringSubmatch(stripped, -1) {
+		ctes[strings.ToLower(m[1])] = true
+	}
 	var out []string
 	for _, m := range tableRe.FindAllStringSubmatch(stripped, -1) {
-		out = append(out, strings.ToLower(m[1]))
+		if tbl := strings.ToLower(m[1]); !ctes[tbl] {
+			out = append(out, tbl)
+		}
 	}
 	return out
 }
@@ -75,7 +110,7 @@ func tablesInSQL(s string) []string {
 // violationsInSQL classifies a single query string. tenant_id is checked on the
 // comment-stripped SQL (so a comment mentioning it doesn't count as scoping);
 // the exempt marker is checked on the raw string (it lives in a comment).
-func violationsInSQL(s string) []string {
+func violationsInSQL(s string, extraExempt map[string]bool) []string {
 	tables := tablesInSQL(s)
 	if len(tables) == 0 {
 		return nil
@@ -86,7 +121,7 @@ func violationsInSQL(s string) []string {
 	var v []string
 	for _, tbl := range tables {
 		switch {
-		case exemptTables[tbl]:
+		case exemptTables[tbl], extraExempt[tbl]:
 		case tenantOwnedTables[tbl]:
 			if !scopedOrExempt {
 				v = append(v, fmt.Sprintf(
@@ -125,27 +160,29 @@ func sqlStringsInGoSource(t *testing.T, name string, src any) []string {
 	return lits
 }
 
-// sqliteDir is this package's directory (app/infrastructure/sqlite), resolved
-// from the compiled-in source path so the scan is independent of the test's CWD.
-func sqliteDir() string {
-	_, file, _, _ := runtime.Caller(0)
-	return filepath.Dir(file)
-}
-
 // Every repo query scopes-or-exempts tenant-owned tables and touches no
 // unclassified table. An unscoped admin read or a new product table fails here.
 func TestTenantConformance_RepoQueriesScopedOrExempt(t *testing.T) {
+	for _, a := range tenantGateAdapters {
+		t.Run(
+			a.name,
+			func(t *testing.T) { checkAdapterQueries(t, adapterDir(a.name), a.extraExempt) },
+		)
+	}
+}
+
+func checkAdapterQueries(t *testing.T, root string, extraExempt map[string]bool) {
 	var violations []string
 	// queriesPerPkg guards against a vacuous pass: every repository package exists
 	// to issue SQL, so one in which the scan found none means the scan went blind
 	// (a moved directory, a changed query idiom) — not that the code is clean.
 	queriesPerPkg := map[string]int{}
-	err := filepath.WalkDir(sqliteDir(), func(path string, d os.DirEntry, err error) error {
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			if path != sqliteDir() {
+			if path != root {
 				queriesPerPkg[filepath.Base(path)] += 0
 			}
 			return nil
@@ -157,7 +194,7 @@ func TestTenantConformance_RepoQueriesScopedOrExempt(t *testing.T) {
 			if len(tablesInSQL(s)) > 0 {
 				queriesPerPkg[filepath.Base(filepath.Dir(path))]++
 			}
-			for _, vio := range violationsInSQL(s) {
+			for _, vio := range violationsInSQL(s, extraExempt) {
 				violations = append(violations, fmt.Sprintf("%s: %s", filepath.Base(path), vio))
 			}
 		}
@@ -168,7 +205,7 @@ func TestTenantConformance_RepoQueriesScopedOrExempt(t *testing.T) {
 	}
 	if len(queriesPerPkg) == 0 {
 		t.Fatalf("found no repository packages under %s — the scan is looking in the wrong place",
-			sqliteDir())
+			root)
 	}
 	for pkg, n := range queriesPerPkg {
 		if n == 0 {
@@ -183,7 +220,7 @@ func TestTenantConformance_RepoQueriesScopedOrExempt(t *testing.T) {
 
 // The gate bites an unclassified table.
 func TestTenantConformance_FlagsUnclassifiedTable(t *testing.T) {
-	if len(violationsInSQL("SELECT * FROM widgets WHERE id = ?")) == 0 {
+	if len(violationsInSQL("SELECT * FROM widgets WHERE id = ?", nil)) == 0 {
 		t.Fatal("an unclassified table must be a violation; the gate does not bite")
 	}
 }
@@ -191,15 +228,43 @@ func TestTenantConformance_FlagsUnclassifiedTable(t *testing.T) {
 // The gate bites an unscoped tenant-owned query and accepts a scoped or
 // exempt-marked one.
 func TestTenantConformance_TenantOwnedMustScopeOrMark(t *testing.T) {
-	if len(violationsInSQL("SELECT * FROM users WHERE nickname = ?")) == 0 {
+	if len(violationsInSQL("SELECT * FROM users WHERE nickname = ?", nil)) == 0 {
 		t.Fatal("an unscoped tenant-owned query must be a violation")
 	}
-	if v := violationsInSQL("SELECT * FROM users WHERE tenant_id = ?"); len(v) != 0 {
+	if v := violationsInSQL("SELECT * FROM users WHERE tenant_id = ?", nil); len(v) != 0 {
 		t.Fatalf("a tenant_id-scoped query must pass, got %v", v)
 	}
 	if v := violationsInSQL(
-		"SELECT * FROM users WHERE id = ? /* tenant-scope-exempt: identity */"); len(v) != 0 {
+		"SELECT * FROM users WHERE id = ? /* tenant-scope-exempt: identity */", nil); len(v) != 0 {
 		t.Fatalf("an exempt-marked query must pass, got %v", v)
+	}
+}
+
+// Postgres clauses that put FROM/UPDATE/JOIN before something that is no table
+// neither hide a table nor invent one: a row-lock clause, an upsert's DO UPDATE,
+// a CTE read back by name. An adapter's catalog table is exempt for that adapter
+// only.
+func TestTenantConformance_ReadsPostgresClauses(t *testing.T) {
+	const claim = `WITH next AS (SELECT id FROM runs WHERE run_at <= $1
+		ORDER BY run_at LIMIT 1 FOR UPDATE SKIP LOCKED)
+		UPDATE runs SET locked_by = $2 FROM next WHERE runs.id = next.id`
+	if got := tablesInSQL(claim); strings.Join(got, ",") != "runs,runs" {
+		t.Fatalf("tables of the claim = %v, want runs twice (no skip, no next)", got)
+	}
+	if got := tablesInSQL(`INSERT INTO runs (id) VALUES ($1)
+		ON CONFLICT (id) DO UPDATE SET id = excluded.id`); strings.Join(got, ",") != "runs" {
+		t.Fatalf("tables of the upsert = %v, want runs only", got)
+	}
+	// The lock clause must not swallow a real table after it.
+	if len(violationsInSQL(`SELECT id FROM users WHERE id = $1 FOR SHARE`, nil)) == 0 {
+		t.Fatal("an unscoped users read with a lock clause must still be a violation")
+	}
+	const catalog = `SELECT rolname FROM pg_roles WHERE oid = $1`
+	if len(violationsInSQL(catalog, nil)) == 0 {
+		t.Fatal("a catalog table is unclassified outside the adapter that exempts it")
+	}
+	if v := violationsInSQL(catalog, map[string]bool{"pg_roles": true}); len(v) != 0 {
+		t.Fatalf("an adapter's exempt catalog table must pass, got %v", v)
 	}
 }
 
@@ -370,9 +435,15 @@ func tenantWriteViolations(t *testing.T, name string, src any) []string {
 // Every repo function that stamps a tenant_id on INSERT guards it. A new
 // tenant-owned write that forgets RequireTenant/AssertTenantScope fails here.
 func TestTenantConformance_TenantWritesGuarded(t *testing.T) {
+	for _, a := range tenantGateAdapters {
+		t.Run(a.name, func(t *testing.T) { checkAdapterWrites(t, adapterDir(a.name)) })
+	}
+}
+
+func checkAdapterWrites(t *testing.T, root string) {
 	var violations []string
 	stamping := 0 // tenant_id-stamping INSERTs seen — zero means the gate checked nothing
-	err := filepath.WalkDir(sqliteDir(), func(path string, d os.DirEntry, err error) error {
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}

@@ -1,6 +1,6 @@
 //go:build !nosqlite
 
-package sqlite_test
+package app_test
 
 import (
 	"fmt"
@@ -12,14 +12,15 @@ import (
 	"testing"
 )
 
-// Datetime comparison gate (F-043).
+// SQLite datetime comparison gate (F-043) — the twin of the Postgres clock gate
+// (zz_pgtime_test.go). Tagged !nosqlite with the adapter it checks.
 //
 // DATETIME (TEXT) columns hold two text encodings — Go-written RFC3339
 // ("…T10:00:00Z") and DB-clock ("… 10:00:00.123", NowExpr/LeaseExpr). The two
 // do not compare as raw strings ('T' sorts above ' '), so every relational
 // comparison or ORDER BY on a datetime column must go through julianday(col) —
-// the one blessed idiom (see sqltime.go). This gate scans every string literal
-// in the sqlite tree and fails on:
+// the one blessed idiom (see infrastructure/sqlite/sqltime.go). This gate scans
+// every string literal in the sqlite tree and fails on:
 //   - a datetime column compared with < > <= >= as raw text, or via
 //     datetime(col) (normalises, but is a second idiom — use julianday);
 //   - a datetime column in an ORDER BY not wrapped in julianday().
@@ -85,21 +86,24 @@ func datetimeComparisonViolations(s string) []string {
 func TestSqlTimeConformance_ComparisonsUseJulianday(t *testing.T) {
 	var violations []string
 	blessed := 0 // julianday(col) uses seen — zero means the scan saw no queries at all
-	err := filepath.WalkDir(sqliteDir(), func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		for _, s := range sqlStringsInGoSource(t, path, nil) {
-			blessed += len(dtJulianWrapRe.FindAllString(stripSQLComments(s), -1))
-			for _, vio := range datetimeComparisonViolations(s) {
-				violations = append(violations, fmt.Sprintf("%s: %s", filepath.Base(path), vio))
+	err := filepath.WalkDir(
+		adapterDir("sqlite"),
+		func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
 			}
-		}
-		return nil
-	})
+			if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			for _, s := range sqlStringsInGoSource(t, path, nil) {
+				blessed += len(dtJulianWrapRe.FindAllString(stripSQLComments(s), -1))
+				for _, vio := range datetimeComparisonViolations(s) {
+					violations = append(violations, fmt.Sprintf("%s: %s", filepath.Base(path), vio))
+				}
+			}
+			return nil
+		},
+	)
 	if err != nil {
 		t.Fatalf("walk repos: %v", err)
 	}
