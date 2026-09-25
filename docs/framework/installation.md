@@ -77,10 +77,20 @@ Zapne **Actions write + create-PR permissions** (bez nich release-please neotev�
 
 | Příkaz | Co dělá |
 |---|---|
-| `make migrate-up` | Aplikuje pending migrace |
-| `make migrate-down` | Rollback poslední migrace |
-| `make migrate-status` | Zobrazí stav migrací |
-| `make migrate-create NAME=...` | Vytvoří nový migrační soubor |
+| `make migrate-up` | Aplikuje pending migrace (SQLite soubor z `APP_DB_PATH`) |
+| `make migrate-down` | Rollback poslední migrace (SQLite) |
+| `make migrate-status` | Zobrazí stav migrací (SQLite) |
+| `make migrate-create NAME=...` | Vytvoří dvojici migrací se stejnou verzí: `migrations/sqlite/…` a `migrations/postgres/…` (vyplnit je potřeba obě) |
+
+### Postgres (rozpracovaný adaptér)
+
+| Příkaz | Co dělá |
+|---|---|
+| `make db-up` | Nahodí Postgres v Dockeru (služba `db`), jen když `.env` má `APP_DB_DRIVER=postgres`; `make build` a `make serve` ho volají samy. Kontejner nepublikuje port, na OrbStacku je dostupný jako `db.$APP_DOMAIN`. |
+| `make db-down` | Zastaví Postgres kontejnery |
+| `make db-reset` | Smaže data Postgresu (zastaví kontejnery projektu a smaže volume `pgdata`) |
+| `make db-psql` | `psql` uvnitř kontejneru jako vlastník schématu |
+| `make test-pg` | Testy Postgres adaptéru nad testovacím kontejnerem `db-test` (data v RAM), sestavené s `-tags nosqlite` |
 
 ### CLI
 

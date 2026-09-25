@@ -21,7 +21,7 @@ Architektura stojí na DDD s CQRS a bus patternem: čtyři vrstvy s přísnými 
 |---|---|---|---|
 | **Domain** | `domain/` | `shared/`, `user/`, `token/`, `run/`, `tenant/` | Entity, value objects, interfaces, errors, events. Žádné závislosti. |
 | **Application** | `application/` | `bus/`, `<domain>/command/`, `<domain>/query/`, `<domain>/event/` | CQRS handlery organizované po doménách, bus middleware. Závisí jen na domain. |
-| **Infrastructure** | `infrastructure/` | `config/`, `database/`, `sqlite/`, `security/`, `scheduler/`, `worker/`, `di/` | Implementace domain interfaces, databáze, security, background práce. |
+| **Infrastructure** | `infrastructure/` | `config/`, `database/`, `persistence/`, `sqlite/`, `postgres/` (rozpracovaný), `seeder/`, `security/`, `scheduler/`, `worker/`, `di/` | Implementace domain interfaces, databáze, security, background práce. |
 | **Presentation** | `presentation/` | `http/handler/`, `http/middleware/`, `http/request/`, `http/response/`, `http/server/`, `console/` | HTTP a CLI vrstva. |
 
 ```
@@ -55,8 +55,8 @@ cmd/main.go
 Tahle stránka je mentální model. Konkrétní cesta requestu napříč vrstvami — middleware chain, transakce, autorizace, mapování chyb — žije na samostatných stránkách:
 
 - [Request](/framework/request) — společný HTTP middleware chain a kudy request vstupuje do busu.
-- [Command](/framework/command) — write operace: Recovery → Logging → Authorize → Tenant → Audit → RunDispatcher → DispatchEvents → Transaction, commit a rozeslání eventů.
-- [Query](/framework/query) — read operace: Recovery → Logging → Authorize → Tenant, typovaný návrat přes `bus.Query`.
+- [Command](/framework/command) — write operace: Recovery → Logging → Authorize → Plane → Tenant → Audit → RunDispatcher → DispatchEvents → Transaction, commit a rozeslání eventů.
+- [Query](/framework/query) — read operace: Recovery → Logging → Authorize → Plane → Tenant → ReadTx, typovaný návrat přes `bus.Query`.
 - [Events](/framework/events) — domain eventy po commitu: per-request collector, synchronní dispatch přes EventBus.
 
 

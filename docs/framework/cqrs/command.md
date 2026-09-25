@@ -58,7 +58,7 @@ if err != nil {
 
 ## Související
 
-- [Query](/framework/query) — čtecí cesta (jen Recovery → Logging → Authorize → Tenant).
+- [Query](/framework/query) — čtecí cesta (jen Recovery → Logging → Authorize → Plane → Tenant → ReadTx).
 - [Events](/framework/events) — co se děje po commitu v `EventBus`.
 - [Request](/framework/request) — HTTP chain před busem.
 - Skilly: `/gk-bus`, `/gk-commands`, `/gk-audit`, `/gk-domain-events`.

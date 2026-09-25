@@ -47,6 +47,8 @@ Bez ORM (gokick píše SQL ručně) **neexistuje** automatické „přihoď `WHE
 
 Endpointy: `GET /api/v1/platform/{stats,users,tenants}`, `POST /api/v1/platform/{users,tenants}`, `GET/PUT/DELETE /api/v1/platform/users/{id}`, `DELETE /api/v1/platform/tenants/{id}` a `POST /api/v1/platform/{users,tenants}/bulk-delete` (+ `users/bulk-active`); FE sekce na `/platform/*` (jen superadmin). FE `permissions.ts` žebřík nereimplementuje — `hasPermission` dělá jednotný membership check nad server-supplied seznamem `user.permissions` (autoritativní, roli-filtrovaný, z login/refresh); jediný vlastník žebříku je backend.
 
+**Roviny a druhá zeď na Postgresu (Row-Level Security).** Každý command/query nese v ctx **rovinu** (`shared.Plane`): `PlaneMiddleware` (v `BaseChain`, před Tenant) ji odvodí z deklarované permission — `platform:*` → platformní, cokoli jiného → tenantová (nulová hodnota = fail closed); `SystemCommandBus` (CLI) dává všemu systémovou. Na SQLite rovina nic nemění. Na Postgresu podle ní adaptér otevře transakci na jiné DB roli: tenantová rovina jako `gokick_app` (bez `BYPASSRLS`, nevlastní tabulky) a transakci nejdřív scopne na tenanta přes `set_config('app.tenant_id', …, true)` — **tx-lokálně**, takže se tenant nikdy nepřenese na dalšího uživatele spojení z poolu; platformní a systémová rovina jako `gokick_system` (`BYPASSRLS`). Politiky v `migrations/postgres` (`users`, `runs`, `tenants` jen čtení vlastního řádku, `refresh_tokens` přes viditelnost svého uživatele; `audit_log` jen pro systémovou roli a jen append) pak i dotazu **bez** `WHERE tenant_id` vrátí jen řádky aktivního tenanta a zápis do cizího tenanta skončí chybou. Explicitní `WHERE tenant_id` v repozitářích zůstává (obrana do hloubky + index), RLS je záloha. Čtení běží v transakci jen pro čtení (`ReadTxMiddleware` → `BeginReadTx`), protože mimo transakci tenantová role nevidí nic. Kontrola rolí při startu (`postgres.Manager.VerifyRoles`) odmítne superusera, `BYPASSRLS` nebo vlastníka tabulek v `APP_DB_URL`. Izolaci v DB (nezávisle na repozitářích) ověřuje `app/infrastructure/postgres/rls_test.go` (`make test-pg`). Repozitáře pro Postgres přijdou ve fázi 4 [plánu](/framework/postgres-adapter-plan).
+
 **Operator tooling.** Seed s MT on založí adminovi vlastní tenant (`APP_SEED_ADMIN_TENANT`, find-or-create); superadmin vždy v default tenantu. CLI: `create-tenant`, `create-superadmin`, `create-user --tenant-id/--tenant-name`.
 
 ## Recipe
@@ -59,7 +61,7 @@ Endpointy: `GET /api/v1/platform/{stats,users,tenants}`, `POST /api/v1/platform/
 
 ### Recipe: přidat tenant-owned tabulku
 
-1. Migrace: sloupec `tenant_id TEXT NOT NULL REFERENCES tenants(id)` (SQLite neumí `ALTER ADD` FK → table-rebuild, viz `/gk-migrations`).
+1. Migrace (dvojčata, viz `/gk-migrations`): v SQLite sloupec `tenant_id TEXT NOT NULL REFERENCES tenants(id)` (SQLite neumí `ALTER ADD` FK → table-rebuild); v Postgresu `tenant_id uuid NOT NULL REFERENCES tenants(id)` + `ENABLE ROW LEVEL SECURITY` + politika `tenant_isolation` (`USING`/`WITH CHECK` `tenant_id = gokick_current_tenant()`) + `GRANT` rolím `gokick_app` a `gokick_system`.
 2. Repo: scopuj každý dotaz přes `r.Tenant(ctx)` (`WHERE … AND tenant_id=?`); na INSERT stampuj tenant z entity/ctx.
 3. Gate: přidej tabulku do `tenantOwnedTables` v `zz_tenant_test.go`. Výjimky mají dva mechanismy: identity/auth dotaz nad tenant-owned tabulkou nese inline `/* tenant-scope-exempt: <důvod> */` marker; celá control-plane tabulka se deklaruje v `exemptTables` (s komentářem proč).
 4. `make test` — gate musí projít.
@@ -68,7 +70,7 @@ Endpointy: `GET /api/v1/platform/{stats,users,tenants}`, `POST /api/v1/platform/
 
 - **Resolver dodá, repo aplikuje.** Žádné transparentní `WHERE` — proto je conformance gate povinný.
 - **Každý dotaz na owned tabulku: `tenant_id` NEBO marker.** Jinak CI padne (neklasifikovaná tabulka = FAIL).
-- **Tichý read-leak na slepém místě scanneru** (dynamicky stavěné SQL, JOIN, dotazy mimo skenované adresáře) je riziko SQLite fáze — transparentní vynucení dá až **Postgres RLS** (roadmap).
+- **Tichý read-leak na slepém místě scanneru** (dynamicky stavěné SQL, JOIN, dotazy mimo skenované adresáře) zůstává rizikem na SQLite — na Postgresu ho zachytí RLS (tenantová role vidí jen aktivního tenanta, viz „Roviny" výše).
 - **Vytváření obchází `r.Tenant`** — `Save` píše `tenant_id` explicitně z entity, takže enforcement při vytváření **nesedí na repo**, ale na vstupní cestě: HTTP bere tenant z přihlášeného admina (TenantMiddleware), CLI ho vyžaduje přes `--tenant-id/--tenant-name` (s MT on). Entita je **born scoped** — `NewUser` vyžaduje `tenantID` jako parametr (gate výše), takže ji nejde zkonstruovat bez vědomé volby tenanta.
 - **Superadmin se nezakládá přes admin API.** `CreateUser`/`UpdateUser` roli `superadmin` odmítnou (anti-eskalace) a admin repo dotazy vylučují `role='superadmin'` — superadmina dělá jen `create-superadmin` / seed.
 
@@ -76,4 +78,4 @@ Endpointy: `GET /api/v1/platform/{stats,users,tenants}`, `POST /api/v1/platform/
 
 - `/gk-permissions` (role/permission, FE enum) · `/gk-repositories` (tx-aware datová vrstva) · `/gk-runs` (durable worker) · `/gk-auth` (JWT) · `/gk-migrations` (table-rebuild)
 - Docs: [Installation](/framework/installation) (CLI), [Roadmap](/framework/gokick-roadmap)
-- Kód: `app/domain/{tenant,shared}/`, `app/infrastructure/sqlite/{conn.go,zz_tenant_test.go}`, `app/application/platform/`, `assets/app/Platform/`; gates: `app/domain/zz_bornscoped_test.go`, `app/application/zz_platform_isolation_test.go`
+- Kód: `app/domain/{tenant,shared}/` (vč. `shared/plane.go`), `app/infrastructure/sqlite/{conn.go,zz_tenant_test.go}`, `app/infrastructure/postgres/{manager.go,roles.go,rls_test.go}`, `migrations/postgres/`, `app/application/platform/`, `assets/app/Platform/`; gates: `app/domain/zz_bornscoped_test.go`, `app/application/zz_platform_isolation_test.go`

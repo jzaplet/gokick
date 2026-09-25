@@ -105,16 +105,16 @@ result, err := bus.Query(
 )
 ```
 
-**QueryBus middleware chain** je krátký a jen čtecí — `BaseChain` v
-`app/application/bus/middleware/base.go`:
+**QueryBus middleware chain** je krátký a jen čtecí — `QueryChain` (= `BaseChain`
++ `ReadTx`) v `app/application/bus/middleware/base.go`:
 
 ```
-Recovery → Logging → Authorize → Tenant
+Recovery → Logging → Authorize → Plane → Tenant → ReadTx
 ```
 
 `Tenant` (`middleware/tenant.go`) hned po autorizaci resolvuje aktivní tenant do ctx — čtení potřebuje tenant scoping stejně jako zápis (viz `/gk-multitenancy`).
 
-Žádná transakce, žádný audit, žádné eventy (to mají jen command busy — `CommandBus` a `SystemCommandBus`). `Authorize`
+Žádný zápis, žádný audit, žádné eventy (to mají jen command busy — `CommandBus` a `SystemCommandBus`). `ReadTx` (`middleware/read_tx.go`) volá `Transactor.BeginReadTx`: na Postgresu obalí dotaz transakcí READ ONLY, protože tenant, podle kterého filtruje Row-Level Security, platí jen uvnitř transakce; na SQLite je to no-op a čte se rovnou z poolu. `Authorize`
 (`middleware/authorize.go`) zavolá `RequiredPermission()` a ověří ho proti rolím
 volajícího.
 

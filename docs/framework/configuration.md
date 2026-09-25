@@ -28,7 +28,7 @@ Obě cesty čtou env přes společné helpery `getEnv(key, fallback)` / `getEnvI
 
 ## Kde se hodnoty validují
 
-`LoadConfig` část hodnot rovnou **validuje** a selže rychle na: rozbitém `.env` (parse chyba je fatální — chybějící soubor ne), nevalidním `APP_CORS_ORIGIN` (musí být přesně jeden origin `scheme://host[:port]`), duration proměnných (`time.ParseDuration` na `APP_JWT_ACCESS_EXPIRATION` / `APP_JWT_REFRESH_EXPIRATION` + `APP_RUN_WORKER_*`; obě JWT expirace musí být navíc **kladné**), int proměnných (`APP_DB_MAX_CONNS`, `APP_RUN_WORKER_MAX_*`) a bool proměnných — ty se parsují **striktně**: povolené je jen `"true"` nebo `"false"`, cokoli jiného shodí start (překlep se nesmí tiše propadnout na `false`).
+`LoadConfig` část hodnot rovnou **validuje** a selže rychle na: rozbitém `.env` (parse chyba je fatální — chybějící soubor ne), nevalidním `APP_CORS_ORIGIN` (musí být přesně jeden origin `scheme://host[:port]`), duration proměnných (`time.ParseDuration` na `APP_JWT_ACCESS_EXPIRATION` / `APP_JWT_REFRESH_EXPIRATION` + `APP_RUN_WORKER_*`; obě JWT expirace musí být navíc **kladné**), int proměnných (`APP_DB_MAX_CONNS`, `APP_RUN_WORKER_MAX_*`), Postgres DSN (s `APP_DB_DRIVER=postgres` povinné a ve tvaru `postgres://…`; chybová hláška DSN nikdy neopakuje, protože nese heslo), Postgres timeoutech (nezáporné) a bool proměnných — ty se parsují **striktně**: povolené je jen `"true"` nebo `"false"`, cokoli jiného shodí start (překlep se nesmí tiše propadnout na `false`).
 
 Sémantickou validaci dělají konzumenti:
 
@@ -51,10 +51,16 @@ Sémantickou validaci dělají konzumenti:
 
 | Proměnná | Default | Co dělá |
 |---|---|---|
-| `APP_DB_DRIVER` | `sqlite` | Databázový adaptér. Parsuje se striktně, neznámá hodnota shodí start. `postgres` se připravuje ([plán](/framework/postgres-adapter-plan)); do té doby ho binárka odmítne s chybou „not built into this binary". Testy čtou stejnou proměnnou (jen z prostředí procesu, ne z `.env`) a běží na zvoleném adaptéru. |
+| `APP_DB_DRIVER` | `sqlite` | Databázový adaptér. Parsuje se striktně, neznámá hodnota shodí start. `postgres` se připravuje ([plán](/framework/postgres-adapter-plan)): databáze v Dockeru už běží (`make build` / `make serve` ji s `postgres` v `.env` samy nahodí), ale dokud adaptér nemá repozitáře, binárka driver odmítne s chybou „not available yet". Testy čtou stejnou proměnnou (jen z prostředí procesu, ne z `.env`) a běží na zvoleném adaptéru. |
 | `APP_DB_PATH` | `./data/app.db` | Cesta k souboru SQLite databáze. |
 | `APP_DB_JOURNAL_MODE` | `WAL` | SQLite journal mode. `WAL` je default a správná volba pro normální běh. Přepni na `DELETE`, když stejnou DB čte přes Docker bind mount jiný proces (např. prohlížení `data/app.db` v IDE, zatímco kontejner zapisuje) — virtualizovaný FS Docker Desktopu nezaručuje koordinaci mmap/shm, kterou WAL vyžaduje. |
-| `APP_DB_MAX_CONNS` | `0` (auto) | Strop SQLite connection poolu. Nenastavené/`0` = auto: `clamp(2×NumCPU, 4, 32)`. SQLite zápisy stejně serializuje — limit řídí paměť a backpressure, ne propustnost; override jen při neobvyklém poměru RAM:CPU. |
+| `APP_DB_MAX_CONNS` | `0` (auto) | Strop connection poolu. Nenastavené/`0` = auto: na SQLite `clamp(2×NumCPU, 4, 32)` — zápisy stejně serializuje, limit řídí paměť a backpressure, ne propustnost; na Postgresu platí pro **každý** ze dvou poolů a auto je `clamp(2×NumCPU, 4, 16)`, aby dva pooly × repliky zůstaly pod `max_connections`. Override jen při neobvyklém poměru RAM:CPU. |
+| `APP_DB_URL` | — | Jen Postgres (povinné): DSN tenantové roviny, role `gokick_app`. Podléhá Row-Level Security, takže vidí jen řádky aktivního tenanta. Nesmí to být vlastník schématu ani superuser — start by selhal. |
+| `APP_DB_SYSTEM_URL` | — | Jen Postgres (povinné): DSN systémové roviny, role `gokick_system` s `BYPASSRLS` — platforma (superadmin), CLI, přihlášení, audit, worker. |
+| `APP_DB_MIGRATE_URL` | — | Jen Postgres (povinné): DSN vlastníka schématu, role `gokick_owner`. Aplikace ho použije jen na migrace při startu. |
+| `APP_DB_LOCK_TIMEOUT` | `5s` | Postgres: jak dlouho příkaz čeká na zámek řádku (obdoba `busy_timeout` u SQLite). `0` = bez limitu. |
+| `APP_DB_STATEMENT_TIMEOUT` | `30s` | Postgres: nejdelší povolený běh jednoho příkazu. `0` = bez limitu. |
+| `APP_DB_IDLE_TX_TIMEOUT` | `60s` | Postgres: jak dlouho smí transakce nečinně viset, než ji server ukončí. `0` = bez limitu. |
 
 Čteno přes `Config` struct. Ladění connection poolu, DSN (`_txlock=immediate`, `busy_timeout`, `foreign_keys`) a transakce viz skill `/gk-repositories` (+ `/gk-migrations` pro schéma).
 

@@ -68,7 +68,7 @@ k souboru. Každý backend má vlastní opener s build tagem
 (`app/internal/testfx/sqlite.go` je `//go:build !nosqlite`).
 
 Helpery na `*Fixture`:
-- **Seed:** `SeedUser`, `SeedUserInTenant`, `SeedTenant`, `SeedTenantWithPlan`, `SeedRunInTenant`, `SeedRefreshToken`, `MarkRunCompleted`.
+- **Seed:** `SeedUser`, `SeedUserInTenant`, `SeedTenant`, `SeedTenantWithPlan`, `SeedRunInTenant`, `SeedRefreshToken`, `MarkRunCompleted`. Zapisují se `testfx.SystemCtx()` — v systémové rovině (`shared.PlaneSystem`), protože seedování je setup napříč tenanty; na Postgresu by tenantová rovina řádek cizího tenanta odmítla (RLS `WITH CHECK`). Stejný ctx použij pro jiný fixture zápis, který musí sáhnout mimo aktivního tenanta.
 - **Stav, který porty vyrobit neumí** (`app/internal/testfx/raw.go`): `SetUserActive`, `SetUserLockedUntil`, `ForceExpireLease`, `SetLeaseFromNow(t, id, d)` (vůči hodinám **databáze**, ms přesně), `StealLease`, `MakeRunDue`, `ForceRunCompleted` / `ForceRunFailed`, `SetRunReclaims` / `SetRunParks`.
 - **Čtení mimo porty:** `Count(t, table, where, args…)`, `AuditEntry(t, id)`, `AssertTokenCount(t, n)`.
 - **Constraint testy:** `RawExec(query, args…)` (přenositelné SQL s `?`) + `Violated(err)` → `testfx.NotNull` / `Unique` / `Check` / `ForeignKey`, klasifikované z kódu chyby driveru, ne z textu hlášky.
@@ -76,7 +76,12 @@ Helpery na `*Fixture`:
 - `ExecCommand[R](ctx, cmdBus, name, cmd, fn)` — **sankcionovaný způsob**, jak v handler testu protáhnout command celým chainem (tx, audit, eventy). Handler balíček nesmí importovat `application/bus` přímo (arch-lint: komponenta `application` nemá grant na `bus` ani na `bus_middleware`), takže to běží přes testfx.
 - **Jen JWT, bez DB:** `jwtfx.New(t, accessExp)` z `gokick/app/internal/testfx/jwtfx`. Middleware testy tak nelinkují žádný DB adaptér.
 
-**Výběr driveru v testu:** `testfx.ActiveDriver()`; `testfx.RequireDriver(t, database.DriverSQLite)` přeskočí test, který pinuje chování jednoho adaptéru. Vlastní testy adaptéru mají v balíčku `TestMain` s `testfx.MainFor(m, database.DriverSQLite)`, takže při jiném driveru neběží vůbec.
+**Výběr driveru v testu:** `testfx.ActiveDriver()`; `testfx.RequireDriver(t, database.DriverSQLite)` přeskočí test, který pinuje chování jednoho adaptéru. Vlastní testy adaptéru mají v balíčku `TestMain` s `testfx.MainFor(m, database.Driver<Adaptér>)`, takže při jiném driveru neběží vůbec (Postgres adaptér: `app/infrastructure/postgres/main_test.go`).
+
+### Postgres: `make test-pg` a harness `pgfx`
+Postgres adaptér zatím nemá repozitáře (fáze 4 [plánu](/framework/postgres-adapter-plan)), takže `testfx.New(t)` na `APP_DB_DRIVER=postgres` hlasitě selže a na Postgresu běží jen vlastní testy adaptéru (`app/infrastructure/postgres/`: manager, migrátor, kontrola rolí a **RLS sada** `rls_test.go`, která izolaci tenantů ověřuje přímo v databázi, bez kódu repozitářů).
+- `make test-pg` nahodí compose službu `db-test` (Postgres 18 z `docker/postgres/Dockerfile`, data v RAM, `fsync=off`, žádný publikovaný port — připojí se na IP kontejneru) a spustí `go test -tags nosqlite` s `APP_DB_DRIVER=postgres`. S nastaveným `APP_TEST_DB_URL` (superuser DSN) poběží proti jinému clusteru; ten musí mít role z `docker/postgres/initdb/01-roles.sh` s výchozími hesly. V CI to dělá job `postgres tests`.
+- **Harness** `app/internal/testfx/pgfx`: `pgfx.New(t)` vrátí testu vlastní databázi, **klon šablony** s hotovým schématem (šablona `gokick_tpl_<hash migrací>` vznikne jednou pod advisory lockem, i když `go test` pouští balíčky paralelně; klon trvá milisekundy), a po testu ji smaže. `pgfx.NewEmpty(t)` dá prázdnou DB pro testy migrací. `DB.Config()` vrátí `*config.Config` s DSN všech tří rolí; `DB.AdminURL` slouží testům, které ověřují, že aplikace superuserovi odmítne sloužit.
 
 ### Kontraktní testy repozitářů
 `app/internal/repotest/<ctx>/` (`audit`, `run`, `tenant`, `token`, `user`, `tx`)
@@ -119,7 +124,7 @@ svůj produkční balíček (vypadá to jako cyklus), jsou v `.go-arch-lint.yml`
 ### Quality gate
 `make test` = `yarn test` (vitest, v CI job `lint + test + build`) + `go test ./app/... ./cmd/...` + `cd tools/gk && go test ./...` (dev nástroje tsgen/boundary/errfields/docpaths jsou vlastní modul, takže je `./app/...` nepokrývá).
 `make lint` = ESLint + `vue-tsc` (type-check) + `knip` (dead code) + `golangci-lint` + `make arch-check` (go-arch-lint) + `nosqlite-check` (build bez SQLite, viz výše) + `format-check` (golines) + `ts-check` (Go→TS parita typů) + `boundary-check` (wire DTO hranice) + `errfields-check` (parita chybových polí) + `i18n-check` (parita překladových katalogů a freshness generovaných artefaktů) + `docpaths-check` (každá cesta a `/gk-*` odkaz v docs/skills musí existovat) + `documan-lint`.
-CI (`.github/workflows/validate.yml`): job `validate` = `make install` → `make lint` → `make test` → `make build`, se `SKIP_DOCUMAN=1` (dokumentaci v CI validuje samostatný `.github/workflows/documan.yml` přes `docker/documan/Dockerfile`); paralelní job `e2e` spouští `make e2e` (durable-run process-lifecycle testy, viz `tests/e2e/README.md`).
+CI (`.github/workflows/validate.yml`): job `validate` = `make install` → `make lint` → `make test` → `make build`, se `SKIP_DOCUMAN=1` (dokumentaci v CI validuje samostatný `.github/workflows/documan.yml` přes `docker/documan/Dockerfile`); paralelní job `postgres tests` spouští `make test-pg` (stejný Docker image a init skript jako lokálně) a job `e2e` spouští `make e2e` (durable-run process-lifecycle testy, viz `tests/e2e/README.md`).
 
 ## Recipe
 

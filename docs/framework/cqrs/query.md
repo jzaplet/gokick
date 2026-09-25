@@ -6,12 +6,12 @@ slug: 'framework-query'
 parent: 'framework-cqrs'
 navTitle: 'Query'
 title: 'Query'
-description: 'Čtecí cesta CQRS — krátký řetězec Recovery → Logging → Authorize → Tenant, typovaný návrat, žádná transakce ani eventy.'
+description: 'Čtecí cesta CQRS — krátký řetězec Recovery → Logging → Authorize → Plane → Tenant → ReadTx, typovaný návrat, žádný zápis ani eventy.'
 ---
 
 # Query
 
-Čtecí operace tečou přes `QueryBus`. Oproti [Command](/framework/command) je řetězec krátký — jen **Recovery → Logging → Authorize → Tenant**. Žádná transakce, audit ani eventy: čtení nemění stav, takže nemá co commitovat ani ohlašovat. Tenant resoluce tu je (čtení se scopuje stejně jako zápisy — viz `/gk-multitenancy`). Návratová hodnota je typovaná díky generikám v `bus.Query[R]`.
+Čtecí operace tečou přes `QueryBus`. Oproti [Command](/framework/command) je řetězec krátký — jen **Recovery → Logging → Authorize → Plane → Tenant → ReadTx**. Žádný audit ani eventy: čtení nemění stav, takže nemá co ohlašovat. Tenant resoluce tu je (čtení se scopuje stejně jako zápisy — viz `/gk-multitenancy`). `ReadTx` na Postgresu obalí dotaz transakcí jen pro čtení, protože tenant, podle kterého řádky filtruje Row-Level Security, platí jen uvnitř transakce; na SQLite nedělá nic. Návratová hodnota je typovaná díky generikám v `bus.Query[R]`.
 
 > Přehled toku. Návod „jak napsat query handler" je ve skillu `/gk-queries`, mechaniku busů rozebírá `/gk-bus`.
 
