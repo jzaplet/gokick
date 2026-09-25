@@ -7,7 +7,7 @@ import (
 )
 
 // F-100: the terminal/lease-state derivation has one domain source (Status /
-// IsTerminal), mirroring the SQL sqlite.NotTerminalClause. The read path calls it
+// IsTerminal), mirroring the SQL database.NotTerminalClause. The read path calls it
 // instead of re-expressing the switch.
 func TestRun_StatusAndIsTerminal(t *testing.T) {
 	now := time.Unix(1_000_000, 0)

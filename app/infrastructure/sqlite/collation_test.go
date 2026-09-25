@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/sqlite"
 
 	"github.com/google/uuid"
@@ -57,7 +58,7 @@ func TestSortCollation_MatchesGoldenCzechOrder(t *testing.T) {
 
 	var asc []string
 	if err := mgr.DB().SelectContext(ctx, &asc,
-		`SELECT s FROM sort_corpus ORDER BY s`+sqlite.CollateSort+`, s`); err != nil {
+		`SELECT s FROM sort_corpus ORDER BY s`+database.CollateSort+`, s`); err != nil {
 		t.Fatalf("select asc: %v", err)
 	}
 	assertSameOrder(t, "ASC", asc, want)
@@ -66,7 +67,7 @@ func TestSortCollation_MatchesGoldenCzechOrder(t *testing.T) {
 	// so the binary tie-break never decides and the order simply flips.
 	var desc []string
 	if err := mgr.DB().SelectContext(ctx, &desc,
-		`SELECT s FROM sort_corpus ORDER BY s`+sqlite.CollateSort+` DESC, s`); err != nil {
+		`SELECT s FROM sort_corpus ORDER BY s`+database.CollateSort+` DESC, s`); err != nil {
 		t.Fatalf("select desc: %v", err)
 	}
 	reversed := slices.Clone(want)
@@ -111,8 +112,8 @@ func TestUnicodeLike_MatchesGoldenCounts(t *testing.T) {
 		}
 		var got int
 		if err := mgr.DB().GetContext(ctx, &got,
-			`SELECT COUNT(*) FROM sort_corpus WHERE s LIKE ?`+sqlite.LikeEscape,
-			sqlite.LikeContains(pattern)); err != nil {
+			`SELECT COUNT(*) FROM sort_corpus WHERE s LIKE ?`+database.LikeEscape,
+			database.LikeContains(pattern)); err != nil {
 			t.Fatalf("count %q: %v", pattern, err)
 		}
 		if got != want {
@@ -142,8 +143,8 @@ func TestLikeContains_MatchesWildcardCharactersLiterally(t *testing.T) {
 	} {
 		var got []string
 		if err := mgr.DB().SelectContext(ctx, &got,
-			`SELECT s FROM names WHERE s LIKE ?`+sqlite.LikeEscape+` ORDER BY s`,
-			sqlite.LikeContains(search)); err != nil {
+			`SELECT s FROM names WHERE s LIKE ?`+database.LikeEscape+` ORDER BY s`,
+			database.LikeContains(search)); err != nil {
 			t.Fatalf("search %q: %v", search, err)
 		}
 		if !slices.Equal(got, want) {
@@ -198,7 +199,7 @@ func TestConnFuncs_RegisteredOnEveryPooledConnection(t *testing.T) {
 		var first, id string
 		if err := c.QueryRowContext(ctx,
 			`SELECT s, uuidv7() FROM (SELECT 'čaj' AS s UNION ALL SELECT 'cibule')
-			  ORDER BY s`+sqlite.CollateSort+` LIMIT 1`).Scan(&first, &id); err != nil {
+			  ORDER BY s`+database.CollateSort+` LIMIT 1`).Scan(&first, &id); err != nil {
 			t.Fatalf("conn %d: collation/uuidv7 unavailable: %v", i, err)
 		}
 		if first != "cibule" {

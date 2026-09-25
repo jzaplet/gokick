@@ -18,6 +18,7 @@ import (
 
 	"gokick/app/domain/run"
 	"gokick/app/domain/shared"
+	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/sqlite"
 )
 
@@ -29,9 +30,10 @@ func NewRepository(db *sqlite.Manager) *Repository {
 	return &Repository{BaseRepository: sqlite.BaseRepository{DB: db}}
 }
 
-// The DB-clock (sqlite.NowExpr) and lease (sqlite.LeaseExpr) SQL, and the fencing
-// rows-affected helper (sqlite.RowsAffectedBool), live in the shared sqlite package
-// so the durable-queue time discipline and fence contract cannot drift per-repo.
+// The DB-clock (sqlite.NowExpr) and lease (sqlite.LeaseExpr) SQL live in the shared
+// sqlite package and the fencing rows-affected helper (database.RowsAffectedBool)
+// in the driver-neutral one, so the durable-queue time discipline and fence
+// contract cannot drift per-repo.
 
 func (r *Repository) Enqueue(ctx context.Context, rn *run.Run) error {
 	const q = `INSERT INTO runs (id, kind, tenant_id, lang, payload, state, run_at, attempts, reclaims, parks, max_retries, locked_by, locked_until, last_error, failed_at, completed_at, cancel_requested, cancelled_at, created_at, updated_at)
@@ -50,9 +52,9 @@ func (r *Repository) Enqueue(ctx context.Context, rn *run.Run) error {
 		return err
 	}
 	row.TenantID = tenantID
-	row.RunAt = sqlite.MsPrecisionUTC(row.RunAt)
-	row.CreatedAt = sqlite.MsPrecisionUTC(row.CreatedAt)
-	row.UpdatedAt = sqlite.MsPrecisionUTC(row.UpdatedAt)
+	row.RunAt = database.MsPrecisionUTC(row.RunAt)
+	row.CreatedAt = database.MsPrecisionUTC(row.CreatedAt)
+	row.UpdatedAt = database.MsPrecisionUTC(row.UpdatedAt)
 	_, err = r.Conn(ctx).NamedExecContext(ctx, q, &row)
 	return err
 }
@@ -80,7 +82,7 @@ func (r *Repository) ClaimDue(
 		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = (
 		    SELECT id FROM runs
-		    WHERE ` + sqlite.NotTerminalClause + `
+		    WHERE ` + database.NotTerminalClause + `
 		      AND julianday(run_at) <= julianday('now')
 		      AND (locked_until IS NULL OR julianday(locked_until) < julianday('now'))
 		    ORDER BY julianday(run_at)
@@ -122,7 +124,7 @@ func (r *Repository) RenewLease(
 		SET locked_until = ` + sqlite.LeaseExpr + `,
 		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = ? AND locked_by = ?
-		  AND ` + sqlite.NotTerminalClause + `
+		  AND ` + database.NotTerminalClause + `
 		RETURNING cancel_requested`
 	err = r.Conn(ctx).GetContext(ctx, &cancelRequested, q, lease.Seconds(), id, owner)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -151,9 +153,9 @@ func (r *Repository) Checkpoint(
 		    locked_until = ` + sqlite.LeaseExpr + `,
 		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = ? AND locked_by = ?
-		  AND ` + sqlite.NotTerminalClause
+		  AND ` + database.NotTerminalClause
 	res, err := r.Conn(ctx).ExecContext(ctx, q, state, lease.Seconds(), id, owner)
-	return sqlite.RowsAffectedBool(res, err)
+	return database.RowsAffectedBool(res, err)
 }
 
 // MarkComplete records terminal success and clears the lock, iff still owned and
@@ -166,9 +168,9 @@ func (r *Repository) MarkComplete(ctx context.Context, id, owner string) (bool, 
 		    locked_by = NULL,
 		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = ? AND locked_by = ?
-		  AND ` + sqlite.NotTerminalClause
+		  AND ` + database.NotTerminalClause
 	res, err := r.Conn(ctx).ExecContext(ctx, q, id, owner)
-	return sqlite.RowsAffectedBool(res, err)
+	return database.RowsAffectedBool(res, err)
 }
 
 // Reschedule requeues a retryable failure: sets run_at + last_error, bumps
@@ -189,9 +191,9 @@ func (r *Repository) Reschedule(
 		    locked_by = NULL,
 		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = ? AND locked_by = ?
-		  AND ` + sqlite.NotTerminalClause
-	res, err := r.Conn(ctx).ExecContext(ctx, q, sqlite.MsPrecisionUTC(runAt), lastErr, id, owner)
-	return sqlite.RowsAffectedBool(res, err)
+		  AND ` + database.NotTerminalClause
+	res, err := r.Conn(ctx).ExecContext(ctx, q, database.MsPrecisionUTC(runAt), lastErr, id, owner)
+	return database.RowsAffectedBool(res, err)
 }
 
 // Park requeues an unknown-kind run (registry skew) exactly like Reschedule but
@@ -212,9 +214,9 @@ func (r *Repository) Park(
 		    locked_by = NULL,
 		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = ? AND locked_by = ?
-		  AND ` + sqlite.NotTerminalClause
-	res, err := r.Conn(ctx).ExecContext(ctx, q, sqlite.MsPrecisionUTC(runAt), reason, id, owner)
-	return sqlite.RowsAffectedBool(res, err)
+		  AND ` + database.NotTerminalClause
+	res, err := r.Conn(ctx).ExecContext(ctx, q, database.MsPrecisionUTC(runAt), reason, id, owner)
+	return database.RowsAffectedBool(res, err)
 }
 
 // MarkFailed records terminal failure and clears the lock, iff still owned and
@@ -233,9 +235,9 @@ func (r *Repository) MarkFailed(
 		    locked_by = NULL,
 		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = ? AND locked_by = ?
-		  AND ` + sqlite.NotTerminalClause
+		  AND ` + database.NotTerminalClause
 	res, err := r.Conn(ctx).ExecContext(ctx, q, lastErr, id, owner)
-	return sqlite.RowsAffectedBool(res, err)
+	return database.RowsAffectedBool(res, err)
 }
 
 // RequestCancel sets the operator cancel signal on a non-terminal run. NOT
@@ -247,7 +249,7 @@ func (r *Repository) RequestCancel(ctx context.Context, id string) error {
 		SET cancel_requested = 1,
 		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = ?
-		  AND ` + sqlite.NotTerminalClause
+		  AND ` + database.NotTerminalClause
 	_, err := r.Conn(ctx).ExecContext(ctx, q, id)
 	return err
 }
@@ -263,9 +265,9 @@ func (r *Repository) MarkCancelled(ctx context.Context, id, owner string) (bool,
 		    locked_by = NULL,
 		    updated_at = ` + sqlite.NowExpr + `
 		WHERE id = ? AND locked_by = ?
-		  AND ` + sqlite.NotTerminalClause
+		  AND ` + database.NotTerminalClause
 	res, err := r.Conn(ctx).ExecContext(ctx, q, id, owner)
-	return sqlite.RowsAffectedBool(res, err)
+	return database.RowsAffectedBool(res, err)
 }
 
 // FindByID returns the run, or (nil, nil) when absent. On a real read error it
