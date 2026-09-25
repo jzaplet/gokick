@@ -70,8 +70,8 @@ func TestUserRepository_UpdateDelete_IsolateByTenant(t *testing.T) {
 		t.Fatalf("cross-tenant Delete must error on 0 rows, got %T: %v", err, err)
 	}
 
-	got, err := fx.Users.FindByID(ctx, bob.ID)
-	if err != nil {
+	got, err := fx.Users.FindByID(testfx.SystemCtx(), bob.ID)
+	if err != nil || got == nil {
 		t.Fatalf("bob must still exist — a tenant-A write must not affect him: %v", err)
 	}
 	if got.Nickname != "bob" {

@@ -11,7 +11,7 @@ import (
 )
 
 func superadminCtx(id string) context.Context {
-	return shared.ContextWithClaims(context.Background(), &shared.AuthClaims{
+	return shared.ContextWithClaims(testfx.PlatformCtx(), &shared.AuthClaims{
 		UserID: id, Role: "superadmin", Nickname: "root",
 	})
 }
@@ -21,7 +21,7 @@ func superadminCtx(id string) context.Context {
 func allPlatformRows(t *testing.T, fx *testfx.Fixture) []user.PlatformRow {
 	t.Helper()
 	page, err := fx.PlatformUsers.FindPageAcrossTenants(
-		context.Background(),
+		testfx.PlatformCtx(),
 		user.PlatformListCriteria{
 			Page: 1, PerPage: 1000, Sort: user.SortByTenant, SortDir: shared.SortAsc,
 		}.Normalize(),
@@ -79,7 +79,7 @@ func TestBulkSetPlatformUsersActive_ByIDs(t *testing.T) {
 		t.Fatalf("bulk deactivate: %v", err)
 	}
 
-	got, err := fx.PlatformUsers.FindByID(context.Background(), alice.ID)
+	got, err := fx.PlatformUsers.FindByID(testfx.PlatformCtx(), alice.ID)
 	if err != nil || got == nil {
 		t.Fatalf("find alice: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestBulkSetPlatformUsersActive_ByIDs(t *testing.T) {
 		t.Fatal("alice must be deactivated")
 	}
 
-	rootRow, err := fx.PlatformUsers.FindByID(context.Background(), root.ID)
+	rootRow, err := fx.PlatformUsers.FindByID(testfx.PlatformCtx(), root.ID)
 	if err != nil || rootRow == nil {
 		t.Fatalf("find root: %v", err)
 	}

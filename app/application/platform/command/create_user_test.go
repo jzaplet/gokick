@@ -14,7 +14,7 @@ import (
 // twin inherits it from ctx, so this is the one behaviour a copy of that handler
 // would get wrong.
 func TestCreatePlatformUser_CreatesInTheChosenTenant(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.NewMultitenant(t)
 
 	target := fx.SeedTenant(t, "Beta")
@@ -49,7 +49,7 @@ func TestCreatePlatformUser_CreatesInTheChosenTenant(t *testing.T) {
 // An unknown tenant owes the operator a 400 against the field, not the 500 an FK
 // violation would produce (users.tenant_id REFERENCES tenants(id)).
 func TestCreatePlatformUser_UnknownTenantIsAFieldError(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.NewMultitenant(t)
 
 	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher)
@@ -92,7 +92,7 @@ func TestCreatePlatformUser_RequiresATenantInEitherMode(t *testing.T) {
 		{"single-tenant", testfx.New},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := testfx.PlatformCtx()
 			fx := tc.fx(t)
 
 			h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher)
@@ -121,7 +121,7 @@ func TestCreatePlatformUser_RequiresATenantInEitherMode(t *testing.T) {
 // Nobody mints a superadmin over HTTP — not even a superadmin. The CLI and the
 // seeder are the only paths, by design.
 func TestCreatePlatformUser_RefusesTheSuperadminRole(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher)
@@ -154,7 +154,7 @@ func TestCreatePlatformUser_RefusesTheSuperadminRole(t *testing.T) {
 // rejects it: a 500 on a perfectly valid form. Only a bus dispatch shows that,
 // which is why the handler-level tests all passed while the feature was broken.
 func TestCreatePlatformUser_ThroughTheBus_WritesIntoAnotherTenant(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.NewMultitenant(t)
 	cmdBus, _, _ := fx.NewBuses()
 
@@ -212,7 +212,7 @@ func TestCreatePlatformUser_EventCarriesTheChosenTenant(t *testing.T) {
 
 	// The actor's active tenant is the default one — what TenantMiddleware sets
 	// for a superadmin. If the event took its tenant from ctx it would say this.
-	ctx, collector := shared.ContextWithEventCollector(context.Background())
+	ctx, collector := shared.ContextWithEventCollector(testfx.PlatformCtx())
 	ctx = shared.ContextWithTenantID(ctx, shared.DefaultTenantID)
 
 	h := NewCreatePlatformUserHandler(fx.PlatformUsers, fx.Tenants, fx.Hasher)
@@ -247,7 +247,7 @@ func TestCreatePlatformUser_EventCarriesTheChosenTenant(t *testing.T) {
 // scope guard; this proves the hole is confined to the platform plane and did not
 // widen Save for everyone.
 func TestCreateUser_AdminPlane_StillCannotCrossTenants(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.NewMultitenant(t)
 
 	other := fx.SeedTenant(t, "Victim Corp")
@@ -271,7 +271,7 @@ func TestCreateUser_AdminPlane_StillCannotCrossTenants(t *testing.T) {
 // a nickname held in tenant A. This is why the shared body's FindByNickname is a
 // deliberately unscoped identity lookup.
 func TestCreatePlatformUser_NicknameCollidesAcrossTenants(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.NewMultitenant(t)
 
 	tenantA := fx.SeedTenant(t, "Alpha")

@@ -27,7 +27,9 @@ import (
 //
 // Closes: app-events-audit-22, app-events-audit-28, roadmap-76.
 func TestRepository_SaveSurvivesBusinessRollback(t *testing.T) {
-	ctx := context.Background()
+	// The system plane: the control row below is a tenant, and creating one is
+	// system work (the tenant plane may only read its own tenant).
+	ctx := testfx.SystemCtx()
 	r, fx := newRepo(t)
 
 	// Start a business transaction on the context.

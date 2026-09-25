@@ -620,7 +620,7 @@ func TestRunWorker_RestoresRunTenantIntoHandlerContext(t *testing.T) {
 	tenantID := fx.SeedTenant(t, "acme").ID
 	r, _ := run.NewRun("agent", []byte(`{}`), 0)
 	r.TenantID = tenantID
-	if err := fx.Runs.Enqueue(context.Background(), r); err != nil {
+	if err := fx.Runs.Enqueue(testfx.TenantCtx(tenantID), r); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 

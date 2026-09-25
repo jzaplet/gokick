@@ -104,6 +104,21 @@ func SystemCtx() context.Context {
 	return shared.ContextWithPlane(context.Background(), shared.PlaneSystem)
 }
 
+// PlatformCtx is the context of the superadmin's cross-tenant work — the plane
+// PlaneMiddleware gives a platform:* command or query. Use it to call a platform
+// handler directly, without the bus.
+func PlatformCtx() context.Context {
+	return shared.ContextWithPlane(context.Background(), shared.PlanePlatform)
+}
+
+// TenantCtx is the context of work on behalf of one tenant — what TenantMiddleware
+// hands a command or query of that tenant, and the worker a run handler of it:
+// the tenant plane, scoped to tenantID. On Postgres, row-level security then shows
+// the work exactly that tenant's rows.
+func TenantCtx(tenantID string) context.Context {
+	return shared.ContextWithTenantID(context.Background(), tenantID)
+}
+
 // HashToken returns the SHA-256 hex hash of the raw refresh token.
 func (*Fixture) HashToken(raw string) string {
 	return security.HashToken(raw)

@@ -10,7 +10,7 @@ import (
 )
 
 func superCtx() context.Context {
-	return shared.ContextWithClaims(context.Background(), &shared.AuthClaims{
+	return shared.ContextWithClaims(testfx.PlatformCtx(), &shared.AuthClaims{
 		UserID: "s1", Role: "superadmin", Nickname: "root",
 	})
 }

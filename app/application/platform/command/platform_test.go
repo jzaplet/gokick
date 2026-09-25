@@ -14,7 +14,7 @@ import (
 // tenant is NOT changed, and `active` is PRESERVED (the form carries no active
 // flag, so the command must not deactivate the user — the advisor's regression).
 func TestUpdatePlatformUser_CrossTenant_PreservesActiveAndTenant(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	tenantB := fx.SeedTenant(t, "Beta")
@@ -48,7 +48,7 @@ func TestUpdatePlatformUser_CrossTenant_PreservesActiveAndTenant(t *testing.T) {
 
 // Editing a SUPERADMIN target is rejected (it is managed out-of-band only).
 func TestUpdatePlatformUser_RejectsSuperadminTarget(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	super := fx.SeedUserInTenant(t, "root", "superadmin", shared.DefaultTenantID)
@@ -76,7 +76,7 @@ func TestUpdatePlatformUser_RejectsSuperadminTarget(t *testing.T) {
 
 // Promoting anyone to superadmin via the platform edit is rejected.
 func TestUpdatePlatformUser_RejectsPromotionToSuperadmin(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	victim := fx.SeedUserInTenant(t, "bob", "user", shared.DefaultTenantID)
@@ -99,7 +99,7 @@ func TestUpdatePlatformUser_RejectsPromotionToSuperadmin(t *testing.T) {
 
 // Cross-tenant delete lands for a regular user; a superadmin target is rejected.
 func TestDeletePlatformUser_CrossTenantAndSuperadminGuard(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	tenantB := fx.SeedTenant(t, "Beta")
@@ -136,7 +136,7 @@ func TestDeletePlatformUser_CrossTenantAndSuperadminGuard(t *testing.T) {
 // admin:* string would hand an admin cross-tenant write with every other test
 // still green. (The inverse-direction guard for the write path.)
 func TestPlatformWriteCommands_AdminDeniedAtBus(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 	victim := fx.SeedUserInTenant(t, "bob", "user", shared.DefaultTenantID)
 	cmdBus, _, _ := fx.NewBuses()
@@ -188,7 +188,7 @@ func TestPlatformWriteCommands_AdminDeniedAtBus(t *testing.T) {
 // still green. Create-tenant is included because it is no longer CLIOnly — the
 // bus's Authorize is now the only thing gating it on the HTTP path.
 func TestPlatformTenantCommands_AdminDeniedAtBus(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 	victim := fx.SeedTenant(t, "Ghost")
 	cmdBus, _, _ := fx.NewBuses()
@@ -227,7 +227,7 @@ func assertPermissionDenied(t *testing.T, label string, err error) {
 // The out-of-band creation path mints a superadmin in the default tenant — the
 // sanctioned way to add one (the admin API refuses the role).
 func TestCreateSuperAdminHandler_CreatesSuperAdmin(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	h := NewCreateSuperAdminHandler(fx.Users, fx.Hasher)
@@ -261,7 +261,7 @@ func TestCreateSuperAdminHandler_CreatesSuperAdmin(t *testing.T) {
 // CreateUser. The shared userwrite.Create body single-sources the announcement so
 // it can't silently skip the event again (it used to).
 func TestCreateSuperAdminHandler_EmitsUserCreatedEvent(t *testing.T) {
-	ctx, collector := shared.ContextWithEventCollector(context.Background())
+	ctx, collector := shared.ContextWithEventCollector(testfx.PlatformCtx())
 	fx := testfx.New(t)
 
 	h := NewCreateSuperAdminHandler(fx.Users, fx.Hasher)
@@ -287,7 +287,7 @@ func TestCreateSuperAdminHandler_EmitsUserCreatedEvent(t *testing.T) {
 }
 
 func TestCreateSuperAdminHandler_RejectsDuplicateNickname(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 	fx.SeedUserInTenant(t, "root", "user", shared.DefaultTenantID)
 
@@ -303,7 +303,7 @@ func TestCreateSuperAdminHandler_RejectsDuplicateNickname(t *testing.T) {
 }
 
 func TestCreateSuperAdminHandler_RejectsShortPassword(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	h := NewCreateSuperAdminHandler(fx.Users, fx.Hasher)
@@ -317,7 +317,7 @@ func TestCreateSuperAdminHandler_RejectsShortPassword(t *testing.T) {
 // contract the admin-plane handlers pin. Guards the target==nil branch that
 // FindByIDAcrossTenants' (nil, nil) not-found contract feeds.
 func TestUpdatePlatformUser_NotFound(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	h := NewUpdatePlatformUserHandler(fx.PlatformUsers, fx.Hasher)
@@ -338,7 +338,7 @@ func TestUpdatePlatformUser_NotFound(t *testing.T) {
 }
 
 func TestDeletePlatformUser_NotFound(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	callerCtx := shared.ContextWithClaims(ctx, &shared.AuthClaims{

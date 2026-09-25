@@ -1,14 +1,13 @@
 package query
 
 import (
-	"context"
 	"testing"
 
 	"gokick/app/internal/testfx"
 )
 
 func TestGetTenantHandler_FindsAndMisses(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 	tn := fx.SeedTenant(t, "Acme")
 

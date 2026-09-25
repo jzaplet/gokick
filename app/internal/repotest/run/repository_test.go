@@ -52,7 +52,8 @@ func claimAs(t *testing.T, fx *testfx.Fixture, owner string) *run.Run {
 
 func mustFind(t *testing.T, fx *testfx.Fixture, id string) *run.Run {
 	t.Helper()
-	got, err := fx.Runs.FindByID(context.Background(), id)
+	// Inspecting the row as stored is fixture work, outside any tenant.
+	got, err := fx.Runs.FindByID(testfx.SystemCtx(), id)
 	if err != nil {
 		t.Fatalf("find: %v", err)
 	}

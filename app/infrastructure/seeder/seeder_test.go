@@ -66,7 +66,7 @@ func newSeederMT(
 
 func TestSeeder_RejectsEmptyPassword(t *testing.T) {
 	fx := testfx.New(t)
-	err := newSeeder(t, fx, "").Seed(context.Background())
+	err := newSeeder(t, fx, "").Seed(testfx.SystemCtx())
 	if err == nil {
 		t.Fatal("empty APP_SEED_ADMIN_PASSWORD must reject seed")
 	}
@@ -77,14 +77,14 @@ func TestSeeder_RejectsEmptyPassword(t *testing.T) {
 
 func TestSeeder_RejectsTooShortPassword(t *testing.T) {
 	fx := testfx.New(t)
-	err := newSeeder(t, fx, "short").Seed(context.Background())
+	err := newSeeder(t, fx, "short").Seed(testfx.SystemCtx())
 	if err == nil {
 		t.Fatal("password shorter than NewPassword's policy must be rejected")
 	}
 }
 
 func TestSeeder_CreatesAdminWithValidPassword(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.SystemCtx()
 	fx := testfx.New(t)
 
 	if err := newSeeder(t, fx, "valid-password-12").Seed(ctx); err != nil {
@@ -104,7 +104,7 @@ func TestSeeder_CreatesAdminWithValidPassword(t *testing.T) {
 // deploys; rerunning without APP_SEED_ADMIN_PASSWORD in env must not fail
 // once the admin already exists.
 func TestSeeder_IdempotentWhenAdminExists(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.SystemCtx()
 	fx := testfx.New(t)
 
 	if err := newSeeder(t, fx, "valid-password-12").Seed(ctx); err != nil {
@@ -119,7 +119,7 @@ func TestSeeder_IdempotentWhenAdminExists(t *testing.T) {
 // An empty APP_SEED_SUPERADMIN_PASSWORD must NOT seed a superadmin
 // (the platform plane is opt-in), and must NOT error — the admin still seeds.
 func TestSeeder_SkipsSuperAdminWhenPasswordEmpty(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.SystemCtx()
 	fx := testfx.New(t)
 
 	if err := newSeederSuper(t, fx, "valid-password-12", "").Seed(ctx); err != nil {
@@ -137,7 +137,7 @@ func TestSeeder_SkipsSuperAdminWhenPasswordEmpty(t *testing.T) {
 // A set APP_SEED_SUPERADMIN_PASSWORD seeds a superadmin account, and
 // re-running the seed is idempotent.
 func TestSeeder_SeedsSuperAdminWhenPasswordSet(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.SystemCtx()
 	fx := testfx.New(t)
 
 	if err := newSeederSuper(t, fx, "valid-password-12", "super-password-12").Seed(ctx); err != nil {
@@ -160,7 +160,7 @@ func TestSeeder_SeedsSuperAdminWhenPasswordSet(t *testing.T) {
 
 // A set-but-invalid superadmin password is rejected, naming the env var.
 func TestSeeder_RejectsInvalidSuperAdminPassword(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.SystemCtx()
 	fx := testfx.New(t)
 
 	err := newSeederSuper(t, fx, "valid-password-12", "short").Seed(ctx)
@@ -175,7 +175,7 @@ func TestSeeder_RejectsInvalidSuperAdminPassword(t *testing.T) {
 // Single-tenant (multitenancy off): the seeded admin lands in the DEFAULT tenant
 // — the deployment behaves as if tenants did not exist.
 func TestSeeder_SingleTenant_AdminInDefaultTenant(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.SystemCtx()
 	fx := testfx.New(t)
 
 	if err := newSeeder(t, fx, "valid-password-12").Seed(ctx); err != nil {
@@ -195,7 +195,7 @@ func TestSeeder_SingleTenant_AdminInDefaultTenant(t *testing.T) {
 // superadmin still lives in the default tenant, and re-seeding is idempotent (no
 // second tenant, no error).
 func TestSeeder_Multitenant_AdminGetsOwnTenant(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.SystemCtx()
 	fx := testfx.New(t)
 
 	if err := newSeederMT(t, fx, "valid-password-12", "super-password-12", "Acme").Seed(ctx); err != nil {
@@ -241,7 +241,7 @@ func TestSeeder_AuditTrailThroughSystemBus(t *testing.T) {
 	fx := testfx.New(t)
 	s := newSeederMT(t, fx, "valid-password-12", "super-password-12", "Acme")
 
-	err := bus.SystemDispatchVoid(context.Background(), fx.NewSystemBus(), "Seed", struct{}{},
+	err := bus.SystemDispatchVoid(testfx.SystemCtx(), fx.NewSystemBus(), "Seed", struct{}{},
 		func(ctx context.Context) error { return s.Seed(ctx) })
 	if err != nil {
 		t.Fatalf("seed through bus: %v", err)
