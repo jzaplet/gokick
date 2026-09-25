@@ -10,9 +10,12 @@ import (
 	"strings"
 
 	"gokick/app/domain/shared"
+	"gokick/app/domain/shared/msgkey"
 	"gokick/app/domain/tenant"
 	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/sqlite"
+
+	"github.com/ncruces/go-sqlite3"
 )
 
 type Repository struct {
@@ -23,10 +26,17 @@ func NewRepository(db *sqlite.Manager) *Repository {
 	return &Repository{BaseRepository: sqlite.BaseRepository{DB: db}}
 }
 
+// Save inserts the tenant. A name another tenant already holds (the table's only
+// UNIQUE constraint besides its primary key) comes back as the error
+// CreateTenantHandler's own pre-check returns — the same 400 on every adapter.
 func (r *Repository) Save(ctx context.Context, t *tenant.Tenant) error {
 	const q = `INSERT INTO tenants (id, name, plan, created_at, updated_at)
 		VALUES (:id, :name, :plan, :created_at, :updated_at)`
 	_, err := r.Conn(ctx).NamedExecContext(ctx, q, t)
+	var serr *sqlite3.Error
+	if errors.As(err, &serr) && serr.ExtendedCode() == sqlite3.CONSTRAINT_UNIQUE {
+		return &shared.ValidationError{Field: "name", Key: msgkey.TenantNameTaken}
+	}
 	return err
 }
 

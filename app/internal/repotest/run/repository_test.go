@@ -494,3 +494,25 @@ func TestCheckpoint_RenewsLease_PersistsState_KeepsUnclaimable(t *testing.T) {
 		t.Fatal("a checkpoint-renewed lease must keep the run unclaimable")
 	}
 }
+
+// A malformed id names a run that is not there: lookups find nothing, the worker's
+// owner-fenced writes match no row, the operator's cancel is a no-op — on every
+// adapter, never an error.
+func TestRun_MalformedIDIsARowThatIsNotThere(t *testing.T) {
+	fx := testfx.New(t)
+	ctx := context.Background()
+	const bad, owner = "not-a-uuid", "w"
+
+	if got, err := fx.Runs.FindByID(ctx, bad); got != nil || err != nil {
+		t.Fatalf("FindByID: got %v, %v; want nil, nil", got, err)
+	}
+	if alive, _, err := fx.Runs.RenewLease(ctx, bad, owner, testLease); alive || err != nil {
+		t.Fatalf("RenewLease: got %v, %v; want false, nil", alive, err)
+	}
+	if ok, err := fx.Runs.MarkComplete(ctx, bad, owner); ok || err != nil {
+		t.Fatalf("MarkComplete: got %v, %v; want false, nil", ok, err)
+	}
+	if err := fx.Runs.RequestCancel(ctx, bad); err != nil {
+		t.Fatalf("RequestCancel: %v", err)
+	}
+}
