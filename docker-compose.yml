@@ -16,10 +16,10 @@ services:
       APP_DB_JOURNAL_MODE: DELETE
       # With APP_DB_DRIVER=postgres the container reaches the db service by its
       # compose hostname; .env's db.$APP_DOMAIN is the host's route (OrbStack).
-      # Same roles and dev passwords as .env.example.
-      APP_DB_URL: postgres://gokick_app:gokick_app@db:5432/gokick?sslmode=disable
-      APP_DB_SYSTEM_URL: postgres://gokick_system:gokick_system@db:5432/gokick?sslmode=disable
-      APP_DB_MIGRATE_URL: postgres://gokick_owner:gokick_owner@db:5432/gokick?sslmode=disable
+      # The passwords are the ones the db service's roles were created with.
+      APP_DB_URL: postgres://gokick_app:${GOKICK_APP_PASSWORD:-gokick_app}@db:5432/gokick?sslmode=disable
+      APP_DB_SYSTEM_URL: postgres://gokick_system:${GOKICK_SYSTEM_PASSWORD:-gokick_system}@db:5432/gokick?sslmode=disable
+      APP_DB_MIGRATE_URL: postgres://gokick_owner:${GOKICK_OWNER_PASSWORD:-gokick_owner}@db:5432/gokick?sslmode=disable
     # OrbStack routes the domain straight to the container — no host port mapping,
     # so nothing collides on the host (run several projects at once, no more "port
     # already allocated"). The domain is per-project configurable via APP_DOMAIN in
@@ -65,6 +65,10 @@ services:
     profiles: [postgres]
     environment:
       POSTGRES_PASSWORD: postgres
+      # Role passwords for docker/postgres/initdb/01-roles.sh (see .env.example).
+      GOKICK_APP_PASSWORD: ${GOKICK_APP_PASSWORD:-gokick_app}
+      GOKICK_SYSTEM_PASSWORD: ${GOKICK_SYSTEM_PASSWORD:-gokick_system}
+      GOKICK_OWNER_PASSWORD: ${GOKICK_OWNER_PASSWORD:-gokick_owner}
     labels:
       - "dev.orbstack.domains=db.${APP_DOMAIN:-gokick.local}"
     volumes:

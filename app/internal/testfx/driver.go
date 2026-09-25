@@ -11,7 +11,7 @@ import (
 
 // activeDriver parses APP_DB_DRIVER once per test binary. It reads the process
 // environment only — never .env — so a developer's local app config cannot flip
-// which database the suite runs against; `make test-*` sets it explicitly.
+// which database the suite runs against; `make test` and `make test-pg` set it.
 var activeDriver = sync.OnceValues(func() (database.Driver, error) {
 	v := os.Getenv("APP_DB_DRIVER")
 	if v == "" {
