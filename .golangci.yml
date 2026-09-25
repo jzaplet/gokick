@@ -44,6 +44,8 @@ linters:
             - github.com/golang-jwt/jwt/v5
             - github.com/google/uuid
             - github.com/google/wire
+            # The Postgres driver (via its database/sql adapter, pgx/v5/stdlib).
+            - github.com/jackc/pgx/v5
             - github.com/jmoiron/sqlx
             - github.com/joho/godotenv
             - github.com/ncruces/go-sqlite3

@@ -108,6 +108,8 @@ components:
     in: infrastructure/security/**
   sqlite_base:
     in: infrastructure/sqlite
+  postgres_base:
+    in: infrastructure/postgres
   sqlite_repos:
     in:
       - infrastructure/sqlite/audit/**
@@ -196,6 +198,8 @@ deps:
       - config
       - persistence
       - sqlite_base
+      - postgres_base
+      - migrations
       - domain_user
       - domain_token
       - domain_tenant
@@ -227,6 +231,15 @@ deps:
       - database
       - config
       - migrations
+      - testfx
+  postgres_base:
+    mayDependOn:
+      - database
+      - config
+      - migrations
+      # Its own external test package (postgres_test) imports it, plus the
+      # harness (testfx/pgfx).
+      - postgres_base
       - testfx
   sqlite_repos:
     mayDependOn:
