@@ -38,7 +38,7 @@ Když command neimplementuje ani jedno, `AuthorizeMiddleware` vrátí runtime er
 
 **Validace uvnitř `Handle`** má dvě úrovně (viz `create_user.go`):
 1. **Formát** přes doménové value objects — `user.NewNickname`, `user.NewEmail`, `user.NewRole`, `user.NewPassword`. Vrátí `*shared.ValidationError` na nevalidní vstup. (Modelování value objects: `/gk-entities`.)
-2. **Business pravidla (I/O)** přes repo — unikátnost nicku (`repo.FindByNickname` ve sdíleném create těle `userwrite.create`, `app/application/userwrite/userwrite.go`), existence (`h.users.FindByID` v `update_user.go`).
+2. **Business pravidla (I/O)** přes repo — unikátnost nicku (`repo.FindByNickname` ve sdíleném create těle `userwrite.create`, `app/application/userwrite/userwrite.go`), existence (`h.users.FindByID` v `update_user.go`; zámek netřeba, protože `Update` zapíše jen sloupce editu, viz `/gk-repositories`).
 
 **Vedlejší efekty** se nesbírají přímo, ale přes per-request collectory z ctx:
 - `shared.AuditCollectorFromContext(ctx).Record(...)` — pro security-relevant mutace (`user.created` a `user.role_changed` ve sdíleném `application/userwrite/userwrite.go`, `user.deleted` v `delete_user.go:55`).

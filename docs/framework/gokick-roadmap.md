@@ -63,7 +63,7 @@ gokick je **production-ready end-to-end** boilerplate — DDD/CQRS backend, Vue 
 
 Největší (a jediný zásadní) strop: single-node SQLite (single-writer) + scheduler bez leader election. SQLite je vědomá volba — řeší se **výměnou adapteru** za doménovými `Repository` interface, ne přepisem aplikace.
 
-- Postgres adaptér — write-scale + RLS jako transparentní-enforcement endgame pro multitenancy. Adaptér je volitelný přes `APP_DB_DRIVER=postgres` (repozitáře, RLS, celá suite na obou DB); zámky scheduleru a CI zbývají — [Plán: PostgreSQL 18 adaptér](/framework/postgres-adapter-plan).
+- Postgres adaptér — write-scale + RLS jako transparentní-enforcement endgame pro multitenancy. Adaptér je volitelný přes `APP_DB_DRIVER=postgres` (repozitáře, RLS, celá suite na obou DB, zámky a souběh); zbývají CI a dokumentace — [Plán: PostgreSQL 18 adaptér](/framework/postgres-adapter-plan).
 - Durable fronta na Postgresu → **River** (`SELECT … FOR UPDATE SKIP LOCKED`); scheduler → leader election (advisory locks); rate-limit stav → Redis (stateless instance).
 - Alternativa bez Postgresu: distribuovaný SQLite (Turso/libSQL, rqlite, dqlite).
 

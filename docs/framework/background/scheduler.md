@@ -23,11 +23,12 @@ Na údržbové úlohy uvnitř procesu — úklid, synchronizace, sběr statistik
 
 ## Jak to teče
 
-1. `NewScheduler` ověří joby **při startu** (fail-fast): neprázdné jméno, `Interval > 0`, `Fn != nil`, unikátní jména — jinak se aplikace nerozběhne.
+1. `NewScheduler` ověří joby **při startu** (fail-fast): locker, neprázdné jméno, `Interval > 0`, `Fn != nil`, unikátní jména — jinak se aplikace nerozběhne.
 2. `Run(ctx)` spustí každý job ve vlastní goroutině.
 3. **Run-once-then-tick**: `Fn` se spustí hned, teprve pak se spustí `time.Ticker` — údržba tak proběhne aspoň jednou za životnost procesu, i při častých restartech.
-4. Každý `tick` má vlastní `recover()` — panika v jednom jobu ostatní nepoloží. Recovery jen loguje, **nehlásí do Sentry** (deterministická panika by se jinak opakovala při každém ticku donekonečna).
-5. SIGTERM zruší sdílený `ctx`, každá goroutina opustí `select`, `Run` blokuje až do `wg.Wait()` — scheduler i server tak doběhnou zároveň.
+4. **Jeden job, jedna replika.** Před každým spuštěním scheduler podrží zámek jobu (`shared.Locker`, klíč `job:<name>`). Na Postgresu ho drží jedna replika po celou dobu, co běží, a ostatní repliky tick přeskočí. Když držitel skončí, zámek uvolní. Když spadne, zámek zahodí databáze. Job pak převezme další replika při svém nejbližším ticku. SQLite obsluhuje jeden proces, a proto jeho locker povolí každý zámek.
+5. Každý `tick` má vlastní `recover()` — panika v jednom jobu ostatní nepoloží. Recovery jen loguje, **nehlásí do Sentry** (deterministická panika by se jinak opakovala při každém ticku donekonečna).
+6. SIGTERM zruší sdílený `ctx`, každá goroutina opustí `select`, `Run` blokuje až do `wg.Wait()` — scheduler i server tak doběhnou zároveň.
 
 
 ## Příklad
