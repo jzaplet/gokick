@@ -39,15 +39,17 @@ Analogie: migrace jsou jako verze nábytkového návodu — krok po kroku, očí
 Goose si značí, u kterého kroku jsi skončil, a dorazí jen ty zbývající.
 
 ## How it works
-Migrace žijí v adresáři dialektu — dnes `migrations/sqlite/` — jako `YYYYMMDDHHMMSS_<name>.sql` (Goose SQL formát). Adresář na dialekt je příprava na Postgres adaptér: SQL se mezi enginy liší, ale **verze musí zůstat v lock-stepu**, aby obě DB došly ke stejnému logickému schématu (viz [Plán: PostgreSQL 18 adaptér](/framework/postgres-adapter-plan)).
+Migrace žijí v adresáři dialektu — `migrations/sqlite/` a `migrations/postgres/` — jako `YYYYMMDDHHMMSS_<name>.sql` (Goose SQL formát). SQL se mezi enginy liší, ale **každá verze existuje v obou adresářích** (dvojčata), aby obě DB došly ke stejnému logickému schématu. Hlídá to gate `app/zz_migrations_test.go`: verze jen v jednom adresáři shodí `make test` (viz [Plán: PostgreSQL 18 adaptér](/framework/postgres-adapter-plan)). Postgres dvojče navíc nese Row-Level Security (politiky, granty rolím `gokick_app`/`gokick_system`) — role samotné migrace nezakládají, ty vytváří `docker/postgres/initdb/01-roles.sh`.
 Aktuální sada = **jediný squashed init** `20260327000001_init_schema.sql` (tabulky `tenants` + unikátní index jména + seed Default tenantu, `users` vč. `lang`, `refresh_tokens`, `audit_log`, `runs` vč. `lang` + všechny indexy) — jako boilerplate gokick dodává aktuální schéma jedním krokem. Historie se squashovala dvakrát: 2026-07-15 (12 kroků vč. vzniku a dropu tabulky `jobs`) a 2026-09-24 (unikátní jméno tenantu, `users.lang`, `runs.lang`). Soubor si drží **první číslo verze**, takže nasazení, která starou historii už aplikovala, mají verzi zapsanou a soubor přeskočí (historické záznamy v `goose_db_version` goose ignoruje). **Pravidlo upgradu:** platí to jen pro nasazení, které prošlo CELOU starou historií — instalace na verzi starší než v1.4.0 musí nejdřív nastartovat některé vydání v1.4.0–v1.4.2 (ta doaplikují zbylé kroky) a teprve pak binárku se squashnutým initem. Projektové migrace přidávej jako NOVÉ soubory za init (`make migrate-create`); vyšší timestamp = běží později.
 
 Existují **dvě oddělené cesty**, jak se migrace spustí:
 
 **1) Embedded auto-up při startu (produkční cesta).**
-- `migrations/embed.go` zapéká `*.sql` do binárky přes `//go:embed sqlite/*.sql`
-  a vystaví je jako `migrations.SQLite` (`fs.FS` zakořeněný v adresáři dialektu) —
-  runtime nepotřebuje žádné soubory na disku.
+- `migrations/embed.go` zapéká Postgres sadu (`//go:embed postgres/*.sql` →
+  `migrations.Postgres`) a `migrations/sqlite.go` SQLite sadu (`migrations.SQLite`,
+  soubor s `//go:build !nosqlite`, takže binárka s `-tags nosqlite` nenese ani SQLite
+  SQL). Každá je `fs.FS` zakořeněný v adresáři dialektu — runtime nepotřebuje žádné
+  soubory na disku.
 - `Application.Run` (`app/application.go:24-28`) volá `migrations.RunUp()`
   **před** `rootCmd.Execute(ctx)`. Takže auto-up proběhne při **každém**
   subcommandu — `serve`, `worker`, `seed`, `create-user`, `create-superadmin`,
@@ -62,12 +64,21 @@ Existují **dvě oddělené cesty**, jak se migrace spustí:
   hlásí přes aplikační `*slog.Logger`: `migrations: applied {from,to}`,
   `migrations: up to date {version}`, a když po úspěšném Up selže čtení goose
   verze, warn `migrations: applied, but version read failed` — migrace samotné
-  proběhly, jen se nefabrikuje rozsah (jedna logovací cesta, viz CLAUDE.md).
+  proběhly, jen se nefabrikuje rozsah (jedna logovací cesta, viz CLAUDE.md). Tuhle
+  část sdílí oba adaptéry: `database.MigrateUp` (`app/infrastructure/database/migrator.go`).
+- **Postgres** (`postgres.Migrator`, `app/infrastructure/postgres/migrator.go`)
+  migruje jako vlastník schématu (`APP_DB_MIGRATE_URL`, role `gokick_owner`) přes
+  krátkodobé spojení, pod advisory lockem goose session lockeru (repliky startující
+  naráz migrují jedna po druhé), a po migraci spustí `VerifyRoles`: runtime role
+  nesmí být superuser, `APP_DB_URL` nesmí mít BYPASSRLS ani vlastnit tabulky,
+  `APP_DB_SYSTEM_URL` BYPASSRLS mít musí. Jinak start selže.
 
 **2) Ruční `make migrate-*` (jen vývoj).**
 - `make migrate-create / migrate-up / migrate-down / migrate-status` (viz
   `Makefile`) volají **externí `goose` binárku** (`make install` ji nainstaluje)
-  nad `migrations/sqlite/` proti DB souboru z `APP_DB_PATH` v `.env`.
+  proti SQLite souboru z `APP_DB_PATH` v `.env`. `migrate-create` zakládá obě
+  dvojčata se stejným timestampem; `migrate-up/down/status` obsluhují jen SQLite
+  (na Postgresu migruje aplikace při startu).
 - Tady žijí `down` a `status` — aplikace je sama nikdy nepouští.
 - Obě cesty sdílí stejnou DB i Goose tabulku `goose_db_version`, takže verze
   zůstávají konzistentní (auto-up dožene to, co `make` nepustil).
@@ -75,9 +86,12 @@ Existují **dvě oddělené cesty**, jak se migrace spustí:
 ## Recipe
 
 ### Recipe: přidat migraci
-1. `make migrate-create NAME=add_orders_table` → vznikne
-   `migrations/<timestamp>_add_orders_table.sql` s prázdnými `Up`/`Down` bloky.
-2. Vyplň **oba** bloky. Změna i její opak:
+1. `make migrate-create NAME=add_orders_table` → vzniknou dvojčata
+   `migrations/sqlite/<timestamp>_add_orders_table.sql` a
+   `migrations/postgres/<timestamp>_add_orders_table.sql` s prázdnými `Up`/`Down` bloky.
+2. Vyplň **oba** bloky v **obou** souborech (každý ve svém dialektu — Postgres:
+   `timestamptz`, `boolean`, `uuid`, …; u nové tabulky vlastněné tenantem i
+   `ENABLE ROW LEVEL SECURITY`, politiku a `GRANT` rolím). Změna i její opak:
    ```sql
    -- +goose Up
    ALTER TABLE users ADD COLUMN locked_until DATETIME;
@@ -110,6 +124,7 @@ Existují **dvě oddělené cesty**, jak se migrace spustí:
 - Sousední skills: `/gk-entities` (entita ↔ sloupce tabulky, `db:` tagy),
   `/gk-repositories` (čtení/zápis do migrované tabulky, transakce),
   `/gk-feature` (přidání featury end-to-end — migrace je její součást).
-- Kód: `migrations/sqlite/` (SQL), `migrations/embed.go`,
-  `app/infrastructure/sqlite/migrator.go` (`RunUp`),
+- Kód: `migrations/sqlite/` + `migrations/postgres/` (SQL), `migrations/embed.go`,
+  `migrations/sqlite.go`, `app/infrastructure/sqlite/migrator.go` a
+  `app/infrastructure/postgres/migrator.go` (`RunUp`), gate `app/zz_migrations_test.go`,
   `app/application.go` (auto-up při startu), `Makefile` (`migrate-*` targety).

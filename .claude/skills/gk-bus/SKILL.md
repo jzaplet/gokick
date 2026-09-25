@@ -56,14 +56,14 @@ Jádro je `app/application/bus/bus.go`: typ `Middleware` a privátní `newBus(..
 Parametr `cmd any` slouží middleware k introspekci (např. type-assert na
 `shared.Permissioned`). `name` je jen lidský štítek do logu.
 
-**Řetězce middleware** jsou single-sourced v `middleware/base.go` (`BaseChain`, `CommandChain`, `SystemChain`) — DI (`app/infrastructure/di/container_provider.go`) je jen volá, a testfx staví bus ze stejného zdroje, takže pořadí nemůže driftovat. `busmw.BaseChain(...)` (`middleware/base.go`) je sdílený základ
-**Recovery → Logging → Authorize → Tenant**:
+**Řetězce middleware** jsou single-sourced v `middleware/base.go` (`BaseChain`, `CommandChain`, `QueryChain`, `SystemChain`) — DI (`app/infrastructure/di/container_provider.go`) je jen volá, a testfx staví bus ze stejného zdroje, takže pořadí nemůže driftovat. `busmw.BaseChain(...)` (`middleware/base.go`) je sdílený základ
+**Recovery → Logging → Authorize → Plane → Tenant**:
 
 | Bus | Chain (pořadí) |
 |---|---|
-| `CommandBus` | Recovery → Logging → Authorize → Tenant → **Audit → RunDispatcher → DispatchEvents → Transaction** |
-| `SystemCommandBus` | Recovery → Logging → **Audit → RunDispatcher → DispatchEvents → Transaction** (bez Authorize/Tenant — operator-trusted CLI, tenant injectovaný explicitně; RunDispatcher zůstává, aby i CLI command mohl durably enqueue run) |
-| `QueryBus` | Recovery → Logging → Authorize → Tenant |
+| `CommandBus` | Recovery → Logging → Authorize → Plane → Tenant → **Audit → RunDispatcher → DispatchEvents → Transaction** |
+| `SystemCommandBus` | Recovery → Logging → SystemPlane → **Audit → RunDispatcher → DispatchEvents → Transaction** (bez Authorize/Tenant, vše v systémové rovině — operator-trusted CLI, tenant injectovaný explicitně; RunDispatcher zůstává, aby i CLI command mohl durably enqueue run) |
+| `QueryBus` | Recovery → Logging → Authorize → Plane → Tenant → ReadTx |
 | `EventBus` | Recovery → Logging |
 
 Co která stanice dělá (`app/application/bus/middleware/`):
@@ -76,6 +76,12 @@ Co která stanice dělá (`app/application/bus/middleware/`):
   `shared.Permissioned` (vrací permission string) nebo `shared.SkipPermission`
   (explicitní opt-out). Když ani jedno → middleware vrátí error. Volá
   `PermissionChecker.Check()`.
+- **Plane** (`plane.go`) — označí v `ctx` rovinu (`shared.Plane`) podle deklarované
+  permission: `platform:*` → platformní, cokoli jiného → tenantová (nulová hodnota,
+  fail closed). `SystemPlaneMiddleware` v `SystemChain` dává všem CLI commandům
+  systémovou rovinu. Adaptér podle ní otevře transakci: na Postgresu tenantová
+  rovina běží jako role `gokick_app` (Row-Level Security), platformní a systémová
+  jako `gokick_system` (BYPASSRLS); na SQLite rovina nic nemění.
 - **Tenant** (`tenant.go`) — resolvne aktivní tenant a uloží ho do `ctx`, takže
   každý downstream handler i repozitář vidí stejný tenant. Sedí v `BaseChain`,
   takže ho dostane CommandBus **i** QueryBus — čtení potřebuje tenant scoping

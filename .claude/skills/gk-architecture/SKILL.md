@@ -68,13 +68,13 @@ jen ty pod sebou. Plná matice závislostí je v `.go-arch-lint.yml` (`mayDepend
 (`AuthClaims`, error typy, service interfaces). Jeden kontext **nesmí** importovat
 druhý — komunikace jde přes QueryBus nebo domain eventy.
 
-**CQRS busy** (tři user-facing + operator-trusted `SystemCommandBus` pro CLI create-*/seed, každý s vlastním řetězcem middleware). Řetězce se skládají v `app/application/bus/middleware/base.go` (`busmw.BaseChain` = `Recovery → Logging → Authorize → Tenant`; `busmw.CommandChain` na něj navěsí write-side zbytek) — DI providery v `app/infrastructure/di/container_provider.go` (`provideCommandBus`, `provideQueryBus`, `provideEventBus`) je jen volají:
+**CQRS busy** (tři user-facing + operator-trusted `SystemCommandBus` pro CLI create-*/seed, každý s vlastním řetězcem middleware). Řetězce se skládají v `app/application/bus/middleware/base.go` (`busmw.BaseChain` = `Recovery → Logging → Authorize → Plane → Tenant`; `busmw.CommandChain` na něj navěsí write-side zbytek, `busmw.QueryChain` read transakci) — DI providery v `app/infrastructure/di/container_provider.go` (`provideCommandBus`, `provideQueryBus`, `provideEventBus`) je jen volají:
 
 | Bus | Řetězec | K čemu |
 |---|---|---|
-| `CommandBus` | Recovery → Logging → Authorize → Tenant → **Audit → RunDispatcher → DispatchEvents → Transaction** | zápisy |
-| `SystemCommandBus` | Recovery → Logging → **Audit → RunDispatcher → DispatchEvents → Transaction** | CLI zápisy (bez Authorize/Tenant) |
-| `QueryBus` | Recovery → Logging → Authorize → Tenant | čtení |
+| `CommandBus` | Recovery → Logging → Authorize → Plane → Tenant → **Audit → RunDispatcher → DispatchEvents → Transaction** | zápisy |
+| `SystemCommandBus` | Recovery → Logging → SystemPlane → **Audit → RunDispatcher → DispatchEvents → Transaction** | CLI zápisy (bez Authorize/Tenant, systémová rovina) |
+| `QueryBus` | Recovery → Logging → Authorize → Plane → Tenant → ReadTx | čtení |
 | `EventBus` | Recovery → Logging | side-effects po commitu |
 
 Audit je **vně** transakce (`busmw.CommandChain`), aby bezpečnostní eventy

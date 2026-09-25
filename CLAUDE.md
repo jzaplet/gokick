@@ -28,18 +28,21 @@ recipe: `/gk-init`; conventions: `CONTRIBUTING.md`.
 ### Database
 
 ```bash
-make migrate-up                         # Apply pending migrations
-make migrate-down                       # Rollback last migration
-make migrate-status                     # Show migration status
-make migrate-create NAME=create_x_table # Create new migration file
+make migrate-up                         # Apply pending migrations (SQLite file from APP_DB_PATH)
+make migrate-down                       # Rollback last migration (SQLite)
+make migrate-status                     # Show migration status (SQLite)
+make migrate-create NAME=create_x_table # Create the migration pair: migrations/sqlite/<v>_x.sql + migrations/postgres/<v>_x.sql
+make db-up                              # Start the Postgres container when .env has APP_DB_DRIVER=postgres (build/serve run it; no-op for sqlite)
+make db-down / db-reset / db-psql       # Stop it / wipe its data volume / psql inside it (no published port)
 ```
 
-Migrations live in `migrations/sqlite/` — one directory per dialect, versions kept in lock-step (Goose SQL format, embedded into binary via `migrations.SQLite`). Migrations run automatically on app startup through a goose Provider (no global goose state).
+Migrations live in `migrations/sqlite/` and `migrations/postgres/` — one directory per dialect, every version present in both (the `app/zz_migrations_test.go` twin gate fails otherwise; Goose SQL format, embedded into the binary via `migrations.SQLite` / `migrations.Postgres` — the SQLite set only in a build without `-tags nosqlite`). Migrations run automatically on app startup through a goose Provider (no global goose state); on Postgres as the schema owner (`APP_DB_MIGRATE_URL`) under an advisory lock, followed by the runtime-role check.
 
 ### Quality
 
 ```bash
 make test                                        # vitest + go test (app/ + cmd/ + tools/gk)
+make test-pg                                     # Postgres adapter tests on the db-test container, -tags nosqlite (or APP_TEST_DB_URL=<superuser DSN>)
 make lint                                        # ESLint + vue-tsc + knip + golangci-lint + go-arch-lint + nosqlite-check + golines format-check + ts-check + boundary-check + errfields-check + i18n-check + docpaths-check + documan-lint
 make format                                      # ESLint Stylistic fix + golines + documan-fix
 go test ./app/infrastructure/security/ -run TestHash  # Single Go test
@@ -58,7 +61,7 @@ go test ./app/infrastructure/security/ -run TestHash  # Single Go test
 
 ### Environment
 
-Copy `.env.example` to `.env`. Key vars: `APP_HTTP_PORT`, `APP_DB_DRIVER` (default `sqlite`; the Postgres adapter is in progress — see [the plan](docs/framework/postgres-adapter-plan.md)), `APP_DB_PATH`, `APP_JWT_SECRET` (≥ 32 chars), `APP_CORS_ORIGIN`, `APP_JWT_ACCESS_EXPIRATION`, `APP_JWT_REFRESH_EXPIRATION`, `APP_COOKIE_SECURE`, `APP_SEED_ADMIN_PASSWORD` (required by `./bin/app seed`), `APP_SEED_SUPERADMIN_PASSWORD` (optional — seeds a platform superadmin), `APP_MULTITENANCY` (default `false` = single-tenant; `true` = row-level multitenancy, fail-closed enforcement), `APP_SEED_ADMIN_TENANT` (admin's tenant name when multitenant), `APP_TRUST_PROXY_HEADERS` (flip to `true` only behind a trusted reverse proxy — flips IP source for rate limit + audit), `APP_RATE_LIMIT_LOGIN`, `APP_RATE_LIMIT_REFRESH`, `APP_SENTRY_DSN` / `APP_SENTRY_DSN_FRONTEND` (error tracking, empty = off). Full reference: [Configuration](docs/framework/configuration.md); Sentry setup: the `/gk-sentry` skill.
+Copy `.env.example` to `.env`. Key vars: `APP_HTTP_PORT`, `APP_DB_DRIVER` (default `sqlite`; the Postgres adapter is in progress — see [the plan](docs/framework/postgres-adapter-plan.md) — and the binary still refuses `postgres`), `APP_DB_PATH`, `APP_DB_URL` / `APP_DB_SYSTEM_URL` / `APP_DB_MIGRATE_URL` (Postgres only, all required: the tenant-plane role `gokick_app`, the BYPASSRLS system role `gokick_system`, the schema owner `gokick_owner`), `APP_JWT_SECRET` (≥ 32 chars), `APP_CORS_ORIGIN`, `APP_JWT_ACCESS_EXPIRATION`, `APP_JWT_REFRESH_EXPIRATION`, `APP_COOKIE_SECURE`, `APP_SEED_ADMIN_PASSWORD` (required by `./bin/app seed`), `APP_SEED_SUPERADMIN_PASSWORD` (optional — seeds a platform superadmin), `APP_MULTITENANCY` (default `false` = single-tenant; `true` = row-level multitenancy, fail-closed enforcement), `APP_SEED_ADMIN_TENANT` (admin's tenant name when multitenant), `APP_TRUST_PROXY_HEADERS` (flip to `true` only behind a trusted reverse proxy — flips IP source for rate limit + audit), `APP_RATE_LIMIT_LOGIN`, `APP_RATE_LIMIT_REFRESH`, `APP_SENTRY_DSN` / `APP_SENTRY_DSN_FRONTEND` (error tracking, empty = off). Full reference: [Configuration](docs/framework/configuration.md); Sentry setup: the `/gk-sentry` skill.
 
 ## Architecture
 
@@ -106,11 +109,13 @@ CQRS with three bus types, each with its own middleware chain:
 
 | Bus | Chain | Use |
 |-----|-------|-----|
-| `CommandBus` | Recovery → Logging → Authorize → Tenant → Audit → RunDispatcher → DispatchEvents → Transaction | Write operations |
-| `QueryBus` | Recovery → Logging → Authorize → Tenant | Read operations |
+| `CommandBus` | Recovery → Logging → Authorize → Plane → Tenant → Audit → RunDispatcher → DispatchEvents → Transaction | Write operations |
+| `QueryBus` | Recovery → Logging → Authorize → Plane → Tenant → ReadTx | Read operations |
 | `EventBus` | Recovery → Logging | Side-effects after commit |
 
 **TenantMiddleware** (in `BaseChain`, right after Authorize → covers both command and query bus) resolves the active tenant into ctx so every downstream handler/repo sees it; reads need scoping as much as writes. See the `/gk-multitenancy` skill.
+
+**PlaneMiddleware** (in `BaseChain`, before Tenant) marks the `shared.Plane` in ctx from the declared permission — `platform:*` → platform, anything else → tenant (the zero value, fail closed); the `SystemCommandBus` marks its commands `system`. The adapter opens a transaction on the plane's role: on Postgres the tenant plane runs as `gokick_app` (row-level security, scoped to the tenant by a tx-local setting), platform/system as `gokick_system` (BYPASSRLS); on SQLite the plane changes nothing. **ReadTxMiddleware** closes the QueryBus chain: `Transactor.BeginReadTx` wraps each query in a READ ONLY transaction on Postgres (the tenant scope is transaction-local, so an unscoped read would see no row) and is a no-op on SQLite.
 
 **Audit middleware lives OUTSIDE Transaction** so security-relevant events (login_failed, account_locked, theft_detected) persist even when the business tx rolls back. Audit write failures are logged but never propagated to the caller.
 
@@ -169,7 +174,7 @@ Taking `*CommandBus`/`*QueryBus` makes the bus↔operation pairing compile-check
 |---------|---------|
 | `config/` | `LoadConfig()` from `.env` via godotenv → `*Config` struct |
 | `database/` | Driver-neutral: the `Driver` name (`APP_DB_DRIVER`), transaction-in-context (`ContextWithTx` / `TxFromContext`) and the `Migrator` port — links no driver |
-| `sqlite/` | `Manager` (connection pool, WAL, `_txlock=immediate`, `busy_timeout`, `foreign_keys` via DSN; per-connection `registerConnFuncs`: Czech sort collation `app_sort`, Unicode `LIKE`, `uuidv7()`; implements `shared.Transactor`: `BeginTx`/`Commit`/`Rollback`), `Migrator` (goose Provider over `migrations/sqlite`), `BaseRepository` (embed in repos for transparent tx support via `r.Conn(ctx)`) |
+| `sqlite/` | `Manager` (connection pool, WAL, `_txlock=immediate`, `busy_timeout`, `foreign_keys` via DSN; per-connection `registerConnFuncs`: Czech sort collation `app_sort`, Unicode `LIKE`, `uuidv7()`; implements `shared.Transactor`: `BeginTx`/`Commit`/`Rollback`, `BeginReadTx` a no-op), `Migrator` (goose Provider over `migrations/sqlite`), `BaseRepository` (embed in repos for transparent tx support via `r.Conn(ctx)`) |
 | `sqlite/user/` | `user.Repository` impl (incl. `RecordFailedLogin` / `ResetFailedLogin` / `RecordLogin` raw-pool on purpose; tenant-scoped admin reads/writes + cross-tenant platform reads/writes — the `*AcrossTenants` set. The ones that touch EXISTING rows exclude superadmins in the statement itself; `SaveAcrossTenants` (the platform create) has no existing row to exclude, so the superadmin role is refused by `userwrite.Create` instead — that floor is what makes `userwrite.CreateSuperAdmin` the only way through the application layer; the seeder mints its superadmin straight through the repository and never reaches either) |
 | `sqlite/token/` | `token.Repository` implementation |
 | `sqlite/run/` | `run.Repository` implementation (owner-fenced; julianday/ms time discipline shared via `sqlite/sqltime.go`) |
@@ -177,6 +182,7 @@ Taking `*CommandBus`/`*QueryBus` makes the bus↔operation pairing compile-check
 | `sqlite/audit/` | `shared.AuditLogger` implementation (raw-pool — survives business rollback) |
 | `seeder/` | `shared.Seeder` impl (DB-neutral — seeds through the repository ports) — admin (+ optional superadmin) seeding; `SeedAdminPassword` / `SeedSuperAdminPassword` / `SeedAdminTenant` / `Multitenant` Wire-distinct types |
 | `security/` | `JwtService` (HS256 access + crypto/rand refresh), `PasswordHasher` (SHA-256 prehash + bcrypt), `PermissionChecker` |
+| `postgres/` | The Postgres adapter, in progress (no repositories yet — `persistence.Open` refuses the driver): `Manager` (two pgx pools — `gokick_app` for the tenant plane, `gokick_system` BYPASSRLS for platform/system; `BeginTx`/`BeginReadTx` pick the pool by `shared.Plane` and scope a tenant-plane tx with `set_config('app.tenant_id', …, true)`; session `lock_timeout`/`statement_timeout`/`idle_in_transaction_session_timeout`), `Migrator` (goose over `migrations/postgres` as `gokick_owner`, advisory-locked, then `VerifyRoles` refuses a superuser/BYPASSRLS/owner runtime role). Tests: `make test-pg` (template-clone harness `app/internal/testfx/pgfx`, RLS suite `rls_test.go`) |
 | `persistence/` | `Open(cfg)` → `Store` (every database port: repositories, `Tx` Transactor, `Audit`, `Migrator`) + cleanup that closes the pool — the single place that knows which adapter backs the ports. Branches on `APP_DB_DRIVER`; each adapter's opener is a build-tagged file (`sqlite.go` is `//go:build !nosqlite`) |
 | `di/` | Wire compile-time DI. `container_provider.go` (wireinject tag) + generated `wire_gen.go` |
 

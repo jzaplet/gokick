@@ -13,14 +13,12 @@ description: 'Analýza vazeb na SQLite a plán refaktoringu na přepínatelný S
 
 Stačí nastavit `APP_DB_DRIVER=postgres` v env a aplikace **i celá Go test suite** poběží na PostgreSQL 18 se stejným chováním, aniž by se kdekoli otevřela SQLite. Postgres zároveň nahradí globální write-lock zámky na úrovni řádků a přinese multitenancy vynucenou přímo databází (Row-Level Security). Tahle stránka je analýza dnešních vazeb na SQLite a fázovaný plán refaktoringu k tomu cíli.
 
-**Status:** 🟢 plán schválen — všechna rozhodnutí D1–D10 potvrzena · **Roadmap:** [Roadmap (GoKick) → Škálovatelnost](/framework/gokick-roadmap) · **Analýza:** 2026-09-24
+**Status:** 🟢 plán schválen — všechna rozhodnutí D1–D10 potvrzena · fáze 0–3 hotové (fáze 3: základ Postgresu — Docker, schéma s RLS, manager se dvěma rolemi, harness a RLS sada; odchylky od plánu v sekci 9, „Fáze 3 — co dopadlo jinak") · **Roadmap:** [Roadmap (GoKick) → Škálovatelnost](/framework/gokick-roadmap) · **Analýza:** 2026-09-24
 
 > **Konvence cest:** existující soubory cituju plnou cestou (`app/…`), aby je hlídal
 > `make docpaths-check`. **Nové** balíčky, které teprve vzniknou, píšu relativně k `app/`
 > (např. `infrastructure/postgres/run`).
 
-<!-- gkdoc:ignore migrations/sqlite/ — adresář, který plán teprve zakládá (přesun dnešních migrací) -->
-<!-- gkdoc:ignore migrations/postgres/ — adresář, který plán teprve zakládá (PG migrace) -->
 
 
 ## TL;DR
@@ -163,7 +161,7 @@ type Store struct {
     PlatformTenants tenant.PlatformRepository
     Audit           shared.AuditLogger
     Tx              shared.Transactor   // BeginTx / BeginReadTx / Commit / Rollback
-    Locker          shared.Locker       // advisory lock; SQLite = in-process no-op
+    Locker          shared.Locker       // advisory lock; SQLite = in-process no-op (fáze 5)
     Migrator        database.Migrator
 }
 
@@ -177,6 +175,8 @@ func providePersistence(cfg *config.Config, log *slog.Logger) (*persistence.Stor
 - `.go-arch-lint.yml` dostane nové komponenty `postgres_base`, `postgres_repos` a `persistence`. Hranice bounded contextů pro Postgres se vyjmenují stejně jako pro `sqlite_repos`.
 
 ### 3.2 Konfigurace
+
+✅ **Hotovo ve fázi 3** (`app/infrastructure/config/config.go`, `loadPostgresConfig`): tři DSN jsou povinné jen s `APP_DB_DRIVER=postgres`, musí mít tvar `postgres://user@host/…` a chybová hláška DSN nikdy neopakuje (nese heslo); timeouty se parsují vždy a záporné shodí start. `APP_TEST_DB_URL` nečte config, ale testovací harness (`app/internal/testfx/pgfx`), jen z prostředí procesu.
 
 | Env | Default | Význam |
 |---|---|---|
@@ -205,12 +205,14 @@ func providePersistence(cfg *config.Config, log *slog.Logger) (*persistence.Stor
   - pro SQLite `DialectSQLite3` bez lockeru.
 
   Tím odpadne i pinning na jedno spojení, a s ním bug N1.
-- **Gate:** množiny verzí v obou adresářích musí být identické. Zachytí zapomenuté dvojče.
-- **`make migrate-*`** budou respektovat driver. `make migrate-create NAME=x` založí oba soubory se stejným timestampem. Parsování `.env` přes `grep | cut` nahradí `goose -env` nebo malý `gk` subcommand, protože DSN obsahuje `=`.
+- **Gate:** množiny verzí v obou adresářích musí být identické. Zachytí zapomenuté dvojče. ✅ `app/zz_migrations_test.go` (fáze 3).
+- **`make migrate-*`** budou respektovat driver. `make migrate-create NAME=x` založí oba soubory se stejným timestampem (✅ fáze 3; `migrate-up/down/status` zatím jen SQLite). Parsování `.env` přes `grep | cut` nahradí `goose -env` nebo malý `gk` subcommand, protože DSN obsahuje `=`.
 - **Role** jsou objekty clusteru, ne databáze, proto nepatří do migrací. Zakládá je init skript Postgres image (`docker/postgres/initdb/01-roles.sh`, sekce 3.4), který použije lokální DB, testovací DB i CI. Migrace dělají jen `GRANT` a RLS politiky; jména rolí jsou pevná (`gokick_app`, `gokick_system`) s možností přepsat je přes goose `ENVSUB`.
 
 
 ### 3.4 Lokální Postgres: Docker + OrbStack, bez portů (rozhodnutí D10 ✅)
+
+✅ **Hotovo ve fázi 3.** Oproti náčrtu níže: služby mají profily (`db` → `postgres`, `db-test` → `test`), takže holé `docker compose up` je v SQLite projektu nespouští (příkaz, který službu jmenuje, profil zapne sám); nepotřebují `env_file` (superuser heslo je `postgres`, hesla rolí jsou výchozí hodnoty init skriptu); healthcheck ptá `pg_isready` přes **TCP**, protože během init skriptů běží dočasný server jen na socketu a `--wait` se nesmí vrátit dřív, než role existují; `db-test` má navíc `max_connections=300` (paralelní testovací balíčky). `make db-reset` = `docker compose down --volumes` nad celým projektem (zastaví i `app`/`documan`; jediný pojmenovaný volume je `pgdata`). Kontejner `app` v compose dostane DSN s hostname `db`. Docker image se v tomto prostředí stáhnout nedal, proto image, init skript a healthcheck poprvé naostro ověří CI job `postgres tests` (sekce 7.7); init skript sám je ověřený na lokálním clusteru (dvakrát po sobě, idempotentní).
 
 **Požadavek:**
 - Vývojář dál spouští jen `make build && make serve`.
@@ -447,6 +449,8 @@ migrace ────────► APP_DB_MIGRATE_URL → role gokick_owner (vl
 
   Gate ověří, že marker `(system)` se vyskytuje jen v metodě, která volá `SystemConn`. `SystemConn` uvnitř tenantové transakce smí jen **číst**; zápis vrátí chybu, protože by tiše rozbil atomicitu.
 
+✅ **Fáze 3:** `shared.Plane` (`PlaneTenant` je nulová hodnota, `PlanePlatform`, `PlaneSystem`), `PlaneMiddleware` v `BaseChain` před Tenant (rovina z `shared.PlaneForPermission`), `SystemPlaneMiddleware` v `SystemChain`, `QueryChain` = `BaseChain` + `ReadTxMiddleware`. `postgres.Manager.BeginTx`/`BeginReadTx` vybírá pool podle roviny a tenantovou transakci scopne přes `set_config('app.tenant_id', $1, true)`; `BeginReadTx` uvnitř otevřené transakce se k ní připojí. Worker a scheduler rovinu v ctx **nenastavují**: jejich cross-tenant operace (claim, lease, úklid tokenů) rozhodne ve fázi 4 přímo metoda repozitáře přes `SystemConn`, a handler runu pak běží v tenantové rovině svého runu. Označit celou smyčku workeru jako systémovou by znamenalo handler z ní zase explicitně vracet do tenantové roviny — zapomenutí by bylo fail-open. `SystemConn`, markery `(rls)`/`(system)` a gate k nim patří do fáze 4 spolu s repozitáři.
+
 ### 6.2 Politiky a granty
 
 ```sql
@@ -467,13 +471,17 @@ CREATE POLICY tenant_isolation ON users
 |---|---|---|
 | `users`, `runs` | DML, podléhá RLS | DML (BYPASSRLS) |
 | `tenants` | jen `SELECT` vlastního řádku | DML |
-| `refresh_tokens` | **žádný grant** (vše kolem tokenů probíhá před autentizací nebo jako auth plumbing) | DML |
-| `audit_log` | **žádný grant** | jen `INSERT` + `SELECT`, takže **append-only vynucuje DB** |
+| `refresh_tokens` | DML, podléhá RLS: token je vidět a zapisovatelný, jen když je vidět jeho uživatel (politika `EXISTS (SELECT 1 FROM users …)` běží pod politikou `users`) | DML |
+| `audit_log` | **žádný grant** (a RLS bez politiky) | jen `INSERT` + `SELECT`, takže **append-only vynucuje DB** |
 | `goose_db_version` | — | — (jen `gokick_owner`) |
+
+✅ **Fáze 3** (`migrations/postgres/20260327000001_init_schema.sql`). Dvě změny oproti návrhu výše:
+- **`refresh_tokens` pro tenantovou rovinu.** Odhlášení (`LogoutCommand`) maže tokeny volajícího uvnitř transakce commandu, tedy v tenantové rovině. Se „žádným grantem" by muselo psát přes `SystemConn` uvnitř tenantové transakce, což 6.1 zakazuje. Politika přes viditelnost uživatele dá tenantové rovině přesně tokeny jejích uživatelů; login, refresh a úklid expirovaných tokenů dál půjdou systémovou rovinou.
+- **RLS je `ENABLE`, ne `FORCE`.** `FORCE` by politikami svázal i vlastníka schématu, takže pozdější datová migrace (`UPDATE users SET …` jako `gokick_owner`) by tiše nezměnila ani řádek. Aplikace jako vlastník nikdy neběží: kontrola rolí při startu (6.3) odmítne `APP_DB_URL`, jehož role tabulky vlastní nebo je členem jejich vlastníka. V8 (`FORCE` filtruje vlastníka) tím pádem v návrhu nevyužíváme.
 
 ### 6.3 Pojistky
 
-- **Kontrola rolí při startu.** Superuser obchází RLS **vždy**, i s `FORCE`; typicky jde o výchozího uživatele `postgres` v dockeru. Proto se při startu ověří, že role pro `APP_DB_URL` nemá `rolsuper` ani `rolbypassrls` a nevlastní tabulky. Jinak start selže (fail fast).
+- **Kontrola rolí při startu.** Superuser obchází RLS **vždy**, i s `FORCE`; typicky jde o výchozího uživatele `postgres` v dockeru. Proto se při startu ověří, že role pro `APP_DB_URL` nemá `rolsuper` ani `rolbypassrls` a nevlastní tabulky. Jinak start selže (fail fast). ✅ **Fáze 3:** `postgres.Manager.VerifyRoles`, volaný z `Migrator.RunUp` **po** migracích (teprve pak existují tabulky, jejichž vlastnictví se kontroluje). Vlastnictví zahrnuje i členství v roli vlastníka (`pg_has_role(…, 'MEMBER')`). Kontroluje i systémovou rovinu: `APP_DB_SYSTEM_URL` musí mít `BYPASSRLS` (bez něj by cross-tenant čtení tiše vracelo filtrovaný výsledek) a nesmí být superuser ani vlastník.
 - **RLS zapnuté i v single-tenant módu.** GUC má vždy hodnotu `DefaultTenantID`, takže se chování nemění a kód má jednu cestu. Testy tak RLS procházejí pořád.
 - **Explicitní `WHERE tenant_id` v repozitářích zůstává.** Slouží jako obrana do hloubky a pomáhá planneru s indexem, a `zz_tenant` gate platí i pro PG repozitáře. RLS je záloha, ne náhrada.
 - **Porušení `WITH CHECK`** (SQLSTATE 42501) je bug, protože `AssertTenantScope` měl zasáhnout dřív. Namapuje se na interní chybu a reportuje do Sentry.
@@ -483,6 +491,8 @@ CREATE POLICY tenant_isolation ON users
   - cross-tenant `INSERT` selže;
   - systémová rovina vidí vše;
   - chybějící tenant dá 0 řádků.
+
+  ✅ **Fáze 3:** `app/infrastructure/postgres/rls_test.go` (9 testů): tenant vidí jen své řádky ve všech čtyřech tabulkách; cizí řádek podle id nejde změnit ani smazat (0 řádků); zápis do cizího tenanta (insert, přesun vlastního řádku, run, token pro cizího uživatele) skončí 42501; granty (tenantová rovina nesmí do registru tenantů ani do auditu, systémová smí do auditu jen přidávat a číst); systémová i platformní rovina vidí vše; role bez scope a neznámý tenant vidí 0 řádků; unikátnost nicku platí napříč tenanty; vlastní zápisy tenanta projdou. Mutační kontrola: po vypnutí RLS na `users` spadne 5 z 9 testů; s `set_config(…, false)` spadne test úniku tenanta přes pool.
 
 
 ## 7. Testy nezávislé na backendu
@@ -535,6 +545,8 @@ jwtfx.New(t, accessExp)          // JWT bez DB (gokick/app/internal/testfx/jwtfx
   - Celkem ≈ 390 databází × 20 ms ≈ 8 s sériově, rozložených do paralelních balíčků.
 - **Role** zakládá bootstrap skript idempotentně jednou za cluster; DSN rolí sestaví harness.
 - **`t.Parallel()`:** po odstranění globálního goose stavu ho lze v DB testech postupně povolit. Jde o volitelný výkonový krok.
+
+✅ **Hotovo ve fázi 3** jako samostatný balíček `app/internal/testfx/pgfx`: `pgfx.New(t)` (klon šablony), `pgfx.NewEmpty(t)` (prázdná DB pro testy migrací), `DB.Config()` s DSN všech tří rolí. Šablona se staví pod dočasným jménem `…_build` z `template0` a přejmenuje se až po úspěšných migracích, takže přerušený běh nikdy nenechá napůl zmigrovanou šablonu. Harness role nezakládá: čeká cluster po init skriptu s výchozími hesly (`db-test`). Ověřeno i souběhem: dva testovací procesy nad studeným clusterem sdílí jednu šablonu a po sobě nenechají žádný klon. `testfx.New(t)` na Postgresu zatím hlasitě selže („no repositories yet"); fixture nad `pgfx` přibude s repozitáři ve fázi 4.
 
 ### 7.4 Kategorie testů
 
@@ -594,7 +606,7 @@ Rozpis po souborech je v **příloze A**.
 | `app/domain/zz_gap_test.go` | ✅ Mezi zakázanými importy handlerů jsou všechny DB kořeny: `infrastructure/sqlite`, `infrastructure/postgres`, `infrastructure/persistence`. |
 | `app/infrastructure/worker/zz_notx_test.go` | Beze změny, kromě komentáře. |
 | ✅ **nový** `app/zz_nosqlite_test.go` | Soubor, který importuje SQLite adaptér nebo ncruces, musí mít `//go:build !nosqlite` (mimo adaptér jsou to jen dva openery). Každý soubor pod `infrastructure/sqlite/**` ten tag má a každý jeho testovací balíček má `TestMain` s `testfx.MainFor(m, database.DriverSQLite)`. Testy a fixtures mimo tagované soubory nenesou SQLite dialekt: `julianday(`, `strftime(`, `datetime(`, `PRAGMA`, `sqlite_master`, `INSERT OR …`, cestu `*.db`. Každé pravidlo má vlastní „bite" test. |
-| **nový** `zz_migration_twins` | Množiny verzí v `migrations/sqlite/` a `migrations/postgres/` se musí shodovat. |
+| ✅ **nový** `app/zz_migrations_test.go` (fáze 3) | Množiny verzí v `migrations/sqlite/` a `migrations/postgres/` se musí shodovat; soubor bez verze i prázdný adresář gate shodí, „bite" test pokrývá obě strany. |
 
 ### 7.7 Trojitá pojistka „žádná SQLite na Postgresu"
 
@@ -612,6 +624,8 @@ Rozpis po souborech je v **příloze A**.
   - nový `test-postgres` spustí `docker compose up -d --wait db-test`, tedy **stejný** `docker/postgres/Dockerfile` a init skript jako lokálně. `APP_TEST_DB_URL` sestaví z IP kontejneru (na Linux runneru je dosažitelná přímo, bez publikovaného portu) a pak pustí `go test -tags nosqlite` s `APP_DB_DRIVER=postgres`.
 
   Protože joby běží souběžně, pipeline se neprodlouží. Lint poběží pro obě sady build tagů.
+
+  ✅ **Částečně už ve fázi 3:** job `postgres tests` (`make test-pg`: `db-test` ze stejného Dockerfile, IP kontejneru, `-tags nosqlite`) běží od fáze 3. Zatím pokrývá jen balíčky Postgres adaptéru a ještě není povinný; celá suite a povinnost v rulesetu zůstávají ve fázi 6.
 - **Kde to běží a kolik to stojí:**
   - **GitHub-hosted runnery.** `jzaplet/gokick` je veřejný repozitář, takže minuty jsou **zdarma** a Postgres se startuje v rámci jobu; žádný vlastní server není potřeba.
   - Projekty založené ze šablony jako **privátní** repozitáře čerpají měsíční kvótu minut z GitHub plánu. Jeden běh je řádově 2 × ~1–2 min, takže běžný provoz se vejde; aktuální kvóty a ceny je potřeba ověřit v ceníku GitHubu.
@@ -657,13 +671,23 @@ Pořadí je zvolené tak, aby **fáze 1 a 2 byly čisté refaktory bez změny ch
 | **1 — švy (jen SQLite)** ✅ | Migrace v `migrations/sqlite/` přes goose Provider API (bez globálního stavu; Provider sám drží jedno `*sql.Conn`, takže pinning poolu odpadl). `database` je driver-neutrální (tx v kontextu, port `Migrator`); `sqlite.Manager` a `sqlite.Migrator` v adaptéru. `persistence.Store` + `Open`, Wire přes `FieldsOf`, cleanup zavírá pool při ukončení. Providery berou `shared.Transactor`, `NewApplication` bere `Migrator`. Seeder v `infrastructure/seeder`. `.go-arch-lint.yml` upraven. Porty `shared.Locker` a `Transactor.BeginReadTx` přesunuty do fáze 3 (bez PG by byly jen prázdné no-op). | ✅ hotovo: lint, arch-check, testy a gates zelené; ověřeno na binárce (migrace, seed, serve, login) |
 | **1b — české řazení a UUIDv7 (jen SQLite, `feat`)** ✅ | SQLite manager přes `driver.Open` + init callback `registerConnFuncs`: Unicode `LIKE`, collation `app_sort` (`cs-CZ`), SQL funkce `uuidv7()`. Sort whitelisty a textové tie-breaky s `sqlite.CollateSort`, filtry přes `sqlite.LikeContains` + `LikeEscape`. `refresh_tokens` a `audit_log` id na v7. Zlatý korpus `app/infrastructure/database/testdata/sort_cs/` (očekávání vyrobil Postgres, ICU `cs-CZ`) + test `app/infrastructure/sqlite/collation_test.go`. Úprava `list_pages_test`. | ✅ hotovo: zlatý test zelený (a spadne s binární collation), celá suite zelená |
 | **2 — testy nezávislé na backendu (ještě SQLite)** ✅ | `APP_DB_DRIVER` + `database.Driver`; `persistence.Open` větví podle driveru a SQLite opener je soubor s tagem `!nosqlite` (celý adaptér taky). Codemod `testfx.New(t)`; `fx.Tx`, `fx.Audit`, helpery ze 7.5; UUID / skuteční tenanti v testových datech. Kontraktní testy v `app/internal/repotest/<ctx>` (vč. testů, které se ukázaly jako přenositelné: raw-pool vs. zámek, ms přesnost leasu, no-tx zóna, kaskáda tokenů); testy adaptéru s `TestMain` → `testfx.MainFor`. Gate `app/zz_nosqlite_test.go`, guard proti prázdnému výsledku v `zz_tenant`/`zz_sqltime`, handler gate na všechny DB kořeny; `make nosqlite-check` v `make lint`. `NewJwt` → `jwtfx`. `SystemCtx`/`TenantCtx` přesunuty do fáze 3. | ✅ hotovo: mimo `infrastructure/sqlite/**` a tagované openery není v testech ani řádek SQLite SQL; s `-tags nosqlite` se celý strom včetně testů zkompiluje a lintuje bez ncruces; test pak hlásí „no fixture backend for APP_DB_DRIVER=postgres" |
-| **3 — PG základ** | Config (sekce 3.2), `pgx`, `postgres.Manager` se dvěma pooly, rovinami a GUC, kontrola rolí při startu. Porty `shared.Locker` (SQLite: in-process no-op) a `Transactor.BeginReadTx` (SQLite: no-op). `PlaneMiddleware` a `ReadTxMiddleware` (na SQLite no-op). `migrations/postgres/` init s typy, FK, RLS a granty. `docker/postgres/Dockerfile` + `initdb/01-roles.sh`, služby `db` a `db-test` v `docker-compose.yml` (OrbStack domény, bez portů), `make db-up` v `build`/`serve` + `db-down`/`db-reset`/`db-psql`, `.env.example` (sekce 3.4). PG harness v `testfx`, `make test-pg`. | Na PG proběhnou migrace a `testfx` fixture; RLS sada (6.3) zelená |
+| **3 — PG základ** ✅ | Config (sekce 3.2), `pgx`, `postgres.Manager` se dvěma pooly, rovinami a GUC, kontrola rolí při startu (`VerifyRoles`), session timeouty. Port `Transactor.BeginReadTx` (SQLite: no-op). `shared.Plane`, `PlaneMiddleware`, `SystemPlaneMiddleware`, `ReadTxMiddleware` v `QueryChain` (na SQLite beze změny chování). `migrations/postgres/` init s typy, FK, RLS a granty; embed po dialektech (SQLite sada jen v buildu bez `nosqlite`); gate dvojčat `app/zz_migrations_test.go`; `make migrate-create` zakládá obě dvojčata. `postgres.Migrator` jako vlastník, pod advisory lockem. `docker/postgres/Dockerfile` + `initdb/01-roles.sh`, služby `db` a `db-test` (OrbStack domény, bez portů), `make db-up` v `build`/`serve` + `db-down`/`db-reset`/`db-psql`, `.env.example`. Harness `app/internal/testfx/pgfx`, `testfx.SystemCtx()` pro seed helpery, `make test-pg`, CI job `postgres tests`. | ✅ hotovo: migrace, harness a RLS sada zelené na PostgreSQL 16 lokálně (PG 18 image ověří CI job); celá suite na SQLite beze změny; `persistence.Open` Postgres zatím odmítá („not available yet"), dokud nejsou repozitáře |
 | **4 — PG repozitáře** | `user`, `tenant`, `token`, `run`, `audit` v `$n` SQL; `ClaimDue` se `SKIP LOCKED`; časy přes `statement_timestamp()`; `ILIKE` s escapováním; `NULLS FIRST/LAST`; parse UUID; mapování chyb (23505, 23503, 42501, 40001, 40P01, 55P03, 22P02). `zz_tenant` pro PG. | **Celá suite zelená na obou backendech**; `make test-pg` s `-tags nosqlite` |
 | **5 — zámky** | Advisory `Locker` pro scheduler, locker migrací, timeouty (sekce 3.2), zamykání „kotvy" u invariantů, deterministické pořadí u bulk operací, volitelný `RequiresSerializable` + retry. PG testy souběhu (N workerů × M runů exactly-once, dvě instance scheduleru, souběžné migrace). Úprava `TestScheduler_TwoInstancesTickIndependently`. | Testy souběhu zelené na PG a opakovaně (`-count=20`) |
 | **6 — CI a pojistky** | Paralelní joby `validate` (SQLite) a `test-postgres` (stejná služba `db-test` jako lokálně, IP kontejneru místo portu) v `validate.yml`; `make test` = obě DB paralelně (služba `db-test`, bez Dockeru selže s nabídkou `make test-sqlite`). Lint pro obě sady tagů, kontrola artefaktů `*.db` a `go list -deps`, e2e na PG + multi-process fencing. | Oba joby povinné v branch rulesetu; `make test` pouští obě DB |
 | **7 — dokumentace** | Příloha B: CLAUDE.md, skilly, framework docs, README, roadmapa (zapsat rozhodnutí D1–D9). | `make docpaths-check` + `documan-lint` zelené |
 | volitelně | `LISTEN/NOTIFY` wake-up workeru; produkční build `-tags nosqlite`; sdílený stav rate-limiteru; `t.Parallel()` v DB testech; self-hosted runner pro privátní projekty ze šablony. | — |
 
+
+### Fáze 3 — co dopadlo jinak
+
+- **Posunuto dopředu:** session timeouty (`lock_timeout`, `statement_timeout`, `idle_in_transaction_session_timeout`) a advisory lock migrací (goose session locker, zámek se zkouší každou sekundu až 5 minut; výchozích 5 s by každou čekající repliku zdrželo) byly v plánu ve fázi 5. Jsou to jen parametry spojení a jedna volba Provideru, takže přišly rovnou s managerem. Test: `TestMigrator_ConcurrentRunUp`. Stejně tak CI job `postgres tests` (jinak fáze 6), protože Docker image se dal ověřit jedině v CI.
+- **Posunuto dál:** port `shared.Locker` (SQLite: in-process no-op) přijde až ve fázi 5 spolu se schedulerem, který je jeho jediným spotřebitelem; bez něj by to byl mrtvý kód. `testfx.TenantCtx` taky počká na testy, které ho budou potřebovat (fáze 4); `testfx.SystemCtx()` už seed helpery používají.
+- **Schéma a granty:** `refresh_tokens` je pro tenantovou rovinu přístupné přes RLS místo „žádného grantu" a RLS je `ENABLE`, ne `FORCE`. Důvody jsou v sekci 6.2.
+- **Roviny workeru a scheduleru** se neoznačují v ctx, rozhodne o nich metoda repozitáře (sekce 6.1).
+- **Adaptér zatím není volitelný:** `persistence.Open` pro `postgres` vrací „not available yet" a `make build && make serve` s `APP_DB_DRIVER=postgres` sice nahodí databázi, ale aplikace start odmítne. `make test-pg` pokrývá balíčky adaptéru (`PG_TEST_PKGS`); ve fázi 4 se rozšíří na celou suite.
+- **`make migrate-up/down/status`** dál obsluhují jen SQLite soubor. Na Postgresu migruje aplikace při startu; ruční cesta (plán v 3.3: `goose -env` nebo `gk` subcommand) zůstává na později.
+- **Ověřeno:** PostgreSQL 16 lokálně (image verze 18 se v tomto prostředí stáhnout nedal). Schéma nepoužívá nic, co PG 16 nemá (`uuidv7()` generuje aplikace; ve schématu není jako DEFAULT).
 
 ## 10. Rozhodnutí
 
