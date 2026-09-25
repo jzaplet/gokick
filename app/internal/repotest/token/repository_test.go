@@ -50,3 +50,11 @@ func TestMarkUsed_UnknownHashReturnsFalse(t *testing.T) {
 		t.Fatal("MarkUsed must return false for an unknown hash")
 	}
 }
+
+// A malformed user id owns no tokens: revoking them is a no-op, not an error.
+func TestTokenRepository_DeleteByMalformedUserIDIsANoOp(t *testing.T) {
+	fx := testfx.New(t)
+	if err := fx.Tokens.DeleteByUserID(context.Background(), "not-a-uuid"); err != nil {
+		t.Fatalf("DeleteByUserID: %v", err)
+	}
+}

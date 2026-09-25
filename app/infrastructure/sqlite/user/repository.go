@@ -14,6 +14,8 @@ import (
 	"gokick/app/domain/user"
 	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/sqlite"
+
+	"github.com/ncruces/go-sqlite3"
 )
 
 type Repository struct {
@@ -35,7 +37,7 @@ func (r *Repository) Save(ctx context.Context, u *user.User) error {
 	const q = `INSERT INTO users (id, nickname, password_hash, email, role, tenant_id, active, created_at, updated_at, lang)
 		VALUES (:id, :nickname, :password_hash, :email, :role, :tenant_id, :active, :created_at, :updated_at, :lang)`
 	_, err := r.Conn(ctx).NamedExecContext(ctx, q, u)
-	return err
+	return nicknameTaken(err)
 }
 
 // SaveAcrossTenants is Save without the scope guard — the superadmin plane's
@@ -68,7 +70,7 @@ func (r *Repository) SaveAcrossTenants(ctx context.Context, u *user.User) error 
 		/* tenant-write-exempt - platform superadmin creates into the CHOSEN tenant */`
 	_, err := r.Conn(ctx).NamedExecContext(ctx, q, u)
 
-	return err
+	return nicknameTaken(err)
 }
 
 // Update scopes the WHERE to the caller's tenant (r.Tenant, positional — the
@@ -82,7 +84,7 @@ func (r *Repository) Update(ctx context.Context, u *user.User) error {
 		WHERE id=? AND tenant_id=? AND role != 'superadmin'`
 	res, err := r.Conn(ctx).ExecContext(ctx, q,
 		u.Nickname, u.PasswordHash, u.Email, u.Role, u.Active, u.UpdatedAt, u.ID, r.Tenant(ctx))
-	return requireOneRow(res, err)
+	return requireOneRow(res, nicknameTaken(err))
 }
 
 // Delete scopes by tenant AND excludes superadmin rows — same rationale as Update.
@@ -251,7 +253,7 @@ func (r *Repository) UpdateAcrossTenants(ctx context.Context, u *user.User) erro
 		WHERE id=? AND role != 'superadmin' /* tenant-scope-exempt: platform superadmin */`
 	res, err := r.Conn(ctx).ExecContext(ctx, q,
 		u.Nickname, u.PasswordHash, u.Email, u.Role, u.Active, u.UpdatedAt, u.ID)
-	return requireOneRow(res, err)
+	return requireOneRow(res, nicknameTaken(err))
 }
 
 // DeleteAcrossTenants is the platform-plane delete — same cross-tenant scope and
@@ -350,6 +352,20 @@ func (r *Repository) ResetFailedLogin(ctx context.Context, userID string) error 
 		`UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?
 		 /* tenant-scope-exempt: clear brute-force counter on successful login */`,
 		userID)
+	return err
+}
+
+// nicknameTaken turns the unique violation on users.nickname — the table's only
+// UNIQUE constraint besides its primary key, so the code alone identifies it —
+// into the error the handlers' own pre-check (FindByNickname) returns. The check
+// is for the message, the constraint is the truth: the port promises the same
+// 400 whichever adapter runs, and on Postgres, where writers run in parallel, two
+// concurrent creates of one nickname can both pass the check.
+func nicknameTaken(err error) error {
+	var serr *sqlite3.Error
+	if errors.As(err, &serr) && serr.ExtendedCode() == sqlite3.CONSTRAINT_UNIQUE {
+		return &shared.ValidationError{Field: "nickname", Key: msgkey.UserNicknameTaken}
+	}
 	return err
 }
 
