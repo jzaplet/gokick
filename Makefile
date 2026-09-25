@@ -262,10 +262,11 @@ fe-clean:
 # `cd tools/gk && go test ./tsgen -update`).
 # No output filtering here on purpose: piping go test through grep makes the
 # recipe's exit status grep's, and grep exits 0 whenever FAIL lines pass the
-# filter — test failures could never fail the target.
+# filter — test failures could never fail the target. APP_DB_DRIVER is pinned: a
+# postgres exported in the shell must not turn this into a Postgres run.
 test:
 	yarn test
-	go test ./app/... ./cmd/...
+	APP_DB_DRIVER=sqlite go test ./app/... ./cmd/...
 	cd tools/gk && go test ./...
 
 # The Postgres adapter's tests, against the db-test service (a throwaway cluster
