@@ -76,10 +76,7 @@ func newFixture(t *testing.T, multitenant bool) *Fixture {
 	case database.DriverSQLite:
 		store, b = openSQLite(t, cfg, logger)
 	case database.DriverPostgres:
-		// Phase 4 of the Postgres adapter plan adds the repositories, and with them
-		// this fixture. Until then only the adapter's own tests run on Postgres.
-		t.Fatal("testfx: the Postgres adapter has no repositories yet, so no fixture " +
-			"can be built on it — only its own tests run on postgres (make test-pg)")
+		store, b = openPostgres(t, cfg, logger)
 	default:
 		t.Fatalf("testfx: no fixture backend for APP_DB_DRIVER=%s in this build", cfg.DBDriver)
 	}

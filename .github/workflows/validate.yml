@@ -158,12 +158,12 @@ jobs:
         run: make build
 
   postgres:
-    # The Postgres adapter's tests (make test-pg) against the db-test compose
+    # The whole Go suite on Postgres (make test-pg) against the db-test compose
     # service — the SAME docker/postgres image and role bootstrap developers run,
-    # so CI proves the image, the init script, the migrations and the row-level
-    # security suite together. The container publishes no port; make test-pg
-    # reaches it by its IP, which a Linux runner routes to directly. Built with
-    # -tags nosqlite: no SQLite code is compiled into this run at all.
+    # so CI proves the image, the init script, the migrations, the repositories and
+    # the row-level security suite together. The container publishes no port;
+    # make test-pg reaches it by its IP, which a Linux runner routes to directly.
+    # Built with -tags nosqlite: no SQLite code is compiled into this run at all.
     name: postgres tests
     # Same reasoning as `validate` above — see the comment there for why this is a
     # job-level `if` rather than a filter in `on:`.

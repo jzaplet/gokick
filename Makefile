@@ -269,14 +269,12 @@ test:
 	APP_DB_DRIVER=sqlite go test ./app/... ./cmd/...
 	cd tools/gk && go test ./...
 
-# The Postgres adapter's tests, against the db-test service (a throwaway cluster
-# in RAM, reached by its container IP — no published port). Built with -tags
-# nosqlite, so not a line of SQLite is compiled in. Set APP_TEST_DB_URL (a
-# superuser DSN) to run against another cluster instead of the container. Until
-# the Postgres repositories land (phase 4 of the Postgres adapter plan) this covers
-# the adapter's own packages; then it becomes the whole suite.
-PG_TEST_PKGS := ./app/infrastructure/postgres/...
-PG_GO_TEST := APP_DB_DRIVER=postgres go test -tags nosqlite $(PG_TEST_PKGS)
+# The Go suite on Postgres, against the db-test service (a throwaway cluster in
+# RAM, reached by its container IP — no published port). Built with -tags
+# nosqlite, so not a line of SQLite is compiled in: every test runs on Postgres,
+# each on its own clone of the migrated template database. Set APP_TEST_DB_URL (a
+# superuser DSN) to run against another cluster instead of the container.
+PG_GO_TEST := APP_DB_DRIVER=postgres go test -tags nosqlite ./app/... ./cmd/...
 
 test-pg:
 ifdef APP_TEST_DB_URL
