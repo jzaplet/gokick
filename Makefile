@@ -148,7 +148,11 @@ serve: db-up
 # postgres it is idempotent — a running container returns at once, otherwise it is
 # built and started and the recipe waits for its healthcheck. The migrations then
 # run at application startup, as on SQLite.
-DB_DRIVER := $(shell sed -n 's/^APP_DB_DRIVER=\([a-z]*\).*/\1/p' .env 2>/dev/null | tail -n 1)
+# The environment wins over .env, as it does for the app (godotenv never overrides
+# a variable that is already set); in .env the value may be quoted or exported.
+DB_DRIVER := $(or $(APP_DB_DRIVER),$(shell sed -nE \
+	's/^[[:space:]]*(export[[:space:]]+)?APP_DB_DRIVER[[:space:]]*=[[:space:]]*["'\'']?([a-z]*).*/\2/p' \
+	.env 2>/dev/null | tail -n 1))
 
 db-up:
 ifeq ($(DB_DRIVER),postgres)
@@ -271,19 +275,19 @@ test:
 # the Postgres repositories land (phase 4 of the Postgres adapter plan) this covers
 # the adapter's own packages; then it becomes the whole suite.
 PG_TEST_PKGS := ./app/infrastructure/postgres/...
+PG_GO_TEST := APP_DB_DRIVER=postgres go test -tags nosqlite $(PG_TEST_PKGS)
 
 test-pg:
 ifdef APP_TEST_DB_URL
-	APP_DB_DRIVER=postgres go test -tags nosqlite $(PG_TEST_PKGS)
+	$(PG_GO_TEST)
 else
 	docker compose up -d --wait db-test
 	@ip="$$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \
 		"$$(docker compose ps -q db-test)")"; \
 	test -n "$$ip" || { echo "test-pg: cannot resolve the db-test container IP"; exit 1; }; \
-	echo "APP_DB_DRIVER=postgres APP_TEST_DB_URL=postgres://postgres:***@$$ip:5432/postgres go test -tags nosqlite $(PG_TEST_PKGS)"; \
-	APP_DB_DRIVER=postgres \
-	APP_TEST_DB_URL="postgres://postgres:postgres@$$ip:5432/postgres?sslmode=disable" \
-		go test -tags nosqlite $(PG_TEST_PKGS)
+	url="postgres://postgres:postgres@$$ip:5432/postgres?sslmode=disable"; \
+	echo "APP_TEST_DB_URL=$$url $(PG_GO_TEST)"; \
+	APP_TEST_DB_URL="$$url" $(PG_GO_TEST)
 endif
 
 # Local durable-run E2E — process-lifecycle guarantees an in-process test can't reach
