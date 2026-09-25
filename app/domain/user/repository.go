@@ -9,18 +9,33 @@ import (
 
 type Repository interface {
 	Save(ctx context.Context, user *User) error
-	Update(ctx context.Context, user *User) error
+	// Update writes an edit of user — nickname, email, role, updated_at, and the
+	// password hash when newPasswordHash is not empty — to its row in the caller's
+	// tenant, never a superadmin's. It writes those columns only: the active flag,
+	// the password when not changed, the login counters and the language belong to
+	// other writes (a deactivation, a password change, a login), and an edit that
+	// wrote them back as it read them would undo one committed in between. Errors
+	// on 0 rows.
+	Update(ctx context.Context, user *User, newPasswordHash string) error
 	// UpdateLang sets a user's OWN UI-language preference (self-service, by
 	// claims id — the admin/platform update paths leave lang alone, like
 	// tenant_id). Mirrors UpdatePassword's scoping so it works for a
 	// superadmin too.
 	UpdateLang(ctx context.Context, userID string, lang shared.Lang, updatedAt time.Time) error
 
-	// UpdatePassword sets a user's OWN password hash (self-service change-password).
-	// Scoped to WHERE id=? with no role != 'superadmin' filter, so a superadmin can
-	// change their own password (Update excludes superadmin rows to block a tenant
-	// admin editing OTHERS — a self password change can't escalate). Errors on 0 rows.
-	UpdatePassword(ctx context.Context, userID, passwordHash string, updatedAt time.Time) error
+	// UpdatePassword sets a user's OWN password hash (self-service change-password)
+	// — if it still is currentHash, the hash the caller verified the old password
+	// against, and reports whether it did. A password that changed in between (an
+	// admin reset) is not overwritten by someone who knew only the old one; the
+	// caller answers false as a wrong current password. Scoped to WHERE id=? with no
+	// role != 'superadmin' filter, so a superadmin can change their own password
+	// (Update excludes superadmin rows to block a tenant admin editing OTHERS — a
+	// self password change can't escalate).
+	UpdatePassword(
+		ctx context.Context,
+		userID, currentHash, newHash string,
+		updatedAt time.Time,
+	) (bool, error)
 	Delete(ctx context.Context, id string) error
 	// FindByID returns (nil, nil) when no user has that id — the same not-found
 	// idiom as FindByNickname and the token/run/tenant ports. It is NOT the
@@ -141,7 +156,8 @@ type PlatformRepository interface {
 	// UpdateAcrossTenants / DeleteAcrossTenants are the platform-plane writes: a
 	// superadmin manages a user in ANY tenant. No tenant filter, but superadmin
 	// rows are excluded so a platform account can never be edited/deleted via API.
-	UpdateAcrossTenants(ctx context.Context, user *User) error
+	// UpdateAcrossTenants writes the same columns as Update, for the same reason.
+	UpdateAcrossTenants(ctx context.Context, user *User, newPasswordHash string) error
 	DeleteAcrossTenants(ctx context.Context, id string) error
 
 	// SaveAcrossTenants inserts a user into the tenant the row itself names,

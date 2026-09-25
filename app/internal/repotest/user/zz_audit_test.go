@@ -42,7 +42,7 @@ func beginWriteLockedTx(t *testing.T, fx *testfx.Fixture, userID string) context
 	}
 	// Touch the row through the tx so the lock is unambiguously held by THIS
 	// connection (and so we exercise the same row the method writes).
-	if err := fx.Users.Update(txCtx, mustFindByID(t, fx, userID)); err != nil {
+	if err := fx.Users.Update(txCtx, mustFindByID(t, fx, userID), ""); err != nil {
 		t.Fatalf("write inside tx to take lock: %v", err)
 	}
 	return txCtx

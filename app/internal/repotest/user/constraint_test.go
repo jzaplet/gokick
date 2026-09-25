@@ -58,8 +58,12 @@ func TestUserRepository_TakenNicknameIsAFieldError(t *testing.T) {
 		fx.PlatformUsers.SaveAcrossTenants(ctx, newUnsavedUser(t, fx, "alice", other.ID)))
 
 	bob.Nickname = "alice"
-	assertNicknameTaken(t, "Update", fx.Users.Update(ctx, bob))
-	assertNicknameTaken(t, "UpdateAcrossTenants", fx.PlatformUsers.UpdateAcrossTenants(ctx, bob))
+	assertNicknameTaken(t, "Update", fx.Users.Update(ctx, bob, ""))
+	assertNicknameTaken(
+		t,
+		"UpdateAcrossTenants",
+		fx.PlatformUsers.UpdateAcrossTenants(ctx, bob, ""),
+	)
 }
 
 // An id that is no UUID at all names a row that is not there: every id column
@@ -84,15 +88,18 @@ func TestUserRepository_MalformedIDIsARowThatIsNotThere(t *testing.T) {
 	ghost.ID = bad
 	var ve *shared.ValidationError
 	for what, err := range map[string]error{
-		"Update":              fx.Users.Update(ctx, ghost),
+		"Update":              fx.Users.Update(ctx, ghost, ""),
 		"Delete":              fx.Users.Delete(ctx, bad),
-		"UpdatePassword":      fx.Users.UpdatePassword(ctx, bad, "hash", ghost.UpdatedAt),
-		"UpdateAcrossTenants": fx.PlatformUsers.UpdateAcrossTenants(ctx, ghost),
+		"UpdateAcrossTenants": fx.PlatformUsers.UpdateAcrossTenants(ctx, ghost, ""),
 		"DeleteAcrossTenants": fx.PlatformUsers.DeleteAcrossTenants(ctx, bad),
 	} {
 		if !errors.As(err, &ve) || ve.Field != "id" {
 			t.Errorf("%s: got %T %v, want the not-found id error", what, err, err)
 		}
+	}
+	if changed, err := fx.Users.UpdatePassword(ctx, bad, "hash", "new", ghost.UpdatedAt); changed ||
+		err != nil {
+		t.Errorf("UpdatePassword: got %v, %v; want false, nil", changed, err)
 	}
 
 	survivor := fx.SeedUser(t, "survivor", "password123", "user")

@@ -96,7 +96,7 @@ func TestCommandBus_AuditSurvivesBusinessRollback(t *testing.T) {
 		func(ctx context.Context) error {
 			// Business write that joins the bus tx (Update uses r.Conn(ctx)).
 			u.Nickname = "tampered"
-			if e := fx.Users.Update(ctx, u); e != nil {
+			if e := fx.Users.Update(ctx, u, ""); e != nil {
 				return e
 			}
 			// Security-relevant audit event.
