@@ -5,8 +5,20 @@ import (
 	"errors"
 )
 
+// Transactor opens and ends database transactions. The transaction rides in the
+// returned ctx, where the repositories pick it up (Conn(ctx)), so a command's repos
+// join it without it being passed around. Which connection the transaction runs on
+// follows the ctx: its Plane and its tenant (see Plane).
 type Transactor interface {
 	BeginTx(ctx context.Context) (context.Context, error)
+	// BeginReadTx opens a read-only transaction around one read (a bus query) and
+	// returns end, which closes it; end must be called. It exists for Postgres,
+	// where the tenant scope that row-level security reads is transaction-local,
+	// so a tenant-plane read must run inside a transaction to see any row at all.
+	// Where a read needs no transaction (SQLite) it returns ctx unchanged and a
+	// no-op end; it does the same when ctx already carries a transaction, which the
+	// read then simply joins.
+	BeginReadTx(ctx context.Context) (txCtx context.Context, end func(), err error)
 	Commit(ctx context.Context) error
 	Rollback(ctx context.Context) error
 }

@@ -6,11 +6,12 @@ import (
 	"log/slog"
 )
 
-// BaseChain returns the recovery + logging + authorize + tenant quartet shared
-// by CommandBus, QueryBus and any bus that runs user-driven commands. Tenant
-// resolution sits right after authorization so every handler and read runs with
-// the active tenant in ctx. Bus-specific extras (Transaction, DispatchEvents)
-// are appended by the caller.
+// BaseChain returns the recovery + logging + authorize + plane + tenant chain
+// shared by CommandBus, QueryBus and any bus that runs user-driven commands. The
+// plane and the tenant are marked right after authorization, so every handler and
+// read runs with both in ctx — and the transaction the bus-specific tail opens
+// (Transaction, ReadTx) lands on the matching database role and tenant scope.
+// Bus-specific extras are appended by the caller.
 func BaseChain(
 	logger *slog.Logger,
 	checker shared.PermissionChecker,
@@ -21,13 +22,29 @@ func BaseChain(
 		RecoveryMiddleware(logger, reporter),
 		LoggingMiddleware(logger),
 		AuthorizeMiddleware(checker),
+		PlaneMiddleware(),
 		TenantMiddleware(tenantResolver),
 	}
 }
 
+// QueryChain is the read-side chain for the QueryBus:
+// Recovery → Logging → Authorize → Plane → Tenant → ReadTx. Single source so the DI
+// provider (provideQueryBus) and testfx (NewBuses) can't drift. ReadTx runs last:
+// the read-only transaction it opens carries the plane and tenant marked before it
+// (on SQLite it is a no-op).
+func QueryChain(
+	logger *slog.Logger,
+	checker shared.PermissionChecker,
+	reporter shared.ErrorReporter,
+	tenantResolver shared.TenantResolver,
+	tx shared.Transactor,
+) []bus.Middleware {
+	return append(BaseChain(logger, checker, reporter, tenantResolver), ReadTxMiddleware(tx))
+}
+
 // CommandChain is the full write-side chain for the CommandBus:
-// Recovery → Logging → Authorize → Tenant → Audit → RunDispatcher → DispatchEvents
-// → Transaction. Single source so the DI provider (provideCommandBus) and testfx
+// Recovery → Logging → Authorize → Plane → Tenant → Audit → RunDispatcher →
+// DispatchEvents → Transaction. Single source so the DI provider (provideCommandBus) and testfx
 // (NewBuses) can't drift. Audit wraps OUTSIDE Transaction (failure events survive
 // rollback); DispatchEvents wraps Transaction (events fire post-commit); the Run
 // dispatcher sits outside Transaction (a handler's Enqueue joins the tx via
@@ -52,9 +69,10 @@ func CommandChain(
 
 // SystemChain is the middleware chain for the SystemCommandBus — the
 // operator-trusted CLI commands (create-*, seed). It is the CommandBus chain
-// MINUS Authorize and Tenant (no principal, no JWT-resolved tenant):
+// MINUS Authorize and Tenant (no principal, no JWT-resolved tenant), and every
+// command runs on the system plane (SystemPlane) — outside any tenant:
 //
-//	Recovery → Logging → Audit → RunDispatcher → DispatchEvents → Transaction
+//	Recovery → Logging → SystemPlane → Audit → RunDispatcher → DispatchEvents → Transaction
 //
 // Audit wraps OUTSIDE Transaction (failure events survive rollback) and
 // DispatchEvents wraps it (events fire post-commit). RunDispatcher sits between
@@ -77,6 +95,7 @@ func SystemChain(
 	return []bus.Middleware{
 		RecoveryMiddleware(logger, reporter),
 		LoggingMiddleware(logger),
+		SystemPlaneMiddleware(),
 		AuditMiddleware(logger, audit),
 		RunDispatcherMiddleware(runDispatcher),
 		DispatchEventsMiddleware(logger, eventBus),

@@ -48,6 +48,11 @@ const (
 	RoleUser       = "user"
 )
 
+// PlatformPermissionPrefix marks the cross-tenant platform plane: a permission
+// carrying it is superadmin-only (IsPermissionAllowedForRole) and its operation
+// runs on PlanePlatform (PlaneForPermission).
+const PlatformPermissionPrefix = "platform:"
+
 // IsPermissionAllowedForRole reports whether the given role may execute an
 // operation requiring the specified permission. Roles form a strict ladder:
 //
@@ -64,7 +69,7 @@ func IsPermissionAllowedForRole(permission, role string) bool {
 		return true
 	}
 
-	if strings.HasPrefix(permission, "platform:") {
+	if strings.HasPrefix(permission, PlatformPermissionPrefix) {
 		return false
 	}
 

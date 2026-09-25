@@ -18,6 +18,9 @@ func (f *fakeTransactor) BeginTx(ctx context.Context) (context.Context, error) {
 	}
 	return ctx, nil
 }
+func (f *fakeTransactor) BeginReadTx(ctx context.Context) (context.Context, func(), error) {
+	return ctx, func() {}, nil
+}
 func (f *fakeTransactor) Commit(context.Context) error   { f.committed++; return nil }
 func (f *fakeTransactor) Rollback(context.Context) error { f.rolledBack++; return nil }
 
