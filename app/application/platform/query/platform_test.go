@@ -34,7 +34,7 @@ func TestListAllUsers_SuperadminSeesAllTenants_AdminDenied(t *testing.T) {
 	}
 
 	// Superadmin → sees both tenants' users, each carrying its tenant NAME.
-	superCtx := shared.ContextWithClaims(context.Background(), &shared.AuthClaims{
+	superCtx := shared.ContextWithClaims(testfx.PlatformCtx(), &shared.AuthClaims{
 		UserID: "s1", Role: "superadmin", Nickname: "root",
 	})
 	users, err := dispatch(superCtx)
@@ -51,7 +51,7 @@ func TestListAllUsers_SuperadminSeesAllTenants_AdminDenied(t *testing.T) {
 	}
 
 	// Admin → denied at the bus, handler never runs.
-	adminCtx := shared.ContextWithClaims(context.Background(), &shared.AuthClaims{
+	adminCtx := shared.ContextWithClaims(testfx.PlatformCtx(), &shared.AuthClaims{
 		UserID: "a1", Role: "admin", Nickname: "tenant-admin", TenantID: tenantA.ID,
 	})
 	if _, err := dispatch(adminCtx); err == nil {
@@ -67,7 +67,7 @@ func TestListAllUsers_SuperadminSeesAllTenants_AdminDenied(t *testing.T) {
 // The dashboard stats count tenants and users; the user count includes all
 // tenants (and matches what the platform user list shows).
 func TestGetStats_CountsTenantsAndUsers(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	// Bootstrap "Default" tenant exists from migration; add two more → 3 tenants.

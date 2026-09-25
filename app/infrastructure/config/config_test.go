@@ -10,6 +10,19 @@ import (
 	"gokick/app/infrastructure/database"
 )
 
+// TestMain clears every APP_* variable the test process inherited. LoadConfig
+// reads the environment, and the invoking run's own settings — APP_DB_DRIVER on
+// the Postgres test run, whatever a developer exported — must not leak into what
+// these tests parse: each one sets exactly the variables it is about.
+func TestMain(m *testing.M) {
+	for _, kv := range os.Environ() {
+		if k, _, _ := strings.Cut(kv, "="); strings.HasPrefix(k, "APP_") {
+			_ = os.Unsetenv(k)
+		}
+	}
+	os.Exit(m.Run())
+}
+
 // F-065: a malformed .env must fail fast at LoadConfig, not be silently swallowed
 // (indistinguishable from an absent .env). An absent .env stays fine (defaults).
 func TestLoadConfig_MalformedDotenvFails(t *testing.T) {

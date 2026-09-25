@@ -24,7 +24,8 @@ func enqueueRunInTenant(t *testing.T, fx *testfx.Fixture, tenantID string) *run.
 	t.Helper()
 	r, _ := run.NewRun("agent", []byte(`{}`), 3)
 	r.TenantID = tenantID
-	if err := fx.Runs.Enqueue(context.Background(), r); err != nil {
+	// Enqueued in its tenant, as the dispatcher does: the run's tenant is ctx's.
+	if err := fx.Runs.Enqueue(testfx.TenantCtx(tenantID), r); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 	return r

@@ -11,7 +11,7 @@ import (
 )
 
 func TestCreateTenantHandler_CreatesTenant(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	h := NewCreateTenantHandler(fx.Tenants)
@@ -33,7 +33,7 @@ func TestCreateTenantHandler_CreatesTenant(t *testing.T) {
 }
 
 func TestCreateTenantHandler_RejectsBlankName(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	h := NewCreateTenantHandler(fx.Tenants)
@@ -53,7 +53,7 @@ func TestCreateTenantHandler_RejectsBlankName(t *testing.T) {
 // changes tenant_id). Both floors are asserted here: the handler answers with a
 // field error, and the row does not exist afterwards.
 func TestCreateTenantHandler_RejectsADuplicateName(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	h := NewCreateTenantHandler(fx.Tenants)
@@ -75,7 +75,7 @@ func TestCreateTenantHandler_RejectsADuplicateName(t *testing.T) {
 // on the VALIDATED value, not the raw input, or whitespace slips a duplicate past
 // it and the UNIQUE index turns a 400 into a 500.
 func TestCreateTenantHandler_RejectsADuplicateNameAfterTrimming(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	h := NewCreateTenantHandler(fx.Tenants)
@@ -97,7 +97,7 @@ func TestCreateTenantHandler_RejectsADuplicateNameAfterTrimming(t *testing.T) {
 // concurrent creates can both pass it — the index is what actually refuses the
 // loser, and it must be there even when no handler is involved.
 func TestTenants_UniqueNameIsEnforcedBySchema(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	first := fx.SeedTenant(t, "Acme")
@@ -123,7 +123,7 @@ func TestTenants_UniqueNameIsEnforcedBySchema(t *testing.T) {
 // only thing making that check bite. Fat-finger it to an admin:* string and every
 // other test here stays green.
 func TestCreateTenantCommand_AdminDeniedAtBus(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 	cmdBus, _, _ := fx.NewBuses()
 
@@ -150,7 +150,7 @@ func TestCreateTenantCommand_AdminDeniedAtBus(t *testing.T) {
 // test above would pass just as well if the permission string were nonsense that
 // denies everyone.
 func TestCreateTenantCommand_SuperadminAllowedAtBus(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 	cmdBus, _, _ := fx.NewBuses()
 

@@ -9,7 +9,9 @@ import (
 )
 
 func TestTenantRepository_SaveAndFindByID(t *testing.T) {
-	ctx := context.Background()
+	// Reading another tenant's registry row is platform/system work: the tenant
+	// plane sees its own tenant only.
+	ctx := testfx.SystemCtx()
 	fx := testfx.New(t)
 
 	tn := fx.SeedTenant(t, "Acme")

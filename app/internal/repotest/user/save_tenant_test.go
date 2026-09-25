@@ -12,6 +12,8 @@ import (
 // Save writes the user's tenant verbatim, so in multitenant mode a handler must not
 // persist a user into a tenant other than its active scope (a cross-tenant write).
 // A system/seed path with no active scope is trusted (it stamps the tenant itself).
+// On Postgres the tenant plane's row-level security refuses the foreign row as
+// well (WITH CHECK), so the guard and the database agree.
 func TestSave_CrossTenantWrite_Rejected(t *testing.T) {
 	fx := testfx.NewMultitenant(t)
 	tenantA := fx.SeedTenant(t, "Acme")
@@ -49,8 +51,9 @@ func TestSave_CrossTenantWrite_Rejected(t *testing.T) {
 		t.Fatalf("same-tenant Save must succeed, got %v", err)
 	}
 
-	// No active scope (system/seed path) → trusted even with an explicit tenant.
-	if err := fx.Users.Save(context.Background(), mkUser("bob", tenantB.ID)); err != nil {
+	// No active scope (the system/seed path — the system plane) → trusted even
+	// with an explicit tenant.
+	if err := fx.Users.Save(testfx.SystemCtx(), mkUser("bob", tenantB.ID)); err != nil {
 		t.Fatalf(
 			"a no-scope Save must be trusted (the seed path stamps its own tenant), got %v",
 			err,

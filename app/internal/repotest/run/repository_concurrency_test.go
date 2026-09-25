@@ -133,7 +133,6 @@ func TestTenant_PropagatesEnqueueToClaim(t *testing.T) {
 
 func TestTenant_ClaimDueGlobalDrainAcrossTenants(t *testing.T) {
 	fx := testfx.New(t)
-	ctx := context.Background()
 	// Two runs in distinct tenants, distinct run_at so order is deterministic.
 	t1, t2 := fx.SeedTenant(t, "acme").ID, fx.SeedTenant(t, "beta").ID
 	r1, _ := run.NewRun("agent", []byte(`{}`), 0)
@@ -141,7 +140,7 @@ func TestTenant_ClaimDueGlobalDrainAcrossTenants(t *testing.T) {
 	r2, _ := run.NewRun("agent", []byte(`{}`), 0)
 	r2.TenantID, r2.RunAt = t2, time.Now().Add(-1*time.Second)
 	for _, r := range []*run.Run{r1, r2} {
-		if err := fx.Runs.Enqueue(ctx, r); err != nil {
+		if err := fx.Runs.Enqueue(testfx.TenantCtx(r.TenantID), r); err != nil {
 			t.Fatalf("enqueue: %v", err)
 		}
 	}

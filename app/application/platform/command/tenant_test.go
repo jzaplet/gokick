@@ -1,7 +1,6 @@
 package command
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -15,7 +14,7 @@ import (
 // count that was stale the moment it rendered — this is the gate that actually
 // holds.
 func TestDeleteTenant_RefusesTenantWithUsers(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	busy := fx.SeedTenant(t, "Beta")
@@ -51,7 +50,7 @@ func TestDeleteTenant_RefusesTenantWithUsers(t *testing.T) {
 // refused, so emptying it is the required first step, and that is exactly the step
 // that strands its runs.
 func TestDeleteTenant_RefusesTenantWithUnfinishedRuns(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	busy := fx.SeedTenant(t, "Exporting")
@@ -80,7 +79,7 @@ func TestDeleteTenant_RefusesTenantWithUnfinishedRuns(t *testing.T) {
 // run at all: a finished run is history. It is never claimed again, so it cannot
 // resume under a dead tenant and must not pin the tenant forever.
 func TestDeleteTenant_TerminalRunsDoNotPinTheTenant(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	done := fx.SeedTenant(t, "Finished")
@@ -102,7 +101,7 @@ func TestDeleteTenant_TerminalRunsDoNotPinTheTenant(t *testing.T) {
 }
 
 func TestDeleteTenant_DeletesEmptyTenant(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	empty := fx.SeedTenant(t, "Ghost")
@@ -135,7 +134,7 @@ func TestDeleteTenant_DeletesEmptyTenant(t *testing.T) {
 // test (see TestDeleteIfEmptyAcrossTenants_RefusesTheDefaultTenantInSQL); the
 // reason is this one's.
 func TestDeleteTenant_RefusesDefaultTenantEvenWhenEmpty(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	// No users, no runs: the default tenant owns nothing here, so the emptiness
@@ -168,7 +167,7 @@ func TestDeleteTenant_RefusesDefaultTenantEvenWhenEmpty(t *testing.T) {
 // "Failed to delete the tenant." — the message would exist and never be shown.
 // Fieldless goes to `general`, which the toast reads.
 func TestDeleteTenant_UnknownTenantIsNotFound(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	h := NewDeleteTenantHandler(fx.PlatformTenants)
@@ -196,7 +195,7 @@ func TestDeleteTenant_UnknownTenantIsNotFound(t *testing.T) {
 // It lives beside the handler tests rather than in sqlite/tenant/ because testfx
 // imports that package — an internal test there would be an import cycle.
 func TestDeleteIfEmptyAcrossTenants_RefusesTheDefaultTenantInSQL(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	// No users seeded, so the emptiness condition would happily let this through:
@@ -222,7 +221,7 @@ func TestDeleteIfEmptyAcrossTenants_RefusesTheDefaultTenantInSQL(t *testing.T) {
 // still have users stay, and `affected` counts only what actually happened. A
 // selection mixing both must not be all-or-nothing in either direction.
 func TestBulkDeleteTenants_DeletesOnlyTheEmptyOnes(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	empty1 := fx.SeedTenant(t, "Ghost One")
@@ -256,7 +255,7 @@ func TestBulkDeleteTenants_DeletesOnlyTheEmptyOnes(t *testing.T) {
 // nobody enumerated an id and the statement is the only thing standing between a
 // broad selection and the tenant the whole single-tenant mode rests on.
 func TestBulkDeleteTenants_SparesDefaultTenantWhenAllFiltered(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	victim := fx.SeedTenant(t, "Ghost")
@@ -282,7 +281,7 @@ func TestBulkDeleteTenants_SparesDefaultTenantWhenAllFiltered(t *testing.T) {
 // what the superadmin actually saw, so a filter that fails to reach the statement
 // silently widens the blast radius.
 func TestBulkDeleteTenants_AllFilteredHonoursTheNameFilter(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	matching := fx.SeedTenant(t, "Ghost One")
@@ -315,7 +314,7 @@ func TestBulkDeleteTenants_AllFilteredHonoursTheNameFilter(t *testing.T) {
 // "delete every empty tenant in the install". The grid offers the plan filter, so
 // this is a path a superadmin can actually take.
 func TestBulkDeleteTenants_AllFilteredHonoursThePlanFilter(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	free := fx.SeedTenant(t, "Free One")
@@ -342,7 +341,7 @@ func TestBulkDeleteTenants_AllFilteredHonoursThePlanFilter(t *testing.T) {
 }
 
 func TestBulkDeleteTenants_EmptySelectionIsRefused(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.PlatformCtx()
 	fx := testfx.New(t)
 
 	h := NewBulkDeleteTenantsHandler(fx.PlatformTenants)

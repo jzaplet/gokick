@@ -310,7 +310,7 @@ func newCreateUserCmd(fx *testfx.Fixture, multitenant bool) *cobra.Command {
 
 // Multitenancy on, no tenant flag → error AND no user persisted.
 func TestCreateUserCommand_MultitenantRequiresTenantFlag(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.SystemCtx()
 	fx := testfx.New(t)
 
 	cmd := newCreateUserCmd(fx, true)
@@ -329,7 +329,7 @@ func TestCreateUserCommand_MultitenantRequiresTenantFlag(t *testing.T) {
 
 // Multitenancy on + --tenant-name → creates the tenant and the user in it.
 func TestCreateUserCommand_MultitenantCreatesTenantByName(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.SystemCtx()
 	fx := testfx.New(t)
 
 	cmd := newCreateUserCmd(fx, true)
@@ -350,7 +350,7 @@ func TestCreateUserCommand_MultitenantCreatesTenantByName(t *testing.T) {
 
 // Multitenancy on + --tenant-id to an existing tenant → the user lands in it.
 func TestCreateUserCommand_MultitenantUsesExistingTenantId(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.SystemCtx()
 	fx := testfx.New(t)
 	tn := fx.SeedTenant(t, "Beta")
 
@@ -368,7 +368,7 @@ func TestCreateUserCommand_MultitenantUsesExistingTenantId(t *testing.T) {
 
 // Unknown --tenant-id → clean "not found", no user, no orphan tenant.
 func TestCreateUserCommand_MultitenantUnknownTenantIdErrors(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.SystemCtx()
 	fx := testfx.New(t)
 
 	cmd := newCreateUserCmd(fx, true)
@@ -387,7 +387,7 @@ func TestCreateUserCommand_MultitenantUnknownTenantIdErrors(t *testing.T) {
 
 // Multitenancy off + a tenant flag → error (the flags are not applicable).
 func TestCreateUserCommand_SingleTenantRejectsTenantFlag(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.SystemCtx()
 	fx := testfx.New(t)
 
 	cmd := newCreateUserCmd(fx, false)
@@ -403,7 +403,7 @@ func TestCreateUserCommand_SingleTenantRejectsTenantFlag(t *testing.T) {
 
 // create-tenant prints the new tenant and persists it.
 func TestCreateTenantCommand_CreatesTenant(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.SystemCtx()
 	fx := testfx.New(t)
 
 	cmd := NewCreateTenantCommand(
@@ -432,7 +432,7 @@ func TestCreateTenantCommand_CreatesTenant(t *testing.T) {
 // no orphan. create-user dispatches through the SystemCommandBus, so its
 // TransactionMiddleware wraps tenant resolution + user creation in one tx.
 func TestCreateUserCommand_TenantNameRolledBackWhenUserFails(t *testing.T) {
-	ctx := context.Background()
+	ctx := testfx.SystemCtx()
 	fx := testfx.New(t)
 
 	// A user named "alice" already exists → create-user with the same nickname fails.
