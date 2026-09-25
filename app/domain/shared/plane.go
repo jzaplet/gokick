@@ -56,6 +56,18 @@ func PlaneForPermission(permission string) Plane {
 	return PlaneTenant
 }
 
+// PreTenant marks a command that runs on the system plane although it arrives
+// through the CommandBus unauthenticated: it acts before any tenant is known.
+// Login finds the account by its nickname — unique across every tenant — and a
+// refresh finds the session by its token, so each has to reach the account and
+// its tokens in whichever tenant they live. PlaneMiddleware honors the marker only
+// on a command that skips the permission check (SkipPermission): a permissioned
+// command runs on the plane its permission names, whatever it implements. The
+// implementers are an allow-list (app/application/zz_pretenant_test.go).
+type PreTenant interface {
+	PreTenant()
+}
+
 type planeKey struct{}
 
 // ContextWithPlane stores the plane in ctx. PlaneMiddleware sets it for every

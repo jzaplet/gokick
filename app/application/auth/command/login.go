@@ -17,6 +17,10 @@ type LoginCommand struct {
 
 func (LoginCommand) SkipPermissionCheck() {}
 
+// PreTenant: it runs before any tenant is known, so it acts on the system plane
+// (see shared.PreTenant) — the account and its tokens may live in any tenant.
+func (LoginCommand) PreTenant() {}
+
 // SkipTransaction keeps LoginCommand out of the bus-managed tx. The
 // handler touches user.RecordFailedLogin / ResetFailedLogin (raw pool)
 // — wrapping the whole thing in a write tx would self-deadlock under

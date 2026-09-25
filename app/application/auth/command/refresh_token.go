@@ -16,6 +16,10 @@ type RefreshTokenCommand struct {
 
 func (RefreshTokenCommand) SkipPermissionCheck() {}
 
+// PreTenant: it runs before any tenant is known, so it acts on the system plane
+// (see shared.PreTenant) — the account and its tokens may live in any tenant.
+func (RefreshTokenCommand) PreTenant() {}
+
 // SkipTransaction keeps RefreshToken out of the bus tx — but for a different
 // reason than LoginCommand (which is about a raw-pool self-deadlock). The theft
 // and expiry paths call tokens.DeleteByUserID and then return an AuthError.

@@ -35,12 +35,28 @@ func TestPlaneMiddleware_DerivesThePlaneFromThePermission(t *testing.T) {
 		{"admin permission", permitCmd{perm: "admin:users:read"}, shared.PlaneTenant},
 		{"user permission", permitCmd{perm: "profile:read"}, shared.PlaneTenant},
 		{"skip permission", noopCommand{}, shared.PlaneTenant},
+		{"pre-tenant", preTenantCmd{}, shared.PlaneSystem},
+		{"pre-tenant marker on a permissioned command", permittedPreTenantCmd{
+			permitCmd{perm: "admin:users:read"},
+		}, shared.PlaneTenant},
 	} {
 		if got := runPlane(t, t.Context(), PlaneMiddleware(), tc.cmd); got != tc.want {
 			t.Errorf("%s: plane = %s, want %s", tc.name, got, tc.want)
 		}
 	}
 }
+
+// preTenantCmd is a pre-tenant command (login, refresh): it skips the permission
+// check and runs on the system plane.
+type preTenantCmd struct{ noopCommand }
+
+func (preTenantCmd) PreTenant() {}
+
+// permittedPreTenantCmd carries the marker on a permissioned command — which must
+// keep the plane its permission names.
+type permittedPreTenantCmd struct{ permitCmd }
+
+func (permittedPreTenantCmd) PreTenant() {}
 
 // The plane is set, never inherited: a tenant command dispatched from inside
 // cross-tenant work still runs on the tenant plane.

@@ -11,14 +11,21 @@ import (
 // right after AuthorizeMiddleware, so the transaction the chain opens later lands
 // on the right database role. The plane comes from the permission the operation
 // already declares — platform:* is the platform plane, everything else the tenant
-// plane — so there is nothing extra to declare and nothing to forget. It always
-// sets the plane, never inherits one: a tenant command dispatched from inside
-// platform work still runs as a tenant command.
+// plane — so there is nothing extra to declare and nothing to forget. The one
+// exception is a pre-tenant command (shared.PreTenant: login, refresh), which
+// skips the permission check and runs on the system plane. It always sets the
+// plane, never inherits one: a tenant command dispatched from inside platform work
+// still runs as a tenant command.
 func PlaneMiddleware() bus.Middleware {
 	return func(ctx context.Context, name string, cmd any, next func(ctx context.Context) (any, error)) (any, error) {
 		plane := shared.PlaneTenant
 		if p, ok := cmd.(shared.Permissioned); ok {
 			plane = shared.PlaneForPermission(p.RequiredPermission())
+		} else if _, ok := cmd.(interface {
+			shared.PreTenant
+			shared.SkipPermission
+		}); ok {
+			plane = shared.PlaneSystem
 		}
 		return next(shared.ContextWithPlane(ctx, plane))
 	}
