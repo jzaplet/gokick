@@ -188,8 +188,19 @@ docpaths-check:
 	cd tools/gk && go run . docpaths
 
 # Migrations
+# Every migration exists once per dialect under the SAME version (the twin gate
+# in app/zz_migrations_test.go enforces it), so this creates the pair with one
+# timestamp: fill in migrations/sqlite/<v>_<name>.sql AND migrations/postgres/….
+# migrate-up / -down / -status below drive the SQLite file only; on Postgres the
+# application migrates at startup (make serve), as the schema owner.
 migrate-create:
-	$(GOOSE) -dir migrations/sqlite create $(NAME) sql
+	@test -n "$(NAME)" || { echo "usage: make migrate-create NAME=add_x_table"; exit 1; }
+	@v="$$(date -u +%Y%m%d%H%M%S)"; \
+	for d in sqlite postgres; do \
+		f="migrations/$$d/$${v}_$(NAME).sql"; \
+		printf -- '-- +goose Up\n\n-- +goose Down\n' > "$$f"; \
+		echo "created $$f"; \
+	done
 
 migrate-up:
 	$(GOOSE) -dir migrations/sqlite sqlite3 $(shell grep APP_DB_PATH .env | cut -d= -f2) up
