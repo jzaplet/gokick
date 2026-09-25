@@ -13,11 +13,13 @@ import (
 // simulate a failing Commit (used by the DispatchEvents+Transaction integration
 // test to prove events are discarded on commit failure).
 type stubTx struct {
-	beginCalls    int
-	commitCalls   int
-	rollbackCalls int
-	beginErr      error
-	commitErr     error
+	beginCalls     int
+	commitCalls    int
+	rollbackCalls  int
+	readBeginCalls int
+	readEndCalls   int
+	beginErr       error
+	commitErr      error
 }
 
 func (s *stubTx) BeginTx(ctx context.Context) (context.Context, error) {
@@ -26,6 +28,14 @@ func (s *stubTx) BeginTx(ctx context.Context) (context.Context, error) {
 		return ctx, s.beginErr
 	}
 	return ctx, nil
+}
+
+func (s *stubTx) BeginReadTx(ctx context.Context) (context.Context, func(), error) {
+	s.readBeginCalls++
+	if s.beginErr != nil {
+		return ctx, nil, s.beginErr
+	}
+	return ctx, func() { s.readEndCalls++ }, nil
 }
 
 func (s *stubTx) Commit(context.Context) error {

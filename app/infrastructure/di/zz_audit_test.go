@@ -237,6 +237,7 @@ func TestQueryBus_AuthorizeEnforced(t *testing.T) {
 		checker,
 		shared.NopReporter{},
 		security.NewDefaultTenantResolver(),
+		testfx.New(t).Tx,
 	)
 
 	// Denied: authenticated non-admin caller → role gate rejects the admin query.

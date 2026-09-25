@@ -166,6 +166,14 @@ func (m *Manager) BeginTx(ctx context.Context) (context.Context, error) {
 	return database.ContextWithTx(ctx, tx), nil
 }
 
+// BeginReadTx is a no-op on SQLite: a query reads straight from the pool, as it
+// always has. A transaction would buy nothing here — isolation is the repos'
+// WHERE tenant_id, not a per-transaction setting — and with _txlock=immediate it
+// would take the global write lock for every read.
+func (m *Manager) BeginReadTx(ctx context.Context) (context.Context, func(), error) {
+	return ctx, func() {}, nil
+}
+
 func (m *Manager) Commit(ctx context.Context) error {
 	tx := database.TxFromContext(ctx)
 	if tx == nil {

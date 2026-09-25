@@ -21,11 +21,11 @@ import (
 //
 // Every other middleware test exercises AuthorizeMiddleware in isolation or via
 // a CommandBus. Nothing pins that the *QueryBus* actually carries Authorize.
-// This builds a QueryBus from the real BaseChain helper (the same triplet
+// This builds a QueryBus from the real QueryChain helper (the same chain
 // container_provider hands the production QueryBus) and dispatches a
 // Permissioned query whose checker DENIES. The denial can only surface if
 // AuthorizeMiddleware is present in the QueryBus chain: drop Authorize from
-// BaseChain and the handler would run and return success instead.
+// QueryChain and the handler would run and return success instead.
 //
 // We also assert the handler did NOT run (fail-closed) and the checker WAS
 // consulted with the query's required permission — proving the request reached
@@ -39,11 +39,12 @@ func TestQueryBus_AuthorizeDeniesUnpermittedQuery(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	queryBus := bus.NewQueryBus(
-		BaseChain(
+		QueryChain(
 			logger,
 			checker,
 			shared.NopReporter{},
 			stubTenantResolver{id: shared.DefaultTenantID},
+			&stubTx{},
 		)...)
 
 	var ran bool
@@ -85,11 +86,12 @@ func TestQueryBus_RejectsQueryWithoutDeclaration(t *testing.T) {
 	checker := &stubChecker{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	queryBus := bus.NewQueryBus(
-		BaseChain(
+		QueryChain(
 			logger,
 			checker,
 			shared.NopReporter{},
 			stubTenantResolver{id: shared.DefaultTenantID},
+			&stubTx{},
 		)...)
 
 	var ran bool

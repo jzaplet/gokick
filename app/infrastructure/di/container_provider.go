@@ -104,8 +104,9 @@ func provideQueryBus(
 	checker shared.PermissionChecker,
 	reporter shared.ErrorReporter,
 	tenantResolver shared.TenantResolver,
+	tx shared.Transactor,
 ) *bus.QueryBus {
-	return bus.NewQueryBus(busmw.BaseChain(logger, checker, reporter, tenantResolver)...)
+	return bus.NewQueryBus(busmw.QueryChain(logger, checker, reporter, tenantResolver, tx)...)
 }
 
 func providePublicFS() fs.FS {

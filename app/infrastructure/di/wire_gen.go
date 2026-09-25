@@ -91,7 +91,7 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	logoutHandler := command.NewLogoutHandler(tokenRepository)
 	permissionsRegistry := providePermissionsRegistry()
 	authHandler := handler.NewAuthHandler(responder, cookieSecure, commandBus, loginHandler, refreshTokenHandler, logoutHandler, permissionsRegistry)
-	queryBus := provideQueryBus(logger, permissionChecker, reporter, tenantResolver)
+	queryBus := provideQueryBus(logger, permissionChecker, reporter, tenantResolver, transactor)
 	getProfileHandler := query.NewGetProfileHandler(userRepository)
 	changePasswordHandler := command2.NewChangePasswordHandler(userRepository, passwordHasher)
 	changeLangHandler := command2.NewChangeLangHandler(userRepository)
@@ -220,8 +220,9 @@ func provideQueryBus(
 	checker shared.PermissionChecker,
 	reporter shared.ErrorReporter,
 	tenantResolver shared.TenantResolver,
+	tx shared.Transactor,
 ) *bus.QueryBus {
-	return bus.NewQueryBus(middleware.BaseChain(logger, checker, reporter, tenantResolver)...)
+	return bus.NewQueryBus(middleware.QueryChain(logger, checker, reporter, tenantResolver, tx)...)
 }
 
 func providePublicFS() fs.FS {

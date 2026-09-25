@@ -112,6 +112,15 @@ func newFixture(t *testing.T, multitenant bool) *Fixture {
 	}
 }
 
+// SystemCtx is the context the seed helpers below write with: the system plane,
+// outside any tenant. Seeding is setup, not tenant work — on Postgres the tenant
+// plane's row-level security would refuse a row stamped with any tenant but the
+// active one, and the helpers seed every tenant. Use it for any other fixture
+// write that must reach past a tenant.
+func SystemCtx() context.Context {
+	return shared.ContextWithPlane(context.Background(), shared.PlaneSystem)
+}
+
 // HashToken returns the SHA-256 hex hash of the raw refresh token.
 func (*Fixture) HashToken(raw string) string {
 	return security.HashToken(raw)
@@ -152,7 +161,7 @@ func (f *Fixture) NewBuses() (*bus.CommandBus, *bus.QueryBus, *bus.EventBus) {
 				f.Tx,
 			)...,
 		),
-		bus.NewQueryBus(busmw.BaseChain(logger, checker, reporter, resolver)...),
+		bus.NewQueryBus(busmw.QueryChain(logger, checker, reporter, resolver, f.Tx)...),
 		eventBus
 }
 
@@ -241,7 +250,7 @@ func (f *Fixture) SeedUser(t *testing.T, nickname, password, role string) *user.
 		t.Fatalf("email: %v", err)
 	}
 	u := user.NewUser(nn, hash, em, r, shared.DefaultTenantID)
-	if err := f.Users.Save(context.Background(), u); err != nil {
+	if err := f.Users.Save(SystemCtx(), u); err != nil {
 		t.Fatalf("save user: %v", err)
 	}
 	return u
@@ -256,7 +265,7 @@ func (f *Fixture) SeedTenant(t *testing.T, name string) *tenant.Tenant {
 		t.Fatalf("tenant name: %v", err)
 	}
 	tn := tenant.NewTenant(n)
-	if err := f.Tenants.Save(context.Background(), tn); err != nil {
+	if err := f.Tenants.Save(SystemCtx(), tn); err != nil {
 		t.Fatalf("save tenant: %v", err)
 	}
 	return tn
@@ -295,7 +304,7 @@ func (f *Fixture) SeedUserInTenant(t *testing.T, nickname, role, tenantID string
 		t.Fatalf("email: %v", err)
 	}
 	u := user.NewUser(nn, hash, em, r, tenantID)
-	if err := f.Users.Save(context.Background(), u); err != nil {
+	if err := f.Users.Save(SystemCtx(), u); err != nil {
 		t.Fatalf("save user: %v", err)
 	}
 	return u
@@ -316,7 +325,7 @@ func (f *Fixture) SeedRunInTenant(t *testing.T, kind, tenantID string) *run.Run 
 		t.Fatalf("new run: %v", err)
 	}
 	r.TenantID = tenantID
-	if err := f.Runs.Enqueue(context.Background(), r); err != nil {
+	if err := f.Runs.Enqueue(SystemCtx(), r); err != nil {
 		t.Fatalf("enqueue run: %v", err)
 	}
 	return r
@@ -328,7 +337,7 @@ func (f *Fixture) SeedRunInTenant(t *testing.T, kind, tenantID string) *run.Run 
 // terminal, which is the exact drift these tests exist to catch.
 func (f *Fixture) MarkRunCompleted(t *testing.T, id string) {
 	t.Helper()
-	ctx := context.Background()
+	ctx := SystemCtx()
 	const owner = "testfx-owner"
 
 	claimed, err := f.Runs.ClaimDue(ctx, owner, time.Minute)
@@ -359,7 +368,7 @@ func (f *Fixture) SeedRefreshToken(t *testing.T, userID string, expiresAt time.T
 		t.Fatalf("generate refresh: %v", err)
 	}
 	rt := token.NewRefreshToken(userID, hash, expiresAt)
-	if err := f.Tokens.Save(context.Background(), rt); err != nil {
+	if err := f.Tokens.Save(SystemCtx(), rt); err != nil {
 		t.Fatalf("save token: %v", err)
 	}
 	return raw
