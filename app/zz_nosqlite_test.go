@@ -126,29 +126,10 @@ func readGoFile(t *testing.T, root, path string) goFileFacts {
 	return facts
 }
 
-func walkGoFiles(t *testing.T, root string) []goFileFacts {
+func walkGoFiles(t *testing.T) []goFileFacts {
 	t.Helper()
 	var files []goFileFacts
-	for _, top := range []string{"app", "cmd"} {
-		err := filepath.WalkDir(
-			filepath.Join(root, top),
-			func(path string, d os.DirEntry, err error) error {
-				if err != nil {
-					return err
-				}
-				if d.IsDir() && (d.Name() == "testdata" || d.Name() == "node_modules") {
-					return filepath.SkipDir
-				}
-				if !d.IsDir() && strings.HasSuffix(path, ".go") {
-					files = append(files, readGoFile(t, root, path))
-				}
-				return nil
-			},
-		)
-		if err != nil {
-			t.Fatalf("walk %s: %v", top, err)
-		}
-	}
+	eachGoFile(t, func(path string) { files = append(files, readGoFile(t, repoRoot(), path)) })
 	return files
 }
 
@@ -212,7 +193,7 @@ func adapterFileViolations(f goFileFacts, testsByPkg, mainForPkg map[string]bool
 }
 
 func TestNoSQLite_OutsideTheAdapter(t *testing.T) {
-	files := walkGoFiles(t, repoRoot()) // repoRoot: zz_params_test.go
+	files := walkGoFiles(t) // eachGoFile, repoRoot: zz_params_test.go
 	adapterFiles, openers := 0, 0
 	for _, f := range files {
 		if strings.HasPrefix(f.rel, sqliteAdapterDir+"/") {

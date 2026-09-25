@@ -76,7 +76,7 @@ Helpery na `*Fixture`:
 - `ExecCommand[R](ctx, cmdBus, name, cmd, fn)` — **sankcionovaný způsob**, jak v handler testu protáhnout command celým chainem (tx, audit, eventy). Handler balíček nesmí importovat `application/bus` přímo (arch-lint: komponenta `application` nemá grant na `bus` ani na `bus_middleware`), takže to běží přes testfx.
 - **Jen JWT, bez DB:** `jwtfx.New(t, accessExp)` z `gokick/app/internal/testfx/jwtfx`. Middleware testy tak nelinkují žádný DB adaptér.
 
-**Výběr driveru v testu:** `testfx.ActiveDriver()`; `testfx.RequireDriver(t, database.DriverSQLite)` přeskočí test, který pinuje chování jednoho adaptéru. Vlastní testy adaptéru mají v balíčku `TestMain` s `testfx.MainFor(m, database.Driver<Adaptér>)`, takže při jiném driveru neběží vůbec (Postgres adaptér: `app/infrastructure/postgres/main_test.go`).
+**Výběr driveru v testu:** `testfx.ActiveDriver()`. Test, který pinuje chování jednoho adaptéru, patří do balíčku toho adaptéru, který má `TestMain` s `testfx.MainFor(m, database.Driver<Adaptér>)`, takže při jiném driveru neběží vůbec (Postgres adaptér: `app/infrastructure/postgres/main_test.go`).
 
 ### Postgres: `make test-pg` a harness `pgfx`
 Postgres adaptér zatím nemá repozitáře (fáze 4 [plánu](/framework/postgres-adapter-plan)), takže `testfx.New(t)` na `APP_DB_DRIVER=postgres` hlasitě selže a na Postgresu běží jen vlastní testy adaptéru (`app/infrastructure/postgres/`: manager, migrátor, kontrola rolí a **RLS sada** `rls_test.go`, která izolaci tenantů ověřuje přímo v databázi, bez kódu repozitářů).

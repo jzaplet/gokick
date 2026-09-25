@@ -523,7 +523,6 @@ fx := testfx.NewMultitenant(t)
 fx.Tx                            // shared.Transactor (místo konkrétního *sqlite.Manager)
 fx.Audit                         // shared.AuditLogger (místo sqliteaudit.NewRepository(fx.DB))
 testfx.ActiveDriver()            // database.Driver z APP_DB_DRIVER (jen prostředí procesu)
-testfx.RequireDriver(t, database.DriverSQLite)   // jinak t.Skip
 func TestMain(m *testing.M) { testfx.MainFor(m, database.DriverSQLite) } // testy adaptéru
 jwtfx.New(t, accessExp)          // JWT bez DB (gokick/app/internal/testfx/jwtfx)
 ```
@@ -555,7 +554,7 @@ jwtfx.New(t, accessExp)          // JWT bez DB (gokick/app/internal/testfx/jwtfx
 | **A** | Nezávislé na backendu, bez SQL | 26 | jen codemod `New(t)` |
 | **A+** | Nezávislé na backendu, ale obsahují raw SQL nebo `fx.DB` | 14 + 1 | codemod + SQL nahradit helpery (7.5); „+1" je `app/zz_gap_test.go`, který se přepisem změní z S na A+ |
 | **K** | Kontraktní testy portů (dříve v `infrastructure/sqlite/<ctx>`) | 23 | ✅ přesunuty do `app/internal/repotest/<ctx>`, poběží na obou backendech; precizní část `run/repository_test.go` se ukázala jako přenositelná (`fx.SetLeaseFromNow`) |
-| **S** | Sémantika specifická pro SQLite | 5 | zůstanou v SQLite adaptéru s `RequireDriver(sqlite)` a `//go:build !nosqlite`; kde to dává smysl, vznikne **PG dvojče** |
+| **S** | Sémantika specifická pro SQLite | 5 | zůstanou v SQLite adaptéru s `TestMain` → `testfx.MainFor(m, database.DriverSQLite)` a `//go:build !nosqlite`; kde to dává smysl, vznikne **PG dvojče** |
 | **G** | Gate testy nad zdrojovým kódem (bez DB) | 2 dotčené + 2 nové | sekce 7.6 |
 
 Rozpis po souborech je v **příloze A**.

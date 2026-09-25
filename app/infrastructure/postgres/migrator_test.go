@@ -2,7 +2,7 @@ package postgres_test
 
 import (
 	"context"
-	"io"
+	"database/sql"
 	"log/slog"
 	"strings"
 	"sync"
@@ -10,48 +10,39 @@ import (
 
 	"gokick/app/infrastructure/postgres"
 	"gokick/app/internal/testfx/pgfx"
+
+	"github.com/pressly/goose/v3"
 )
 
-func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
+func discardLogger() *slog.Logger { return slog.New(slog.DiscardHandler) }
 
-// migratedDB is a fresh migrated database (no Manager).
-func migratedDB(t *testing.T) *pgfx.DB {
-	t.Helper()
-	return pgfx.New(t)
-}
-
-// latestVersion is the newest version of the embedded Postgres migration set.
-func latestVersion(t *testing.T, db *pgfx.DB) int64 {
+// ownerProvider opens the migration provider over db as the schema owner, and the
+// owner connection it runs on.
+func ownerProvider(t *testing.T, db *pgfx.DB) (*goose.Provider, *sql.DB) {
 	t.Helper()
 	owner, err := postgres.OpenOwner(db.OwnerURL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = owner.Close() }()
+	t.Cleanup(func() { _ = owner.Close() })
 	p, err := postgres.NewMigrationProvider(owner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sources := p.ListSources()
-	return sources[len(sources)-1].Version
+	return p, owner
 }
 
-func dbVersion(t *testing.T, db *pgfx.DB) int64 {
+// assertLatest fails unless db is at the newest embedded migration.
+func assertLatest(t *testing.T, db *pgfx.DB) {
 	t.Helper()
-	owner, err := postgres.OpenOwner(db.OwnerURL)
+	p, _ := ownerProvider(t, db)
+	current, target, err := p.GetVersions(context.Background())
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("read versions: %v", err)
 	}
-	defer func() { _ = owner.Close() }()
-	p, err := postgres.NewMigrationProvider(owner)
-	if err != nil {
-		t.Fatal(err)
+	if current != target {
+		t.Fatalf("version = %d, want the latest %d", current, target)
 	}
-	v, err := p.GetDBVersion(context.Background())
-	if err != nil {
-		t.Fatalf("read version: %v", err)
-	}
-	return v
 }
 
 // RunUp migrates an empty database to the latest version and is a no-op the
@@ -65,9 +56,7 @@ func TestMigrator_RunUpIsIdempotent(t *testing.T) {
 			t.Fatalf("RunUp #%d: %v", i+1, err)
 		}
 	}
-	if got, want := dbVersion(t, db), latestVersion(t, db); got != want {
-		t.Fatalf("version after RunUp = %d, want %d", got, want)
-	}
+	assertLatest(t, db)
 }
 
 // Replicas starting together migrate one at a time (the goose session locker
@@ -88,23 +77,12 @@ func TestMigrator_ConcurrentRunUp(t *testing.T) {
 			t.Errorf("RunUp #%d: %v", i, err)
 		}
 	}
-	if got, want := dbVersion(t, db), latestVersion(t, db); got != want {
-		t.Fatalf("version = %d, want %d", got, want)
-	}
+	assertLatest(t, db)
 }
 
 // Every migration rolls back cleanly and re-applies — the Down sections work.
 func TestMigrator_DownToZeroAndUpAgain(t *testing.T) {
-	db := pgfx.New(t)
-	owner, err := postgres.OpenOwner(db.OwnerURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = owner.Close() }()
-	p, err := postgres.NewMigrationProvider(owner)
-	if err != nil {
-		t.Fatal(err)
-	}
+	p, owner := ownerProvider(t, pgfx.New(t))
 	ctx := context.Background()
 	if _, err := p.DownTo(ctx, 0); err != nil {
 		t.Fatalf("DownTo(0): %v", err)
@@ -112,8 +90,7 @@ func TestMigrator_DownToZeroAndUpAgain(t *testing.T) {
 	var objects int
 	if err := owner.QueryRowContext(ctx, `SELECT count(*) FROM pg_class c
 		JOIN pg_namespace n ON n.oid = c.relnamespace
-		WHERE n.nspname = 'public' AND c.relname <> 'goose_db_version'
-		  AND c.relname NOT LIKE 'goose_db_version%'`).Scan(&objects); err != nil {
+		WHERE n.nspname = 'public' AND c.relname NOT LIKE 'goose_db_version%'`).Scan(&objects); err != nil {
 		t.Fatal(err)
 	}
 	if objects != 0 {

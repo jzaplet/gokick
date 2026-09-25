@@ -33,24 +33,22 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
 
-// Concrete-implementation roots that a handler must never import directly. These
-// are the packages whose presence in a handler import set means the presentation
-// layer has bypassed the bus / domain-interface contract.
-const (
-	infraSecurityRoot = "gokick/app/infrastructure/security"
-	applicationPrefix = "gokick/app/application/"
-)
+const applicationPrefix = "gokick/app/application/"
 
-// infraDatabaseRoots are the database adapters and the package that opens them —
-// every one a concrete implementation behind the repository ports.
-var infraDatabaseRoots = []string{
+// forbiddenHandlerRoots are the concrete-implementation roots a handler must never
+// import directly — their presence in a handler import set means the presentation
+// layer has bypassed the bus / domain-interface contract: the database adapters,
+// the package that opens them, and the security (crypto/JWT) implementations.
+var forbiddenHandlerRoots = []string{
 	"gokick/app/infrastructure/sqlite",
 	"gokick/app/infrastructure/postgres",
 	"gokick/app/infrastructure/persistence",
+	"gokick/app/infrastructure/security",
 }
 
 // underRoot reports whether importPath is root or a package beneath it.
@@ -101,19 +99,8 @@ func isEventPackage(importPath string) bool {
 // (application command/query packages, the bus, domain packages, the response
 // and request presentation packages, stdlib) is permitted.
 func forbiddenHandlerImport(importPath string) bool {
-	for _, root := range infraDatabaseRoots {
-		if underRoot(importPath, root) {
-			return true
-		}
-	}
-	switch {
-	case underRoot(importPath, infraSecurityRoot):
-		return true
-	case isEventPackage(importPath):
-		return true
-	default:
-		return false
-	}
+	return isEventPackage(importPath) || slices.ContainsFunc(forbiddenHandlerRoots,
+		func(root string) bool { return underRoot(importPath, root) })
 }
 
 // collectHandlerImports parses every non-test .go file directly under the

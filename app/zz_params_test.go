@@ -86,28 +86,44 @@ func repoRoot() string {
 	return filepath.Dir(filepath.Dir(file))
 }
 
+// eachGoFile calls fn with the path of every .go file under app/ and cmd/
+// (testdata and node_modules skipped) — the source set the conformance gates scan.
+func eachGoFile(t *testing.T, fn func(path string)) {
+	t.Helper()
+	for _, top := range []string{"app", "cmd"} {
+		err := filepath.WalkDir(
+			filepath.Join(repoRoot(), top),
+			func(path string, d os.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if d.IsDir() && (d.Name() == "testdata" || d.Name() == "node_modules") {
+					return filepath.SkipDir
+				}
+				if !d.IsDir() && strings.HasSuffix(path, ".go") {
+					fn(path)
+				}
+				return nil
+			},
+		)
+		if err != nil {
+			t.Fatalf("walk %s: %v", top, err)
+		}
+	}
+}
+
 // Every production function in app/ + cmd/ fits the parameter budget or is a
 // named DI composition shape.
 func TestParamsConformance_ProductionFunctionsFitBudget(t *testing.T) {
 	var violations []string
-	for _, root := range []string{filepath.Join(repoRoot(), "app"), filepath.Join(repoRoot(), "cmd")} {
-		err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if d.IsDir() || !strings.HasSuffix(path, ".go") ||
-				strings.HasSuffix(path, "_test.go") || strings.HasSuffix(path, "wire_gen.go") {
-				return nil
-			}
-			for _, vio := range paramViolations(t, path, nil) {
-				violations = append(violations, fmt.Sprintf("%s: %s", filepath.Base(path), vio))
-			}
-			return nil
-		})
-		if err != nil {
-			t.Fatalf("walk %s: %v", root, err)
+	eachGoFile(t, func(path string) {
+		if strings.HasSuffix(path, "_test.go") || strings.HasSuffix(path, "wire_gen.go") {
+			return
 		}
-	}
+		for _, vio := range paramViolations(t, path, nil) {
+			violations = append(violations, fmt.Sprintf("%s: %s", filepath.Base(path), vio))
+		}
+	})
 	if len(violations) > 0 {
 		sort.Strings(violations)
 		t.Fatalf("parameter-count violations:\n  %s", strings.Join(violations, "\n  "))

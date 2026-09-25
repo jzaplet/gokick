@@ -213,7 +213,7 @@ func TestConcurrency_TwoOwnersRaceExpiredReclaim_OneWins_ReclaimsOnce(t *testing
 	fx := testfx.New(t)
 	r := enqueueRun(t, fx, "agent")
 	claimAs(t, fx, newOwner("wA"))
-	forceExpire(t, fx, r.ID)
+	fx.ForceExpireLease(t, r.ID)
 
 	var wins int32
 	var wg sync.WaitGroup
@@ -249,7 +249,7 @@ func TestMutators_AllBumpUpdatedAt(t *testing.T) {
 		mutate func(t *testing.T, fx *testfx.Fixture, id, owner string)
 	}{
 		{"ClaimDue_reclaim", func(t *testing.T, fx *testfx.Fixture, id, owner string) {
-			forceExpire(t, fx, id)
+			fx.ForceExpireLease(t, id)
 			if _, err := fx.Runs.ClaimDue(context.Background(), newOwner("wRe"), testLease); err != nil {
 				t.Fatalf("reclaim: %v", err)
 			}

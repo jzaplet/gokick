@@ -72,21 +72,6 @@ func findW(t *testing.T, fx *testfx.Fixture, id string) *run.Run {
 	return r
 }
 
-func forceExpireW(t *testing.T, fx *testfx.Fixture, id string) {
-	t.Helper()
-	fx.ForceExpireLease(t, id)
-}
-
-// stealLeaseW atomically reassigns a run's lease to newOwner with a fresh future
-// expiry — simulating another worker reclaiming it. Unlike expire-then-ClaimDue it
-// is a SINGLE write, so it cannot be interleaved by a live incumbent's heartbeat
-// (RenewLease), which makes the steal deterministic even under load. The incumbent's
-// next owner-checked write then matches zero rows (locked_by no longer matches).
-func stealLeaseW(t *testing.T, fx *testfx.Fixture, id, newOwner string) {
-	t.Helper()
-	fx.StealLease(t, id, newOwner)
-}
-
 // startWorker runs w in the background and returns a stop func that cancels it
 // and waits for Run to return.
 func startWorker(w *RunWorker) func() {
@@ -362,7 +347,7 @@ func TestRunWorker_LeaseLost_Abandons(t *testing.T) {
 	// be interleaved, so the incumbent's next RenewLease matches zero rows (owner
 	// mismatch), detects the loss, and abandons the run.
 	stealer := "stealer-" + uuid.NewString()
-	stealLeaseW(t, fx, r.ID, stealer)
+	fx.StealLease(t, r.ID, stealer)
 	<-returned // the original worker's heartbeat detected loss and cancelled the handler
 
 	got := findW(t, fx, r.ID)
@@ -699,7 +684,7 @@ func TestRunWorker_ResumesAfterReclaim_Completes(t *testing.T) {
 		!ok {
 		t.Fatalf("seed checkpoint: ok=%v err=%v", ok, err)
 	}
-	forceExpireW(t, fx, r.ID) // the dead worker's lease lapses -> claimable again
+	fx.ForceExpireLease(t, r.ID) // the dead worker's lease lapses -> claimable again
 
 	resumed := make(chan string, 1)
 	handler := func(ctx context.Context, r *run.Run, ck runapp.Checkpointer) error {

@@ -202,19 +202,15 @@ func LoadConfig() (*Config, error) {
 // Postgres; the three DSNs are required only when the driver is postgres, and each
 // must be a postgres:// URL.
 func loadPostgresConfig(config *Config) error {
-	for _, d := range []struct {
-		dst *time.Duration
-		key string
-		def string
-	}{
+	timeouts := []durationVar{
 		{&config.DBLockTimeout, "APP_DB_LOCK_TIMEOUT", "5s"},
 		{&config.DBStatementTimeout, "APP_DB_STATEMENT_TIMEOUT", "30s"},
 		{&config.DBIdleTxTimeout, "APP_DB_IDLE_TX_TIMEOUT", "60s"},
-	} {
-		var err error
-		if *d.dst, err = time.ParseDuration(getEnv(d.key, d.def)); err != nil {
-			return fmt.Errorf("invalid %s: %w", d.key, err)
-		}
+	}
+	if err := loadDurations(timeouts...); err != nil {
+		return err
+	}
+	for _, d := range timeouts {
 		if *d.dst < 0 {
 			return fmt.Errorf("%s must not be negative", d.key)
 		}
@@ -259,20 +255,13 @@ func validatePostgresURL(key, value string) error {
 // loadRunWorkerConfig parses the durable-run worker knobs onto config, split out
 // of LoadConfig to keep it under the length gate.
 func loadRunWorkerConfig(config *Config) error {
-	for _, d := range []struct {
-		dst *time.Duration
-		key string
-		def string
-	}{
-		{&config.RunWorkerLease, "APP_RUN_WORKER_LEASE", "5m"},
-		{&config.RunWorkerHeartbeat, "APP_RUN_WORKER_HEARTBEAT", "0s"}, // 0 → worker uses Lease/3
-		{&config.RunWorkerPoll, "APP_RUN_WORKER_POLL", "1s"},
-		{&config.RunWorkerDrainTimeout, "APP_RUN_WORKER_DRAIN_TIMEOUT", "10s"},
-	} {
-		var err error
-		if *d.dst, err = time.ParseDuration(getEnv(d.key, d.def)); err != nil {
-			return fmt.Errorf("invalid %s: %w", d.key, err)
-		}
+	if err := loadDurations(
+		durationVar{&config.RunWorkerLease, "APP_RUN_WORKER_LEASE", "5m"},
+		durationVar{&config.RunWorkerHeartbeat, "APP_RUN_WORKER_HEARTBEAT", "0s"}, // 0 → worker uses Lease/3
+		durationVar{&config.RunWorkerPoll, "APP_RUN_WORKER_POLL", "1s"},
+		durationVar{&config.RunWorkerDrainTimeout, "APP_RUN_WORKER_DRAIN_TIMEOUT", "10s"},
+	); err != nil {
+		return err
 	}
 
 	var err error
@@ -335,6 +324,25 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// durationVar is one Go-duration setting ("5s", "1m30s"): parsed from key onto
+// dst, def when unset/empty.
+type durationVar struct {
+	dst *time.Duration
+	key string
+	def string
+}
+
+// loadDurations parses every durationVar, failing on the first malformed one.
+func loadDurations(vars ...durationVar) error {
+	for _, d := range vars {
+		var err error
+		if *d.dst, err = time.ParseDuration(getEnv(d.key, d.def)); err != nil {
+			return fmt.Errorf("invalid %s: %w", d.key, err)
+		}
+	}
+	return nil
 }
 
 // getEnvInt reads an integer env var, falling back when unset/empty.

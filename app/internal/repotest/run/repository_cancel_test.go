@@ -68,7 +68,7 @@ func TestCancelRequested_StillClaimable_SurvivesReclaim(t *testing.T) {
 	if err := fx.Runs.RequestCancel(ctx, r.ID); err != nil {
 		t.Fatalf("request cancel: %v", err)
 	}
-	forceExpire(t, fx, r.ID)
+	fx.ForceExpireLease(t, r.ID)
 
 	b, err := fx.Runs.ClaimDue(ctx, newOwner("wB"), testLease)
 	if err != nil || b == nil {

@@ -41,7 +41,7 @@ func reclaimedByB(t *testing.T, fx *testfx.Fixture) (id, ownerA, ownerB string) 
 	if _, err := fx.Runs.ClaimDue(ctx, ownerA, testLease); err != nil {
 		t.Fatalf("claim A: %v", err)
 	}
-	forceExpire(t, fx, r.ID)
+	fx.ForceExpireLease(t, r.ID)
 	b, err := fx.Runs.ClaimDue(ctx, ownerB, testLease)
 	if err != nil || b == nil || b.ID != r.ID || b.LockedBy == nil || *b.LockedBy != ownerB {
 		t.Fatalf("reclaim by B failed: b=%v err=%v", b, err)
@@ -168,7 +168,7 @@ func TestReclaim_CarriesLastCheckpointState(t *testing.T) {
 		!ok {
 		t.Fatalf("A checkpoint: ok=%v err=%v", ok, err)
 	}
-	forceExpire(t, fx, r.ID)
+	fx.ForceExpireLease(t, r.ID)
 
 	b, err := fx.Runs.ClaimDue(ctx, newOwner("wB"), testLease)
 	if err != nil || b == nil {
@@ -188,7 +188,7 @@ func TestReclaim_FromEmptyState_ResumesFromScratch_PayloadImmutable(t *testing.T
 	r := enqueueRunPayload(t, fx, `{"in":"P"}`)
 	ownerA := newOwner("wA")
 	claimAs(t, fx, ownerA)
-	forceExpire(t, fx, r.ID)
+	fx.ForceExpireLease(t, r.ID)
 
 	b, err := fx.Runs.ClaimDue(ctx, newOwner("wB"), testLease)
 	if err != nil || b == nil {
@@ -310,7 +310,7 @@ func TestFence_SelfReclaim_FencesOwnEarlierToken(t *testing.T) {
 	r := enqueueRun(t, fx, "agent")
 	tok1 := newOwner("wSAME")
 	claimAs(t, fx, tok1)
-	forceExpire(t, fx, r.ID)
+	fx.ForceExpireLease(t, r.ID)
 	// The SAME worker process reclaims with a FRESH token.
 	tok2 := newOwner("wSAME")
 	if b, err := fx.Runs.ClaimDue(ctx, tok2, testLease); err != nil || b == nil {
@@ -329,7 +329,7 @@ func TestReclaim_TenantPreserved(t *testing.T) {
 	tenantID := fx.SeedTenant(t, "acme").ID
 	r := enqueueRunInTenant(t, fx, tenantID)
 	claimAs(t, fx, newOwner("wA"))
-	forceExpire(t, fx, r.ID)
+	fx.ForceExpireLease(t, r.ID)
 	b, err := fx.Runs.ClaimDue(ctx, newOwner("wB"), testLease)
 	if err != nil || b == nil {
 		t.Fatalf("reclaim: %v / %v", b, err)

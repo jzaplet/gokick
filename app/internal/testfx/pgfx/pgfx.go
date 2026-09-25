@@ -51,7 +51,6 @@ const templateLockKey = 0x676f6b69636b // "gokick"
 
 // DB is one test's database and the DSNs of each role on it.
 type DB struct {
-	Name string
 	// AdminURL connects as the cluster superuser — for tests that need a role the
 	// application must refuse.
 	AdminURL  string
@@ -113,7 +112,6 @@ func create(t *testing.T, source string) *DB {
 		}
 	})
 	return &DB{
-		Name:      name,
 		AdminURL:  withDatabase(adminURL, name, nil),
 		OwnerURL:  withDatabase(adminURL, name, url.UserPassword(RoleOwner, RoleOwner)),
 		AppURL:    withDatabase(adminURL, name, url.UserPassword(RoleApp, RoleApp)),

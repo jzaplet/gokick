@@ -50,13 +50,6 @@ func claimAs(t *testing.T, fx *testfx.Fixture, owner string) *run.Run {
 	return r
 }
 
-// forceExpire backdates a run's lease so it is reclaimable — deterministic, no
-// sleeping (a sub-second lease + sleep would be racy).
-func forceExpire(t *testing.T, fx *testfx.Fixture, id string) {
-	t.Helper()
-	fx.ForceExpireLease(t, id)
-}
-
 func mustFind(t *testing.T, fx *testfx.Fixture, id string) *run.Run {
 	t.Helper()
 	got, err := fx.Runs.FindByID(context.Background(), id)
@@ -268,7 +261,7 @@ func TestClaimDue_ReclaimsExpiredLease_FlipsOwner_BumpsReclaimsNotAttempts(t *te
 	if a.Attempts != 0 || a.Reclaims != 0 {
 		t.Fatalf("after first claim: attempts/reclaims %d/%d want 0/0", a.Attempts, a.Reclaims)
 	}
-	forceExpire(t, fx, r.ID)
+	fx.ForceExpireLease(t, r.ID)
 
 	b := claimAs(t, fx, ownerB)
 	if b == nil || b.ID != r.ID {
@@ -337,7 +330,7 @@ func TestRenewLease_OriginalOwner_RescuesExpiredUnreclaimedLease(t *testing.T) {
 	r := enqueueRun(t, fx, "agent")
 	owner := newOwner("wA")
 	claimAs(t, fx, owner)
-	forceExpire(t, fx, r.ID)
+	fx.ForceExpireLease(t, r.ID)
 
 	alive, _, err := fx.Runs.RenewLease(ctx, r.ID, owner, testLease)
 	if err != nil || !alive {

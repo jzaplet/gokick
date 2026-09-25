@@ -10,7 +10,6 @@ import (
 	"gokick/app/infrastructure/database"
 	"os"
 	"path/filepath"
-	"runtime"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/ncruces/go-sqlite3/driver"
@@ -94,10 +93,7 @@ func NewManager(config *config.Config) (*Manager, error) {
 	// cheaply at Go's pool gate instead of every burst goroutine holding a live
 	// WASM connection (unbounded → reachable OOM, F-047). Reads run concurrently
 	// under WAL, so the cap tracks read concurrency + a little write headroom.
-	maxConns := config.DBMaxConns
-	if maxConns <= 0 {
-		maxConns = autoMaxConns()
-	}
+	maxConns := database.PoolSize(config.DBMaxConns, dbMaxConnsFloor, dbMaxConnsCeil)
 	m := &Manager{db: db, multitenant: config.Multitenancy, maxConns: maxConns}
 	m.applyPoolLimits()
 
@@ -115,30 +111,18 @@ func (m *Manager) applyPoolLimits() {
 	m.db.SetMaxIdleConns(m.maxConns)
 }
 
-// dbMaxConnsFloor / dbMaxConnsCeil bound the auto pool cap. The floor keeps a
-// tiny box (a 2-vCPU droplet) usable; the ceiling bounds WASM-connection memory
-// on a big-core host, where extra connections past read concurrency buy nothing
-// (writes serialize regardless).
+// dbMaxConnsFloor / dbMaxConnsCeil bound the auto pool cap (database.PoolSize:
+// 2×NumCPU when APP_DB_MAX_CONNS is unset — concurrent readers plus a little
+// write-queue headroom). The floor keeps a tiny box (a 2-vCPU droplet) usable; the
+// ceiling bounds WASM-connection memory on a big-core host, where extra
+// connections past read concurrency buy nothing (writes serialize regardless).
+// Cloud RAM scales with vCPU, so scaling by CPU implicitly tracks the memory
+// budget (2 vCPU / 2 GB → 4; 10-core → 20; 16-core → capped 32). Override with
+// APP_DB_MAX_CONNS for an unusual RAM:CPU ratio.
 const (
 	dbMaxConnsFloor = 4
 	dbMaxConnsCeil  = 32
 )
-
-// autoMaxConns derives the pool cap from the CPU count when APP_DB_MAX_CONNS is
-// unset. 2×NumCPU covers concurrent readers plus a little write-queue headroom;
-// clamped to [floor, ceil]. Cloud RAM scales with vCPU, so scaling by CPU
-// implicitly tracks the memory budget (2 vCPU / 2 GB → 4; 10-core → 20; 16-core
-// → capped 32). Override with APP_DB_MAX_CONNS for an unusual RAM:CPU ratio.
-func autoMaxConns() int {
-	n := 2 * runtime.NumCPU()
-	if n < dbMaxConnsFloor {
-		return dbMaxConnsFloor
-	}
-	if n > dbMaxConnsCeil {
-		return dbMaxConnsCeil
-	}
-	return n
-}
 
 func (m *Manager) DB() *sqlx.DB {
 	return m.db
@@ -174,18 +158,6 @@ func (m *Manager) BeginReadTx(ctx context.Context) (context.Context, func(), err
 	return ctx, func() {}, nil
 }
 
-func (m *Manager) Commit(ctx context.Context) error {
-	tx := database.TxFromContext(ctx)
-	if tx == nil {
-		return fmt.Errorf("database: no transaction in context")
-	}
-	return tx.Commit()
-}
+func (m *Manager) Commit(ctx context.Context) error { return database.CommitTx(ctx) }
 
-func (m *Manager) Rollback(ctx context.Context) error {
-	tx := database.TxFromContext(ctx)
-	if tx == nil {
-		return fmt.Errorf("database: no transaction in context")
-	}
-	return tx.Rollback()
-}
+func (m *Manager) Rollback(ctx context.Context) error { return database.RollbackTx(ctx) }

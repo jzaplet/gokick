@@ -31,15 +31,6 @@ func ActiveDriver() database.Driver {
 	return d
 }
 
-// RequireDriver skips the test unless the run targets driver d — for a test
-// that pins one adapter's behavior rather than the ports' contract.
-func RequireDriver(t *testing.T, d database.Driver) {
-	t.Helper()
-	if got := ActiveDriver(); got != d {
-		t.Skipf("%s-only test; this run targets APP_DB_DRIVER=%s", d, got)
-	}
-}
-
 // MainFor is TestMain for an adapter's own test package: the tests run only when
 // the run targets that adapter, so switching APP_DB_DRIVER never leaves a test
 // quietly exercising the other database.

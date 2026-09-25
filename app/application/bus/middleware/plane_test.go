@@ -3,8 +3,6 @@ package middleware
 import (
 	"context"
 	"errors"
-	"io"
-	"log/slog"
 	"testing"
 
 	"gokick/app/application/bus"
@@ -65,7 +63,7 @@ func TestSystemPlaneMiddleware_MarksTheSystemPlane(t *testing.T) {
 // chain opens: the production chains, not the middleware in isolation.
 func TestChains_CarryThePlaneToTheHandler(t *testing.T) {
 	t.Parallel()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := silent()
 	resolver := stubTenantResolver{id: shared.DefaultTenantID}
 	superadmin := shared.ContextWithClaims(t.Context(),
 		&shared.AuthClaims{UserID: "u1", Role: shared.RoleSuperAdmin})
@@ -91,7 +89,7 @@ func TestChains_CarryThePlaneToTheHandler(t *testing.T) {
 
 	eventBus := bus.NewEventBus()
 	systemBus := bus.NewSystemCommandBus(SystemChain(logger, &stubTx{}, eventBus,
-		nopAudit{}, shared.RunDispatcherFromContext(t.Context()), shared.NopReporter{})...)
+		&captureAudit{}, shared.RunDispatcherFromContext(t.Context()), shared.NopReporter{})...)
 	got, err := bus.SystemDispatch(
 		t.Context(),
 		systemBus,
@@ -142,8 +140,3 @@ func TestReadTxMiddleware_BeginErrorStopsTheQuery(t *testing.T) {
 		t.Fatal("the handler must not run without its read transaction")
 	}
 }
-
-// nopAudit is an AuditLogger that drops every record.
-type nopAudit struct{}
-
-func (nopAudit) Save(context.Context, *shared.AuditRecord) error { return nil }

@@ -3,13 +3,11 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"log/slog"
 
 	"gokick/app/infrastructure/database"
 	"gokick/migrations"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/lock"
@@ -59,13 +57,9 @@ func NewMigrationProvider(db *sql.DB) (*goose.Provider, error) {
 // migrations only. No statement or lock limit applies: a migration may
 // legitimately run long.
 func OpenOwner(migrateURL string) (*sql.DB, error) {
-	pc, err := pgx.ParseConfig(migrateURL)
+	pc, err := connConfig(migrateURL, "APP_DB_MIGRATE_URL", "gokick-migrate")
 	if err != nil {
-		return nil, fmt.Errorf("postgres: invalid APP_DB_MIGRATE_URL")
-	}
-	pc.RuntimeParams["TimeZone"] = "UTC"
-	if pc.RuntimeParams["application_name"] == "" {
-		pc.RuntimeParams["application_name"] = "gokick-migrate"
+		return nil, err
 	}
 	return stdlib.OpenDB(*pc), nil
 }
