@@ -46,7 +46,7 @@ func TestScheduler_StartupLogReportsJobCount(t *testing.T) {
 	buf := &lockedBuffer{}
 	// Long interval: each job run-once-ticks exactly once, then waits on the
 	// ticker until cancel — no extra noise in the log.
-	s, err := NewScheduler(captureLogger(buf), []Job{
+	s, err := NewScheduler(captureLogger(buf), grantAll{}, []Job{
 		{Name: "a", Interval: time.Hour, Fn: noop},
 		{Name: "b", Interval: time.Hour, Fn: noop},
 		{Name: "c", Interval: time.Hour, Fn: noop},
@@ -91,7 +91,7 @@ func TestScheduler_CompletedTickLogsNameAndDuration(t *testing.T) {
 	ran := make(chan struct{})
 	once := sync.Once{}
 	buf := &lockedBuffer{}
-	s, err := NewScheduler(captureLogger(buf), []Job{
+	s, err := NewScheduler(captureLogger(buf), grantAll{}, []Job{
 		{Name: "cleanup", Interval: time.Hour, Fn: func(_ context.Context) error {
 			once.Do(func() { close(ran) })
 			return nil

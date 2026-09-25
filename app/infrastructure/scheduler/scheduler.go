@@ -5,6 +5,15 @@
 // every Interval thereafter. This guarantees maintenance jobs (token cleanup,
 // stat collectors) execute at least once per process lifetime, even on a
 // process that restarts more often than the interval.
+//
+// Every replica of `serve` runs a Scheduler, but each job runs on one of them:
+// before each run the Scheduler holds the job's lock (shared.Locker, key
+// "job:<name>"), and it keeps the lock for as long as it runs — not just for the
+// run, which would only stop two replicas from overlapping and still run the job
+// once per replica per interval. The other replicas' ticks find the lock taken
+// and skip. When the holder stops, it releases the lock; when it dies, the
+// database drops it; either way the next replica to tick takes the job over. On
+// SQLite, which one process serves, the Locker grants every lock.
 package scheduler
 
 import (
@@ -25,6 +34,11 @@ const (
 	logKeyJobs = "jobs"
 )
 
+// releaseTimeout bounds the release of a job's lock when the Scheduler stops —
+// the Scheduler's context is already cancelled by then, and a stuck database
+// must not hold up the shutdown.
+const releaseTimeout = 5 * time.Second
+
 type JobFunc func(ctx context.Context) error
 
 type Job struct {
@@ -35,10 +49,14 @@ type Job struct {
 
 type Scheduler struct {
 	logger *slog.Logger
+	locker shared.Locker
 	jobs   []Job
 }
 
-func NewScheduler(logger *slog.Logger, jobs []Job) (*Scheduler, error) {
+func NewScheduler(logger *slog.Logger, locker shared.Locker, jobs []Job) (*Scheduler, error) {
+	if locker == nil {
+		return nil, fmt.Errorf("scheduler: a locker is required")
+	}
 	seen := make(map[string]struct{}, len(jobs))
 	for _, j := range jobs {
 		if j.Name == "" {
@@ -59,7 +77,7 @@ func NewScheduler(logger *slog.Logger, jobs []Job) (*Scheduler, error) {
 		}
 		seen[j.Name] = struct{}{}
 	}
-	return &Scheduler{logger: logger, jobs: jobs}, nil
+	return &Scheduler{logger: logger, locker: locker, jobs: jobs}, nil
 }
 
 // Run launches every registered job in its own goroutine and blocks until
@@ -84,6 +102,8 @@ func (s *Scheduler) Run(ctx context.Context) {
 }
 
 func (s *Scheduler) runJob(ctx context.Context, j Job) {
+	defer s.release(ctx, j)
+
 	// Run-once-then-tick: maintenance jobs benefit from immediate execution
 	// so a frequently-restarted process still cleans up at least once.
 	s.tick(ctx, j)
@@ -101,8 +121,24 @@ func (s *Scheduler) runJob(ctx context.Context, j Job) {
 	}
 }
 
-// tick runs one invocation of j.Fn with panic recovery, so a buggy job
-// can't take down the rest of the scheduler.
+// lockKey is the Locker key of a job.
+func lockKey(j Job) string { return "job:" + j.Name }
+
+// release gives up the job's lock once its loop ends, so another replica can
+// take the job over on its next tick.
+func (s *Scheduler) release(ctx context.Context, j Job) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
+	defer cancel()
+	if err := s.locker.Release(ctx, lockKey(j)); err != nil {
+		s.logger.Warn("scheduler: releasing the job lock failed",
+			slog.String(logKeyName, j.Name),
+			slog.Any(shared.LogKeyError, err),
+		)
+	}
+}
+
+// tick runs one invocation of j.Fn — if this replica holds the job's lock — with
+// panic recovery, so a buggy job can't take down the rest of the scheduler.
 func (s *Scheduler) tick(ctx context.Context, j Job) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -120,8 +156,22 @@ func (s *Scheduler) tick(ctx context.Context, j Job) {
 		}
 	}()
 
+	held, err := s.locker.Hold(ctx, lockKey(j))
+	if err != nil {
+		s.logger.Error("scheduler: job lock failed",
+			slog.String(logKeyName, j.Name),
+			slog.Any(shared.LogKeyError, err),
+		)
+		return
+	}
+	if !held {
+		s.logger.Debug("scheduler: job skipped, another replica runs it",
+			slog.String(logKeyName, j.Name))
+		return
+	}
+
 	start := time.Now()
-	err := j.Fn(ctx)
+	err = j.Fn(ctx)
 	duration := time.Since(start)
 	if err != nil {
 		s.logger.Error(

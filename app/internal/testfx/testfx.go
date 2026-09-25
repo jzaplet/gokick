@@ -39,6 +39,8 @@ type Fixture struct {
 	Jwt    *security.JwtService
 
 	backend
+	// cfg is the configuration the fixture database was opened with (Replica).
+	cfg *config.Config
 }
 
 // backend is what an adapter's fixture opener hands back besides the production
@@ -89,7 +91,22 @@ func newFixture(t *testing.T, multitenant bool) *Fixture {
 		Hasher:  security.NewPasswordHasher(),
 		Jwt:     jwtfx.New(t, 15*time.Minute),
 		backend: b,
+		cfg:     cfg,
 	}
+}
+
+// Replica opens the fixture's database a second time, with pools of its own —
+// the Store a second process (another `serve` replica) would have — for tests of
+// what two processes on one database do to each other: a lock one of them holds,
+// a row one of them claims. It closes with the test.
+func (f *Fixture) Replica(t *testing.T) *persistence.Store {
+	t.Helper()
+	store, cleanup, err := persistence.Open(f.cfg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("testfx: open a replica: %v", err)
+	}
+	t.Cleanup(cleanup)
+	return store
 }
 
 // SystemCtx is the context the seed helpers below write with: the system plane,

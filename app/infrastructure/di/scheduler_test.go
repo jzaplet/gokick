@@ -21,6 +21,14 @@ func (stubTokens) MarkUsed(context.Context, string) (bool, error) { return true,
 func (stubTokens) DeleteByUserID(context.Context, string) error   { return nil }
 func (stubTokens) DeleteExpired(context.Context) error            { return nil }
 
+// grantAllLocker grants every lock — a Locker that is never the reason a
+// scheduler is refused.
+type grantAllLocker struct{}
+
+func (grantAllLocker) Hold(context.Context, string) (bool, error) { return true, nil }
+
+func (grantAllLocker) Release(context.Context, string) error { return nil }
+
 // Catches a "someone added a duplicate name (or invalid interval, or nil Fn)
 // to provideSchedulerJobs" regression at test time instead of at process
 // startup — the constructor's validation error would otherwise only surface
@@ -30,7 +38,7 @@ func TestProvideScheduler_AcceptsRegisteredJobs(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	jobs := provideSchedulerJobs(stubTokens{})
-	if _, err := provideScheduler(logger, jobs); err != nil {
+	if _, err := provideScheduler(logger, grantAllLocker{}, jobs); err != nil {
 		t.Fatalf("provideScheduler rejected its registered jobs: %v", err)
 	}
 }

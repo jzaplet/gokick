@@ -17,13 +17,20 @@ func silentLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
+// grantAll is a Locker that grants every lock — a single replica, as on SQLite.
+type grantAll struct{}
+
+func (grantAll) Hold(context.Context, string) (bool, error) { return true, nil }
+
+func (grantAll) Release(context.Context, string) error { return nil }
+
 // Short interval + counter + cancel: each job fires at least the immediate
 // run-once tick plus a few ticker ticks before the test cancels.
 func TestScheduler_RunsAndStops(t *testing.T) {
 	t.Parallel()
 
 	var aCount, bCount int32
-	s, err := NewScheduler(silentLogger(), []Job{
+	s, err := NewScheduler(silentLogger(), grantAll{}, []Job{
 		{Name: "a", Interval: 10 * time.Millisecond, Fn: func(_ context.Context) error {
 			atomic.AddInt32(&aCount, 1)
 			return nil
@@ -64,7 +71,7 @@ func TestNewScheduler_DuplicateName(t *testing.T) {
 	t.Parallel()
 
 	noop := func(_ context.Context) error { return nil }
-	_, err := NewScheduler(silentLogger(), []Job{
+	_, err := NewScheduler(silentLogger(), grantAll{}, []Job{
 		{Name: "dup", Interval: time.Second, Fn: noop},
 		{Name: "dup", Interval: time.Second, Fn: noop},
 	})
@@ -88,7 +95,7 @@ func TestNewScheduler_InvalidJob(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := NewScheduler(silentLogger(), tc.jobs)
+			_, err := NewScheduler(silentLogger(), grantAll{}, tc.jobs)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("expected error containing %q, got %v", tc.want, err)
 			}
@@ -103,7 +110,7 @@ func TestScheduler_PanicInOneJobKeepsOthersRunning(t *testing.T) {
 	var safeRuns int32
 	var panicRuns int32
 
-	s, err := NewScheduler(silentLogger(), []Job{
+	s, err := NewScheduler(silentLogger(), grantAll{}, []Job{
 		{Name: "safe", Interval: 10 * time.Millisecond, Fn: func(_ context.Context) error {
 			atomic.AddInt32(&safeRuns, 1)
 			return nil
@@ -154,7 +161,7 @@ func TestScheduler_PanicLogCarriesStack(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
 	fired := make(chan struct{})
-	s, err := NewScheduler(logger, []Job{
+	s, err := NewScheduler(logger, grantAll{}, []Job{
 		{Name: "boom", Interval: time.Hour, Fn: func(_ context.Context) error {
 			close(fired) // signal before panicking; run-once + hour interval = once
 			panic("kaboom")
@@ -194,7 +201,7 @@ func TestScheduler_ErrorReturnedJobKeepsTicking(t *testing.T) {
 	t.Parallel()
 
 	var runs int32
-	s, err := NewScheduler(silentLogger(), []Job{
+	s, err := NewScheduler(silentLogger(), grantAll{}, []Job{
 		{Name: "flaky", Interval: 10 * time.Millisecond, Fn: func(_ context.Context) error {
 			atomic.AddInt32(&runs, 1)
 			return errors.New("flaky failure")
@@ -220,58 +227,6 @@ func TestScheduler_ErrorReturnedJobKeepsTicking(t *testing.T) {
 	}
 }
 
-// Two independent Scheduler instances running a job with the SAME name both
-// tick — there is no multi-instance coordination (no shared lock, no dedup by
-// name). This documents the single-process assumption: run two replicas and a
-// once-per-interval job fires once PER replica, not once globally. If anyone
-// ever bolts on cross-instance locking, the shared counter would stop doubling
-// and this test would catch the behavior change.
-func TestScheduler_TwoInstancesTickIndependently(t *testing.T) {
-	t.Parallel()
-
-	var ticks int32
-	newOne := func() *Scheduler {
-		s, err := NewScheduler(silentLogger(), []Job{
-			{Name: "cleanup", Interval: time.Hour, Fn: func(_ context.Context) error {
-				atomic.AddInt32(&ticks, 1)
-				return nil
-			}},
-		})
-		if err != nil {
-			t.Fatalf("NewScheduler: %v", err)
-		}
-		return s
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{}, 2)
-	for _, s := range []*Scheduler{newOne(), newOne()} {
-		go func(s *Scheduler) {
-			defer func() { done <- struct{}{} }()
-			s.Run(ctx)
-		}(s)
-	}
-
-	// A long Interval means only the run-once tick fires before we cancel, so
-	// the count is exactly "one per instance" — no coordination would let it be 2.
-	time.Sleep(40 * time.Millisecond)
-	cancel()
-	for range 2 {
-		select {
-		case <-done:
-		case <-time.After(time.Second):
-			t.Fatal("a scheduler instance did not drain after cancel")
-		}
-	}
-
-	if got := atomic.LoadInt32(&ticks); got != 2 {
-		t.Fatalf(
-			"two instances should each run the job once (no coordination): got %d ticks, want 2",
-			got,
-		)
-	}
-}
-
 // Cancel arrives after the first run-once tick completed; ctx.Done() must
 // preempt the long ticker wait so the goroutine exits without leaking.
 func TestScheduler_CancelDuringTickerWait(t *testing.T) {
@@ -279,7 +234,7 @@ func TestScheduler_CancelDuringTickerWait(t *testing.T) {
 
 	ran := make(chan struct{})
 	once := sync.Once{}
-	s, err := NewScheduler(silentLogger(), []Job{
+	s, err := NewScheduler(silentLogger(), grantAll{}, []Job{
 		{Name: "x", Interval: time.Hour, Fn: func(_ context.Context) error {
 			once.Do(func() { close(ran) })
 			return nil

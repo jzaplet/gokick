@@ -80,8 +80,9 @@ func TestPostgresSystemRole_OnlyListedMethods(t *testing.T) {
 	root := adapterDir("postgres")
 	var found, violations []string
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		// The repositories live in the sub-packages; the adapter's root defines
-		// SystemConn itself.
+		// The repositories live in the sub-packages. The adapter's root is the
+		// plumbing under them — it defines SystemConn itself, and its Locker keeps
+		// advisory locks on a system-pool connection, which is no row access.
 		if err != nil || d.IsDir() || filepath.Dir(path) == root ||
 			!strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return err

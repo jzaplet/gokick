@@ -42,9 +42,10 @@ var tenantGateAdapters = []struct {
 	extraExempt map[string]bool
 }{
 	{name: "sqlite"},
-	// The startup role check (VerifyRoles) reads the system catalogs.
+	// The startup role check (VerifyRoles) and the Locker (its own advisory
+	// locks) read the system catalogs.
 	{name: "postgres", extraExempt: map[string]bool{
-		"pg_roles": true, "pg_class": true, "pg_namespace": true,
+		"pg_roles": true, "pg_class": true, "pg_namespace": true, "pg_locks": true,
 	}},
 }
 

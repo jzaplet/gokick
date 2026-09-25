@@ -27,7 +27,8 @@ const logMsgCloseFailed = "persistence: closing the database failed"
 // Store is everything the application needs from the database, as ports. The
 // platform ports are the same concrete repositories as their tenant-scoped
 // counterparts, exposed separately so a handler asks for exactly the plane it
-// works on (see /gk-multitenancy).
+// works on (see /gk-multitenancy). The Locker excludes the other replicas on the
+// same database (the scheduler runs each job on one of them).
 type Store struct {
 	Users           user.Repository
 	PlatformUsers   user.PlatformRepository
@@ -37,6 +38,7 @@ type Store struct {
 	PlatformTenants tenant.PlatformRepository
 	Audit           shared.AuditLogger
 	Tx              shared.Transactor
+	Locker          shared.Locker
 	Migrator        database.Migrator
 }
 

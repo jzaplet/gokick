@@ -37,6 +37,7 @@ func PostgresStore(mgr *postgres.Manager, migrateURL string, logger *slog.Logger
 		PlatformTenants: tenants,
 		Audit:           pgaudit.NewRepository(mgr),
 		Tx:              mgr,
+		Locker:          postgres.NewLocker(mgr),
 		Migrator:        postgres.NewMigrator(mgr, migrateURL, logger),
 	}
 }
