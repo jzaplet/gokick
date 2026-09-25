@@ -126,8 +126,9 @@ func CreateApplication(logger *slog.Logger, reporter shared.ErrorReporter) (*app
 	platformHandler := handler.NewPlatformHandler(responder, queryBus, commandBus, getStatsHandler, listAllUsersHandler, queryGetUserHandler, listTenantsHandler, createPlatformUserHandler, updatePlatformUserHandler, deletePlatformUserHandler, bulkDeletePlatformUsersHandler, bulkSetPlatformUsersActiveHandler, createTenantHandler, deleteTenantHandler, bulkDeleteTenantsHandler)
 	debugRunHandler := handler.NewDebugRunHandler(responder, repository)
 	serverServer := server.NewServer(configConfig, logger, reporter, jwtService, responder, rateLimiters, ipExtractor, healthHandler, spaHandler, authHandler, profileHandler, adminUsersHandler, dashboardHandler, platformHandler, debugRunHandler)
+	locker := store.Locker
 	v2 := provideSchedulerJobs(tokenRepository)
-	scheduler, err := provideScheduler(logger, v2)
+	scheduler, err := provideScheduler(logger, locker, v2)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
@@ -341,8 +342,12 @@ func provideSchedulerJobs(tokens token.Repository) []scheduler.Job {
 	}
 }
 
-func provideScheduler(logger *slog.Logger, jobs []scheduler.Job) (*scheduler.Scheduler, error) {
-	return scheduler.NewScheduler(logger, jobs)
+func provideScheduler(
+	logger *slog.Logger,
+	locker shared.Locker,
+	jobs []scheduler.Job,
+) (*scheduler.Scheduler, error) {
+	return scheduler.NewScheduler(logger, locker, jobs)
 }
 
 // provideRunHandlerRegistry collects every kind → durable-run handler the binary

@@ -318,7 +318,7 @@ func TestProvideScheduler_PropagatesValidationError(t *testing.T) {
 		{Name: "dup", Interval: time.Second, Fn: noop},
 		{Name: "dup", Interval: time.Second, Fn: noop},
 	}
-	if _, err := provideScheduler(logger, jobs); err == nil {
+	if _, err := provideScheduler(logger, grantAllLocker{}, jobs); err == nil {
 		t.Fatal("provideScheduler must propagate the duplicate-name validation error")
 	}
 }

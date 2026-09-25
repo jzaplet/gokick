@@ -230,8 +230,12 @@ func provideSchedulerJobs(tokens token.Repository) []scheduler.Job {
 	}
 }
 
-func provideScheduler(logger *slog.Logger, jobs []scheduler.Job) (*scheduler.Scheduler, error) {
-	return scheduler.NewScheduler(logger, jobs)
+func provideScheduler(
+	logger *slog.Logger,
+	locker shared.Locker,
+	jobs []scheduler.Job,
+) (*scheduler.Scheduler, error) {
+	return scheduler.NewScheduler(logger, locker, jobs)
 }
 
 // provideRunHandlerRegistry collects every kind → durable-run handler the binary
@@ -345,7 +349,7 @@ func CreateApplication(
 		persistence.Open,
 		wire.FieldsOf(new(*persistence.Store),
 			"Users", "PlatformUsers", "Tokens", "Runs", "Tenants", "PlatformTenants",
-			"Audit", "Tx", "Migrator",
+			"Audit", "Tx", "Locker", "Migrator",
 		),
 		providePasswordHasher,
 		providePermissionChecker,

@@ -35,6 +35,7 @@ excludeFiles:
   # exercise production behavior end-to-end. Same sanctioned test-only exception
   # as the entries above — these files are tests, never imported by production.
   - application/bus/middleware/zz_audit_test.go
+  - infrastructure/scheduler/replicas_db_test.go
   - infrastructure/sqlite/zz_audit_test.go
   - presentation/console/zz_audit_test.go
   - presentation/http/server/zz_audit_test.go

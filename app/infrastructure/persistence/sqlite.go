@@ -39,6 +39,7 @@ func SQLiteStore(mgr *sqlite.Manager, logger *slog.Logger) *Store {
 		PlatformTenants: tenants,
 		Audit:           sqliteaudit.NewRepository(mgr),
 		Tx:              mgr,
+		Locker:          sqlite.Locker{},
 		Migrator:        sqlite.NewMigrator(mgr, logger),
 	}
 }

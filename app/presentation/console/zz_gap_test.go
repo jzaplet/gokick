@@ -172,7 +172,7 @@ func TestServeCommand_SchedulerDoneGatesReturnAndSharesCtx(t *testing.T) {
 			return nil
 		},
 	}
-	sched, err := scheduler.NewScheduler(logger, []scheduler.Job{job})
+	sched, err := scheduler.NewScheduler(logger, fx.Locker, []scheduler.Job{job})
 	if err != nil {
 		t.Fatalf("new scheduler: %v", err)
 	}
