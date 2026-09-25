@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -34,20 +35,34 @@ type testEvent struct{}
 func (testEvent) EventName() string     { return "test.happened" }
 func (testEvent) OccurredAt() time.Time { return time.Unix(0, 0) }
 
+// countTestEvents is a spy event handler: it counts the testEvents dispatched.
+func countTestEvents(fired *atomic.Int32) bus.EventHandlerEntry {
+	return bus.EventHandlerEntry{
+		Event: testEvent{}.EventName(),
+		Handler: func(context.Context, shared.DomainEvent) error {
+			fired.Add(1)
+			return nil
+		},
+	}
+}
+
 // newProductionCommandBus builds the CommandBus through the SAME provider the
 // binary uses (provideCommandBus), so the middleware chain under test cannot
 // drift from production the way a hand-assembled chain silently could.
 // testfx.NewBuses builds the same busmw.CommandChain (the single source), just
-// at the fixture layer rather than through the provider.
+// at the fixture layer rather than through the provider. extra event handlers
+// join the production ones (a spy: countTestEvents).
 func newProductionCommandBus(
 	t *testing.T,
 	fx *testfx.Fixture,
 	runDispatcher shared.RunDispatcher,
+	extra ...bus.EventHandlerEntry,
 ) *bus.CommandBus {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	checker := security.NewPermissionChecker()
-	eventBus := provideEventBus(logger, provideEventHandlers(), shared.NopReporter{})
+	eventBus := provideEventBus(logger, append(provideEventHandlers(), extra...),
+		shared.NopReporter{})
 	return provideCommandBus(
 		logger,
 		fx.Tx,
@@ -177,25 +192,8 @@ func TestCommandBus_RunEnqueueJoinsBusinessTransaction(t *testing.T) {
 func TestCommandBus_EventsDispatchOnCommitNotRollback(t *testing.T) {
 	ctx := context.Background()
 	fx := testfx.New(t)
-
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	fired := 0
-	eventBus := provideEventBus(logger, []bus.EventHandlerEntry{
-		{Event: "test.happened", Handler: func(context.Context, shared.DomainEvent) error {
-			fired++
-			return nil
-		}},
-	}, shared.NopReporter{})
-	cmdBus := provideCommandBus(
-		logger,
-		fx.Tx,
-		security.NewPermissionChecker(),
-		eventBus,
-		noopDispatcher{},
-		fx.Audit,
-		shared.NopReporter{},
-		security.NewDefaultTenantResolver(),
-	)
+	var fired atomic.Int32
+	cmdBus := newProductionCommandBus(t, fx, noopDispatcher{}, countTestEvents(&fired))
 
 	// Rollback case: collect an event then fail → the handler must NOT fire.
 	_ = bus.DispatchVoid(
@@ -208,8 +206,8 @@ func TestCommandBus_EventsDispatchOnCommitNotRollback(t *testing.T) {
 			return errors.New("boom")
 		},
 	)
-	if fired != 0 {
-		t.Fatalf("event must NOT dispatch when the business tx rolls back, fired=%d", fired)
+	if n := fired.Load(); n != 0 {
+		t.Fatalf("event must NOT dispatch when the business tx rolls back, fired=%d", n)
 	}
 
 	// Commit case: collect an event then succeed → the handler fires exactly once.
@@ -219,8 +217,8 @@ func TestCommandBus_EventsDispatchOnCommitNotRollback(t *testing.T) {
 	}); e != nil {
 		t.Fatalf("collect+commit: %v", e)
 	}
-	if fired != 1 {
-		t.Fatalf("event must dispatch exactly once on commit, fired=%d", fired)
+	if n := fired.Load(); n != 1 {
+		t.Fatalf("event must dispatch exactly once on commit, fired=%d", n)
 	}
 }
 

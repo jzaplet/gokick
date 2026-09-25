@@ -23,6 +23,7 @@ func (f *fakeTransactor) BeginReadTx(ctx context.Context) (context.Context, func
 }
 func (f *fakeTransactor) Commit(context.Context) error   { f.committed++; return nil }
 func (f *fakeTransactor) Rollback(context.Context) error { f.rolledBack++; return nil }
+func (f *fakeTransactor) IsRetryable(error) bool         { return false }
 
 func TestWithTx_NoTransactor_ReturnsErr(t *testing.T) {
 	err := WithTx(context.Background(), func(context.Context) error { return nil })
