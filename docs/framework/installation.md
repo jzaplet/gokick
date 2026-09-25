@@ -90,7 +90,7 @@ Zapne **Actions write + create-PR permissions** (bez nich release-please neotev�
 | `make db-down` | Zastaví Postgres kontejnery |
 | `make db-reset` | Smaže data Postgresu (zastaví kontejnery projektu a smaže volume `pgdata`) |
 | `make db-psql` | `psql` uvnitř kontejneru jako vlastník schématu |
-| `make test-pg` | Testy Postgres adaptéru nad testovacím kontejnerem `db-test` (data v RAM), sestavené s `-tags nosqlite` |
+| `make test-pg` | Celá Go suite na Postgresu nad testovacím kontejnerem `db-test` (data v RAM), sestavená s `-tags nosqlite` |
 
 ### CLI
 

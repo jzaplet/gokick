@@ -21,7 +21,7 @@ Architektura stojí na DDD s CQRS a bus patternem: čtyři vrstvy s přísnými 
 |---|---|---|---|
 | **Domain** | `domain/` | `shared/`, `user/`, `token/`, `run/`, `tenant/` | Entity, value objects, interfaces, errors, events. Žádné závislosti. |
 | **Application** | `application/` | `bus/`, `<domain>/command/`, `<domain>/query/`, `<domain>/event/` | CQRS handlery organizované po doménách, bus middleware. Závisí jen na domain. |
-| **Infrastructure** | `infrastructure/` | `config/`, `database/`, `persistence/`, `sqlite/`, `postgres/` (rozpracovaný), `seeder/`, `security/`, `scheduler/`, `worker/`, `di/` | Implementace domain interfaces, databáze, security, background práce. |
+| **Infrastructure** | `infrastructure/` | `config/`, `database/`, `persistence/`, `sqlite/`, `postgres/`, `seeder/`, `security/`, `scheduler/`, `worker/`, `di/` | Implementace domain interfaces, databáze, security, background práce. |
 | **Presentation** | `presentation/` | `http/handler/`, `http/middleware/`, `http/request/`, `http/response/`, `http/server/`, `console/` | HTTP a CLI vrstva. |
 
 ```
