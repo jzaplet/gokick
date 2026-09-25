@@ -67,12 +67,36 @@ func (b *BaseRepository) Conn(ctx context.Context) Conn {
 // its own even inside a transaction (the login counters, the audit log — the
 // raw-pool writes of the SQLite adapter).
 func (b *BaseRepository) SystemConn(ctx context.Context) Conn {
+	if tx := crossTenantTx(ctx); tx != nil {
+		return tx
+	}
+	return b.DB.system
+}
+
+// SystemTx runs fn on the system role inside one transaction: the cross-tenant
+// transaction in ctx when there is one (fn's statements then commit or roll back
+// with it), else a transaction of fn's own that commits when fn returns nil. It
+// is SystemConn for cross-tenant work of several statements that must share a
+// transaction — typically one that locks rows and then acts on them, since a lock
+// taken outside a transaction ends with its statement. The same rule as
+// SystemConn applies: never inside a tenant transaction, which fn would not join.
+func (b *BaseRepository) SystemTx(ctx context.Context, fn func(Conn) error) error {
+	if tx := crossTenantTx(ctx); tx != nil {
+		return fn(tx)
+	}
+	return scopedConn{m: b.DB, s: txScope{crossTenant: true}}.run(ctx,
+		func(tx *sqlx.Tx) error { return fn(tx) })
+}
+
+// crossTenantTx is the transaction in ctx when it is a cross-tenant one — the
+// one SystemConn and SystemTx join — else nil.
+func crossTenantTx(ctx context.Context) Conn {
 	if tx := database.TxFromContext(ctx); tx != nil {
 		if s, _ := ctx.Value(txScopeKey{}).(txScope); s.crossTenant {
 			return tx
 		}
 	}
-	return b.DB.system
+	return nil
 }
 
 // Tenant returns the tenant id to scope a query by — the twin of
@@ -96,7 +120,8 @@ func (b *BaseRepository) Multitenancy() shared.Multitenancy {
 }
 
 // scopedConn runs each statement in a transaction of its own on the tenant role,
-// scoped to one tenant — see BaseRepository.Conn.
+// scoped to one tenant — see BaseRepository.Conn. Its run opens a transaction of
+// scope s for any fn (SystemTx: a cross-tenant one).
 type scopedConn struct {
 	m *Manager
 	s txScope
@@ -195,8 +220,7 @@ func ParseIDs(ids []string) []string {
 
 // SQLSTATE codes the adapter reacts to.
 const (
-	codeUniqueViolation     = "23505"
-	codeForeignKeyViolation = "23503"
+	codeUniqueViolation = "23505"
 	// A transaction that lost a race with a concurrent one (Manager.IsRetryable).
 	codeSerializationFailure = "40001"
 	codeDeadlockDetected     = "40P01"
@@ -232,10 +256,4 @@ func IsUniqueViolation(err error, constraint string) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) &&
 		pgErr.Code == codeUniqueViolation && pgErr.ConstraintName == constraint
-}
-
-// IsForeignKeyViolation reports whether err is a foreign-key violation.
-func IsForeignKeyViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == codeForeignKeyViolation
 }

@@ -16,10 +16,10 @@ import (
 // Postgres system-role gate.
 //
 // A Postgres repository statement runs where ctx says (BaseRepository.Conn): on
-// the tenant plane under row-level security. Two calls step outside that on
-// purpose — SystemConn (cross-tenant work) and the raw system pool r.DB.System()
-// (a write that must commit on its own) — and both run on the role that bypasses
-// row-level security. Every method that makes such a call is listed here, the
+// the tenant plane under row-level security. Three calls step outside that on
+// purpose — SystemConn and SystemTx (cross-tenant work) and the raw system pool
+// r.DB.System() (a write that must commit on its own) — and all run on the role
+// that bypasses row-level security. Every method that makes such a call is listed here, the
 // Postgres counterpart of the SQLite adapter's raw-pool exceptions: a new one is a
 // conscious decision in review, not a side effect. A platform-port method
 // (*AcrossTenants) needs no entry — reaching every tenant is its contract, and
@@ -38,7 +38,7 @@ var allowedSystemRoleMethods = []string{
 }
 
 // systemRoleCallers returns "<pkg>.<func>" for every function in the Go source
-// (src nil = read the file at name) that calls SystemConn or System.
+// (src nil = read the file at name) that calls SystemConn, SystemTx or System.
 func systemRoleCallers(t *testing.T, pkg, name string, src any) []string {
 	t.Helper()
 	f, err := parser.ParseFile(token.NewFileSet(), name, src, 0)
@@ -55,7 +55,7 @@ func systemRoleCallers(t *testing.T, pkg, name string, src any) []string {
 		ast.Inspect(fn.Body, func(n ast.Node) bool {
 			if call, ok := n.(*ast.CallExpr); ok {
 				if sel, ok := call.Fun.(*ast.SelectorExpr); ok &&
-					(sel.Sel.Name == "SystemConn" || sel.Sel.Name == "System") {
+					slices.Contains(systemRoleCalls, sel.Sel.Name) {
 					calls = true
 				}
 			}
@@ -67,6 +67,9 @@ func systemRoleCallers(t *testing.T, pkg, name string, src any) []string {
 	}
 	return out
 }
+
+// systemRoleCalls are the BaseRepository calls that run on the system role.
+var systemRoleCalls = []string{"SystemConn", "SystemTx", "System"}
 
 func systemRoleViolation(caller string) bool {
 	return !strings.HasSuffix(caller, "AcrossTenants") &&
@@ -97,7 +100,7 @@ func TestPostgresSystemRole_OnlyListedMethods(t *testing.T) {
 	if len(violations) > 0 {
 		sort.Strings(violations)
 		t.Errorf("these repository methods run on the system role (SystemConn / "+
-			"DB.System()), which bypasses row-level security, without being listed in "+
+			"SystemTx / DB.System()), which bypasses row-level security, without being listed in "+
 			"allowedSystemRoleMethods:\n  %s", strings.Join(violations, "\n  "))
 	}
 	// The list must not go stale: each entry still makes such a call.
@@ -117,9 +120,10 @@ func (r *Repository) FindAll(ctx context.Context) error { return r.SystemConn(ct
 func (r *Repository) Save(ctx context.Context) error { return r.DB.System().Exec() }
 func (r *Repository) CountAcrossTenants(ctx context.Context) error { return r.SystemConn(ctx).Get() }
 func (r *Repository) Update(ctx context.Context) error { return r.Conn(ctx).Exec() }
+func (r *Repository) Purge(ctx context.Context) error { return r.SystemTx(ctx, purge) }
 `
 	got := systemRoleCallers(t, "user", "x.go", src)
-	want := []string{"user.FindAll", "user.Save", "user.CountAcrossTenants"}
+	want := []string{"user.FindAll", "user.Save", "user.CountAcrossTenants", "user.Purge"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("callers = %v, want %v", got, want)
 	}
@@ -129,7 +133,7 @@ func (r *Repository) Update(ctx context.Context) error { return r.Conn(ctx).Exec
 			flagged = append(flagged, c)
 		}
 	}
-	if fmt.Sprint(flagged) != "[user.FindAll user.Save]" {
-		t.Fatalf("flagged %v, want the two unlisted methods only", flagged)
+	if fmt.Sprint(flagged) != "[user.FindAll user.Save user.Purge]" {
+		t.Fatalf("flagged %v, want the three unlisted methods only", flagged)
 	}
 }

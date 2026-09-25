@@ -2,10 +2,12 @@ package postgres_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"gokick/app/domain/shared"
+	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/postgres"
 )
 
@@ -101,5 +103,63 @@ func TestBaseRepository_SystemConn_JoinsOnlyACrossTenantTransaction(t *testing.T
 	if strings.Join(seen, ",") != "alice,bob" {
 		t.Fatalf("SystemConn in a tenant tx sees %v, want the committed alice,bob — "+
 			"it must not join the tenant transaction", seen)
+	}
+}
+
+// SystemTx runs fn's statements in one transaction on the system role. Outside a
+// transaction it opens one — so a lock the first statement takes still holds for
+// the next, and a failing fn leaves nothing behind; inside a cross-tenant
+// transaction it joins that one.
+func TestBaseRepository_SystemTx_RunsInOneTransaction(t *testing.T) {
+	_, mgr := migrated(t)
+	w := seedWorld(t, mgr)
+	repo := postgres.BaseRepository{DB: mgr}
+	ctx := context.Background()
+	xact := func(c postgres.Conn) string {
+		var id string
+		if err := c.GetContext(ctx, &id, `SELECT pg_current_xact_id()::text`); err != nil {
+			t.Fatalf("read the transaction id: %v", err)
+		}
+		return id
+	}
+	const insertUser = `INSERT INTO users (id, nickname, password_hash, tenant_id)
+		VALUES ($1, $2, 'h', $3)`
+
+	if err := repo.SystemTx(ctx, func(c postgres.Conn) error {
+		if first, second := xact(c), xact(c); first != second {
+			t.Errorf("statements ran in transactions %s and %s, want one", first, second)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("SystemTx: %v", err)
+	}
+
+	boom := errors.New("boom")
+	err := repo.SystemTx(ctx, func(c postgres.Conn) error {
+		if _, err := c.ExecContext(ctx, insertUser, newID(), "carol", w.tenantA); err != nil {
+			t.Fatalf("insert: %v", err)
+		}
+		return boom
+	})
+	if !errors.Is(err, boom) {
+		t.Fatalf("SystemTx returned %v, want fn's error", err)
+	}
+	if n := countUsers(t, ctx, mgr.System()); n != 2 {
+		t.Fatalf("%d users after a failed SystemTx, want its insert rolled back (2)", n)
+	}
+
+	sysCtx, err := mgr.BeginTx(shared.ContextWithPlane(ctx, shared.PlaneSystem))
+	if err != nil {
+		t.Fatalf("begin system tx: %v", err)
+	}
+	defer func() { _ = mgr.Rollback(sysCtx) }()
+	outer := xact(database.TxFromContext(sysCtx))
+	if err := repo.SystemTx(sysCtx, func(c postgres.Conn) error {
+		if inner := xact(c); inner != outer {
+			t.Errorf("SystemTx ran in transaction %s, want the open one %s", inner, outer)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("SystemTx in a system tx: %v", err)
 	}
 }

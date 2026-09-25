@@ -75,11 +75,9 @@ func (r *Repository) CountAcrossTenants(ctx context.Context) (int, error) {
 
 // emptyTenantCond is the "owns nothing live" test, correlated against the tenants
 // row the outer statement deletes — inside the DELETE, never a check-then-act.
-// See the SQLite twin for why both users and non-terminal runs count. Here the
-// foreign keys back it up: a user or run inserted concurrently, which this
-// statement's snapshot cannot see, makes the DELETE fail its foreign-key check
-// instead of stranding the row (users) — and a finished run, which does not count,
-// goes with its tenant (runs.tenant_id cascades).
+// See the SQLite twin for why both users and non-terminal runs count; a finished
+// run does not, and goes with its tenant (runs.tenant_id cascades). On its own it
+// loses a race to a concurrent insert — see BulkDeleteEmptyAcrossTenants.
 const emptyTenantCond = ` AND NOT EXISTS (
 	SELECT 1 FROM users u /* tenant-scope-exempt: platform superadmin */
 	 WHERE u.tenant_id = tenants.id
@@ -90,25 +88,11 @@ const emptyTenantCond = ` AND NOT EXISTS (
 )`
 
 // DeleteIfEmptyAcrossTenants deletes the tenant iff it owns nothing live and is
-// not the default tenant, reporting whether it did — see the SQLite twin. A
-// foreign-key violation is a user or run that arrived while the statement ran: the
-// tenant is not empty after all, the same refusal as the condition's.
+// not the default tenant, reporting whether it did — see the SQLite twin. It is
+// the bulk delete of one id (a malformed id matches no row).
 func (r *Repository) DeleteIfEmptyAcrossTenants(ctx context.Context, id string) (bool, error) {
-	tid, ok := postgres.ParseID(id)
-	if !ok {
-		return false, nil
-	}
-	res, err := r.SystemConn(ctx).ExecContext(ctx,
-		`DELETE FROM tenants WHERE id = $1 AND id <> $2`+emptyTenantCond,
-		tid, shared.DefaultTenantID)
-	if postgres.IsForeignKeyViolation(err) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	n, err := res.RowsAffected()
-	return n > 0, err
+	ids, err := r.BulkDeleteEmptyAcrossTenants(ctx, tenant.BulkSelection{IDs: []string{id}})
+	return len(ids) > 0, err
 }
 
 // overviewFilterConds renders the tenants grid's name/plan filters as loose
@@ -142,6 +126,18 @@ func bulkWhere(sel tenant.BulkSelection, a *postgres.Args) string {
 // BulkDeleteEmptyAcrossTenants deletes every selected tenant that owns nothing
 // live and returns the ids that actually went (DELETE … RETURNING) — see the
 // SQLite twin.
+//
+// emptyTenantCond alone would lose a race SQLite cannot have: a user or run
+// inserted concurrently is invisible to the DELETE's snapshot, so the DELETE would
+// fail the users foreign key (a 500) or cascade the new run away with its tenant.
+// The delete therefore first locks the selected tenants (never the default one)
+// in id order — two overlapping deletes queue up instead of deadlocking — and
+// deletes in a second statement of the same transaction. An insert takes a
+// key-share lock on its tenant's row for the foreign-key check, so the lock waits
+// for an insert in flight to commit, and the DELETE — a new statement with a fresh
+// snapshot — sees what it inserted; an insert that comes after the lock waits
+// until the tenant is gone and fails its own foreign-key check, as it would
+// against a tenant deleted long before.
 func (r *Repository) BulkDeleteEmptyAcrossTenants(
 	ctx context.Context,
 	sel tenant.BulkSelection,
@@ -149,11 +145,19 @@ func (r *Repository) BulkDeleteEmptyAcrossTenants(
 	if sel.IsEmpty() {
 		return nil, nil
 	}
-	a := postgres.Args{shared.DefaultTenantID}
 	var ids []string
-	err := r.SystemConn(ctx).SelectContext(ctx, &ids,
-		`DELETE FROM tenants WHERE id <> $1`+bulkWhere(sel, &a)+emptyTenantCond+` RETURNING id`,
-		a...)
+	err := r.SystemTx(ctx, func(conn postgres.Conn) error {
+		a := postgres.Args{shared.DefaultTenantID}
+		where := bulkWhere(sel, &a)
+		var locked []string
+		err := conn.SelectContext(ctx, &locked,
+			`SELECT id FROM tenants WHERE id <> $1`+where+postgres.LockInIDOrder, a...)
+		if err != nil || len(locked) == 0 {
+			return err
+		}
+		return conn.SelectContext(ctx, &ids,
+			`DELETE FROM tenants WHERE id = ANY($1)`+emptyTenantCond+` RETURNING id`, locked)
+	})
 	if err != nil {
 		return nil, err
 	}

@@ -63,3 +63,13 @@ func NullsSmallest(dir shared.SortDirection) string {
 	}
 	return " NULLS FIRST"
 }
+
+// LockInIDOrder closes a subquery that selects the rows a write is about to
+// change: it locks them in id order first. Two writes over overlapping rows then
+// queue up on the first row they share, instead of each locking part of the set
+// in its own scan order and deadlocking on the rest. (A deadlock that happens
+// anyway is retried by the bus — Manager.IsRetryable — but costs a second
+// attempt.)
+//
+//	`UPDATE users SET … WHERE id IN (SELECT id FROM users WHERE …` + postgres.LockInIDOrder + `)`
+const LockInIDOrder = ` ORDER BY id FOR UPDATE`
