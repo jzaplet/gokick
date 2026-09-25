@@ -8,6 +8,7 @@ import (
 	"errors"
 
 	"gokick/app/domain/token"
+	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/sqlite"
 )
 
@@ -47,7 +48,7 @@ func (r *Repository) MarkUsed(ctx context.Context, hash string) (bool, error) {
 	res, err := r.Conn(ctx).ExecContext(ctx,
 		`UPDATE refresh_tokens SET used_at=datetime('now')
 		 WHERE token_hash=? AND used_at IS NULL`, hash)
-	return sqlite.RowsAffectedBool(res, err)
+	return database.RowsAffectedBool(res, err)
 }
 
 func (r *Repository) DeleteByUserID(ctx context.Context, userID string) error {

@@ -102,7 +102,7 @@ func NewRun(kind string, payload []byte, maxRetries int) (*Run, error) {
 
 // IsTerminal reports whether the run has reached a terminal state — one of the
 // three terminal timestamps is set. This is the domain mirror of the SQL
-// sqlite.NotTerminalClause (which encodes NOT IsTerminal); both express the one
+// database.NotTerminalClause (which encodes NOT IsTerminal); both express the one
 // terminal-state rule, from the entity's side and the query's side.
 func (r *Run) IsTerminal() bool {
 	return r.CompletedAt != nil || r.FailedAt != nil || r.CancelledAt != nil

@@ -41,8 +41,3 @@ func uuidV7SQL(ctx sqlite3.Context, _ ...sqlite3.Value) {
 	}
 	ctx.ResultText(id.String())
 }
-
-// CollateSort is the ORDER BY suffix for user-facing text sorts:
-// `ORDER BY nickname` + CollateSort. Sort whitelists append it to text columns
-// only — ids, numbers and timestamps keep their natural order.
-const CollateSort = " COLLATE " + database.SortCollation

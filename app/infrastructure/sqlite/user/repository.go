@@ -12,6 +12,7 @@ import (
 	"gokick/app/domain/shared"
 	"gokick/app/domain/shared/msgkey"
 	"gokick/app/domain/user"
+	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/sqlite"
 )
 
@@ -188,7 +189,7 @@ func (r *Repository) FindByNickname(ctx context.Context, nickname string) (*user
 func (r *Repository) FindAll(ctx context.Context) ([]user.User, error) {
 	var users []user.User
 	err := r.Conn(ctx).SelectContext(ctx, &users,
-		`SELECT * FROM users WHERE tenant_id=? AND role != 'superadmin' ORDER BY nickname`+sqlite.CollateSort,
+		`SELECT * FROM users WHERE tenant_id=? AND role != 'superadmin' ORDER BY nickname`+database.CollateSort,
 		r.Tenant(ctx))
 	return users, err
 }
@@ -357,7 +358,7 @@ func (r *Repository) ResetFailedLogin(ctx context.Context, userID string) error 
 // excluded by the WHERE guard (role != 'superadmin', wrong tenant) — must surface
 // as an error, never a silent success: a silent no-op returns 204 AND lets the
 // caller emit a phantom audit event for a write that never happened (F-023 phantom
-// role_changed, F-039 superadmin self-password no-op). Unlike sqlite.RowsAffectedBool
+// role_changed, F-039 superadmin self-password no-op). Unlike database.RowsAffectedBool
 // (owner-fencing, where 0 rows is a normal terminal outcome), here 0 rows is ALWAYS
 // an error. Field "id" matches the not-found ValidationError the admin/platform
 // handlers return on a missing user, so both map to the same 400.

@@ -11,6 +11,7 @@ import (
 
 	"gokick/app/domain/shared"
 	"gokick/app/domain/tenant"
+	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/sqlite"
 )
 
@@ -78,7 +79,7 @@ func (r *Repository) CountAcrossTenants(ctx context.Context) (int, error) {
 // emptying it is the required first step — and that is exactly what strands its
 // runs. Only NON-TERMINAL runs count; a completed/failed/cancelled row is history,
 // never claimed again, and must not pin a tenant forever. That "still live"
-// definition is sqlite.NotTerminalClause rather than a tenth hand-rolled copy —
+// definition is database.NotTerminalClause rather than a tenth hand-rolled copy —
 // the constant exists precisely so this rule cannot drift between its call sites,
 // and a delete gate disagreeing with the claim query about what "finished" means
 // is the drift it was built to stop. It needs the runs table unaliased (bare
@@ -89,7 +90,7 @@ const emptyTenantCond = ` AND NOT EXISTS (
 ) AND NOT EXISTS (
 	SELECT 1 FROM runs /* tenant-scope-exempt: platform superadmin */
 	 WHERE runs.tenant_id = tenants.id
-	   AND ` + sqlite.NotTerminalClause + `
+	   AND ` + database.NotTerminalClause + `
 )`
 
 // DeleteIfEmptyAcrossTenants deletes the tenant iff it owns nothing live (no
@@ -131,8 +132,8 @@ func overviewFilterConds(f tenant.ListFilters, prefix string) ([]string, []any) 
 	conds := []string{}
 	args := []any{}
 	if f.Name != "" {
-		conds = append(conds, prefix+"name LIKE ?"+sqlite.LikeEscape)
-		args = append(args, sqlite.LikeContains(f.Name))
+		conds = append(conds, prefix+"name LIKE ?"+database.LikeEscape)
+		args = append(args, database.LikeContains(f.Name))
 	}
 	if f.Plan != "" {
 		conds = append(conds, prefix+"plan = ?")
@@ -193,10 +194,10 @@ func (r *Repository) BulkDeleteEmptyAcrossTenants(
 	return ids, nil
 }
 
-// overviewSortSQL: the name sorts through the Czech collation (sqlite.CollateSort),
+// overviewSortSQL: the name sorts through the Czech collation (database.CollateSort),
 // the user count numerically.
 var overviewSortSQL = map[tenant.SortColumn]string{
-	tenant.SortByName:  "t.name" + sqlite.CollateSort,
+	tenant.SortByName:  "t.name" + database.CollateSort,
 	tenant.SortByUsers: "user_count",
 }
 
@@ -224,9 +225,9 @@ func (r *Repository) OverviewPageAcrossTenants(
 
 	col, ok := overviewSortSQL[c.Sort]
 	if !ok {
-		col = "t.name" + sqlite.CollateSort
+		col = "t.name" + database.CollateSort
 	}
-	orderBy := fmt.Sprintf(` ORDER BY %s %s, t.name%s ASC`, col, c.SortDir, sqlite.CollateSort)
+	orderBy := fmt.Sprintf(` ORDER BY %s %s, t.name%s ASC`, col, c.SortDir, database.CollateSort)
 	err := r.Conn(ctx).SelectContext(ctx, &page.Items,
 		`SELECT t.id, t.name, t.plan, COUNT(u.id) AS user_count
 		   FROM tenants t
