@@ -178,14 +178,8 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
+          # setup-go's own cache (module + build cache) is all this job needs.
           go-version-file: go.mod
-
-      - name: Cache Go build cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/go-build
-          key: go-postgres-${{ runner.os }}-${{ hashFiles('go.sum') }}
-          restore-keys: go-postgres-${{ runner.os }}-
 
       - name: Test (Postgres 18, -tags nosqlite)
         # docker compose reads .env for the other services' env_file even when
