@@ -104,6 +104,19 @@ Co která stanice dělá (`app/application/bus/middleware/`):
   důvodů: raw-pool zápisy (Login, jinak SQLite self-deadlock) a cleanup,
   který musí přežít vrácený error (RefreshToken — theft/expiry smaže tokeny
   a vrátí `AuthError`; uvnitř tx by rollback force-logout zrušil).
+  **Opakování:** na Postgresu může transakce prohrát souboj se souběžnou
+  transakcí (deadlock 40P01, serializační chyba 40001, čekání na zámek delší než
+  `lock_timeout` 55P03). Taková transakce se vrátí a celý handler běží znovu
+  v nové transakci.
+  Pokusy jsou nejvýš tři, mezi nimi je krátká náhodná pauza. Co je taková chyba,
+  rozhodne adaptér (`shared.Transactor.IsRetryable`). SQLite zápisy serializuje,
+  takže souběh neprohraje nikdy. Každý pokus sbírá eventy a audit záznamy do
+  vlastních sběračů a ven se dostanou jen záznamy posledního pokusu: eventy po
+  commitu, audit vždy. Opakovaný command proto rozešle eventy a zapíše audit
+  jednou. Pevný časový strop opakování nemá: `APP_DB_LOCK_TIMEOUT` omezuje každé
+  jednotlivé čekání na zámek, ne celý pokus. Command za dlouhým držitelem zámku
+  tak může trvat až třikrát déle. Write timeout HTTP serveru ho neukončí, jen
+  zahodí odpověď; kontext requestu běží dál.
 
 `EventBus.Register(name, handler)` se volá **jen při DI wiringu** (single-goroutine
 init) — `event.go` čte mapu bez zámku, což je safe jen díky tomu. Dispatch navíc
@@ -157,6 +170,11 @@ Command, který něco vrací (bulk operace vrací počet dotčených řádků), 
   čtení musí být tenant-scoped stejně jako zápis.
 - **`Register` jen při DI.** Registrace event handleru po prvním dispatchi je
   data race (mapa se čte bez zámku) — proto se dělá jen v `provideEventBus`.
+- **Handler musí snést opakování.** Na Postgresu se může spustit víckrát (viz
+  Transaction). Zápisy přes `Conn(ctx)` se s pokusem vrátí, ale práce mimo
+  transakci (raw pool, volání cizího API) by se zopakovala. Commandy s raw-pool
+  zápisy jsou `SkipsTransaction`, a tím i bez opakování. Pomalou nebo externí
+  práci dej do runu (`/gk-runs`).
 - **`SkipsTransaction` jen výjimečně** — dnes jen dva legitimní důvody:
   raw-pool zápisy (Login, jinak SQLite self-deadlock) a cleanup přeživší
   vrácený error (RefreshToken, force-logout po theft/expiry). Ne jako

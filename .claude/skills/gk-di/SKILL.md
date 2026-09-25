@@ -52,7 +52,7 @@ wire_gen.go             # vygenerovaný kód (//go:build !wireinject) — NIKDY 
    wire.Bind(new(shared.Seeder), new(*seeder.Seeder))
    ```
 4. **`wire.FieldsOf(new(*persistence.Store), ...)`** — porty databáze (repozitáře,
-   `Tx` = `shared.Transactor`, `Audit`, `Migrator`). `persistence.Open`
+   `Tx` = `shared.Transactor`, `Audit`, `Locker`, `Migrator`). `persistence.Open`
    (`app/infrastructure/persistence/persistence.go`) otevře adaptér a vrátí `Store` +
    cleanup (zavře pool při ukončení); Wire z něj vytáhne jednotlivá pole. DI tak nikde
    nejmenuje konkrétní repozitář — je to jediné místo, které ví, jaký adaptér za porty stojí.

@@ -155,7 +155,9 @@ Přidání nového kindu (vyber tvar podle „potřebuje checkpoint/resume?"):
   pár atomických zápisů udělej přes `shared.WithTx(ctx, fn)` — krátkou tx, kterou si
   handler sám ohraničí (worker mu `Transactor` do ctx injektuje; drž ji krátkou, žádné
   pomalé/externí I/O uvnitř — přesně jako v command handleru). Vnořený `WithTx` i syrový
-  `BeginTx` uvnitř fail-closed selžou. Kdy durable run vs fire-and-forget run vs
+  `BeginTx` uvnitř fail-closed selžou. Opakování busu (`/gk-bus`) se na `WithTx`
+  nevztahuje: když jeho transakce na Postgresu prohraje souběh (deadlock, čekání na
+  zámek), `WithTx` vrátí chybu a run zopakuje worker podle `maxRetries`. Kdy durable run vs fire-and-forget run vs
   scheduler vs event → `docs/framework/background/overview.md`.
 - **At-least-once → idempotence VŠEHO.** Mimo tx zaniká atomicita „handler-writes +
   complete" — `MarkComplete` je **samostatný zápis až po návratu handleru**, takže crash

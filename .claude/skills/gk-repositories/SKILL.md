@@ -78,10 +78,16 @@ Registrace musí být v init callbacku, ne jednorázová: funkce/collation zareg
 ### Postgres dvojčata
 Každý repozitář má dvojče v `app/infrastructure/postgres/<ctx>/` se stejným kontraktem portu; kontraktní testy v `app/internal/repotest/<ctx>` běží na obou DB (`make test-pg`). Rozdíly:
 - **`r.Conn(ctx)` podle roviny:** transakce z ctx; bez ní na platformní/systémové rovině systémový pool, na tenantové krátká transakce na jeden příkaz, scopnutá na tenanta (jinak by RLS neukázal nic). Chybějící tenant v multitenant módu = chyba.
-- **`r.SystemConn(ctx)`** pro práci napříč tenanty (`*AcrossTenants`, bookkeeping workeru, `FindByNickname`); **`r.DB.System()`** je dvojče raw poolu. Každá metoda, která je volá, je na allow-listu gatu `app/zz_pgsystem_test.go`.
+- **`r.SystemConn(ctx)`** pro práci napříč tenanty (`*AcrossTenants`, bookkeeping workeru, `FindByNickname`); **`r.SystemTx(ctx, fn)`** pro práci napříč tenanty z více příkazů, které musí sdílet transakci (typicky zamknout řádky a pak s nimi pracovat); **`r.DB.System()`** je dvojče raw poolu. Každá metoda, která je volá, je na allow-listu gatu `app/zz_pgsystem_test.go`.
 - **SQL:** `$n` placeholdery (dynamické filtry přes `postgres.Args`), hodiny DB jen `statement_timestamp()` (`postgres.NowExpr` / `NowPlus`; gate `app/zz_pgtime_test.go`), textové filtry `postgres.ILikeContains`, nullable sort sloupce s `postgres.NullsSmallest` (NULL jako na SQLite), `ClaimDue` s `FOR UPDATE SKIP LOCKED`.
 - **Id z venku** projdou `postgres.ParseID`: nevalidní UUID = neexistující řádek (jako na SQLite), ne chyba 22P02.
 - **Unikátnost:** porušení unikátního nicku / jména tenanta vrátí stejnou `ValidationError` jako pre-check handleru — na obou DB.
+- **Zápisy běží souběžně.** SQLite pouští jen jednu zápisovou transakci naráz, Postgres (READ COMMITTED) víc. Co na SQLite drží serializace, musí na Postgresu držet tvar zápisu nebo zámek:
+  - **Zápis zpět jen vlastních sloupců.** Edit načte řádek bez zámku a `Update` zapíše jen sloupce, které edit mění: nikdy `active`, `password_hash` jen s novým heslem (`COALESCE(NULLIF($n, ''), password_hash)`). Souběžná deaktivace nebo změna hesla, commitnutá mezi čtením a zápisem, tak zůstane.
+  - **Zápis závislý na přečtené hodnotě** je compare-and-swap: změna hesla ověří staré heslo proti přečtenému hashi a zapíše jen `WHERE password_hash = <ověřený hash>` (`UpdatePassword` vrací `false`, když se heslo mezitím změnilo). Stejně funguje rotace refresh tokenu.
+  - **Rozhodnutí nad jinými tabulkami** (smazat tenanta, jen když nic nevlastní) nejdřív zamkne řádek, o kterém rozhoduje, a teprve další příkaz rozhodne s čerstvým snapshotem. Vzor je `BulkDeleteEmptyAcrossTenants` (`r.SystemTx`: `SELECT … ` + `postgres.LockInIDOrder`, pak `DELETE`).
+  - **Hromadné zápisy** zamykají v pořadí podle id: `… WHERE id IN (SELECT id … ` + `postgres.LockInIDOrder` + `)`. Dva hromadné zápisy nad stejnými řádky se pak seřadí za sebe a nezablokují se navzájem (deadlock).
+  - Deadlock nebo čekání na zámek delší než `lock_timeout` vyřeší bus opakováním celého commandu (`/gk-bus`).
 
 ### Aktuální repozitáře
 `sqlite/user/` (`user.Repository`), `sqlite/token/` (`token.Repository`), `sqlite/run/` (`run.Repository`), `sqlite/tenant/` (`tenant.Repository`), `sqlite/audit/` (`shared.AuditLogger`) a jejich dvojčata pod `postgres/`. Seeder (`shared.Seeder`) žije mimo adaptér v `infrastructure/seeder/` — mluví jen s porty repozitářů. Všechny porty sestaví `persistence.Open`.
