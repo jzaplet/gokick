@@ -161,7 +161,9 @@ func (r *Repository) BulkDelete(ctx context.Context, sel user.BulkSelection) (in
 	}
 	a := postgres.Args{r.Tenant(ctx)}
 	res, err := r.Conn(ctx).ExecContext(ctx,
-		`DELETE FROM users WHERE tenant_id = $1 AND role <> 'superadmin'`+bulkWhere(sel, &a), a...)
+		`DELETE FROM users WHERE id IN (
+		   SELECT id FROM users WHERE tenant_id = $1 AND role <> 'superadmin'`+
+			bulkWhere(sel, &a)+postgres.LockInIDOrder+`)`, a...)
 	if err != nil {
 		return 0, err
 	}
@@ -178,11 +180,9 @@ func (r *Repository) BulkSetActive(
 	}
 	a := postgres.Args{active, time.Now().UTC(), r.Tenant(ctx)}
 	res, err := r.Conn(ctx).ExecContext(ctx,
-		`UPDATE users SET active = $1, updated_at = $2 WHERE tenant_id = $3 AND role <> 'superadmin'`+
-			bulkWhere(
-				sel,
-				&a,
-			), a...)
+		`UPDATE users SET active = $1, updated_at = $2 WHERE id IN (
+		   SELECT id FROM users WHERE tenant_id = $3 AND role <> 'superadmin'`+
+			bulkWhere(sel, &a)+postgres.LockInIDOrder+`)`, a...)
 	if err != nil {
 		return 0, err
 	}
@@ -223,8 +223,9 @@ func (r *Repository) BulkDeleteAcrossTenants(
 	}
 	var a postgres.Args
 	res, err := r.SystemConn(ctx).ExecContext(ctx,
-		`DELETE FROM users /* tenant-scope-exempt: platform superadmin */
-		  WHERE role <> 'superadmin'`+platformBulkWhere(sel, &a), a...)
+		`DELETE FROM users /* tenant-scope-exempt: platform superadmin */ WHERE id IN (
+		   SELECT id FROM users WHERE role <> 'superadmin'`+
+			platformBulkWhere(sel, &a)+postgres.LockInIDOrder+`)`, a...)
 	if err != nil {
 		return 0, err
 	}
@@ -242,8 +243,9 @@ func (r *Repository) BulkSetActiveAcrossTenants(
 	a := postgres.Args{active, time.Now().UTC()}
 	res, err := r.SystemConn(ctx).ExecContext(ctx,
 		`UPDATE users /* tenant-scope-exempt: platform superadmin */
-		    SET active = $1, updated_at = $2 WHERE role <> 'superadmin'`+platformBulkWhere(sel, &a),
-		a...)
+		    SET active = $1, updated_at = $2 WHERE id IN (
+		   SELECT id FROM users WHERE role <> 'superadmin'`+
+			platformBulkWhere(sel, &a)+postgres.LockInIDOrder+`)`, a...)
 	if err != nil {
 		return 0, err
 	}
