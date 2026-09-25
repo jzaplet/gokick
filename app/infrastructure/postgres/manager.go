@@ -2,9 +2,8 @@
 // one per database role, and implements shared.Transactor: a transaction opens on
 // the pool of the plane in ctx (shared.Plane), and on the tenant plane it first
 // scopes itself to the active tenant, which row-level security then enforces. The
-// repositories arrive in phase 4 of the Postgres adapter plan; until then the
-// adapter is exercised by its own tests (make test-pg) and not yet selectable by
-// APP_DB_DRIVER.
+// repositories live in the sub-packages (user, tenant, token, run, audit) and embed
+// BaseRepository, which resolves where each statement runs.
 package postgres
 
 import (
@@ -20,6 +19,7 @@ import (
 	"gokick/app/infrastructure/database"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
 )
@@ -73,7 +73,7 @@ func openPool(dsn, key string, cfg *config.Config) (*sqlx.DB, error) {
 	pc.RuntimeParams["statement_timeout"] = milliseconds(cfg.DBStatementTimeout)
 	pc.RuntimeParams["idle_in_transaction_session_timeout"] = milliseconds(cfg.DBIdleTxTimeout)
 
-	db := sqlx.NewDb(stdlib.OpenDB(*pc), DriverName)
+	db := sqlx.NewDb(stdlib.OpenDB(*pc, stdlib.OptionAfterConnect(scanTimesInUTC)), DriverName)
 	maxConns := database.PoolSize(cfg.DBMaxConns, dbMaxConnsFloor, dbMaxConnsCeil)
 	db.SetMaxOpenConns(maxConns)
 	db.SetMaxIdleConns(maxConns)
@@ -82,6 +82,19 @@ func openPool(dsn, key string, cfg *config.Config) (*sqlx.DB, error) {
 	db.SetConnMaxLifetime(30 * time.Minute)
 	db.SetConnMaxIdleTime(5 * time.Minute)
 	return db, nil
+}
+
+// scanTimesInUTC makes the connection read timestamptz values back as UTC times —
+// the same instant pgx would return in the process's local zone, but in the zone
+// the SQLite adapter returns and the application writes, so a time reads back
+// equal (==, not just Equal) and serializes the same on both backends.
+func scanTimesInUTC(_ context.Context, conn *pgx.Conn) error {
+	conn.TypeMap().RegisterType(&pgtype.Type{
+		Name:  "timestamptz",
+		OID:   pgtype.TimestamptzOID,
+		Codec: &pgtype.TimestamptzCodec{ScanLocation: time.UTC},
+	})
+	return nil
 }
 
 // connConfig parses dsn (the value of the variable key) with the settings every

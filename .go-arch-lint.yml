@@ -117,6 +117,15 @@ components:
       - infrastructure/sqlite/tenant/**
       - infrastructure/sqlite/token/**
       - infrastructure/sqlite/user/**
+  # The Postgres twins — one sub-package per bounded context, enumerated for the
+  # same reason as sqlite_repos.
+  postgres_repos:
+    in:
+      - infrastructure/postgres/audit/**
+      - infrastructure/postgres/run/**
+      - infrastructure/postgres/tenant/**
+      - infrastructure/postgres/token/**
+      - infrastructure/postgres/user/**
   # DB-neutral: seeds through the repository ports, so it serves every adapter.
   seeder:
     in: infrastructure/seeder/**
@@ -249,6 +258,14 @@ deps:
       - domain_token
       - domain_tenant
       - domain_run
+  postgres_repos:
+    mayDependOn:
+      - postgres_base
+      - database
+      - domain_user
+      - domain_token
+      - domain_tenant
+      - domain_run
   seeder:
     mayDependOn:
       - testfx
@@ -260,6 +277,8 @@ deps:
       - database
       - sqlite_base
       - sqlite_repos
+      - postgres_base
+      - postgres_repos
       - domain_user
       - domain_token
       - domain_tenant
