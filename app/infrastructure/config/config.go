@@ -19,9 +19,25 @@ type Config struct {
 	DBDriver      database.Driver
 	DBPath        string
 	DBJournalMode string
-	// DBMaxConns caps the SQLite connection pool. <= 0 means auto (sqlite.NewManager
-	// derives it from CPU count). APP_DB_MAX_CONNS overrides.
-	DBMaxConns           int
+	// DBMaxConns caps the connection pool — on Postgres each of its two pools.
+	// <= 0 means auto (the adapter derives it from CPU count). APP_DB_MAX_CONNS
+	// overrides.
+	DBMaxConns int
+	// Postgres (APP_DB_DRIVER=postgres): one DSN per database role, all three
+	// required. DBURL is the tenant plane (gokick_app, bound by row-level security),
+	// DBSystemURL the cross-tenant system plane (gokick_system, BYPASSRLS),
+	// DBMigrateURL the schema owner that runs the migrations at startup and nothing
+	// else (see the Postgres adapter plan, section 6).
+	DBURL        string
+	DBSystemURL  string
+	DBMigrateURL string
+	// Postgres session limits, applied to every pooled connection. Lock: how long a
+	// statement waits for a row lock (the counterpart of SQLite's busy_timeout);
+	// Statement: the longest one statement may run; IdleTx: how long a transaction
+	// may sit idle before the server ends it. 0 disables a limit.
+	DBLockTimeout        time.Duration
+	DBStatementTimeout   time.Duration
+	DBIdleTxTimeout      time.Duration
 	JWTSecret            string
 	JWTAccessExpiration  time.Duration
 	JWTRefreshExpiration time.Duration
@@ -165,9 +181,13 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("APP_JWT_REFRESH_EXPIRATION must be positive")
 	}
 
-	// 0 = auto (sqlite.NewManager derives the cap from CPU count).
+	// 0 = auto (the adapter derives the cap from CPU count).
 	if config.DBMaxConns, err = getEnvInt("APP_DB_MAX_CONNS", 0); err != nil {
 		return nil, fmt.Errorf("invalid APP_DB_MAX_CONNS: %w", err)
+	}
+
+	if err := loadPostgresConfig(config); err != nil {
+		return nil, err
 	}
 
 	if err := loadRunWorkerConfig(config); err != nil {
@@ -175,6 +195,65 @@ func LoadConfig() (*Config, error) {
 	}
 
 	return config, nil
+}
+
+// loadPostgresConfig parses the Postgres settings onto config. The session limits
+// are parsed whatever the driver, so a typo fails fast before anyone switches to
+// Postgres; the three DSNs are required only when the driver is postgres, and each
+// must be a postgres:// URL.
+func loadPostgresConfig(config *Config) error {
+	for _, d := range []struct {
+		dst *time.Duration
+		key string
+		def string
+	}{
+		{&config.DBLockTimeout, "APP_DB_LOCK_TIMEOUT", "5s"},
+		{&config.DBStatementTimeout, "APP_DB_STATEMENT_TIMEOUT", "30s"},
+		{&config.DBIdleTxTimeout, "APP_DB_IDLE_TX_TIMEOUT", "60s"},
+	} {
+		var err error
+		if *d.dst, err = time.ParseDuration(getEnv(d.key, d.def)); err != nil {
+			return fmt.Errorf("invalid %s: %w", d.key, err)
+		}
+		if *d.dst < 0 {
+			return fmt.Errorf("%s must not be negative", d.key)
+		}
+	}
+
+	config.DBURL = getEnv("APP_DB_URL", "")
+	config.DBSystemURL = getEnv("APP_DB_SYSTEM_URL", "")
+	config.DBMigrateURL = getEnv("APP_DB_MIGRATE_URL", "")
+	if config.DBDriver != database.DriverPostgres {
+		return nil
+	}
+	for _, dsn := range []struct{ key, value string }{
+		{"APP_DB_URL", config.DBURL},
+		{"APP_DB_SYSTEM_URL", config.DBSystemURL},
+		{"APP_DB_MIGRATE_URL", config.DBMigrateURL},
+	} {
+		if err := validatePostgresURL(dsn.key, dsn.value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validatePostgresURL requires a postgres:// (or postgresql://) URL naming a user
+// and a host. The error never echoes the value: a DSN carries a password.
+func validatePostgresURL(key, value string) error {
+	if value == "" {
+		return fmt.Errorf("%s is required when APP_DB_DRIVER=postgres", key)
+	}
+	u, err := url.Parse(value)
+	if err != nil {
+		return fmt.Errorf("invalid %s: not a URL", key)
+	}
+	if (u.Scheme != "postgres" && u.Scheme != "postgresql") || u.Host == "" ||
+		u.User == nil || u.User.Username() == "" {
+		return fmt.Errorf(
+			"invalid %s: must be postgres://user:password@host[:port]/database", key)
+	}
+	return nil
 }
 
 // loadRunWorkerConfig parses the durable-run worker knobs onto config, split out

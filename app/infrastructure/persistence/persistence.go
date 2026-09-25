@@ -8,6 +8,7 @@
 package persistence
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -52,6 +53,8 @@ func Open(cfg *config.Config, logger *slog.Logger) (*Store, func(), error) {
 	switch cfg.DBDriver {
 	case database.DriverSQLite:
 		store, closeFn, err = openSQLite(cfg, logger)
+	case database.DriverPostgres:
+		err = errPostgresIncomplete
 	default:
 		err = notBuilt(cfg.DBDriver)
 	}
@@ -61,8 +64,16 @@ func Open(cfg *config.Config, logger *slog.Logger) (*Store, func(), error) {
 	return store, closer(closeFn, logger), nil
 }
 
-// notBuilt is the error for a driver this binary has no adapter for — either
-// excluded by a build tag or (Postgres, for now) not written yet.
+// errPostgresIncomplete refuses Postgres until its adapter is whole: the
+// connection manager, the schema and its row-level security exist
+// (infrastructure/postgres, migrations/postgres), the repositories do not yet —
+// phase 4 of the Postgres adapter plan — so no Store can be built on it.
+var errPostgresIncomplete = errors.New("persistence: database driver \"postgres\" is not " +
+	"available yet — the Postgres adapter has no repositories so far (see " +
+	"docs/framework/postgres-adapter-plan.md); use APP_DB_DRIVER=sqlite")
+
+// notBuilt is the error for a driver this binary has no adapter for (excluded by
+// a build tag).
 func notBuilt(d database.Driver) error {
 	return fmt.Errorf("persistence: database driver %q is not built into this binary", d)
 }

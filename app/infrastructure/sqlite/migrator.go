@@ -5,21 +5,12 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"errors"
-	"gokick/app/domain/shared"
+	"gokick/app/infrastructure/database"
 	"gokick/migrations"
 	"log/slog"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/pressly/goose/v3"
-)
-
-// Migration-local structured-log keys. sloglint's no-raw-keys forbids bare
-// string keys.
-const (
-	logKeyFrom    = "from"
-	logKeyTo      = "to"
-	logKeyVersion = "version"
 )
 
 // Migrator applies the embedded SQLite migration set (migrations.SQLite) — the
@@ -55,33 +46,9 @@ func NewMigrationProvider(db *sql.DB) (*goose.Provider, error) {
 }
 
 func (m *Migrator) RunUp() error {
-	ctx := context.Background()
 	provider, err := NewMigrationProvider(m.db.DB)
 	if err != nil {
 		return err
 	}
-
-	before, errBefore := provider.GetDBVersion(ctx)
-
-	if _, err := provider.Up(ctx); err != nil {
-		return err
-	}
-
-	after, errAfter := provider.GetDBVersion(ctx)
-
-	switch {
-	case errBefore != nil || errAfter != nil:
-		// A version read failed. The migrations themselves succeeded (Up
-		// returned nil), so this is a reporting-only degradation — but don't
-		// fabricate an applied-range from a swallowed 0 (that would log a phantom
-		// "0 -> N" or "up to date version 0"). Surface the read failure instead.
-		m.logger.Warn("migrations: applied, but version read failed (applied-range log skipped)",
-			shared.LogKeyError, errors.Join(errBefore, errAfter))
-	case after > before:
-		m.logger.Info("migrations: applied", logKeyFrom, before, logKeyTo, after)
-	default:
-		m.logger.Info("migrations: up to date", logKeyVersion, after)
-	}
-
-	return nil
+	return database.MigrateUp(context.Background(), provider, m.logger)
 }

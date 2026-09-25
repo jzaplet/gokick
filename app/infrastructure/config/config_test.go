@@ -97,6 +97,7 @@ func TestLoadConfig_StrictBool_RejectsTypo(t *testing.T) {
 // is, and a typo fails the start instead of silently running on the default.
 func TestLoadConfig_DBDriver(t *testing.T) {
 	t.Chdir(t.TempDir()) // no .env: only the vars set below count
+	setPostgresURLs(t)
 
 	for env, want := range map[string]database.Driver{
 		"":         database.DriverSQLite,
@@ -116,6 +117,95 @@ func TestLoadConfig_DBDriver(t *testing.T) {
 	t.Setenv("APP_DB_DRIVER", "sqlite3")
 	if _, err := LoadConfig(); err == nil || !strings.Contains(err.Error(), "APP_DB_DRIVER") {
 		t.Fatalf("expected an APP_DB_DRIVER error for a typo, got %v", err)
+	}
+}
+
+// setPostgresURLs sets the three role DSNs APP_DB_DRIVER=postgres requires.
+func setPostgresURLs(t *testing.T) {
+	t.Helper()
+	t.Setenv("APP_DB_URL", "postgres://gokick_app:pw@db:5432/gokick?sslmode=disable")
+	t.Setenv("APP_DB_SYSTEM_URL", "postgres://gokick_system:pw@db:5432/gokick")
+	t.Setenv("APP_DB_MIGRATE_URL", "postgresql://gokick_owner:pw@db/gokick")
+}
+
+func TestLoadConfig_PostgresURLs(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("APP_DB_DRIVER", "postgres")
+	setPostgresURLs(t)
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.DBURL == "" || cfg.DBSystemURL == "" || cfg.DBMigrateURL == "" {
+		t.Fatalf("DSNs not loaded: %+v", []string{cfg.DBURL, cfg.DBSystemURL, cfg.DBMigrateURL})
+	}
+
+	for _, key := range []string{"APP_DB_URL", "APP_DB_SYSTEM_URL", "APP_DB_MIGRATE_URL"} {
+		for _, bad := range []struct{ value, want string }{
+			{"", key + " is required"},
+			{"mysql://u:secret-pw@db/gokick", "invalid " + key},
+			{"postgres://db/gokick", "invalid " + key}, // no user
+			{"postgres:///gokick?user=u", "invalid " + key},
+		} {
+			setPostgresURLs(t)
+			t.Setenv(key, bad.value)
+			_, err := LoadConfig()
+			if err == nil || !strings.Contains(err.Error(), bad.want) {
+				t.Fatalf(
+					"%s=%q: got %v, want an error containing %q",
+					key,
+					bad.value,
+					err,
+					bad.want,
+				)
+			}
+			if strings.Contains(err.Error(), "secret-pw") {
+				t.Fatalf("the error must not echo the DSN (it carries a password): %v", err)
+			}
+		}
+	}
+}
+
+// The DSNs are only required on Postgres — the SQLite default needs none.
+func TestLoadConfig_PostgresURLsNotRequiredOnSQLite(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("APP_DB_DRIVER", "sqlite")
+	if _, err := LoadConfig(); err != nil {
+		t.Fatalf("sqlite must not require Postgres DSNs: %v", err)
+	}
+}
+
+func TestLoadConfig_PostgresTimeouts(t *testing.T) {
+	t.Chdir(t.TempDir())
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.DBLockTimeout != 5*time.Second || cfg.DBStatementTimeout != 30*time.Second ||
+		cfg.DBIdleTxTimeout != time.Minute {
+		t.Fatalf("defaults: lock %s, statement %s, idle tx %s — want 5s/30s/1m",
+			cfg.DBLockTimeout, cfg.DBStatementTimeout, cfg.DBIdleTxTimeout)
+	}
+
+	t.Setenv("APP_DB_LOCK_TIMEOUT", "0s") // 0 disables the limit
+	t.Setenv("APP_DB_STATEMENT_TIMEOUT", "2m")
+	if cfg, err = LoadConfig(); err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.DBLockTimeout != 0 || cfg.DBStatementTimeout != 2*time.Minute {
+		t.Fatalf("overrides: lock %s, statement %s", cfg.DBLockTimeout, cfg.DBStatementTimeout)
+	}
+
+	for _, bad := range []struct{ key, value string }{
+		{"APP_DB_LOCK_TIMEOUT", "soon"},
+		{"APP_DB_IDLE_TX_TIMEOUT", "-1s"},
+	} {
+		t.Setenv(bad.key, bad.value)
+		if _, err := LoadConfig(); err == nil || !strings.Contains(err.Error(), bad.key) {
+			t.Fatalf("%s=%q: expected an error naming the key, got %v", bad.key, bad.value, err)
+		}
+		t.Setenv(bad.key, "")
 	}
 }
 
