@@ -21,7 +21,8 @@ func TestManager_SessionSettings(t *testing.T) {
 	db := pgfx.New(t)
 	cfg := db.Config()
 	cfg.DBLockTimeout = 1500 * time.Millisecond
-	cfg.DBStatementTimeout = 0 // disabled
+	cfg.DBStatementTimeout = 0                   // disabled
+	cfg.DBIdleTxTimeout = 500 * time.Microsecond // rounds up, never down to "off"
 	mgr := newManager(t, cfg)
 
 	for _, pool := range []*sqlx.DB{mgr.App(), mgr.System()} {
@@ -30,7 +31,7 @@ func TestManager_SessionSettings(t *testing.T) {
 			"application_name":                    "gokick",
 			"lock_timeout":                        "1500ms",
 			"statement_timeout":                   "0",
-			"idle_in_transaction_session_timeout": "1min",
+			"idle_in_transaction_session_timeout": "1ms",
 		} {
 			var got string
 			if err := pool.Get(&got, "SELECT current_setting($1)", setting); err != nil {
@@ -195,6 +196,38 @@ func TestManager_BeginReadTx_JoinsAnOpenTransaction(t *testing.T) {
 	// Ending the joined read left the outer transaction usable.
 	if _, err := database.TxFromContext(txCtx).Exec("SELECT 1"); err != nil {
 		t.Fatalf("outer transaction after the joined read: %v", err)
+	}
+}
+
+// A query joins only a transaction of its own scope: not one of another tenant,
+// and not across the tenant/cross-tenant roles in either direction.
+func TestManager_BeginReadTx_RefusesToJoinAnotherScope(t *testing.T) {
+	_, mgr := migrated(t)
+	tenantA := shared.ContextWithTenantID(context.Background(), newID())
+	system := shared.ContextWithPlane(context.Background(), shared.PlaneSystem)
+	for _, tc := range []struct {
+		name  string
+		open  context.Context
+		query func(txCtx context.Context) context.Context
+	}{
+		{"another tenant", tenantA, func(c context.Context) context.Context {
+			return shared.ContextWithTenantID(c, newID())
+		}},
+		{"platform query in a tenant transaction", tenantA, func(c context.Context) context.Context {
+			return shared.ContextWithPlane(c, shared.PlanePlatform)
+		}},
+		{"tenant query in a system transaction", system, func(c context.Context) context.Context {
+			return shared.ContextWithPlane(c, shared.PlaneTenant)
+		}},
+	} {
+		txCtx, err := mgr.BeginTx(tc.open)
+		if err != nil {
+			t.Fatalf("%s: BeginTx: %v", tc.name, err)
+		}
+		if _, _, err := mgr.BeginReadTx(tc.query(txCtx)); err == nil {
+			t.Errorf("%s: BeginReadTx joined a transaction of another scope", tc.name)
+		}
+		_ = mgr.Rollback(txCtx)
 	}
 }
 
