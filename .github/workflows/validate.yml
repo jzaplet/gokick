@@ -157,6 +157,43 @@ jobs:
       - name: Build
         run: make build
 
+  postgres:
+    # The Postgres adapter's tests (make test-pg) against the db-test compose
+    # service — the SAME docker/postgres image and role bootstrap developers run,
+    # so CI proves the image, the init script, the migrations and the row-level
+    # security suite together. The container publishes no port; make test-pg
+    # reaches it by its IP, which a Linux runner routes to directly. Built with
+    # -tags nosqlite: no SQLite code is compiled into this run at all.
+    name: postgres tests
+    # Same reasoning as `validate` above — see the comment there for why this is a
+    # job-level `if` rather than a filter in `on:`.
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release-please--') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Empty on a pull_request — checkout then falls back to its own default
+          # (the PR merge ref), which is what the PR checks must validate.
+          ref: ${{ inputs.ref }}
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Cache Go build cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/go-build
+          key: go-postgres-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          restore-keys: go-postgres-${{ runner.os }}-
+
+      - name: Test (Postgres 18, -tags nosqlite)
+        # docker compose reads .env for the other services' env_file even when
+        # only db-test starts; the example is enough (db-test sets its own env).
+        run: |
+          cp .env.example .env
+          make test-pg
+
   e2e:
     # Durable-run process-lifecycle E2E (kill -9 / SIGTERM against real serve
     # processes + a persistent SQLite file) — deliberately NOT part of `make test`,

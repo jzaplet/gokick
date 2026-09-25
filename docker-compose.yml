@@ -14,6 +14,12 @@ services:
       # mount the container writes to. Docker Desktop's virtualised FS does
       # not provide reliable mmap/shm coordination that WAL needs.
       APP_DB_JOURNAL_MODE: DELETE
+      # With APP_DB_DRIVER=postgres the container reaches the db service by its
+      # compose hostname; .env's db.$APP_DOMAIN is the host's route (OrbStack).
+      # Same roles and dev passwords as .env.example.
+      APP_DB_URL: postgres://gokick_app:gokick_app@db:5432/gokick?sslmode=disable
+      APP_DB_SYSTEM_URL: postgres://gokick_system:gokick_system@db:5432/gokick?sslmode=disable
+      APP_DB_MIGRATE_URL: postgres://gokick_owner:gokick_owner@db:5432/gokick?sslmode=disable
     # OrbStack routes the domain straight to the container — no host port mapping,
     # so nothing collides on the host (run several projects at once, no more "port
     # already allocated"). The domain is per-project configurable via APP_DOMAIN in
@@ -44,3 +50,54 @@ services:
       # documan sees every project skill. _TEMPLATE.md is excluded via the
       # Dockerfile's DOCUMAN_EXCLUDED_FILES.
       - ./.claude/skills:/documan/data/skills
+
+  # Postgres for APP_DB_DRIVER=postgres (docker/postgres/Dockerfile). `make build`
+  # and `make serve` start it when .env selects postgres (make db-up); the profile
+  # keeps a bare `docker compose up` from starting it for a SQLite project. Like the
+  # services above it publishes NO port: OrbStack routes db.$APP_DOMAIN straight to
+  # the container, which is the host the APP_DB_*_URL DSNs in .env name. The
+  # superuser password only matters inside the container; the application connects
+  # as the gokick_* roles the init script creates.
+  db:
+    build:
+      context: .
+      dockerfile: ./docker/postgres/Dockerfile
+    profiles: [postgres]
+    environment:
+      POSTGRES_PASSWORD: postgres
+    labels:
+      - "dev.orbstack.domains=db.${APP_DOMAIN:-gokick.local}"
+    volumes:
+      # The Postgres 18 image keeps its data under /var/lib/postgresql (versioned
+      # subdirectories), not /var/lib/postgresql/data as older images did.
+      - pgdata:/var/lib/postgresql
+
+  # Throwaway Postgres for the test suite (make test-pg): same image, data in RAM,
+  # durability off — a test cluster lives for one session, and without fsync a
+  # database clone costs milliseconds. Reached by the container's IP address, so
+  # it needs no port either (make test-pg resolves it). Room for many connections:
+  # go test runs test packages in parallel, each with its own pools.
+  db-test:
+    build:
+      context: .
+      dockerfile: ./docker/postgres/Dockerfile
+    profiles: [test]
+    environment:
+      POSTGRES_PASSWORD: postgres
+    command:
+      - postgres
+      - -c
+      - fsync=off
+      - -c
+      - full_page_writes=off
+      - -c
+      - synchronous_commit=off
+      - -c
+      - max_connections=300
+    tmpfs:
+      - /var/lib/postgresql
+    labels:
+      - "dev.orbstack.domains=db-test.${APP_DOMAIN:-gokick.local}"
+
+volumes:
+  pgdata:
