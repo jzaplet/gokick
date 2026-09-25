@@ -63,9 +63,10 @@ CREATE TABLE users (
     lang                  text
 );
 
--- Tenant-scoped lists: the tenant_id prefix scopes, the nickname suffix orders.
--- It also serves the users.tenant_id foreign key.
-CREATE INDEX idx_users_tenant_id_nickname ON users (tenant_id, nickname);
+-- Tenant-scoped lists: the tenant_id prefix scopes, the nickname suffix orders —
+-- in app_sort, the collation the grids ORDER BY (an index in another collation
+-- cannot serve that sort). It also serves the users.tenant_id foreign key.
+CREATE INDEX idx_users_tenant_id_nickname ON users (tenant_id, nickname COLLATE app_sort);
 
 -- Opaque refresh tokens: only the SHA-256 hash is stored. token_hash's UNIQUE
 -- constraint is its index (the SQLite twin carries a redundant second one).
@@ -99,14 +100,16 @@ CREATE INDEX idx_audit_log_actor ON audit_log (actor_user_id);
 CREATE INDEX idx_audit_log_created_at ON audit_log (created_at);
 
 -- The durable-task primitive — see the SQLite twin for the state machine and the
--- three counters. Differences: tenant_id is a real foreign key (a tenant with
--- pending runs cannot be deleted from under them), and the claim index is a plain
--- partial index on run_at, as timestamptz compares natively.
+-- three counters. Differences: tenant_id is a real foreign key, and the claim
+-- index is a plain partial index on run_at, as timestamptz compares natively. The
+-- key cascades: a finished run is history and must not pin its tenant forever;
+-- an unfinished one keeps the tenant alive through the tenant delete's own
+-- "owns nothing live" condition, exactly as on SQLite.
 CREATE TABLE runs (
     id               uuid PRIMARY KEY,
     kind             text NOT NULL,
     tenant_id        uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'
-                         REFERENCES tenants (id),
+                         REFERENCES tenants (id) ON DELETE CASCADE,
     payload          bytea NOT NULL,
     state            bytea,
     run_at           timestamptz NOT NULL,
@@ -129,16 +132,18 @@ CREATE TABLE runs (
 CREATE INDEX idx_runs_claim ON runs (run_at)
     WHERE completed_at IS NULL AND failed_at IS NULL AND cancelled_at IS NULL;
 CREATE INDEX idx_runs_kind ON runs (kind, created_at);
--- Serves the tenant foreign key: deleting a tenant checks it owns no runs.
+-- Serves the tenant foreign key: deleting a tenant finds its runs to cascade to.
 CREATE INDEX idx_runs_tenant_id ON runs (tenant_id);
 
--- Row-level security: the database's own tenant wall.
+-- Row-level security: the database's own tenant filter.
 --
 -- The tenant plane (gokick_app) opens every transaction with
 -- set_config('app.tenant_id', <tenant>, true) — transaction-local, so the value
 -- never leaks to the next user of a pooled connection. A query that forgets its
 -- WHERE tenant_id = … then sees only its own tenant, and a write into another
--- tenant fails the WITH CHECK. Without the setting it sees nothing at all.
+-- tenant fails the WITH CHECK. Without the setting it sees nothing at all. It
+-- guards against a forgotten filter, not against injected SQL — that could set the
+-- value itself; parameterized queries are what stop injection.
 --
 -- NULLIF is required: once a connection has run a transaction that set the value,
 -- current_setting returns '' (not NULL) afterwards, and ''::uuid would raise an

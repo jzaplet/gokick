@@ -17,6 +17,10 @@ type roleFacts struct {
 	// owner the role is, or is a member of. An owner can switch row security off
 	// on its own tables, and row security never applies to the owner anyway.
 	OwnedTables int `db:"owned_tables"`
+	// SuperVia / BypassVia name a superuser / BYPASSRLS role this role is a member
+	// of ("" when none): it could SET ROLE to it and leave row security behind.
+	SuperVia  string `db:"super_via"`
+	BypassVia string `db:"bypass_via"`
 }
 
 const roleFactsQuery = `
@@ -27,7 +31,13 @@ SELECT r.rolname, r.rolsuper, r.rolbypassrls,
          WHERE c.relkind IN ('r', 'p', 'v', 'm')
            AND n.nspname NOT IN ('pg_catalog', 'information_schema')
            AND n.nspname NOT LIKE 'pg\_%'
-           AND pg_has_role(current_user, c.relowner, 'MEMBER')) AS owned_tables
+           AND pg_has_role(current_user, c.relowner, 'MEMBER')) AS owned_tables,
+       COALESCE((SELECT min(m.rolname)::text FROM pg_roles m
+                  WHERE m.rolsuper AND m.oid <> r.oid
+                    AND pg_has_role(r.oid, m.oid, 'MEMBER')), '') AS super_via,
+       COALESCE((SELECT min(m.rolname)::text FROM pg_roles m
+                  WHERE m.rolbypassrls AND m.oid <> r.oid
+                    AND pg_has_role(r.oid, m.oid, 'MEMBER')), '') AS bypass_via
   FROM pg_roles r
  WHERE r.rolname = current_user`
 
@@ -36,9 +46,11 @@ SELECT r.rolname, r.rolsuper, r.rolbypassrls,
 // misconfigured DSN would otherwise pass every test and still leak across
 // tenants:
 //
+//   - neither may be a member of a superuser role (it could SET ROLE to it);
 //   - the tenant plane (APP_DB_URL) must not be a superuser (superusers bypass
-//     row security even under FORCE), must not have BYPASSRLS, and must not own —
-//     or be a member of the owner of — any table;
+//     row security even under FORCE), must not have BYPASSRLS nor be a member of
+//     a role that has it, and must not own — or be a member of the owner of — any
+//     table;
 //   - the system plane (APP_DB_SYSTEM_URL) must have BYPASSRLS (without it every
 //     cross-tenant read would see a filtered, silently wrong result), and must be
 //     neither a superuser nor an owner — it needs to cross tenants, not to rewrite
@@ -82,9 +94,17 @@ func checkRole(key, role string, f roleFacts, bypassRLS bool) error {
 	case f.Super:
 		return fmt.Errorf("postgres: %s connects as %q, a superuser — superusers bypass "+
 			"row-level security and can rewrite the schema; connect as %s", key, f.Name, role)
+	case f.SuperVia != "":
+		return fmt.Errorf("postgres: %s connects as %q, a member of the superuser %q — it "+
+			"can SET ROLE to it and bypass row-level security; connect as %s",
+			key, f.Name, f.SuperVia, role)
 	case f.BypassRLS && !bypassRLS:
 		return fmt.Errorf("postgres: %s connects as %q, which has BYPASSRLS — the tenant "+
 			"plane must be bound by row-level security; connect as %s", key, f.Name, role)
+	case f.BypassVia != "" && !bypassRLS:
+		return fmt.Errorf("postgres: %s connects as %q, a member of %q, which has BYPASSRLS "+
+			"— it can SET ROLE to it and leave row-level security; connect as %s",
+			key, f.Name, f.BypassVia, role)
 	case !f.BypassRLS && bypassRLS:
 		return fmt.Errorf("postgres: %s connects as %q, which lacks BYPASSRLS — cross-tenant "+
 			"work would see a silently filtered result; connect as %s", key, f.Name, role)

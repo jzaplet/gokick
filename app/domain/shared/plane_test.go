@@ -10,8 +10,8 @@ func TestPlaneFromContext_DefaultsToTheTenantPlane(t *testing.T) {
 	if got := PlaneFromContext(context.Background()); got != PlaneTenant {
 		t.Fatalf("plane of a bare ctx = %s, want tenant", got)
 	}
-	if PlaneTenant.CrossTenant() {
-		t.Fatal("the tenant plane must not be cross-tenant")
+	if PlaneTenant.CrossTenant() || Plane(99).CrossTenant() {
+		t.Fatal("the tenant plane, and any unknown plane, must not be cross-tenant")
 	}
 	for _, p := range []Plane{PlanePlatform, PlaneSystem} {
 		if !p.CrossTenant() {

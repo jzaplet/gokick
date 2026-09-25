@@ -290,3 +290,48 @@ func TestRLS_TenantWritesItsOwnRows(t *testing.T) {
 		t.Fatalf("tenant A's own token survived its revocation: %d left", got)
 	}
 }
+
+// Every table has row security switched on — a new tenant-owned table that forgets
+// ENABLE ROW LEVEL SECURITY would be readable across tenants by the tenant plane.
+// (A table with no policy then denies the tenant plane every row, which is safe.)
+func TestRLS_EveryTableHasRowSecurity(t *testing.T) {
+	_, mgr := migrated(t)
+	var tables []struct {
+		Name   string `db:"relname"`
+		Secure bool   `db:"relrowsecurity"`
+	}
+	if err := mgr.System().Select(&tables, `SELECT c.relname, c.relrowsecurity
+		  FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+		 WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
+		   AND c.relname NOT LIKE 'goose_db_version%'`); err != nil {
+		t.Fatal(err)
+	}
+	if len(tables) == 0 {
+		t.Fatal("no tables found — the check would pass vacuously")
+	}
+	for _, tbl := range tables {
+		if !tbl.Secure {
+			t.Errorf("table %s has no row-level security (ENABLE ROW LEVEL SECURITY)", tbl.Name)
+		}
+	}
+}
+
+// A finished run is history: it does not keep its tenant from being deleted.
+func TestSchema_FinishedRunsDoNotPinTheirTenant(t *testing.T) {
+	_, mgr := migrated(t)
+	w := seedWorld(t, mgr)
+	sys := mgr.System()
+	for _, s := range []struct{ q, arg string }{
+		{`DELETE FROM refresh_tokens WHERE user_id = $1`, w.userA},
+		{`DELETE FROM users WHERE id = $1`, w.userA},
+		{`UPDATE runs SET completed_at = statement_timestamp() WHERE tenant_id = $1`, w.tenantA},
+		{`DELETE FROM tenants WHERE id = $1`, w.tenantA},
+	} {
+		if _, err := sys.Exec(s.q, s.arg); err != nil {
+			t.Fatalf("%s: %v", s.q, err)
+		}
+	}
+	if got := count(t, sys, `SELECT count(*) FROM runs WHERE tenant_id = $1`, w.tenantA); got != 0 {
+		t.Fatalf("%d runs of the deleted tenant left behind", got)
+	}
+}

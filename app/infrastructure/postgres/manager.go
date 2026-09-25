@@ -101,9 +101,10 @@ func connConfig(dsn, key, appName string) (*pgx.ConnConfig, error) {
 }
 
 // milliseconds renders d as a Postgres time setting (integer milliseconds; 0
-// disables the limit).
+// disables the limit). A positive d rounds UP: a sub-millisecond limit must not
+// truncate to 0 and silently switch the limit off.
 func milliseconds(d time.Duration) string {
-	return strconv.FormatInt(d.Milliseconds(), 10)
+	return strconv.FormatInt(int64((d+time.Millisecond-1)/time.Millisecond), 10)
 }
 
 // dbMaxConnsFloor / dbMaxConnsCeil bound the auto cap of EACH pool
@@ -138,49 +139,84 @@ var errTxForbidden = errors.New(
 		"open a transaction (it would hold row locks and a connection for the run's " +
 		"lifetime); persist state via the Checkpointer or enqueue a command/run")
 
+// txScope is what a transaction the Manager opens is bound to: the role (the
+// system pool for the cross-tenant planes) and, on the tenant plane, the tenant.
+type txScope struct {
+	crossTenant bool
+	tenantID    string
+}
+
+type txScopeKey struct{}
+
+// scope resolves ctx's plane and tenant into a txScope. A tenant plane without a
+// tenant fails closed under multitenancy (shared.RequireTenant) and scopes to the
+// default tenant otherwise.
+func (m *Manager) scope(ctx context.Context) (txScope, error) {
+	if shared.PlaneFromContext(ctx).CrossTenant() {
+		return txScope{crossTenant: true}, nil
+	}
+	tenantID, err := shared.RequireTenant(
+		shared.TenantIDFromContext(ctx), shared.Multitenancy(m.multitenant))
+	if err != nil {
+		return txScope{}, err
+	}
+	return txScope{tenantID: tenantID}, nil
+}
+
 // BeginTx opens a read-write transaction on the plane in ctx.
 func (m *Manager) BeginTx(ctx context.Context) (context.Context, error) {
 	if shared.IsTxForbidden(ctx) {
 		return ctx, errTxForbidden
 	}
-	tx, err := m.begin(ctx, nil)
+	s, err := m.scope(ctx)
 	if err != nil {
 		return ctx, err
 	}
-	return database.ContextWithTx(ctx, tx), nil
+	tx, err := m.begin(ctx, s, nil)
+	if err != nil {
+		return ctx, err
+	}
+	return context.WithValue(database.ContextWithTx(ctx, tx), txScopeKey{}, s), nil
 }
 
 // BeginReadTx opens a READ ONLY transaction for one query, on the plane in ctx.
 // It is what lets a tenant-plane read see its tenant's rows at all: the tenant
-// scope is transaction-local. When ctx already carries a transaction the query
-// joins it. The returned end rolls the transaction back — it wrote nothing, so a
-// rollback ends it as well as a commit would, and cannot fail on a write.
+// scope is transaction-local. The returned end rolls the transaction back — it
+// wrote nothing, so a rollback ends it as well as a commit would, and cannot fail
+// on a write.
+//
+// When ctx already carries a transaction the query joins it — but only one of the
+// same scope: joined, a platform query would see one tenant's rows, and a tenant
+// query inside a system transaction would run without row-level security. Any
+// other scope is refused.
 //
 // It does not honor the no-transaction zone: that rule is about long work holding
 // a transaction open, and a read transaction lives exactly as long as one query.
 func (m *Manager) BeginReadTx(ctx context.Context) (context.Context, func(), error) {
-	if database.TxFromContext(ctx) != nil {
-		return ctx, func() {}, nil
-	}
-	tx, err := m.begin(ctx, &sql.TxOptions{ReadOnly: true})
+	s, err := m.scope(ctx)
 	if err != nil {
 		return ctx, nil, err
 	}
-	return database.ContextWithTx(ctx, tx), func() { _ = tx.Rollback() }, nil
+	if database.TxFromContext(ctx) != nil {
+		if open, _ := ctx.Value(txScopeKey{}).(txScope); open != s {
+			return ctx, nil, errors.New("postgres: a query cannot join the open " +
+				"transaction — it runs on another plane or tenant")
+		}
+		return ctx, func() {}, nil
+	}
+	tx, err := m.begin(ctx, s, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return ctx, nil, err
+	}
+	txCtx := context.WithValue(database.ContextWithTx(ctx, tx), txScopeKey{}, s)
+	return txCtx, func() { _ = tx.Rollback() }, nil
 }
 
-// begin opens a transaction on the pool of ctx's plane. On the tenant plane it
-// scopes the transaction to the active tenant before handing it out; a tenant
-// plane without a tenant fails closed under multitenancy (shared.RequireTenant)
-// and scopes to the default tenant otherwise.
-func (m *Manager) begin(ctx context.Context, opts *sql.TxOptions) (*sqlx.Tx, error) {
-	if shared.PlaneFromContext(ctx).CrossTenant() {
+// begin opens a transaction on the pool of scope s. On the tenant plane it scopes
+// the transaction to the tenant before handing it out.
+func (m *Manager) begin(ctx context.Context, s txScope, opts *sql.TxOptions) (*sqlx.Tx, error) {
+	if s.crossTenant {
 		return m.system.BeginTxx(ctx, opts)
-	}
-	tenantID, err := shared.RequireTenant(
-		shared.TenantIDFromContext(ctx), shared.Multitenancy(m.multitenant))
-	if err != nil {
-		return nil, err
 	}
 	tx, err := m.app.BeginTxx(ctx, opts)
 	if err != nil {
@@ -189,7 +225,7 @@ func (m *Manager) begin(ctx context.Context, opts *sql.TxOptions) (*sqlx.Tx, err
 	// is_local = true: the setting ends with the transaction, so the pooled
 	// connection never carries this tenant into its next transaction.
 	if _, err := tx.ExecContext(ctx,
-		`SELECT set_config('`+tenantSetting+`', $1, true)`, tenantID); err != nil {
+		`SELECT set_config('`+tenantSetting+`', $1, true)`, s.tenantID); err != nil {
 		_ = tx.Rollback()
 		return nil, fmt.Errorf("postgres: scope the transaction to its tenant: %w", err)
 	}

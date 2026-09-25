@@ -26,8 +26,10 @@ const (
 	PlaneSystem
 )
 
-// CrossTenant reports whether the plane may reach every tenant's rows.
-func (p Plane) CrossTenant() bool { return p != PlaneTenant }
+// CrossTenant reports whether the plane may reach every tenant's rows. Only the
+// two named cross-tenant planes do: an unknown value fails closed, like the zero
+// value.
+func (p Plane) CrossTenant() bool { return p == PlanePlatform || p == PlaneSystem }
 
 func (p Plane) String() string {
 	switch p {

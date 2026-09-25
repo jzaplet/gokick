@@ -72,8 +72,10 @@ CREATE TABLE IF NOT EXISTS users (
     lang TEXT
 );
 
--- Composite index: the tenant_id prefix serves tenant-scoped lists / GROUP BY,
--- the nickname suffix removes the ORDER BY sort (no TEMP B-TREE).
+-- Composite index: the tenant_id prefix serves tenant-scoped lists / GROUP BY.
+-- The grids ORDER BY nickname COLLATE app_sort, which this binary-collated suffix
+-- cannot serve; a collated index would make every tool that opens the file (the
+-- sqlite3 CLI, a DB GUI) fail on users without the app's collation.
 CREATE INDEX idx_users_tenant_id_nickname ON users(tenant_id, nickname);
 
 -- Opaque refresh tokens: only the SHA-256 hash is stored (the raw value goes to
