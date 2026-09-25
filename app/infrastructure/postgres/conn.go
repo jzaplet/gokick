@@ -193,11 +193,38 @@ func ParseIDs(ids []string) []string {
 	return valid
 }
 
-// SQLSTATE codes the repositories react to.
+// SQLSTATE codes the adapter reacts to.
 const (
 	codeUniqueViolation     = "23505"
 	codeForeignKeyViolation = "23503"
+	// A transaction that lost a race with a concurrent one (Manager.IsRetryable).
+	codeSerializationFailure = "40001"
+	codeDeadlockDetected     = "40P01"
+	codeLockNotAvailable     = "55P03"
 )
+
+// IsRetryable reports whether err ended a transaction that lost a race with a
+// concurrent one, so running the same work again in a fresh transaction may
+// succeed (shared.Transactor):
+//   - 40001 serialization failure — a SERIALIZABLE or REPEATABLE READ transaction
+//     read a snapshot a concurrent commit invalidated;
+//   - 40P01 deadlock — Postgres aborted this transaction to break a lock cycle;
+//   - 55P03 lock not available — a lock wait ran past lock_timeout
+//     (APP_DB_LOCK_TIMEOUT), typically behind a long transaction.
+//
+// It holds whether the error came from a statement or from COMMIT.
+func (m *Manager) IsRetryable(err error) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+	switch pgErr.Code {
+	case codeSerializationFailure, codeDeadlockDetected, codeLockNotAvailable:
+		return true
+	default:
+		return false
+	}
+}
 
 // IsUniqueViolation reports whether err is a unique violation of constraint (the
 // index or constraint name Postgres reports).

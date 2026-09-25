@@ -58,7 +58,7 @@ func TestAuditMiddleware_PersistsAcrossBusinessRollback(t *testing.T) {
 	// t.Parallel for DB tests is an optional later step of the Postgres plan.)
 	fx := testfx.New(t)
 	audit := mw.AuditMiddleware(quietLogger(), fx.Audit) // real raw-pool AuditLogger
-	txmw := mw.TransactionMiddleware(fx.Tx)
+	txmw := mw.TransactionMiddleware(quietLogger(), fx.Tx)
 
 	const action = "auth.login.failed"
 	const nickname = "rollbackvictim"
@@ -260,7 +260,7 @@ func TestDispatchEventsMiddleware_AfterCommitSideEffectWithRealDB(t *testing.T) 
 		})
 
 		dispatch := mw.DispatchEventsMiddleware(logger, eventBus)
-		txmw := mw.TransactionMiddleware(fx.Tx)
+		txmw := mw.TransactionMiddleware(quietLogger(), fx.Tx)
 
 		_, _ = dispatch(
 			context.Background(),

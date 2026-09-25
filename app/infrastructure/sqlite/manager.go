@@ -161,3 +161,9 @@ func (m *Manager) BeginReadTx(ctx context.Context) (context.Context, func(), err
 func (m *Manager) Commit(ctx context.Context) error { return database.CommitTx(ctx) }
 
 func (m *Manager) Rollback(ctx context.Context) error { return database.RollbackTx(ctx) }
+
+// IsRetryable is always false on SQLite: _txlock=immediate serializes every
+// write transaction at BEGIN, so none can lose a race to a concurrent one. A
+// writer that waited out busy_timeout gets SQLITE_BUSY, which stays an error —
+// retrying would only wait out the same lock again.
+func (m *Manager) IsRetryable(error) bool { return false }

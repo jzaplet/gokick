@@ -33,7 +33,7 @@ func TestDispatchEventsMiddleware_DiscardsEventsUnlessCommitSucceeds(t *testing.
 			return nil
 		})
 		dispatch := DispatchEventsMiddleware(logger, eventBus)
-		txmw := TransactionMiddleware(tx)
+		txmw := TransactionMiddleware(logger, tx)
 		run := func(handlerErr error) error {
 			_, err := dispatch(
 				context.Background(),

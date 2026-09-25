@@ -21,6 +21,12 @@ type Transactor interface {
 	BeginReadTx(ctx context.Context) (txCtx context.Context, end func(), err error)
 	Commit(ctx context.Context) error
 	Rollback(ctx context.Context) error
+	// IsRetryable reports whether err means the transaction lost a race with a
+	// concurrent one — a serialization failure, a deadlock, a lock wait that timed
+	// out — so the same work, run again in a fresh transaction, may well succeed.
+	// The bus TransactionMiddleware retries such a command. A database that
+	// serializes every write (SQLite) never loses such a race and reports false.
+	IsRetryable(err error) bool
 }
 
 type noTxKey struct{}

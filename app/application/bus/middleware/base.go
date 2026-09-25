@@ -63,7 +63,7 @@ func CommandChain(
 		AuditMiddleware(logger, audit),
 		RunDispatcherMiddleware(runDispatcher),
 		DispatchEventsMiddleware(logger, eventBus),
-		TransactionMiddleware(tx),
+		TransactionMiddleware(logger, tx),
 	)
 }
 
@@ -99,6 +99,6 @@ func SystemChain(
 		AuditMiddleware(logger, audit),
 		RunDispatcherMiddleware(runDispatcher),
 		DispatchEventsMiddleware(logger, eventBus),
-		TransactionMiddleware(tx),
+		TransactionMiddleware(logger, tx),
 	}
 }
