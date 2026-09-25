@@ -5,14 +5,14 @@ position: 10
 slug: 'skills-gk-repositories'
 parent: 'skills-data'
 navTitle: 'gk-repositories'
-title: 'GK — Repositories (SQLite datová vrstva)'
-description: 'Repozitáře nad SQLite — jak píšeš datovou vrstvu, aby sama běžela uvnitř transakce (r.Conn(ctx)), kde jsou vědomé výjimky (raw pool) a proč je DB takhle naladěná. Use when přidáváš/upravuješ repozitář, řešíš proč zápis přežil/nepřežil rollback, nebo ladíš "database is locked" / SQLITE_BUSY.'
+title: 'GK — Repositories (datová vrstva SQLite a Postgres)'
+description: 'Repozitáře nad SQLite a Postgresem — jak píšeš datovou vrstvu, aby sama běžela uvnitř transakce (r.Conn(ctx)), kde jsou vědomé výjimky (raw pool) a proč je DB takhle naladěná. Use when přidáváš/upravuješ repozitář, řešíš proč zápis přežil/nepřežil rollback, nebo ladíš "database is locked" / SQLITE_BUSY.'
 name: 'gk-repositories'
 ---
 
-# GK — Repositories (SQLite datová vrstva)
+# GK — Repositories (datová vrstva SQLite a Postgres)
 
-Jak v gokicku vypadají repozitáře: tenké adaptéry nad SQLite, které se samy zapojí do transakce, plus pár vědomých výjimek a naladění databáze.
+Jak v gokicku vypadají repozitáře: tenké adaptéry nad SQLite (a jejich Postgres dvojčata), které se samy zapojí do transakce, plus pár vědomých výjimek a naladění databáze.
 
 ## What & when
 - Sáhni sem, když píšeš nebo upravuješ repozitář (`app/infrastructure/sqlite/<context>/`) a nevíš, jak má vypadat.
@@ -69,14 +69,22 @@ file:<path>?_txlock=immediate&_pragma=busy_timeout(5000)&_pragma=foreign_keys(on
 
 ### Řazení a vyhledávání — česky a stejně na obou DB
 Každé nové spojení v poolu projde `registerConnFuncs` (`app/infrastructure/sqlite/conninit.go`, init callback driveru), který zaregistruje:
-- **collation `app_sort`** (`database.SortCollation`, locale `database.SortLocale` = `cs-CZ`) — textové `ORDER BY` píšeš `"nickname" + sqlite.CollateSort`. Jen v dotazech, **nikdy ve schématu/indexech**: rovnost a UNIQUE zůstávají binární a SQLite soubor jde dál otevřít v GUI nástroji bez registrované collation.
-- **Unicode `LIKE`** (ncruces `ext/unicode`) — case-insensitive i pro Č/Ř/Ž. Uživatelský vstup vždy přes `sqlite.LikeContains(s)` + `LIKE ?` + `sqlite.LikeEscape`, aby `%`/`_` nebyly wildcardy.
+- **collation `app_sort`** (`database.SortCollation`, locale `database.SortLocale` = `cs-CZ`) — textové `ORDER BY` píšeš `"nickname" + database.CollateSort`. Jen v dotazech, **nikdy ve schématu/indexech**: rovnost a UNIQUE zůstávají binární a SQLite soubor jde dál otevřít v GUI nástroji bez registrované collation.
+- **Unicode `LIKE`** (ncruces `ext/unicode`) — case-insensitive i pro Č/Ř/Ž. Uživatelský vstup vždy přes `database.LikeContains(s)` + `LIKE ?` + `database.LikeEscape`, aby `%`/`_` nebyly wildcardy.
 - **SQL funkci `uuidv7()`** — stejné jméno jako v Postgresu 18, pro přenositelné SQL seedy.
 
-Registrace musí být v init callbacku, ne jednorázová: funkce/collation zaregistrovaná na jednom spojení by na dalším spojení z poolu chyběla. Zlatý test `app/infrastructure/sqlite/collation_test.go` porovnává řazení i vyhledávání se soubory v `app/infrastructure/database/testdata/sort_cs/`, jejichž očekávání vyrobil Postgres (ICU `cs-CZ`) — hlídá, že obě DB řadí stejně.
+Registrace musí být v init callbacku, ne jednorázová: funkce/collation zaregistrovaná na jednom spojení by na dalším spojení z poolu chyběla. Zlaté testy `app/infrastructure/sqlite/collation_test.go` a `app/infrastructure/postgres/collation_test.go` porovnávají řazení i vyhledávání se soubory v `app/infrastructure/database/testdata/sort_cs/` (očekávání z ICU `cs-CZ`) — hlídají, že obě DB řadí a hledají stejně.
+
+### Postgres dvojčata
+Každý repozitář má dvojče v `app/infrastructure/postgres/<ctx>/` se stejným kontraktem portu; kontraktní testy v `app/internal/repotest/<ctx>` běží na obou DB (`make test-pg`). Rozdíly:
+- **`r.Conn(ctx)` podle roviny:** transakce z ctx; bez ní na platformní/systémové rovině systémový pool, na tenantové krátká transakce na jeden příkaz, scopnutá na tenanta (jinak by RLS neukázal nic). Chybějící tenant v multitenant módu = chyba.
+- **`r.SystemConn(ctx)`** pro práci napříč tenanty (`*AcrossTenants`, bookkeeping workeru, `FindByNickname`); **`r.DB.System()`** je dvojče raw poolu. Každá metoda, která je volá, je na allow-listu gatu `app/zz_pgsystem_test.go`.
+- **SQL:** `$n` placeholdery (dynamické filtry přes `postgres.Args`), hodiny DB jen `statement_timestamp()` (`postgres.NowExpr` / `NowPlus`; gate `app/zz_pgtime_test.go`), textové filtry `postgres.ILikeContains`, nullable sort sloupce s `postgres.NullsSmallest` (NULL jako na SQLite), `ClaimDue` s `FOR UPDATE SKIP LOCKED`.
+- **Id z venku** projdou `postgres.ParseID`: nevalidní UUID = neexistující řádek (jako na SQLite), ne chyba 22P02.
+- **Unikátnost:** porušení unikátního nicku / jména tenanta vrátí stejnou `ValidationError` jako pre-check handleru — na obou DB.
 
 ### Aktuální repozitáře
-`sqlite/user/` (`user.Repository`), `sqlite/token/` (`token.Repository`), `sqlite/run/` (`run.Repository`), `sqlite/tenant/` (`tenant.Repository`), `sqlite/audit/` (`shared.AuditLogger`). Seeder (`shared.Seeder`) žije mimo adaptér v `infrastructure/seeder/` — mluví jen s porty repozitářů. Všechny porty sestaví `persistence.Open`.
+`sqlite/user/` (`user.Repository`), `sqlite/token/` (`token.Repository`), `sqlite/run/` (`run.Repository`), `sqlite/tenant/` (`tenant.Repository`), `sqlite/audit/` (`shared.AuditLogger`) a jejich dvojčata pod `postgres/`. Seeder (`shared.Seeder`) žije mimo adaptér v `infrastructure/seeder/` — mluví jen s porty repozitářů. Všechny porty sestaví `persistence.Open`.
 
 ## Recipe: nový repozitář
 1. Vytvoř `app/infrastructure/sqlite/<context>/repository.go` se `type Repository struct { sqlite.BaseRepository }`.

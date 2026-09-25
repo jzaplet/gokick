@@ -69,6 +69,7 @@ k souboru. Každý backend má vlastní opener s build tagem
 
 Helpery na `*Fixture`:
 - **Seed:** `SeedUser`, `SeedUserInTenant`, `SeedTenant`, `SeedTenantWithPlan`, `SeedRunInTenant`, `SeedRefreshToken`, `MarkRunCompleted`. Zapisují se `testfx.SystemCtx()` — v systémové rovině (`shared.PlaneSystem`), protože seedování je setup napříč tenanty; na Postgresu by tenantová rovina řádek cizího tenanta odmítla (RLS `WITH CHECK`). Stejný ctx použij pro jiný fixture zápis, který musí sáhnout mimo aktivního tenanta.
+- **Rovina, když voláš handler nebo repozitář bez busu:** dej mu ctx, jaký by mu dal bus — `testfx.TenantCtx(tenantID)` (práce za jednoho tenanta, jako handler runu), `testfx.PlatformCtx()` (platformní handler), `testfx.SystemCtx()` (CLI, seeder, inspekce řádku cizího tenanta). Holý `context.Background()` je tenantová rovina výchozího tenanta: na SQLite projde cokoli, na Postgresu RLS ukáže jen řádky výchozího tenanta.
 - **Stav, který porty vyrobit neumí** (`app/internal/testfx/raw.go`): `SetUserActive`, `SetUserLockedUntil`, `ForceExpireLease`, `SetLeaseFromNow(t, id, d)` (vůči hodinám **databáze**, ms přesně), `StealLease`, `MakeRunDue`, `ForceRunCompleted` / `ForceRunFailed`, `SetRunReclaims` / `SetRunParks`.
 - **Čtení mimo porty:** `Count(t, table, where, args…)`, `AuditEntry(t, id)`, `AssertTokenCount(t, n)`.
 - **Constraint testy:** `RawExec(query, args…)` (přenositelné SQL s `?`) + `Violated(err)` → `testfx.NotNull` / `Unique` / `Check` / `ForeignKey`, klasifikované z kódu chyby driveru, ne z textu hlášky.
@@ -79,8 +80,8 @@ Helpery na `*Fixture`:
 **Výběr driveru v testu:** `testfx.ActiveDriver()`. Test, který pinuje chování jednoho adaptéru, patří do balíčku toho adaptéru, který má `TestMain` s `testfx.MainFor(m, database.Driver<Adaptér>)`, takže při jiném driveru neběží vůbec (Postgres adaptér: `app/infrastructure/postgres/main_test.go`).
 
 ### Postgres: `make test-pg` a harness `pgfx`
-Postgres adaptér zatím nemá repozitáře (fáze 4 [plánu](/framework/postgres-adapter-plan)), takže `testfx.New(t)` na `APP_DB_DRIVER=postgres` hlasitě selže a na Postgresu běží jen vlastní testy adaptéru (`app/infrastructure/postgres/`: manager, migrátor, kontrola rolí a **RLS sada** `rls_test.go`, která izolaci tenantů ověřuje přímo v databázi, bez kódu repozitářů).
-- `make test-pg` nahodí compose službu `db-test` (Postgres 18 z `docker/postgres/Dockerfile`, data v RAM, `fsync=off`, žádný publikovaný port — připojí se na IP kontejneru) a spustí `go test -tags nosqlite` s `APP_DB_DRIVER=postgres`. S nastaveným `APP_TEST_DB_URL` (superuser DSN) poběží proti jinému clusteru; ten musí mít role z `docker/postgres/initdb/01-roles.sh` s výchozími hesly. V CI to dělá job `postgres tests`.
+Na Postgresu běží **celá suite**: `testfx.New(t)` postaví Store z Postgres repozitářů nad klonem šablony. Navíc tam běží vlastní testy adaptéru (`app/infrastructure/postgres/`: manager, migrátor, kontrola rolí, `BaseRepository`, zlatý test řazení a **RLS sada** `rls_test.go`, která izolaci tenantů ověřuje přímo v databázi, bez kódu repozitářů).
+- `make test-pg` nahodí compose službu `db-test` (Postgres 18 z `docker/postgres/Dockerfile`, data v RAM, `fsync=off`, žádný publikovaný port — připojí se na IP kontejneru) a spustí `go test -tags nosqlite ./app/... ./cmd/...` s `APP_DB_DRIVER=postgres`. S nastaveným `APP_TEST_DB_URL` (superuser DSN) poběží proti jinému clusteru; ten musí mít role z `docker/postgres/initdb/01-roles.sh` s výchozími hesly. V CI to dělá job `postgres tests`.
 - **Harness** `app/internal/testfx/pgfx`: `pgfx.New(t)` vrátí testu vlastní databázi, **klon šablony** s hotovým schématem (šablona `gokick_tpl_<hash migrací>` vznikne jednou pod advisory lockem, i když `go test` pouští balíčky paralelně; klon trvá milisekundy), a po testu ji smaže. `pgfx.NewEmpty(t)` dá prázdnou DB pro testy migrací. `DB.Config()` vrátí `*config.Config` s DSN všech tří rolí; `DB.AdminURL` slouží testům, které ověřují, že aplikace superuserovi odmítne sloužit.
 
 ### Kontraktní testy repozitářů
@@ -105,6 +106,7 @@ fyzické podoby:
    - `app/domain/zz_audit_test.go` — domain smí importovat jen stdlib + `uuid` + jiný `domain/` (overview-39).
    - `app/domain/zz_gap_test.go` — HTTP handler nesmí importovat DB adaptér (`infrastructure/sqlite`, `infrastructure/postgres`, `infrastructure/persistence`), `infrastructure/security` ani `application/**/event` (overview-41).
    - `app/zz_nosqlite_test.go` — viz „Žádná SQLite při přepnutém adaptéru" níže.
+   - `app/zz_tenant_test.go` — tenant conformance nad SQL **obou** adaptérů (dotaz nad tenant-owned tabulkou má `tenant_id` nebo marker; INSERT se `tenant_id` volá write guard); `app/zz_sqltime_test.go` (SQLite, `julianday`) a `app/zz_pgtime_test.go` (Postgres, jen `statement_timestamp()`) hlídají hodiny DB; `app/zz_pgsystem_test.go` drží allow-list Postgres metod na systémové roli. Čtou jen zdroj, takže běží v každém běhu.
 2. **testfx-wired black-box testy** — postaví reálné prostředí a pinují konkrétní coverage claim, např. `app/internal/repotest/user/zz_gap_test.go` (DB-level `CHECK`/`UNIQUE` constraints přes raw insert).
 
 ### Žádná SQLite při přepnutém adaptéru (trojitá pojistka)

@@ -51,7 +51,7 @@ Sémantickou validaci dělají konzumenti:
 
 | Proměnná | Default | Co dělá |
 |---|---|---|
-| `APP_DB_DRIVER` | `sqlite` | Databázový adaptér. Parsuje se striktně, neznámá hodnota shodí start. `postgres` se připravuje ([plán](/framework/postgres-adapter-plan)): databáze v Dockeru už běží (`make build` / `make serve` ji s `postgres` v `.env` samy nahodí), ale dokud adaptér nemá repozitáře, binárka driver odmítne s chybou „not available yet". Testy čtou stejnou proměnnou (jen z prostředí procesu, ne z `.env`) a běží na zvoleném adaptéru. |
+| `APP_DB_DRIVER` | `sqlite` | Databázový adaptér. Parsuje se striktně, neznámá hodnota shodí start. `postgres` přepne na Postgres ([plán](/framework/postgres-adapter-plan)): databázi v Dockeru nahodí `make build` / `make serve` samy, když je v `.env` `postgres`. Testy čtou stejnou proměnnou (jen z prostředí procesu, ne z `.env`) a běží na zvoleném adaptéru. |
 | `APP_DB_PATH` | `./data/app.db` | Cesta k souboru SQLite databáze. |
 | `APP_DB_JOURNAL_MODE` | `WAL` | SQLite journal mode. `WAL` je default a správná volba pro normální běh. Přepni na `DELETE`, když stejnou DB čte přes Docker bind mount jiný proces (např. prohlížení `data/app.db` v IDE, zatímco kontejner zapisuje) — virtualizovaný FS Docker Desktopu nezaručuje koordinaci mmap/shm, kterou WAL vyžaduje. |
 | `APP_DB_MAX_CONNS` | `0` (auto) | Strop connection poolu. Nenastavené/`0` = auto: na SQLite `clamp(2×NumCPU, 4, 32)` — zápisy stejně serializuje, limit řídí paměť a backpressure, ne propustnost; na Postgresu platí pro **každý** ze dvou poolů a auto je `clamp(2×NumCPU, 4, 16)`, aby dva pooly × repliky zůstaly pod `max_connections`. Override jen při neobvyklém poměru RAM:CPU. |
