@@ -1,4 +1,5 @@
-.PHONY: install build serve dev di install-tools go-deps hooks setup-github lint format format-check test arch-check nosqlite-check \
+.PHONY: install build serve dev di install-tools go-deps hooks setup-github lint format format-check test test-pg arch-check nosqlite-check \
+        db-up db-down db-reset db-psql \
         ts-gen ts-check boundary-check errfields-check docpaths-check \
         e2e e2e-crash-recovery e2e-at-least-once e2e-sigterm-drain e2e-terminal-failure \
         fe-deps fe-dev fe-build fe-clean \
@@ -81,8 +82,9 @@ hooks:
 setup-github:
 	./scripts/setup-github.sh $(ARGS)
 
-# Build — frontend first (Vite → public/), then Go (embeds public/)
-build: di fe-build
+# Build — frontend first (Vite → public/), then Go (embeds public/). db-up first:
+# with APP_DB_DRIVER=postgres in .env the Postgres container comes up on its own.
+build: db-up di fe-build
 	go build -ldflags="-s -w -X main.release=$(VERSION)" -o bin/app ./cmd/
 
 # Format — frontend (ESLint Stylistic) + backend (golines) + docs
@@ -136,8 +138,35 @@ format-check:
 dev: di
 	go build -o bin/app ./cmd/
 
-serve:
+serve: db-up
 	./bin/app serve
+
+# Postgres (APP_DB_DRIVER=postgres) — the db service of docker-compose.yml, built
+# from docker/postgres/Dockerfile. It publishes no port: on OrbStack the host
+# reaches db.$APP_DOMAIN directly (the APP_DB_*_URL DSNs in .env). db-up is a no-op
+# unless .env selects postgres, so a SQLite project never needs Docker; with
+# postgres it is idempotent — a running container returns at once, otherwise it is
+# built and started and the recipe waits for its healthcheck. The migrations then
+# run at application startup, as on SQLite.
+DB_DRIVER := $(shell sed -n 's/^APP_DB_DRIVER=\([a-z]*\).*/\1/p' .env 2>/dev/null | tail -n 1)
+
+db-up:
+ifeq ($(DB_DRIVER),postgres)
+	docker compose up -d --wait db
+endif
+
+db-down:
+	docker compose stop db db-test
+
+# Wipes the Postgres data: stops the project's containers (the app and documan
+# too) and deletes its named volumes — pgdata is the only one. The next db-up
+# starts from an empty cluster (roles re-created, schema re-migrated at startup).
+db-reset:
+	docker compose --profile postgres --profile test down --volumes
+
+# psql inside the container, as the schema owner — no port needed.
+db-psql:
+	docker compose exec db psql -U gokick_owner gokick
 
 # DI
 di:
@@ -234,6 +263,28 @@ test:
 	yarn test
 	go test ./app/... ./cmd/...
 	cd tools/gk && go test ./...
+
+# The Postgres adapter's tests, against the db-test service (a throwaway cluster
+# in RAM, reached by its container IP — no published port). Built with -tags
+# nosqlite, so not a line of SQLite is compiled in. Set APP_TEST_DB_URL (a
+# superuser DSN) to run against another cluster instead of the container. Until
+# the Postgres repositories land (phase 4 of the Postgres adapter plan) this covers
+# the adapter's own packages; then it becomes the whole suite.
+PG_TEST_PKGS := ./app/infrastructure/postgres/...
+
+test-pg:
+ifdef APP_TEST_DB_URL
+	APP_DB_DRIVER=postgres go test -tags nosqlite $(PG_TEST_PKGS)
+else
+	docker compose up -d --wait db-test
+	@ip="$$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \
+		"$$(docker compose ps -q db-test)")"; \
+	test -n "$$ip" || { echo "test-pg: cannot resolve the db-test container IP"; exit 1; }; \
+	echo "APP_DB_DRIVER=postgres APP_TEST_DB_URL=postgres://postgres:***@$$ip:5432/postgres go test -tags nosqlite $(PG_TEST_PKGS)"; \
+	APP_DB_DRIVER=postgres \
+	APP_TEST_DB_URL="postgres://postgres:postgres@$$ip:5432/postgres?sslmode=disable" \
+		go test -tags nosqlite $(PG_TEST_PKGS)
+endif
 
 # Local durable-run E2E — process-lifecycle guarantees an in-process test can't reach
 # (kill -9 / SIGTERM + persistent SQLite). Each builds bin/app and spawns real serve
