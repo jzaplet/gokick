@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gokick/app/domain/shared"
+	"gokick/app/infrastructure/config"
 	"gokick/app/infrastructure/database"
 	"gokick/app/infrastructure/postgres"
 	"gokick/app/internal/testfx/pgfx"
@@ -17,7 +18,7 @@ import (
 // Every pooled connection starts with the session settings the adapter relies on:
 // UTC, the application name, and the configured lock/statement/idle limits.
 func TestManager_SessionSettings(t *testing.T) {
-	db, _ := migrated(t)
+	db := pgfx.New(t)
 	cfg := db.Config()
 	cfg.DBLockTimeout = 1500 * time.Millisecond
 	cfg.DBStatementTimeout = 0 // disabled
@@ -67,7 +68,7 @@ func TestManager_BeginTx_PlanePicksTheRole(t *testing.T) {
 // A tenant-plane transaction is scoped to the tenant in ctx — and only for its own
 // lifetime: the next transaction on the same pooled connection starts unscoped.
 func TestManager_BeginTx_ScopesTheTenantPerTransaction(t *testing.T) {
-	db, _ := migrated(t)
+	db := pgfx.New(t)
 	cfg := db.Config()
 	cfg.DBMaxConns = 1 // one connection: every transaction below reuses it
 	mgr := newManager(t, cfg)
@@ -139,7 +140,7 @@ func TestManager_BeginTx_RefusesTheNoTxZone(t *testing.T) {
 // A read transaction is READ ONLY, carries the tenant scope, and hands its
 // connection back when it ends.
 func TestManager_BeginReadTx(t *testing.T) {
-	db, _ := migrated(t)
+	db := pgfx.New(t)
 	cfg := db.Config()
 	cfg.DBMaxConns = 1 // a read transaction that never ended would starve the next one
 	mgr := newManager(t, cfg)
@@ -209,10 +210,10 @@ func TestManager_CommitWithoutTransaction(t *testing.T) {
 
 // A malformed DSN fails NewManager naming the variable, never echoing the DSN.
 func TestNewManager_InvalidDSN(t *testing.T) {
-	db := pgfx.New(t)
-	cfg := db.Config()
-	cfg.DBSystemURL = "postgres://u:secret-pw@host:notaport/db"
-	_, err := postgres.NewManager(cfg)
+	_, err := postgres.NewManager(&config.Config{
+		DBURL:       "postgres://u@host/db",
+		DBSystemURL: "postgres://u:secret-pw@host:notaport/db",
+	})
 	if err == nil {
 		t.Fatal("NewManager must reject a malformed DSN")
 	}

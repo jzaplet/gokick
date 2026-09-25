@@ -12,7 +12,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"runtime"
 	"strconv"
 	"time"
 
@@ -50,15 +49,11 @@ type Manager struct {
 // NewManager opens both pools. Like database/sql it connects lazily: an
 // unreachable server surfaces on first use (at startup, the migrations), not here.
 func NewManager(cfg *config.Config) (*Manager, error) {
-	maxConns := cfg.DBMaxConns
-	if maxConns <= 0 {
-		maxConns = autoMaxConns()
-	}
-	app, err := openPool(cfg.DBURL, "APP_DB_URL", cfg, maxConns)
+	app, err := openPool(cfg.DBURL, "APP_DB_URL", cfg)
 	if err != nil {
 		return nil, err
 	}
-	system, err := openPool(cfg.DBSystemURL, "APP_DB_SYSTEM_URL", cfg, maxConns)
+	system, err := openPool(cfg.DBSystemURL, "APP_DB_SYSTEM_URL", cfg)
 	if err != nil {
 		_ = app.Close()
 		return nil, err
@@ -69,21 +64,17 @@ func NewManager(cfg *config.Config) (*Manager, error) {
 // openPool opens one role's pool with the session settings every connection
 // starts with: UTC, the application name (visible in pg_stat_activity) and the
 // configured lock, statement and idle-transaction limits.
-func openPool(dsn, key string, cfg *config.Config, maxConns int) (*sqlx.DB, error) {
-	pc, err := pgx.ParseConfig(dsn)
+func openPool(dsn, key string, cfg *config.Config) (*sqlx.DB, error) {
+	pc, err := connConfig(dsn, key, "gokick")
 	if err != nil {
-		// The parse error may quote the DSN; name the variable instead.
-		return nil, fmt.Errorf("postgres: invalid %s", key)
-	}
-	pc.RuntimeParams["TimeZone"] = "UTC"
-	if pc.RuntimeParams["application_name"] == "" {
-		pc.RuntimeParams["application_name"] = "gokick"
+		return nil, err
 	}
 	pc.RuntimeParams["lock_timeout"] = milliseconds(cfg.DBLockTimeout)
 	pc.RuntimeParams["statement_timeout"] = milliseconds(cfg.DBStatementTimeout)
 	pc.RuntimeParams["idle_in_transaction_session_timeout"] = milliseconds(cfg.DBIdleTxTimeout)
 
 	db := sqlx.NewDb(stdlib.OpenDB(*pc), DriverName)
+	maxConns := database.PoolSize(cfg.DBMaxConns, dbMaxConnsFloor, dbMaxConnsCeil)
 	db.SetMaxOpenConns(maxConns)
 	db.SetMaxIdleConns(maxConns)
 	// Recycle connections now and then, so a pool rebalances after a failover
@@ -93,25 +84,36 @@ func openPool(dsn, key string, cfg *config.Config, maxConns int) (*sqlx.DB, erro
 	return db, nil
 }
 
+// connConfig parses dsn (the value of the variable key) with the settings every
+// connection of the adapter starts with: UTC, and appName as the application name
+// visible in pg_stat_activity unless the DSN names one.
+func connConfig(dsn, key, appName string) (*pgx.ConnConfig, error) {
+	pc, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		// The parse error may quote the DSN; name the variable instead.
+		return nil, fmt.Errorf("postgres: invalid %s", key)
+	}
+	pc.RuntimeParams["TimeZone"] = "UTC"
+	if pc.RuntimeParams["application_name"] == "" {
+		pc.RuntimeParams["application_name"] = appName
+	}
+	return pc, nil
+}
+
 // milliseconds renders d as a Postgres time setting (integer milliseconds; 0
 // disables the limit).
 func milliseconds(d time.Duration) string {
 	return strconv.FormatInt(d.Milliseconds(), 10)
 }
 
-// dbMaxConnsFloor / dbMaxConnsCeil bound the auto cap of EACH pool. The ceiling
-// is lower than SQLite's: two pools per process, times the replicas, must stay
-// well under the server's max_connections (100 by default).
+// dbMaxConnsFloor / dbMaxConnsCeil bound the auto cap of EACH pool
+// (database.PoolSize: 2×NumCPU when APP_DB_MAX_CONNS is unset). The ceiling is
+// lower than SQLite's: two pools per process, times the replicas, must stay well
+// under the server's max_connections (100 by default).
 const (
 	dbMaxConnsFloor = 4
 	dbMaxConnsCeil  = 16
 )
-
-// autoMaxConns derives each pool's cap from the CPU count when APP_DB_MAX_CONNS is
-// unset: 2×NumCPU, clamped to [floor, ceil].
-func autoMaxConns() int {
-	return min(max(2*runtime.NumCPU(), dbMaxConnsFloor), dbMaxConnsCeil)
-}
 
 // App is the tenant-plane pool (gokick_app).
 func (m *Manager) App() *sqlx.DB { return m.app }
@@ -194,18 +196,6 @@ func (m *Manager) begin(ctx context.Context, opts *sql.TxOptions) (*sqlx.Tx, err
 	return tx, nil
 }
 
-func (m *Manager) Commit(ctx context.Context) error {
-	tx := database.TxFromContext(ctx)
-	if tx == nil {
-		return errors.New("postgres: no transaction in context")
-	}
-	return tx.Commit()
-}
+func (m *Manager) Commit(ctx context.Context) error { return database.CommitTx(ctx) }
 
-func (m *Manager) Rollback(ctx context.Context) error {
-	tx := database.TxFromContext(ctx)
-	if tx == nil {
-		return errors.New("postgres: no transaction in context")
-	}
-	return tx.Rollback()
-}
+func (m *Manager) Rollback(ctx context.Context) error { return database.RollbackTx(ctx) }

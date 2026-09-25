@@ -7,12 +7,13 @@ import (
 	"testing"
 
 	"gokick/app/infrastructure/config"
+	"gokick/app/infrastructure/persistence"
 )
 
 // openSQLite in a -tags nosqlite build: the adapter is not linked, so a test that
 // still asks for SQLite fails loudly instead of running on some other database.
-func openSQLite(t *testing.T, _ *config.Config, _ *slog.Logger) backend {
+func openSQLite(t *testing.T, _ *config.Config, _ *slog.Logger) (*persistence.Store, backend) {
 	t.Helper()
 	t.Fatal("testfx: APP_DB_DRIVER=sqlite, but this test binary was built with -tags nosqlite")
-	return backend{}
+	return nil, backend{}
 }

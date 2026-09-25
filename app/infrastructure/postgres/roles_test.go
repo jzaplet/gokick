@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"gokick/app/internal/testfx/pgfx"
 )
 
 // The gokick roles pass the startup check.
@@ -18,7 +20,7 @@ func TestVerifyRoles_AcceptsTheGokickRoles(t *testing.T) {
 // the owner, a superuser or the BYPASSRLS role on the tenant plane, and a role
 // without BYPASSRLS (or a superuser) on the system plane.
 func TestVerifyRoles_RefusesRolesThatDefeatTheTenantWall(t *testing.T) {
-	db := migratedDB(t)
+	db := pgfx.New(t)
 	for _, tc := range []struct {
 		name              string
 		appURL, systemURL string

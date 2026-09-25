@@ -18,7 +18,11 @@ import (
 // openSQLite gives the test its own database file in t.TempDir(), wired exactly
 // like production (persistence.SQLiteStore); the file and its pool go away with
 // the test.
-func openSQLite(t *testing.T, cfg *config.Config, logger *slog.Logger) backend {
+func openSQLite(
+	t *testing.T,
+	cfg *config.Config,
+	logger *slog.Logger,
+) (*persistence.Store, backend) {
 	t.Helper()
 	cfg.DBPath = filepath.Join(t.TempDir(), "fixture.db")
 	mgr, err := sqlite.NewManager(cfg)
@@ -26,8 +30,7 @@ func openSQLite(t *testing.T, cfg *config.Config, logger *slog.Logger) backend {
 		t.Fatalf("testfx: open sqlite: %v", err)
 	}
 	t.Cleanup(func() { _ = mgr.Close() })
-	return backend{
-		store:     persistence.SQLiteStore(mgr, logger),
+	return persistence.SQLiteStore(mgr, logger), backend{
 		db:        mgr.DB(),
 		nowPlus:   sqlite.LeaseExpr,
 		violation: sqliteViolation,

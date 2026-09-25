@@ -8,7 +8,6 @@ package testfx
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"testing"
 	"time"
@@ -30,27 +29,21 @@ import (
 )
 
 type Fixture struct {
-	// Tx opens and ends transactions on the fixture database — the same
-	// shared.Transactor the bus TransactionMiddleware uses.
-	Tx              shared.Transactor
-	Users           user.Repository
-	PlatformUsers   user.PlatformRepository // same concrete repo; the cross-tenant port for platform handler tests
-	Tokens          token.Repository
-	Runs            run.Repository
-	Tenants         tenant.Repository
-	PlatformTenants tenant.PlatformRepository // same concrete repo; cross-tenant port for platform tests
-	// Audit is the real AuditLogger (raw pool — survives a business rollback).
-	Audit  shared.AuditLogger
+	// The production ports on the fixture database — the Store persistence.Open
+	// builds, promoted: fx.Users, fx.PlatformUsers, fx.Tokens, fx.Runs,
+	// fx.Tenants, fx.PlatformTenants, fx.Audit (the real AuditLogger, raw pool —
+	// survives a business rollback) and fx.Tx (the shared.Transactor the bus
+	// TransactionMiddleware uses).
+	*persistence.Store
 	Hasher *security.PasswordHasher
 	Jwt    *security.JwtService
 
 	backend
 }
 
-// backend is what an adapter's fixture opener hands back: the production Store
-// plus the handle and dialect bits the fixture helpers in raw.go need.
+// backend is what an adapter's fixture opener hands back besides the production
+// Store: the handle and dialect bits the fixture helpers in raw.go need.
 type backend struct {
-	store *persistence.Store
 	// db is the fixture handle for writes that reach past the repositories.
 	db *sqlx.DB
 	// nowPlus is a SQL expression for the database clock shifted by ? seconds,
@@ -72,19 +65,16 @@ func NewMultitenant(t *testing.T) *Fixture { return newFixture(t, true) }
 func newFixture(t *testing.T, multitenant bool) *Fixture {
 	t.Helper()
 
-	cfg := &config.Config{
-		DBDriver:             ActiveDriver(),
-		JWTSecret:            jwtfx.Secret,
-		JWTAccessExpiration:  15 * time.Minute,
-		JWTRefreshExpiration: 7 * 24 * time.Hour,
-		Multitenancy:         multitenant,
-	}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := &config.Config{DBDriver: ActiveDriver(), Multitenancy: multitenant}
+	logger := slog.New(slog.DiscardHandler)
 
-	var b backend
+	var (
+		store *persistence.Store
+		b     backend
+	)
 	switch cfg.DBDriver {
 	case database.DriverSQLite:
-		b = openSQLite(t, cfg, logger)
+		store, b = openSQLite(t, cfg, logger)
 	case database.DriverPostgres:
 		// Phase 4 of the Postgres adapter plan adds the repositories, and with them
 		// this fixture. Until then only the adapter's own tests run on Postgres.
@@ -93,27 +83,15 @@ func newFixture(t *testing.T, multitenant bool) *Fixture {
 	default:
 		t.Fatalf("testfx: no fixture backend for APP_DB_DRIVER=%s in this build", cfg.DBDriver)
 	}
-	if err := b.store.Migrator.RunUp(); err != nil {
+	if err := store.Migrator.RunUp(); err != nil {
 		t.Fatalf("testfx: migrate: %v", err)
 	}
 
-	jwt, err := security.NewJwtService(cfg)
-	if err != nil {
-		t.Fatalf("jwt: %v", err)
-	}
-
 	return &Fixture{
-		Tx:              b.store.Tx,
-		Users:           b.store.Users,
-		PlatformUsers:   b.store.PlatformUsers,
-		Tokens:          b.store.Tokens,
-		Runs:            b.store.Runs,
-		Tenants:         b.store.Tenants,
-		PlatformTenants: b.store.PlatformTenants,
-		Audit:           b.store.Audit,
-		Hasher:          security.NewPasswordHasher(),
-		Jwt:             jwt,
-		backend:         b,
+		Store:   store,
+		Hasher:  security.NewPasswordHasher(),
+		Jwt:     jwtfx.New(t, 15*time.Minute),
+		backend: b,
 	}
 }
 
@@ -136,7 +114,7 @@ func (*Fixture) HashToken(raw string) string {
 // need to inspect collected events should use shared.ContextWithEventCollector
 // directly when invoking a handler outside the bus.
 func (f *Fixture) NewBuses() (*bus.CommandBus, *bus.QueryBus, *bus.EventBus) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	checker := security.NewPermissionChecker()
 	resolver := security.NewDefaultTenantResolver()
 	reporter := shared.NopReporter{}
@@ -175,7 +153,7 @@ func (f *Fixture) NewBuses() (*bus.CommandBus, *bus.QueryBus, *bus.EventBus) {
 // so the test bus can never drift from production — add a middleware once and
 // both get it. Audit writes land in the real audit_log table.
 func (f *Fixture) NewSystemBus() *bus.SystemCommandBus {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	reporter := shared.NopReporter{}
 
 	eventBus := bus.NewEventBus(

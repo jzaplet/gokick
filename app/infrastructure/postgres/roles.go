@@ -68,29 +68,30 @@ func readRoleFacts(ctx context.Context, db *sqlx.DB, key string) (roleFacts, err
 
 // checkRoles applies the VerifyRoles rules to the facts of both roles.
 func checkRoles(app, system roleFacts) error {
+	if err := checkRole("APP_DB_URL", "gokick_app", app, false); err != nil {
+		return err
+	}
+	return checkRole("APP_DB_SYSTEM_URL", "gokick_system", system, true)
+}
+
+// checkRole refuses a superuser or a table owner on either plane, and a role whose
+// BYPASSRLS is not the plane's (the tenant plane must not have it, the system
+// plane must). role is the gokick role the plane should connect as.
+func checkRole(key, role string, f roleFacts, bypassRLS bool) error {
 	switch {
-	case app.Super:
-		return fmt.Errorf("postgres: APP_DB_URL connects as %q, a superuser — superusers "+
-			"bypass row-level security; connect as the tenant role (gokick_app)", app.Name)
-	case app.BypassRLS:
-		return fmt.Errorf("postgres: APP_DB_URL connects as %q, which has BYPASSRLS — the "+
-			"tenant plane must be bound by row-level security; connect as gokick_app", app.Name)
-	case app.OwnedTables > 0:
-		return fmt.Errorf("postgres: APP_DB_URL connects as %q, which owns (or is a member of "+
-			"the owner of) %d tables — row-level security does not bind a table's owner; "+
-			"connect as gokick_app, never as the schema owner", app.Name, app.OwnedTables)
-	case system.Super:
-		return fmt.Errorf("postgres: APP_DB_SYSTEM_URL connects as %q, a superuser — the "+
-			"system plane needs BYPASSRLS, not the whole cluster; connect as gokick_system",
-			system.Name)
-	case !system.BypassRLS:
-		return fmt.Errorf("postgres: APP_DB_SYSTEM_URL connects as %q, which lacks BYPASSRLS — "+
-			"cross-tenant work would see a silently filtered result; connect as gokick_system",
-			system.Name)
-	case system.OwnedTables > 0:
-		return fmt.Errorf("postgres: APP_DB_SYSTEM_URL connects as %q, which owns (or is a "+
-			"member of the owner of) %d tables; connect as gokick_system, never as the schema "+
-			"owner", system.Name, system.OwnedTables)
+	case f.Super:
+		return fmt.Errorf("postgres: %s connects as %q, a superuser — superusers bypass "+
+			"row-level security and can rewrite the schema; connect as %s", key, f.Name, role)
+	case f.BypassRLS && !bypassRLS:
+		return fmt.Errorf("postgres: %s connects as %q, which has BYPASSRLS — the tenant "+
+			"plane must be bound by row-level security; connect as %s", key, f.Name, role)
+	case !f.BypassRLS && bypassRLS:
+		return fmt.Errorf("postgres: %s connects as %q, which lacks BYPASSRLS — cross-tenant "+
+			"work would see a silently filtered result; connect as %s", key, f.Name, role)
+	case f.OwnedTables > 0:
+		return fmt.Errorf("postgres: %s connects as %q, which owns (or is a member of the "+
+			"owner of) %d tables — row-level security does not bind a table's owner; connect "+
+			"as %s, never as the schema owner", key, f.Name, f.OwnedTables, role)
 	}
 	return nil
 }
