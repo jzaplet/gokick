@@ -63,7 +63,7 @@ func TestUserRepository_UpdateDelete_IsolateByTenant(t *testing.T) {
 	// (F-039), never a silent success — and must leave bob untouched.
 	bob.Nickname = "hacked"
 	var ve *shared.ValidationError
-	if err := fx.Users.Update(ctxA, bob); !errors.As(err, &ve) {
+	if err := fx.Users.Update(ctxA, bob, ""); !errors.As(err, &ve) {
 		t.Fatalf("cross-tenant Update must error on 0 rows, got %T: %v", err, err)
 	}
 	if err := fx.Users.Delete(ctxA, bob.ID); !errors.As(err, &ve) {

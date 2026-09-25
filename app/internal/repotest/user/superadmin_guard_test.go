@@ -47,10 +47,9 @@ func TestUserRepository_AdminCannotTouchSuperadminInSameTenant(t *testing.T) {
 	// (2) Update must REFUSE a superadmin (password reset attempt). The row is
 	// excluded by role != 'superadmin', so it matches 0 rows — which now surfaces
 	// as a not-found error (F-039), never a silent success. The row stays intact.
-	super.PasswordHash = "hijacked"
 	super.Nickname = "pwned"
 	var ve *shared.ValidationError
-	if err := fx.Users.Update(dctx, super); !errors.As(err, &ve) {
+	if err := fx.Users.Update(dctx, super, "hijacked"); !errors.As(err, &ve) {
 		t.Fatalf("Update of a superadmin must error on 0 rows, got %T: %v", err, err)
 	}
 

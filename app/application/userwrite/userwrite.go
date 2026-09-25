@@ -25,10 +25,11 @@ type Deps struct {
 
 // Plane carries the two spots where the admin and platform planes legitimately
 // diverge (see Update's doc): the plane-specific guard (nil = none) and the
-// save closure (tenant-scoped Update vs cross-tenant UpdateAcrossTenants).
+// save closure (tenant-scoped Update vs cross-tenant UpdateAcrossTenants), which
+// gets the new password hash apart from the user ("" = keep the password).
 type Plane struct {
 	Guard func(user.Role) error
-	Save  func(context.Context, *user.User) error
+	Save  func(ctx context.Context, u *user.User, newPasswordHash string) error
 }
 
 // CreateSpec is the validated input of Create — value objects only, so an
@@ -63,7 +64,10 @@ type Fields struct {
 //
 // Reads (FindByNickname) go through user.Repository, which the platform repo also
 // satisfies (PlatformRepository embeds it). The caller loads target first
-// (FindByID), so a missing user is already a not-found before we get here.
+// (FindByID), so a missing user is already a not-found before we get here. The
+// load takes no lock: the save writes only the columns the edit owns (see
+// user.Repository.Update), so a deactivation or password change that commits in
+// between survives it.
 //
 // The validation ORDER is load-bearing — it fixes which ValidationError wins, so
 // it stays in lockstep with the handlers' original behaviour: superadmin-target →
@@ -119,12 +123,11 @@ func Update(
 		return err
 	}
 
+	var newHash string
 	if f.Password != "" {
-		hash, err := user.HashNewPassword(f.Password, d.Hasher)
-		if err != nil {
+		if newHash, err = user.HashNewPassword(f.Password, d.Hasher); err != nil {
 			return err
 		}
-		target.PasswordHash = hash
 	}
 
 	roleChanged := target.Role != string(role)
@@ -134,7 +137,7 @@ func Update(
 	target.Role = string(role)
 	target.UpdatedAt = time.Now()
 
-	if err := plane.Save(ctx, target); err != nil {
+	if err := plane.Save(ctx, target, newHash); err != nil {
 		return err
 	}
 

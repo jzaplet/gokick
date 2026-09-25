@@ -42,14 +42,14 @@ func TestCommandBus_RetriesADeadlockedCommand(t *testing.T) {
 			attempts.Add(1)
 			shared.EventCollectorFromContext(ctx).Collect(testEvent{})
 			shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{Action: action})
-			if err := fx.Users.Update(ctx, &first); err != nil {
+			if err := fx.Users.Update(ctx, &first, ""); err != nil {
 				return err
 			}
 			if tries == 1 {
 				firstLocks.Done()
 				firstLocks.Wait()
 			}
-			return fx.Users.Update(ctx, &second)
+			return fx.Users.Update(ctx, &second, "")
 		}
 	}
 

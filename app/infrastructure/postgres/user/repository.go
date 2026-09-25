@@ -68,16 +68,19 @@ func (r *Repository) SaveAcrossTenants(ctx context.Context, u *user.User) error 
 }
 
 // Update scopes to the caller's tenant and never touches a superadmin row — see
-// the SQLite twin.
-func (r *Repository) Update(ctx context.Context, u *user.User) error {
+// the SQLite twin. It writes the edit's columns only (user.Repository): under
+// READ COMMITTED a deactivation or password change committing between the
+// edit's read and this write would otherwise be undone.
+func (r *Repository) Update(ctx context.Context, u *user.User, newPasswordHash string) error {
 	id, ok := postgres.ParseID(u.ID)
 	if !ok {
 		return requireOneRow(nil, nil)
 	}
 	res, err := r.Conn(ctx).ExecContext(ctx,
-		`UPDATE users SET nickname = $1, password_hash = $2, email = $3, role = $4, active = $5, updated_at = $6
-		  WHERE id = $7 AND tenant_id = $8 AND role <> 'superadmin'`,
-		u.Nickname, u.PasswordHash, u.Email, u.Role, u.Active, u.UpdatedAt, id, r.Tenant(ctx))
+		`UPDATE users SET nickname = $1, email = $2, role = $3, updated_at = $4,
+		        password_hash = COALESCE(NULLIF($5, ''), password_hash)
+		  WHERE id = $6 AND tenant_id = $7 AND role <> 'superadmin'`,
+		u.Nickname, u.Email, u.Role, u.UpdatedAt, newPasswordHash, id, r.Tenant(ctx))
 	return requireOneRow(res, nicknameTaken(err))
 }
 
@@ -93,22 +96,28 @@ func (r *Repository) Delete(ctx context.Context, id string) error {
 	return requireOneRow(res, err)
 }
 
-// UpdatePassword sets a user's OWN password hash (subject == claims.UserID) —
-// see the SQLite twin for why it carries no superadmin floor.
+// UpdatePassword sets a user's OWN password hash (subject == claims.UserID) if it
+// still is currentHash — see the SQLite twin for why it carries no superadmin
+// floor. The compare-and-swap is what stops it, under READ COMMITTED, from
+// overwriting a reset committed since the caller read currentHash.
 func (r *Repository) UpdatePassword(
 	ctx context.Context,
-	userID, passwordHash string,
+	userID, currentHash, newHash string,
 	updatedAt time.Time,
-) error {
+) (bool, error) {
 	id, ok := postgres.ParseID(userID)
 	if !ok {
-		return requireOneRow(nil, nil)
+		return false, nil
 	}
 	res, err := r.Conn(ctx).ExecContext(ctx,
-		`UPDATE users SET password_hash = $1, updated_at = $2 WHERE id = $3
+		`UPDATE users SET password_hash = $1, updated_at = $2 WHERE id = $3 AND password_hash = $4
 		 /* tenant-scope-exempt: self password change by id (subject == claims.UserID) */`,
-		passwordHash, updatedAt, id)
-	return requireOneRow(res, err)
+		newHash, updatedAt, id, currentHash)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
 }
 
 // UpdateLang sets the user's own UI-language preference — same self-service
@@ -242,16 +251,22 @@ func (r *Repository) CountByActive(ctx context.Context) (int, int, error) {
 }
 
 // UpdateAcrossTenants is the platform-plane write — any tenant, never a
-// superadmin row, never a tenant move (tenant_id is not in the SET clause).
-func (r *Repository) UpdateAcrossTenants(ctx context.Context, u *user.User) error {
+// superadmin row, never a tenant move (tenant_id is not in the SET clause), and
+// the same columns as Update.
+func (r *Repository) UpdateAcrossTenants(
+	ctx context.Context,
+	u *user.User,
+	newPasswordHash string,
+) error {
 	id, ok := postgres.ParseID(u.ID)
 	if !ok {
 		return requireOneRow(nil, nil)
 	}
 	res, err := r.SystemConn(ctx).ExecContext(ctx,
-		`UPDATE users SET nickname = $1, password_hash = $2, email = $3, role = $4, active = $5, updated_at = $6
-		  WHERE id = $7 AND role <> 'superadmin' /* tenant-scope-exempt: platform superadmin */`,
-		u.Nickname, u.PasswordHash, u.Email, u.Role, u.Active, u.UpdatedAt, id)
+		`UPDATE users SET nickname = $1, email = $2, role = $3, updated_at = $4,
+		        password_hash = COALESCE(NULLIF($5, ''), password_hash)
+		  WHERE id = $6 AND role <> 'superadmin' /* tenant-scope-exempt: platform superadmin */`,
+		u.Nickname, u.Email, u.Role, u.UpdatedAt, newPasswordHash, id)
 	return requireOneRow(res, nicknameTaken(err))
 }
 

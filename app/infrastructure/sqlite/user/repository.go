@@ -78,12 +78,14 @@ func (r *Repository) SaveAcrossTenants(ctx context.Context, u *user.User) error 
 // rows: a tenant admin must never modify (e.g. reset the password of) a platform
 // superadmin, even one that shares its tenant — that would be a back-door
 // escalation. The platform account is managed out-of-band, never through
-// tenant-admin user management.
-func (r *Repository) Update(ctx context.Context, u *user.User) error {
-	const q = `UPDATE users SET nickname=?, password_hash=?, email=?, role=?, active=?, updated_at=?
+// tenant-admin user management. It writes the edit's columns only (see
+// user.Repository) — the password only when newPasswordHash is set.
+func (r *Repository) Update(ctx context.Context, u *user.User, newPasswordHash string) error {
+	const q = `UPDATE users SET nickname=?, email=?, role=?, updated_at=?,
+		password_hash=COALESCE(NULLIF(?, ''), password_hash)
 		WHERE id=? AND tenant_id=? AND role != 'superadmin'`
 	res, err := r.Conn(ctx).ExecContext(ctx, q,
-		u.Nickname, u.PasswordHash, u.Email, u.Role, u.Active, u.UpdatedAt, u.ID, r.Tenant(ctx))
+		u.Nickname, u.Email, u.Role, u.UpdatedAt, newPasswordHash, u.ID, r.Tenant(ctx))
 	return requireOneRow(res, nicknameTaken(err))
 }
 
@@ -100,17 +102,23 @@ func (r *Repository) Delete(ctx context.Context, id string) error {
 // superadmin changing their own password is legitimate and must not silently
 // no-op. That escalation guard exists only to stop a tenant admin editing OTHER
 // users; a self password change can't escalate. Scoped WHERE id=? — a self
-// identity write, tenant-exempt like FindByID — and errors on 0 rows.
+// identity write, tenant-exempt like FindByID — and a compare-and-swap on the
+// hash the caller verified the old password against (see user.Repository):
+// false when the row is gone or its password changed since.
 func (r *Repository) UpdatePassword(
 	ctx context.Context,
-	userID, passwordHash string,
+	userID, currentHash, newHash string,
 	updatedAt time.Time,
-) error {
+) (bool, error) {
 	res, err := r.Conn(ctx).ExecContext(ctx,
-		`UPDATE users SET password_hash=?, updated_at=? WHERE id=?
+		`UPDATE users SET password_hash=?, updated_at=? WHERE id=? AND password_hash=?
 		 /* tenant-scope-exempt: self password change by id (subject == claims.UserID) */`,
-		passwordHash, updatedAt, userID)
-	return requireOneRow(res, err)
+		newHash, updatedAt, userID, currentHash)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
 }
 
 // UpdateLang sets the user's own UI-language preference — same self-service
@@ -247,12 +255,18 @@ func (r *Repository) CountByActive(ctx context.Context) (int, int, error) {
 // ANY tenant. Unlike Update it carries no tenant filter (the marker makes that
 // explicit), but it still excludes superadmin rows so no platform account can be
 // edited through the API. tenant_id is deliberately NOT in the SET clause — an
-// edit must never move a user between tenants.
-func (r *Repository) UpdateAcrossTenants(ctx context.Context, u *user.User) error {
-	const q = `UPDATE users SET nickname=?, password_hash=?, email=?, role=?, active=?, updated_at=?
+// edit must never move a user between tenants — and it writes the same columns as
+// Update.
+func (r *Repository) UpdateAcrossTenants(
+	ctx context.Context,
+	u *user.User,
+	newPasswordHash string,
+) error {
+	const q = `UPDATE users SET nickname=?, email=?, role=?, updated_at=?,
+		password_hash=COALESCE(NULLIF(?, ''), password_hash)
 		WHERE id=? AND role != 'superadmin' /* tenant-scope-exempt: platform superadmin */`
 	res, err := r.Conn(ctx).ExecContext(ctx, q,
-		u.Nickname, u.PasswordHash, u.Email, u.Role, u.Active, u.UpdatedAt, u.ID)
+		u.Nickname, u.Email, u.Role, u.UpdatedAt, newPasswordHash, u.ID)
 	return requireOneRow(res, nicknameTaken(err))
 }
 

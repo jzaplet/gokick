@@ -70,9 +70,15 @@ func (h *ChangePasswordHandler) Handle(ctx context.Context, cmd ChangePasswordCo
 	// Self-service password write: scoped to the caller's own id, so it works for
 	// a superadmin too (the full-row Update excludes superadmin rows and would
 	// silently no-op — F-039). UpdatePassword also stamps updated_at, which the
-	// old full-row Update left stale here.
-	if err := h.users.UpdatePassword(ctx, u.ID, newHash, time.Now()); err != nil {
+	// old full-row Update left stale here. It writes only over the hash the old
+	// password was just verified against: if the password changed since (an admin
+	// reset), the old password is no longer the current one.
+	changed, err := h.users.UpdatePassword(ctx, u.ID, u.PasswordHash, newHash, time.Now())
+	if err != nil {
 		return err
+	}
+	if !changed {
+		return &shared.AuthError{Key: msgkey.AuthCurrentPasswordIncorrect}
 	}
 
 	shared.AuditCollectorFromContext(ctx).Record(shared.AuditEvent{
