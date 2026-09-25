@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.5.0](https://github.com/jzaplet/gokick/compare/v1.4.2...v1.5.0) (2026-09-25)
+
+
+### Features
+
+* **bus:** mark the database plane and read inside a read transaction ([3bbcb1d](https://github.com/jzaplet/gokick/commit/3bbcb1d487cedc8a4998a7762912f2a7a89026e9))
+* **bus:** retry a command whose transaction lost a race ([fbf32df](https://github.com/jzaplet/gokick/commit/fbf32dfdb8a56cba2702b3f22caed6dca19672fc))
+* **bus:** run login and refresh on the system plane ([72a4463](https://github.com/jzaplet/gokick/commit/72a446328820bf790d0d2ce8b7edc878d43e6d24))
+* **db:** report a taken nickname or tenant name as its field error ([60be8aa](https://github.com/jzaplet/gokick/commit/60be8aab1132d07c53e8913f405262542cc75221))
+* mint every primary key as a UUIDv7 ([627b57c](https://github.com/jzaplet/gokick/commit/627b57cd5b3a539b234dafa985db2aa4db1965e7))
+* **postgres:** add the Postgres repositories and make the adapter selectable ([6740358](https://github.com/jzaplet/gokick/commit/6740358bb76996f2292c0870696576b3fd0c9bb3))
+* **postgres:** add the Postgres schema twin with row-level security ([b21be22](https://github.com/jzaplet/gokick/commit/b21be2217d74ca6344d1fa724469c503c175b55a))
+* **postgres:** connect over two role pools with tenant-scoped transactions ([dd94dee](https://github.com/jzaplet/gokick/commit/dd94dee63d86813b5ac57acf5668e5c03fe1978e))
+* **scheduler:** run each job on one replica at a time ([604ec9b](https://github.com/jzaplet/gokick/commit/604ec9bd6e8b95164b1ec30a88663bc77ac7cab8))
+* **sqlite:** sort grids in Czech order and search case-insensitively in any letter ([ad72a3f](https://github.com/jzaplet/gokick/commit/ad72a3f86f93b91ffeb29596cb5be3bdc2963226))
+
+
+### Bug Fixes
+
+* **database:** keep the pool cap after startup migrations ([363fb40](https://github.com/jzaplet/gokick/commit/363fb4073c34b53e5d03433418237167a967db58))
+* **db:** keep user edits and password changes from undoing concurrent writes ([924f2d0](https://github.com/jzaplet/gokick/commit/924f2d0a730abb9451ec26705fbef9d7c973d6d5))
+* **postgres:** close tenant-isolation gaps in the adapter and schema ([4ee441b](https://github.com/jzaplet/gokick/commit/4ee441b9086d7c78f664a63650f5a3e29d3f1794))
+* **postgres:** lock tenants before deleting them, and bulk-selected rows in id order ([4c8d523](https://github.com/jzaplet/gokick/commit/4c8d523664a3095fc247ecdb4bcf8da2482100cd))
+
+
+### Refactoring
+
+* **database:** move the SQLite manager into the sqlite adapter ([24839b0](https://github.com/jzaplet/gokick/commit/24839b0ad3d6082e5316a4b4cdf6ef7cf12414ce))
+* **db:** pick the database adapter with APP_DB_DRIVER ([85466e9](https://github.com/jzaplet/gokick/commit/85466e94b66642125f31b82ab30bae41002dbc3d))
+* **db:** share the portable SQL helpers in the database package ([9f90533](https://github.com/jzaplet/gokick/commit/9f9053337b33175cc03855f20e27cf4236f54a52))
+* **db:** share transaction and pool plumbing across the adapters ([fbcabac](https://github.com/jzaplet/gokick/commit/fbcabac25d8c712f109ed1b340f39230733a3061))
+* **migrations:** one directory per dialect, run through a goose Provider ([36b665a](https://github.com/jzaplet/gokick/commit/36b665a696ef295dc4017f36c117c39d1cd9f66f))
+* **migrations:** squash into one init (installs older than v1.4.0 upgrade via v1.4.x) ([6ca98fe](https://github.com/jzaplet/gokick/commit/6ca98fe8c37cbbeac9d06799c40f005ce049359e))
+* **persistence:** open the database behind one Store ([4b51f10](https://github.com/jzaplet/gokick/commit/4b51f10dc41e21a7931a09a92fad3d5ff0ef6367))
+
 ## [1.4.2](https://github.com/jzaplet/gokick/compare/v1.4.1...v1.4.2) (2026-08-20)
 
 
